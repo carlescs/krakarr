@@ -32,7 +32,7 @@ public static class SettingsEndpoints
         app.MapGet("/api/v1/qualities", () => Qualities.All).WithTags("Quality");
 
         var profiles = app.MapGroup("/api/v1/qualityprofiles").WithTags("Quality");
-        profiles.MapGet("/", async (KrakarrDbContext db, CancellationToken ct) => await db.QualityProfiles.AsNoTracking().OrderBy(p => p.Name).ToListAsync(ct));
+        profiles.MapGet("/", async (KrakarrDbContext db, CancellationToken ct) => await db.QualityProfiles.AsNoTracking().OrderBy(p => p.Id).ToListAsync(ct));
         profiles.MapPost("/", async (QualityProfile input, KrakarrDbContext db, CancellationToken ct) =>
         {
             if (ValidateProfile(input) is { } problem) return problem;

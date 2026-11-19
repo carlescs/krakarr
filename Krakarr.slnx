@@ -13,6 +13,7 @@
     <Project Path="src/Krakarr.Subtitles/Krakarr.Subtitles.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Krakarr.Host.Tests/Krakarr.Host.Tests.csproj" />
     <Project Path="tests/Krakarr.Indexers.Tests/Krakarr.Indexers.Tests.csproj" />
     <Project Path="tests/Krakarr.Media.Tests/Krakarr.Media.Tests.csproj" />
     <Project Path="tests/Krakarr.Movies.Tests/Krakarr.Movies.Tests.csproj" />

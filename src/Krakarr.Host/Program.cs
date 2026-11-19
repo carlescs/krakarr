@@ -17,6 +17,7 @@ using Krakarr.Series;
 using Krakarr.Subtitles;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -29,13 +30,13 @@ var configDir = builder.Configuration["Krakarr:ConfigDirectory"]
     ?? (inContainer ? "/config" : Path.Combine(builder.Environment.ContentRootPath, "data"));
 configDir = Path.GetFullPath(configDir);
 builder.Configuration.AddJsonFile(Path.Combine(configDir, "config.json"), optional: true, reloadOnChange: false);
-builder.Configuration.AddEnvironmentVariables("KRAKARR_");
+builder.Configuration.AddEnvironmentVariables(); // environment wins over config.json
 
 var paths = new KrakarrPaths
 {
     ConfigDirectory = configDir,
     DefaultDownloadDirectory = Path.GetFullPath(builder.Configuration["Krakarr:DownloadDirectory"]
-        ?? (inContainer ? "/downloads" : Path.Combine(configDir, "downloads"))),
+        ?? (inContainer ? "/data/downloads" : Path.Combine(configDir, "downloads"))),
 };
 paths.EnsureCreated();
 builder.Services.AddSingleton(paths);
@@ -85,6 +86,9 @@ builder.Services.AddSingleton<IEventHub, SignalREventHub>();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
+builder.Services.AddDataProtection()
+    .SetApplicationName("Krakarr")
+    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(configDir, "keys")));
 
 builder.Services
     .AddAuthentication(AuthConstants.SmartScheme)
@@ -135,6 +139,7 @@ if (!string.IsNullOrEmpty(urlBase))
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseKrakarrStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -148,7 +153,7 @@ app.MapMovieEndpoints();
 app.MapSeriesEndpoints();
 app.MapSubtitleEndpoints();
 app.MapHub<EventsHub>("/hubs/events");
-app.UseKrakarrSpa(urlBase);
+app.MapKrakarrSpa(urlBase);
 
 await app.RunAsync();
 

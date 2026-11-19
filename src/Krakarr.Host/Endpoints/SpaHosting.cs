@@ -5,10 +5,15 @@ namespace Krakarr.Host.Endpoints;
 /// <summary>Serves the Angular app from wwwroot, rewriting &lt;base href&gt; for the configured URL base.</summary>
 public static class SpaHosting
 {
-    public static WebApplication UseKrakarrSpa(this WebApplication app, string urlBase)
+    /// <summary>Static assets must be served before authorization (the fallback policy would otherwise apply).</summary>
+    public static WebApplication UseKrakarrStaticFiles(this WebApplication app)
     {
         app.UseStaticFiles();
+        return app;
+    }
 
+    public static WebApplication MapKrakarrSpa(this WebApplication app, string urlBase)
+    {
         string? cachedIndex = null;
         app.MapFallback(async (HttpContext http, IWebHostEnvironment env) =>
         {

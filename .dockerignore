@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/node_modules/
+web/dist/
+web/.angular/
+src/Krakarr.Host/wwwroot/
+tests/
+.git/
+.github/
+data/
+config/
