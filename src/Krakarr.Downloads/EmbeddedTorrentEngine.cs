@@ -266,6 +266,7 @@ public sealed class EmbeddedTorrentEngine(
         MediaType = o.MediaType,
         MovieId = o.MovieId,
         SeriesId = o.SeriesId,
+        EpisodeIds = o.EpisodeIds.ToList(),
         QualityId = o.QualityId,
         IndexerName = o.IndexerName,
     };
@@ -439,6 +440,7 @@ public sealed class EmbeddedTorrentEngine(
             Added = row.Added,
             CompletedAt = row.CompletedAt,
             MovieId = row.MovieId,
+            SeriesId = row.SeriesId,
             Imported = row.Imported,
             ImportMessage = row.ImportMessage,
             ErrorMessage = manager.Error?.Exception?.Message,

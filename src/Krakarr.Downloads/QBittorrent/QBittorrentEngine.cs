@@ -269,6 +269,7 @@ public sealed class QBittorrentEngine(
             MediaType = options.MediaType,
             MovieId = options.MovieId,
             SeriesId = options.SeriesId,
+            EpisodeIds = options.EpisodeIds.ToList(),
             QualityId = options.QualityId,
             IndexerName = options.IndexerName,
         };
@@ -423,6 +424,7 @@ public sealed class QBittorrentEngine(
         Added = row.Added,
         CompletedAt = row.CompletedAt,
         MovieId = row.MovieId,
+        SeriesId = row.SeriesId,
         Imported = row.Imported,
         ImportMessage = row.ImportMessage,
         ErrorMessage = row.ErrorMessage,

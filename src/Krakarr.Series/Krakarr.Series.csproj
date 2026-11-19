@@ -1,7 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <InternalsVisibleTo Include="Krakarr.Series.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../Krakarr.Core/Krakarr.Core.csproj" />
     <ProjectReference Include="../Krakarr.Data/Krakarr.Data.csproj" />
     <ProjectReference Include="../Krakarr.Media/Krakarr.Media.csproj" />
+    <ProjectReference Include="../Krakarr.Indexers/Krakarr.Indexers.csproj" />
+    <ProjectReference Include="../Krakarr.Downloads/Krakarr.Downloads.csproj" />
   </ItemGroup>
 </Project>

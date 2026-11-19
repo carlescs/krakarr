@@ -17,7 +17,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261119181538_AddDownloadClient";
+    public override string LastMigrationId => "20261119185934_AddSeriesLibrary";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -55,6 +55,10 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<long>("DownloadedBytes")
                     .HasColumnType("bigint");
+
+                b.PrimitiveCollection<List<int>>("EpisodeIds")
+                    .IsRequired()
+                    .HasColumnType("integer[]");
 
                 b.Property<string>("ErrorMessage")
                     .HasColumnType("text");
@@ -121,6 +125,8 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.HasIndex("MovieId");
 
+                b.HasIndex("SeriesId");
+
                 b.ToTable("Downloads");
             });
 
@@ -132,8 +138,14 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
 
+                b.Property<int?>("AbsoluteNumber")
+                    .HasColumnType("integer");
+
                 b.Property<DateOnly?>("AirDate")
                     .HasColumnType("date");
+
+                b.Property<int?>("EpisodeFileId")
+                    .HasColumnType("integer");
 
                 b.Property<int>("EpisodeNumber")
                     .HasColumnType("integer");
@@ -141,8 +153,11 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<bool>("Monitored")
                     .HasColumnType("boolean");
 
-                b.Property<string>("RelativePath")
+                b.Property<string>("Overview")
                     .HasColumnType("text");
+
+                b.Property<int>("Runtime")
+                    .HasColumnType("integer");
 
                 b.Property<int>("SeasonNumber")
                     .HasColumnType("integer");
@@ -158,9 +173,53 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.HasKey("Id");
 
+                b.HasIndex("EpisodeFileId");
+
+                b.HasIndex("TvdbId");
+
                 b.HasIndex("SeriesId", "SeasonNumber", "EpisodeNumber");
 
                 b.ToTable("Episodes");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.EpisodeFile", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
+
+                b.Property<DateTimeOffset>("DateAdded")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<int>("QualityId")
+                    .HasColumnType("integer");
+
+                b.Property<string>("RelativePath")
+                    .IsRequired()
+                    .HasColumnType("text");
+
+                b.Property<string>("ReleaseGroup")
+                    .HasColumnType("text");
+
+                b.Property<string>("SceneName")
+                    .HasColumnType("text");
+
+                b.Property<int>("SeasonNumber")
+                    .HasColumnType("integer");
+
+                b.Property<int>("SeriesId")
+                    .HasColumnType("integer");
+
+                b.Property<long>("Size")
+                    .HasColumnType("bigint");
+
+                b.HasKey("Id");
+
+                b.HasIndex("SeriesId");
+
+                b.ToTable("EpisodeFiles");
             });
 
         modelBuilder.Entity("Krakarr.Core.Domain.HistoryEntry", b =>
@@ -432,6 +491,31 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("RootFolders");
             });
 
+        modelBuilder.Entity("Krakarr.Core.Domain.Season", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
+
+                b.Property<bool>("Monitored")
+                    .HasColumnType("boolean");
+
+                b.Property<int>("SeasonNumber")
+                    .HasColumnType("integer");
+
+                b.Property<int>("SeriesId")
+                    .HasColumnType("integer");
+
+                b.HasKey("Id");
+
+                b.HasIndex("SeriesId", "SeasonNumber")
+                    .IsUnique();
+
+                b.ToTable("Seasons");
+            });
+
         modelBuilder.Entity("Krakarr.Core.Domain.Series", b =>
             {
                 var id = b.Property<int>("Id")
@@ -443,11 +527,26 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<DateTimeOffset>("Added")
                     .HasColumnType("timestamp with time zone");
 
+                b.Property<string>("FanartUrl")
+                    .HasColumnType("text");
+
+                b.Property<DateOnly?>("FirstAired")
+                    .HasColumnType("date");
+
                 b.Property<string>("ImdbId")
                     .HasColumnType("text");
 
+                b.Property<DateTimeOffset?>("LastRefreshed")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset?>("LastSearched")
+                    .HasColumnType("timestamp with time zone");
+
                 b.Property<bool>("Monitored")
                     .HasColumnType("boolean");
+
+                b.Property<string>("Network")
+                    .HasColumnType("text");
 
                 b.Property<string>("Overview")
                     .HasColumnType("text");
@@ -460,6 +559,19 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("text");
 
                 b.Property<int>("QualityProfileId")
+                    .HasColumnType("integer");
+
+                b.Property<int>("Runtime")
+                    .HasColumnType("integer");
+
+                b.Property<bool>("SeasonFolder")
+                    .HasColumnType("boolean");
+
+                b.Property<string>("SortTitle")
+                    .IsRequired()
+                    .HasColumnType("text");
+
+                b.Property<int>("Status")
                     .HasColumnType("integer");
 
                 b.Property<string>("Title")
@@ -476,6 +588,8 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("integer");
 
                 b.HasKey("Id");
+
+                b.HasIndex("QualityProfileId");
 
                 b.HasIndex("TvdbId")
                     .IsUnique();
@@ -528,8 +642,24 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
         modelBuilder.Entity("Krakarr.Core.Domain.Episode", b =>
             {
+                b.HasOne("Krakarr.Core.Domain.EpisodeFile", "EpisodeFile")
+                    .WithMany()
+                    .HasForeignKey("EpisodeFileId")
+                    .OnDelete(DeleteBehavior.SetNull);
+
                 b.HasOne("Krakarr.Core.Domain.Series", null)
                     .WithMany("Episodes")
+                    .HasForeignKey("SeriesId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.Navigation("EpisodeFile");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.EpisodeFile", b =>
+            {
+                b.HasOne("Krakarr.Core.Domain.Series", null)
+                    .WithMany()
                     .HasForeignKey("SeriesId")
                     .OnDelete(DeleteBehavior.Cascade)
                     .IsRequired();
@@ -553,9 +683,31 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Navigation("QualityProfile");
             });
 
+        modelBuilder.Entity("Krakarr.Core.Domain.Season", b =>
+            {
+                b.HasOne("Krakarr.Core.Domain.Series", null)
+                    .WithMany("Seasons")
+                    .HasForeignKey("SeriesId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.Series", b =>
+            {
+                b.HasOne("Krakarr.Core.Domain.QualityProfile", "QualityProfile")
+                    .WithMany()
+                    .HasForeignKey("QualityProfileId")
+                    .OnDelete(DeleteBehavior.Restrict)
+                    .IsRequired();
+
+                b.Navigation("QualityProfile");
+            });
+
         modelBuilder.Entity("Krakarr.Core.Domain.Series", b =>
             {
                 b.Navigation("Episodes");
+
+                b.Navigation("Seasons");
             });
 #pragma warning restore 612, 618
     }

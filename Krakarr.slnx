@@ -18,6 +18,7 @@
     <Project Path="tests/Krakarr.Indexers.Tests/Krakarr.Indexers.Tests.csproj" />
     <Project Path="tests/Krakarr.Media.Tests/Krakarr.Media.Tests.csproj" />
     <Project Path="tests/Krakarr.Movies.Tests/Krakarr.Movies.Tests.csproj" />
+    <Project Path="tests/Krakarr.Series.Tests/Krakarr.Series.Tests.csproj" />
   </Folder>
   <Folder Name="/Solution Items/">
     <File Path="Directory.Build.props" />

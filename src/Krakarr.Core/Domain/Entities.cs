@@ -112,6 +112,24 @@ public class MovieFile
     public DateTimeOffset DateAdded { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public enum SeriesStatus
+{
+    Continuing = 0,
+    Ended = 1,
+    Upcoming = 2,
+}
+
+/// <summary>How episodes are monitored when a series is added.</summary>
+public enum MonitorMode
+{
+    All = 0,
+    Future = 1,
+    Missing = 2,
+    FirstSeason = 3,
+    LatestSeason = 4,
+    None = 5,
+}
+
 public class Series
 {
     public int Id { get; set; }
@@ -119,14 +137,35 @@ public class Series
     public int? TmdbId { get; set; }
     public string? ImdbId { get; set; }
     public required string Title { get; set; }
+    public string SortTitle { get; set; } = string.Empty;
     public int Year { get; set; }
     public string? Overview { get; set; }
     public string? PosterUrl { get; set; }
+    public string? FanartUrl { get; set; }
+    public string? Network { get; set; }
+    public int Runtime { get; set; }
+    public SeriesStatus Status { get; set; } = SeriesStatus.Continuing;
+    public DateOnly? FirstAired { get; set; }
     public bool Monitored { get; set; } = true;
+    /// <summary>Put episodes in "Season NN" sub-folders.</summary>
+    public bool SeasonFolder { get; set; } = true;
     public int QualityProfileId { get; set; }
+    public QualityProfile? QualityProfile { get; set; }
+    /// <summary>Absolute path of the series folder.</summary>
     public required string Path { get; set; }
     public DateTimeOffset Added { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? LastRefreshed { get; set; }
+    public DateTimeOffset? LastSearched { get; set; }
+    public List<Season> Seasons { get; set; } = [];
     public List<Episode> Episodes { get; set; } = [];
+}
+
+public class Season
+{
+    public int Id { get; set; }
+    public int SeriesId { get; set; }
+    public int SeasonNumber { get; set; }
+    public bool Monitored { get; set; } = true;
 }
 
 public class Episode
@@ -136,10 +175,31 @@ public class Episode
     public int TvdbId { get; set; }
     public int SeasonNumber { get; set; }
     public int EpisodeNumber { get; set; }
+    public int? AbsoluteNumber { get; set; }
     public string? Title { get; set; }
+    public string? Overview { get; set; }
     public DateOnly? AirDate { get; set; }
+    public int Runtime { get; set; }
     public bool Monitored { get; set; } = true;
-    public string? RelativePath { get; set; }
+    public int? EpisodeFileId { get; set; }
+    public EpisodeFile? EpisodeFile { get; set; }
+
+    public bool HasAired(DateOnly today) => AirDate is { } d && d <= today;
+}
+
+/// <summary>A video file in the library holding one or more episodes of the same season.</summary>
+public class EpisodeFile
+{
+    public int Id { get; set; }
+    public int SeriesId { get; set; }
+    public int SeasonNumber { get; set; }
+    /// <summary>Path relative to <see cref="Series.Path"/>.</summary>
+    public required string RelativePath { get; set; }
+    public long Size { get; set; }
+    public int QualityId { get; set; }
+    public string? ReleaseGroup { get; set; }
+    public string? SceneName { get; set; }
+    public DateTimeOffset DateAdded { get; set; } = DateTimeOffset.UtcNow;
 }
 
 public enum DownloadState
@@ -186,6 +246,8 @@ public class Download
     public MediaType? MediaType { get; set; }
     public int? MovieId { get; set; }
     public int? SeriesId { get; set; }
+    /// <summary>Episodes this download is expected to contain (series downloads).</summary>
+    public List<int> EpisodeIds { get; set; } = [];
     public int? QualityId { get; set; }
     public string? IndexerName { get; set; }
     public bool Imported { get; set; }

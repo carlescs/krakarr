@@ -40,7 +40,10 @@ import { StateBadge } from '../shared/state-badge';
               <kr-state-badge [state]="d.state" />
               <span class="min-w-0 flex-1 truncate font-medium text-slate-100" [title]="d.name">{{ d.name }}</span>
               @if (d.movieId) {
-                <a [routerLink]="['/movies', d.movieId]" class="badge bg-violet-500/15 text-violet-300 hover:bg-violet-500/25">Movie</a>
+                <a [routerLink]="['/movies', d.movieId]" class="badge bg-accent-500/15 text-accent-300 hover:bg-accent-500/25">Movie</a>
+              }
+              @if (d.seriesId) {
+                <a [routerLink]="['/series', d.seriesId]" class="badge bg-violet-500/15 text-violet-300 hover:bg-violet-500/25">Series</a>
               }
               @if (d.imported) { <span class="badge bg-emerald-500/15 text-emerald-300">Imported</span> }
               <span class="badge bg-surface-700 text-slate-300">{{ d.category }}</span>

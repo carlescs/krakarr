@@ -117,4 +117,25 @@ public class TorznabTests
         var url = TorznabClient.BuildUrl(Indexer, [("t", "caps")]);
         Assert.Equal("http://localhost:9117/api/v2.0/indexers/test/results/torznab/api?t=caps&apikey=abc", url.ToString());
     }
+
+    [Fact]
+    public void Builds_tv_search_with_tvdb_id_season_and_episode()
+    {
+        var caps = new IndexerCapabilities { TvSearchAvailable = true, TvSearchParams = new HashSet<string> { "q", "season", "ep", "tvdbid" } };
+        var p = TorznabClient.BuildSearchParameters(Indexer, new SearchCriteria { Type = SearchType.Tv, Query = "The Office", TvdbId = 73244, Season = 5, Episode = 14 }, caps);
+        Assert.Contains(("t", "tvsearch"), p);
+        Assert.Contains(("tvdbid", "73244"), p);
+        Assert.Contains(("season", "5"), p);
+        Assert.Contains(("ep", "14"), p);
+        Assert.Contains(("cat", "5000"), p);
+    }
+
+    [Fact]
+    public void Tv_search_without_caps_puts_episode_in_query()
+    {
+        var p = TorznabClient.BuildSearchParameters(Indexer, new SearchCriteria { Type = SearchType.Tv, Query = "The Office", Season = 5, Episode = 14 }, new IndexerCapabilities());
+        Assert.Contains(("q", "The Office S05E14"), p);
+        var season = TorznabClient.BuildSearchParameters(Indexer, new SearchCriteria { Type = SearchType.Tv, Query = "The Office", Season = 5 }, new IndexerCapabilities());
+        Assert.Contains(("q", "The Office S05"), season);
+    }
 }

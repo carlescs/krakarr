@@ -1,10 +1,14 @@
+using System.Globalization;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Text.Json.Serialization;
+using System.Text.Json;
 using Krakarr.Core.Configuration;
 using Krakarr.Data;
 
 namespace Krakarr.Series;
+
+public sealed class TvdbException(string message) : Exception(message);
 
 public sealed record SeriesLookup
 {
@@ -15,14 +19,45 @@ public sealed record SeriesLookup
     public string? PosterUrl { get; init; }
     public string? Network { get; init; }
     public string? Status { get; init; }
+    /// <summary>Local series id when the show is already in the library.</summary>
+    public int? SeriesId { get; init; }
+}
+
+public sealed record EpisodeInfo
+{
+    public int TvdbId { get; init; }
+    public int SeasonNumber { get; init; }
+    public int EpisodeNumber { get; init; }
+    public int? AbsoluteNumber { get; init; }
+    public string? Title { get; init; }
+    public string? Overview { get; init; }
+    public DateOnly? AirDate { get; init; }
+    public int Runtime { get; init; }
+}
+
+public sealed record SeriesInfo
+{
+    public int TvdbId { get; init; }
+    public required string Title { get; init; }
+    public int Year { get; init; }
+    public string? Overview { get; init; }
+    public string? PosterUrl { get; init; }
+    public string? FanartUrl { get; init; }
+    public string? Network { get; init; }
+    public string? Status { get; init; }
+    public int Runtime { get; init; }
+    public string? ImdbId { get; init; }
+    public DateOnly? FirstAired { get; init; }
+    public IReadOnlyList<EpisodeInfo> Episodes { get; init; } = [];
 }
 
 public interface ITvdbClient
 {
     Task<IReadOnlyList<SeriesLookup>> SearchAsync(string query, CancellationToken ct = default);
+    Task<SeriesInfo> GetSeriesAsync(int tvdbId, CancellationToken ct = default);
 }
 
-/// <summary>TheTVDB v4 client (search only for now; full series/episode sync lands in a later milestone).</summary>
+/// <summary>TheTVDB v4 client: search, series details (with translations and artwork) and the default episode order.</summary>
 public sealed class TvdbClient(IHttpClientFactory httpClientFactory, ISettingsService settings) : ITvdbClient
 {
     public const string HttpClientName = "tvdb";
@@ -31,46 +66,181 @@ public sealed class TvdbClient(IHttpClientFactory httpClientFactory, ISettingsSe
 
     public async Task<IReadOnlyList<SeriesLookup>> SearchAsync(string query, CancellationToken ct = default)
     {
-        var http = httpClientFactory.CreateClient(HttpClientName);
-        var token = await GetTokenAsync(http, ct);
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"search?query={Uri.EscapeDataString(query)}&type=series&limit=25");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var response = await http.SendAsync(request, ct);
-        response.EnsureSuccessStatusCode();
-        var body = await response.Content.ReadFromJsonAsync<TvdbResponse<List<TvdbSearchResult>>>(ct);
-
-        return body?.Data?.Select(r => new SeriesLookup
+        var lang = await LanguageAsync(ct);
+        using var doc = await GetJsonAsync($"search?query={Uri.EscapeDataString(query)}&type=series&limit=25", ct);
+        var results = new List<SeriesLookup>();
+        if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
         {
-            TvdbId = int.TryParse(r.TvdbId, out var id) ? id : 0,
-            Title = r.Name ?? "Unknown",
-            Year = int.TryParse(r.Year, out var y) ? y : 0,
-            Overview = r.Overview,
-            PosterUrl = r.ImageUrl,
-            Network = r.Network,
-            Status = r.Status,
-        }).ToList() ?? [];
+            return results;
+        }
+
+        foreach (var item in data.EnumerateArray())
+        {
+            var id = Int(Str(item, "tvdb_id") ?? Str(item, "id")?.Replace("series-", string.Empty, StringComparison.Ordinal));
+            if (id is null or 0) continue;
+            results.Add(new SeriesLookup
+            {
+                TvdbId = id.Value,
+                Title = Translation(item, "translations", lang) ?? Str(item, "name") ?? $"TVDB {id}",
+                Year = Int(Str(item, "year")) ?? 0,
+                Overview = Translation(item, "overviews", lang) ?? Str(item, "overview"),
+                PosterUrl = Str(item, "image_url") ?? Str(item, "thumbnail"),
+                Network = Str(item, "network"),
+                Status = Str(item, "status"),
+            });
+        }
+
+        return results;
     }
 
-    private async Task<string> GetTokenAsync(HttpClient http, CancellationToken ct)
+    public async Task<SeriesInfo> GetSeriesAsync(int tvdbId, CancellationToken ct = default)
+    {
+        var lang = await LanguageAsync(ct);
+        var id = tvdbId.ToString(CultureInfo.InvariantCulture);
+
+        using var doc = await GetJsonAsync($"series/{id}/extended", ct);
+        var s = doc.RootElement.GetProperty("data");
+
+        string? title = null, overview = null;
+        try
+        {
+            using var tr = await GetJsonAsync($"series/{id}/translations/{lang}", ct);
+            if (tr.RootElement.TryGetProperty("data", out var t))
+            {
+                title = Str(t, "name");
+                overview = Str(t, "overview");
+            }
+        }
+        catch (TvdbException)
+        {
+            // No translation in the preferred language; fall back to the original.
+        }
+
+        var firstAired = Date(Str(s, "firstAired"));
+        var status = s.TryGetProperty("status", out var st) && st.ValueKind == JsonValueKind.Object ? Str(st, "name") : null;
+        var network = (s.TryGetProperty("originalNetwork", out var nw) && nw.ValueKind == JsonValueKind.Object ? Str(nw, "name") : null)
+            ?? (s.TryGetProperty("latestNetwork", out var ln) && ln.ValueKind == JsonValueKind.Object ? Str(ln, "name") : null);
+
+        string? imdb = null;
+        if (s.TryGetProperty("remoteIds", out var remotes) && remotes.ValueKind == JsonValueKind.Array)
+        {
+            imdb = remotes.EnumerateArray()
+                .Where(r => (Str(r, "sourceName") ?? string.Empty).Contains("IMDB", StringComparison.OrdinalIgnoreCase))
+                .Select(r => Str(r, "id"))
+                .FirstOrDefault(v => v?.StartsWith("tt", StringComparison.Ordinal) == true);
+        }
+
+        return new SeriesInfo
+        {
+            TvdbId = tvdbId,
+            Title = title ?? Str(s, "name") ?? $"TVDB {tvdbId}",
+            Year = Int(Str(s, "year")) ?? firstAired?.Year ?? 0,
+            Overview = overview ?? Str(s, "overview"),
+            PosterUrl = Artwork(s, 2, lang) ?? Str(s, "image"),
+            FanartUrl = Artwork(s, 3, lang),
+            Network = network,
+            Status = status,
+            Runtime = Int(Str(s, "averageRuntime")) ?? 0,
+            ImdbId = imdb,
+            FirstAired = firstAired,
+            Episodes = await GetEpisodesAsync(id, lang, ct),
+        };
+    }
+
+    private async Task<List<EpisodeInfo>> GetEpisodesAsync(string seriesId, string lang, CancellationToken ct)
+    {
+        var episodes = new List<EpisodeInfo>();
+        for (var page = 0; page < 100; page++)
+        {
+            using var doc = await GetJsonAsync($"series/{seriesId}/episodes/default/{lang}?page={page}", ct);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("data", out var data) && data.TryGetProperty("episodes", out var eps) && eps.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var e in eps.EnumerateArray())
+                {
+                    var season = Int(Str(e, "seasonNumber"));
+                    var number = Int(Str(e, "number"));
+                    if (season is null || number is null) continue;
+                    episodes.Add(new EpisodeInfo
+                    {
+                        TvdbId = Int(Str(e, "id")) ?? 0,
+                        SeasonNumber = season.Value,
+                        EpisodeNumber = number.Value,
+                        AbsoluteNumber = Int(Str(e, "absoluteNumber")) is > 0 and var abs ? abs : null,
+                        Title = Str(e, "name"),
+                        Overview = Str(e, "overview"),
+                        AirDate = Date(Str(e, "aired")),
+                        Runtime = Int(Str(e, "runtime")) ?? 0,
+                    });
+                }
+            }
+
+            var hasNext = root.TryGetProperty("links", out var links)
+                && links.TryGetProperty("next", out var next)
+                && next.ValueKind is JsonValueKind.String or JsonValueKind.Number;
+            if (!hasNext) break;
+        }
+
+        return episodes;
+    }
+
+    private async Task<JsonDocument> GetJsonAsync(string relative, CancellationToken ct)
+    {
+        var http = httpClientFactory.CreateClient(HttpClientName);
+        for (var attempt = 0; ; attempt++)
+        {
+            var token = await GetTokenAsync(http, force: attempt > 0, ct);
+            using var request = new HttpRequestMessage(HttpMethod.Get, relative);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            HttpResponseMessage response;
+            try
+            {
+                response = await http.SendAsync(request, ct);
+            }
+            catch (HttpRequestException ex)
+            {
+                throw new TvdbException($"Cannot reach TheTVDB: {ex.Message}");
+            }
+
+            using (response)
+            {
+                if (response.StatusCode == HttpStatusCode.Unauthorized && attempt == 0) continue; // token expired
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new TvdbException($"TheTVDB request failed with HTTP {(int)response.StatusCode}");
+                }
+
+                return await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            }
+        }
+    }
+
+    private async Task<string> GetTokenAsync(HttpClient http, bool force, CancellationToken ct)
     {
         var meta = await settings.GetAsync<MetadataSettings>(ct);
         if (string.IsNullOrWhiteSpace(meta.TvdbApiKey))
         {
-            throw new InvalidOperationException("TVDB API key is not configured (Settings → Metadata)");
+            throw new TvdbException("TheTVDB API key is not configured (Settings → Metadata)");
         }
 
         await TokenLock.WaitAsync(ct);
         try
         {
-            if (_token is { } t && t.Key == meta.TvdbApiKey && t.Expires > DateTimeOffset.UtcNow)
+            if (!force && _token is { } t && t.Key == meta.TvdbApiKey && t.Expires > DateTimeOffset.UtcNow)
             {
                 return t.Token;
             }
 
-            using var response = await http.PostAsJsonAsync("login", new { apikey = meta.TvdbApiKey, pin = meta.TvdbPin }, ct);
-            response.EnsureSuccessStatusCode();
-            var body = await response.Content.ReadFromJsonAsync<TvdbResponse<TvdbLogin>>(ct);
-            var token = body?.Data?.Token ?? throw new InvalidOperationException("TVDB login returned no token");
+            object body = string.IsNullOrWhiteSpace(meta.TvdbPin) ? new { apikey = meta.TvdbApiKey } : new { apikey = meta.TvdbApiKey, pin = meta.TvdbPin };
+            using var response = await http.PostAsJsonAsync("login", body, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new TvdbException($"TheTVDB login failed (HTTP {(int)response.StatusCode}); check the API key/PIN");
+            }
+
+            using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+            var token = doc.RootElement.TryGetProperty("data", out var d) ? Str(d, "token") : null;
+            if (string.IsNullOrEmpty(token)) throw new TvdbException("TheTVDB login returned no token");
             _token = (meta.TvdbApiKey, token, DateTimeOffset.UtcNow.AddDays(25));
             return token;
         }
@@ -80,18 +250,49 @@ public sealed class TvdbClient(IHttpClientFactory httpClientFactory, ISettingsSe
         }
     }
 
-    private sealed record TvdbResponse<T>([property: JsonPropertyName("data")] T? Data);
+    private async Task<string> LanguageAsync(CancellationToken ct) => ToTvdbLanguage((await settings.GetAsync<MetadataSettings>(ct)).Language);
 
-    private sealed record TvdbLogin([property: JsonPropertyName("token")] string? Token);
-
-    private sealed record TvdbSearchResult
+    /// <summary>TheTVDB uses ISO 639-2 codes ("eng"); settings use culture names ("en-US").</summary>
+    public static string ToTvdbLanguage(string? culture)
     {
-        [JsonPropertyName("tvdb_id")] public string? TvdbId { get; init; }
-        [JsonPropertyName("name")] public string? Name { get; init; }
-        [JsonPropertyName("year")] public string? Year { get; init; }
-        [JsonPropertyName("overview")] public string? Overview { get; init; }
-        [JsonPropertyName("image_url")] public string? ImageUrl { get; init; }
-        [JsonPropertyName("network")] public string? Network { get; init; }
-        [JsonPropertyName("status")] public string? Status { get; init; }
+        var two = (culture ?? "en").Split('-', '_')[0].ToLowerInvariant();
+        return two switch
+        {
+            "en" => "eng", "es" => "spa", "fr" => "fra", "de" => "deu", "it" => "ita", "pt" => "por", "nl" => "nld",
+            "ca" => "cat", "sv" => "swe", "da" => "dan", "no" or "nb" => "nor", "fi" => "fin", "pl" => "pol", "ru" => "rus",
+            "ja" => "jpn", "ko" => "kor", "zh" => "zho", "cs" => "ces", "hu" => "hun", "tr" => "tur", "el" => "ell", "he" => "heb",
+            _ => two.Length == 3 ? two : "eng",
+        };
     }
+
+    private static string? Artwork(JsonElement series, int type, string lang)
+    {
+        if (!series.TryGetProperty("artworks", out var arts) || arts.ValueKind != JsonValueKind.Array) return null;
+        return arts.EnumerateArray()
+            .Where(a => Int(Str(a, "type")) == type && !string.IsNullOrEmpty(Str(a, "image")))
+            .OrderByDescending(a => Str(a, "language") == lang ? 2 : Str(a, "language") is null ? 1 : 0)
+            .ThenByDescending(a => Int(Str(a, "score")) ?? 0)
+            .Select(a => Str(a, "image"))
+            .FirstOrDefault();
+    }
+
+    private static string? Translation(JsonElement item, string property, string lang) =>
+        item.TryGetProperty(property, out var tr) && tr.ValueKind == JsonValueKind.Object ? Str(tr, lang) : null;
+
+    private static string? Str(JsonElement e, string name)
+    {
+        if (e.ValueKind != JsonValueKind.Object || !e.TryGetProperty(name, out var v)) return null;
+        return v.ValueKind switch
+        {
+            JsonValueKind.String => string.IsNullOrWhiteSpace(v.GetString()) ? null : v.GetString(),
+            JsonValueKind.Number => v.GetRawText(),
+            _ => null,
+        };
+    }
+
+    private static int? Int(string? s) =>
+        double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? (int)d : null;
+
+    private static DateOnly? Date(string? s) =>
+        DateOnly.TryParse(s, CultureInfo.InvariantCulture, out var d) ? d : null;
 }

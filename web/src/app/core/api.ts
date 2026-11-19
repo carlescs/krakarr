@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
-  IndexerError, IndexerTestResult, MediaManagementSettings, MetadataSettings, Movie, MovieLookup, Quality, QualityProfile,
+  IndexerError, IndexerTestResult, Episode, EpisodeRelease, MediaType, MonitorMode, Series, MediaManagementSettings, MetadataSettings, Movie, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, RootFolder, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
 } from './models';
 
@@ -64,7 +64,7 @@ export class Api {
   saveQualityProfile(p: QualityProfile) { return p.id ? this.put<QualityProfile>(`qualityprofiles/${p.id}`, p) : this.post<QualityProfile>('qualityprofiles', p); }
   deleteQualityProfile(id: number) { return this.delete<void>(`qualityprofiles/${id}`); }
   rootFolders() { return this.get<RootFolder[]>('rootfolders'); }
-  addRootFolder(path: string) { return this.post<RootFolder>('rootfolders', { path, mediaType: 'Movie' }); }
+  addRootFolder(path: string, mediaType: MediaType = 'Movie') { return this.post<RootFolder>('rootfolders', { path, mediaType }); }
   deleteRootFolder(id: number) { return this.delete<void>(`rootfolders/${id}`); }
   browse(path?: string) { return this.get<DirectoryListing>('filesystem', { path }); }
 
@@ -105,10 +105,31 @@ export class Api {
   searchMovie(id: number) { return this.post<CommandInfo>(`movies/${id}/search`); }
   movieReleases(id: number) { return this.get<{ releases: ReleaseDecision[]; errors: IndexerError[] }>(`movies/${id}/releases`); }
   grabMovieRelease(id: number, release: ReleaseInfo) { return this.post<unknown>(`movies/${id}/releases/grab`, { release }); }
-  history(movieId?: number, page = 1, pageSize = 50) {
-    return this.get<{ total: number; items: HistoryItem[] }>('history', { movieId, page, pageSize });
+  history(movieId?: number, page = 1, pageSize = 50, seriesId?: number) {
+    return this.get<{ total: number; items: HistoryItem[] }>('history', { movieId, seriesId, page, pageSize });
   }
 
-  // Series (scaffold)
+  // Series
+  seriesList() { return this.get<Series[]>('series'); }
+  series(id: number) { return this.get<Series>(`series/${id}`); }
+  episodes(seriesId: number) { return this.get<Episode[]>(`series/${seriesId}/episodes`); }
   lookupSeries(term: string) { return this.get<SeriesLookup[]>('series/lookup', { term }); }
+  addSeries(req: { tvdbId: number; qualityProfileId: number; rootFolderPath: string; monitor: MonitorMode; seasonFolder: boolean; searchForMissing: boolean }) {
+    return this.post<Series>('series', req);
+  }
+  updateSeries(id: number, monitored: boolean, qualityProfileId: number, seasonFolder: boolean) {
+    return this.put<void>(`series/${id}`, { monitored, qualityProfileId, seasonFolder });
+  }
+  deleteSeries(id: number, deleteFiles: boolean) { return this.delete<void>(`series/${id}`, { deleteFiles }); }
+  monitorSeason(seriesId: number, season: number, monitored: boolean) { return this.put<void>(`series/${seriesId}/seasons/${season}`, { monitored }); }
+  monitorEpisode(id: number, monitored: boolean) { return this.put<void>(`episodes/${id}`, { monitored }); }
+  refreshSeries(id: number) { return this.post<CommandInfo>(`series/${id}/refresh`); }
+  searchSeries(id: number, seasonNumber?: number, episodeIds?: number[]) {
+    return this.post<CommandInfo>(`series/${id}/search`, { seasonNumber: seasonNumber ?? null, episodeIds: episodeIds ?? null });
+  }
+  seriesReleases(id: number, season?: number, episodeId?: number) {
+    return this.get<{ releases: EpisodeRelease[]; errors: IndexerError[] }>(`series/${id}/releases`, { season, episodeId });
+  }
+  grabSeriesRelease(id: number, release: ReleaseInfo) { return this.post<unknown>(`series/${id}/releases/grab`, { release }); }
+  deleteEpisodeFile(id: number) { return this.delete<void>(`episodefiles/${id}`); }
 }

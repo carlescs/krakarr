@@ -1,10 +1,7 @@
-using Krakarr.Data;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
-using Microsoft.EntityFrameworkCore;
+using Krakarr.Core.Jobs;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Krakarr.Series;
 
@@ -18,29 +15,12 @@ public static class SeriesModule
             c.Timeout = TimeSpan.FromSeconds(30);
             c.DefaultRequestHeaders.UserAgent.ParseAdd("Krakarr/0.1");
         });
+        services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<ITvdbClient, TvdbClient>();
+        services.AddScoped<SeriesService>();
+        services.AddScheduledTask<SeriesImportService>();
+        services.AddScheduledTask<SeriesRssSyncTask>();
+        services.AddScheduledTask<SeriesRefreshTask>();
         return services;
-    }
-
-    public static IEndpointRouteBuilder MapSeriesEndpoints(this IEndpointRouteBuilder app)
-    {
-        var group = app.MapGroup("/api/v1/series").WithTags("Series");
-
-        group.MapGet("/", async (KrakarrDbContext db, CancellationToken ct) =>
-            await db.Series.AsNoTracking().OrderBy(s => s.Title).ToListAsync(ct));
-
-        group.MapGet("/lookup", async (string term, ITvdbClient tvdb, CancellationToken ct) =>
-        {
-            try
-            {
-                return Results.Ok(await tvdb.SearchAsync(term, ct));
-            }
-            catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException)
-            {
-                return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest);
-            }
-        });
-
-        return app;
     }
 }

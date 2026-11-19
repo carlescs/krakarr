@@ -51,12 +51,33 @@ export interface MovieLookup {
   posterUrl?: string; fanartUrl?: string; runtime: number; status?: string; movieId?: number;
 }
 
-export interface SeriesLookup { tvdbId: number; title: string; year: number; overview?: string; posterUrl?: string; network?: string; status?: string; }
+export interface SeriesLookup {
+  tvdbId: number; title: string; year: number; overview?: string; posterUrl?: string; network?: string; status?: string; seriesId?: number;
+}
+export type SeriesStatus = 'Continuing' | 'Ended' | 'Upcoming';
+export type MonitorMode = 'All' | 'Future' | 'Missing' | 'FirstSeason' | 'LatestSeason' | 'None';
+export interface SeasonInfo {
+  seasonNumber: number; monitored: boolean; episodeCount: number; episodeFileCount: number; totalEpisodeCount: number; sizeOnDisk: number;
+}
+export interface Series {
+  id: number; tvdbId: number; imdbId?: string; title: string; year: number; overview?: string; posterUrl?: string; fanartUrl?: string;
+  network?: string; runtime: number; status: SeriesStatus; monitored: boolean; seasonFolder: boolean; qualityProfileId: number; path: string;
+  added: string; episodeCount: number; episodeFileCount: number; sizeOnDisk: number; nextAiring?: string; downloadingCount: number;
+  seasons: SeasonInfo[];
+}
+export interface EpisodeFile { id: number; relativePath: string; size: number; quality: string; releaseGroup?: string; dateAdded: string; }
+export interface Episode {
+  id: number; seasonNumber: number; episodeNumber: number; absoluteNumber?: number; title?: string; overview?: string; airDate?: string;
+  monitored: boolean; hasAired: boolean; episodeFile?: EpisodeFile; downloadProgress?: number;
+}
+export interface EpisodeRelease {
+  release: ReleaseInfo; quality: string; qualityWeight: number; approved: boolean; rejections: string[]; episodes?: string; seasonPack: boolean;
+}
 
 export interface TorrentStatus {
   id: number; infoHash: string; name: string; state: DownloadState; progress: number; size: number; downloaded: number; uploaded: number;
   downloadRate: number; uploadRate: number; seeds: number; leechers: number; ratio: number; etaSeconds?: number;
-  category: string; savePath: string; added: string; completedAt?: string; movieId?: number; imported: boolean;
+  category: string; savePath: string; added: string; completedAt?: string; movieId?: number; seriesId?: number; imported: boolean;
   importMessage?: string; errorMessage?: string;
 }
 
@@ -70,6 +91,7 @@ export interface CommandInfo { id: string; name: string; status: CommandStatus; 
 export interface GeneralSettings { apiKey: string; instanceName: string; }
 export interface MediaManagementSettings {
   renameFiles: boolean; movieFolderFormat: string; movieFileFormat: string; useHardlinks: boolean; minimumVideoFileSizeMb: number;
+  seriesFolderFormat: string; seasonFolderFormat: string; episodeFileFormat: string;
 }
 export interface MetadataSettings { tmdbApiKey?: string; tvdbApiKey?: string; tvdbPin?: string; language: string; }
 export type DownloadClientKind = 'Embedded' | 'QBittorrent';

@@ -33,11 +33,12 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'metadata' | 'general';
             <button class="btn-secondary btn-sm" (click)="openBrowser()">+ Add root folder</button>
           </div>
           @if (rootFolders().length === 0) {
-            <p class="text-sm text-amber-300">Add at least one root folder where movies will be stored (e.g. /media/movies).</p>
+            <p class="text-sm text-amber-300">Add root folders where movies and series will be stored (e.g. /data/media/movies and /data/media/tv).</p>
           }
           <ul class="divide-y divide-surface-800">
             @for (r of rootFolders(); track r.id) {
               <li class="flex items-center gap-3 py-2 text-sm">
+                <span class="badge" [class]="r.mediaType === 'Series' ? 'bg-violet-500/15 text-violet-300' : 'bg-accent-500/15 text-accent-300'">{{ r.mediaType === 'Series' ? 'Series' : 'Movies' }}</span>
                 <span class="flex-1 font-mono">{{ r.path }}</span>
                 @if (!r.accessible) { <span class="badge bg-rose-500/15 text-rose-300">Not accessible</span> }
                 @if (r.freeSpace != null) { <span class="text-slate-400">{{ r.freeSpace | bytes }} free</span> }
@@ -50,10 +51,18 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'metadata' | 'general';
           <section class="card space-y-4 p-5">
             <h2 class="font-semibold text-white">File management</h2>
             <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="m.renameFiles" /> Rename movie files</label>
-            <div><label class="label">Movie folder format</label><input class="input font-mono" [(ngModel)]="m.movieFolderFormat" /></div>
+            <div>
+              <label class="label">Movie folder format</label><input class="input font-mono" [(ngModel)]="m.movieFolderFormat" />
+            </div>
             <div>
               <label class="label">Movie file format</label><input class="input font-mono" [(ngModel)]="m.movieFileFormat" />
               <p class="hint">Tokens: {{ namingTokens }}</p>
+            </div>
+            <div><label class="label">Series folder format</label><input class="input font-mono" [(ngModel)]="m.seriesFolderFormat" /></div>
+            <div><label class="label">Season folder format</label><input class="input font-mono" [(ngModel)]="m.seasonFolderFormat" /></div>
+            <div>
+              <label class="label">Episode file format</label><input class="input font-mono" [(ngModel)]="m.episodeFileFormat" />
+              <p class="hint">Tokens: {{ episodeTokens }}</p>
             </div>
             <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="m.useHardlinks" /> Use hardlinks instead of copies (keeps seeding without doubling disk usage)</label>
             <div class="max-w-xs"><label class="label">Minimum video size (MB)</label><input class="input" type="number" min="0" [(ngModel)]="m.minimumVideoFileSizeMb" /></div>
@@ -265,7 +274,10 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'metadata' | 'general';
     <!-- Folder browser -->
     @if (browser(); as b) {
       <kr-modal title="Add root folder" width="max-w-xl" (closed)="browser.set(null)">
-        <input class="input mb-3 font-mono" [(ngModel)]="browsePath" (keyup.enter)="browse(browsePath)" />
+        <div class="mb-3 flex gap-2">
+          <select class="input w-36" [(ngModel)]="rootMediaType"><option value="Movie">Movies</option><option value="Series">Series</option></select>
+          <input class="input font-mono" [(ngModel)]="browsePath" (keyup.enter)="browse(browsePath)" />
+        </div>
         <div class="max-h-72 overflow-y-auto rounded-lg border border-surface-700">
           @if (b.parent) {
             <button class="block w-full px-3 py-1.5 text-left font-mono text-sm text-slate-400 hover:bg-surface-800" (click)="browse(b.parent)">..</button>
@@ -315,7 +327,10 @@ export class SettingsPage implements OnInit {
   protected readonly selectableQualities = computed(() => this.qualities().filter(q => q.id !== 0));
   protected readonly namingTokens = ['Movie Title', 'Movie CleanTitle', 'Original Title', 'Release Year', 'Quality', 'Release Group', 'TmdbId', 'ImdbId']
     .map(t => `{${t}}`).join(', ');
+  protected readonly episodeTokens = ['Series Title', 'Series CleanTitle', 'Series Year', 'Season', 'Episode', 'Episode Title', 'Quality', 'Release Group', 'TvdbId']
+    .map(t => `{${t}}`).join(', ');
   protected browsePath = '/';
+  protected rootMediaType: 'Movie' | 'Series' = 'Movie';
   protected newUsername = '';
   protected newPassword = '';
 
@@ -374,7 +389,7 @@ export class SettingsPage implements OnInit {
 
   async addRoot() {
     try {
-      await this.api.addRootFolder(this.browsePath);
+      await this.api.addRootFolder(this.browsePath, this.rootMediaType);
       this.browser.set(null);
       this.rootFolders.set(await this.api.rootFolders());
     } catch (e) {

@@ -13,6 +13,7 @@ public sealed record AddTorrentOptions
     public MediaType? MediaType { get; init; }
     public int? MovieId { get; init; }
     public int? SeriesId { get; init; }
+    public IReadOnlyList<int> EpisodeIds { get; init; } = [];
     public int? QualityId { get; init; }
     public string? IndexerName { get; init; }
     public string? DisplayName { get; init; }
@@ -39,6 +40,7 @@ public sealed record TorrentStatus
     public DateTimeOffset Added { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
     public int? MovieId { get; init; }
+    public int? SeriesId { get; init; }
     public bool Imported { get; init; }
     public string? ImportMessage { get; init; }
     public string? ErrorMessage { get; init; }

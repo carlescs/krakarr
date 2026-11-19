@@ -164,11 +164,12 @@ public static class MovieEndpoints
             }
         });
 
-        app.MapGet("/api/v1/history", async (int? movieId, int? page, int? pageSize, KrakarrDbContext db, CancellationToken ct) =>
+        app.MapGet("/api/v1/history", async (int? movieId, int? seriesId, int? page, int? pageSize, KrakarrDbContext db, CancellationToken ct) =>
         {
             var size = Math.Clamp(pageSize ?? 50, 1, 500);
             var query = db.History.AsNoTracking();
             if (movieId is { } mid) query = query.Where(h => h.MovieId == mid);
+            if (seriesId is { } sid) query = query.Where(h => h.SeriesId == sid);
             var total = await query.CountAsync(ct);
             var items = await query.OrderByDescending(h => h.Date).Skip(((page ?? 1) - 1) * size).Take(size).ToListAsync(ct);
             return new

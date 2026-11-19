@@ -19,6 +19,9 @@ public sealed record MediaManagementSettings : ISettingsSection
     public bool RenameFiles { get; init; } = true;
     public string MovieFolderFormat { get; init; } = "{Movie Title} ({Release Year})";
     public string MovieFileFormat { get; init; } = "{Movie Title} ({Release Year}) [{Quality}]";
+    public string SeriesFolderFormat { get; init; } = "{Series Title} ({Series Year})";
+    public string SeasonFolderFormat { get; init; } = "Season {Season}";
+    public string EpisodeFileFormat { get; init; } = "{Series Title} - S{Season}E{Episode} - {Episode Title} [{Quality}]";
     public bool UseHardlinks { get; init; } = true;
     /// <summary>Minimum file size (MB) to consider when picking the main video file of a download.</summary>
     public int MinimumVideoFileSizeMb { get; init; } = 50;

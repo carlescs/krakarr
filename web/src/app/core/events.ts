@@ -9,6 +9,7 @@ export class Events {
   readonly downloads = signal<TorrentStatus[]>([]);
   readonly connected = signal(false);
   readonly movieUpdated = new Subject<{ id: number }>();
+  readonly seriesUpdated = new Subject<{ id: number }>();
   readonly commandUpdated = new Subject<CommandInfo>();
   readonly historyAdded = new Subject<HistoryItem>();
 
@@ -25,6 +26,7 @@ export class Events {
 
     this.connection.on('downloadsUpdated', (d: TorrentStatus[]) => this.downloads.set(d));
     this.connection.on('movieUpdated', (m: { id: number }) => this.movieUpdated.next(m));
+    this.connection.on('seriesUpdated', (s: { id: number }) => this.seriesUpdated.next(s));
     this.connection.on('commandUpdated', (c: CommandInfo) => this.commandUpdated.next(c));
     this.connection.on('historyAdded', (h: HistoryItem) => this.historyAdded.next(h));
     this.connection.onreconnecting(() => this.connected.set(false));

@@ -131,25 +131,7 @@ public sealed class MovieImportService(
 
     private async Task<(string Path, long Length)?> FindMainVideoFileAsync(Download download, int minSizeMb, CancellationToken ct)
     {
-        IEnumerable<(string Path, long Length)> files = await engine.GetFilesAsync(download.InfoHash, ct);
-        if (!files.Any())
-        {
-            var root = Path.Combine(download.SavePath, download.Name);
-            if (File.Exists(root))
-            {
-                files = [(root, new FileInfo(root).Length)];
-            }
-            else if (Directory.Exists(root))
-            {
-                files = Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Select(f => (f, new FileInfo(f).Length));
-            }
-        }
-
-        var candidates = files
-            .Where(f => ReleaseParser.IsVideoFile(f.Path) && File.Exists(f.Path))
-            .Where(f => !Path.GetFileNameWithoutExtension(f.Path).Contains("sample", StringComparison.OrdinalIgnoreCase))
-            .OrderByDescending(f => f.Length)
-            .ToList();
+        var candidates = DownloadContents.VideoFiles(await engine.GetFilesAsync(download.InfoHash, ct), download.SavePath, download.Name);
 
         // Prefer files above the minimum size; fall back to the largest video if all are small.
         var big = candidates.FirstOrDefault(f => f.Length >= (long)minSizeMb * 1024 * 1024);

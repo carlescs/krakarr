@@ -16,7 +16,9 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
     public DbSet<Movie> Movies => Set<Movie>();
     public DbSet<MovieFile> MovieFiles => Set<MovieFile>();
     public DbSet<Series> Series => Set<Series>();
+    public DbSet<Season> Seasons => Set<Season>();
     public DbSet<Episode> Episodes => Set<Episode>();
+    public DbSet<EpisodeFile> EpisodeFiles => Set<EpisodeFile>();
     public DbSet<Download> Downloads => Set<Download>();
     public DbSet<HistoryEntry> History => Set<HistoryEntry>();
 
@@ -61,15 +63,31 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
         b.Entity<Series>(e =>
         {
             e.HasIndex(x => x.TvdbId).IsUnique();
+            e.HasOne(x => x.QualityProfile).WithMany().HasForeignKey(x => x.QualityProfileId).OnDelete(DeleteBehavior.Restrict);
+            e.HasMany(x => x.Seasons).WithOne().HasForeignKey(x => x.SeriesId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Episodes).WithOne().HasForeignKey(x => x.SeriesId).OnDelete(DeleteBehavior.Cascade);
         });
 
-        b.Entity<Episode>(e => e.HasIndex(x => new { x.SeriesId, x.SeasonNumber, x.EpisodeNumber }));
+        b.Entity<Season>(e => e.HasIndex(x => new { x.SeriesId, x.SeasonNumber }).IsUnique());
+
+        b.Entity<Episode>(e =>
+        {
+            e.HasIndex(x => new { x.SeriesId, x.SeasonNumber, x.EpisodeNumber });
+            e.HasIndex(x => x.TvdbId);
+            e.HasOne(x => x.EpisodeFile).WithMany().HasForeignKey(x => x.EpisodeFileId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        b.Entity<EpisodeFile>(e =>
+        {
+            e.HasIndex(x => x.SeriesId);
+            e.HasOne<Series>().WithMany().HasForeignKey(x => x.SeriesId).OnDelete(DeleteBehavior.Cascade);
+        });
 
         b.Entity<Download>(e =>
         {
             e.HasIndex(x => x.InfoHash).IsUnique();
             e.HasIndex(x => x.MovieId);
+            e.HasIndex(x => x.SeriesId);
             e.Property(x => x.InfoHash).HasMaxLength(64);
             e.Property(x => x.Client).HasMaxLength(32).HasDefaultValue(DownloadClients.Embedded);
         });

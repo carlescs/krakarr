@@ -7,7 +7,7 @@
 | **Radarr** – movie library & automation | `Krakarr.Movies` | ✅ TMDB lookup, library, quality profiles, auto/interactive search, RSS sync, rename + hardlink import |
 | **Prowlarr** – indexer management | `Krakarr.Indexers` | ✅ Torznab/Newznab indexers, capability detection, aggregated search across indexers |
 | **qBittorrent** – torrent client | `Krakarr.Downloads` | ✅ Embedded [MonoTorrent](https://github.com/alanmcgovern/monotorrent) engine: magnets, .torrent files, DHT, speed limits, seeding ratio/time limits, fast-resume — *or* drive an existing qBittorrent (tag-scoped) |
-| **Sonarr** – TV series | `Krakarr.Series` | 🚧 TVDB lookup + data model; full library management is the next milestone |
+| **Sonarr** – TV series | `Krakarr.Series` | ✅ TheTVDB metadata, seasons/episodes, monitoring, season-pack aware search, RSS sync, rename + hardlink import |
 | **Bazarr** – subtitles | `Krakarr.Subtitles` | 🚧 Provider interface; providers land in a later milestone |
 
 Everything (API, web UI, torrent engine, schedulers) runs in a single .NET process inside a single Docker container.
@@ -32,6 +32,8 @@ Then open <http://localhost:8787>:
 3. **Settings → Metadata:** paste a [TMDB API key](https://www.themoviedb.org/settings/api) (v3 key or v4 read token).
 4. **Indexers:** add one or more Torznab/Newznab feeds and press *Test*.
 5. **Movies → Add movie:** search, add, and Krakarr searches, downloads and imports it for you.
+6. **Series:** add a root folder of type *Series* (e.g. `/data/media/tv`) and a [TheTVDB API key](https://thetvdb.com/api-information)
+   in *Settings → Metadata*, then **Series → Add series**.
 
 ### Volumes & ports
 
@@ -45,6 +47,21 @@ Then open <http://localhost:8787>:
 > **Why one `/data` mount?** Krakarr keeps seeding the original download and **hardlinks** it into your library,
 > so a movie takes disk space only once. Hardlinks only work within a single filesystem *and* a single mount,
 > so put downloads and media under one host directory and mount it once.
+
+### TV series
+
+- **Metadata** comes from TheTVDB v4 (series, seasons, episodes in the default order, translations in your language).
+  Series are refreshed every 12 hours; new episodes inherit their season's monitoring.
+- **Monitoring** on add: all, future, missing, first season, latest season or none. Specials are never monitored automatically.
+  Seasons and episodes can be toggled individually.
+- **Searching:** *Search missing* searches each season with wanted episodes. It prefers season packs, never grabs
+  overlapping releases, and then searches individually for episodes that are still missing. Seasons and episodes also
+  have automatic and interactive searches. Quality/size limits apply per episode, and every covered episode must
+  benefit from an upgrade.
+- **Import:** each video file is matched to its episode(s) (multi-episode files included). It is renamed with
+  *Settings → Media management* formats (default `{Series Title} - S{Season}E{Episode} - {Episode Title} [{Quality}]`
+  in `Season {Season}` folders) and hardlinked. Samples and extras are skipped.
+- Not yet supported: daily shows (date-based numbering) and anime absolute numbering.
 
 ### Using an existing qBittorrent instead of the built-in client
 
@@ -92,7 +109,7 @@ src/
   Krakarr.Indexers/      Torznab/Newznab client + aggregated search          (Prowlarr)
   Krakarr.Downloads/     MonoTorrent engine wrapper, grab-from-indexer        (qBittorrent)
   Krakarr.Movies/        TMDB, decision engine, search/grab, import, RSS sync (Radarr)
-  Krakarr.Series/        TVDB client, series model                            (Sonarr, WIP)
+  Krakarr.Series/        TVDB, episode decisions, search/grab, import, RSS    (Sonarr)
   Krakarr.Subtitles/     Subtitle provider abstraction                        (Bazarr, WIP)
 web/                     Angular 22 + Tailwind 4 frontend
 tests/                   xUnit v3 unit + HTTP integration tests
@@ -143,7 +160,7 @@ API documentation (OpenAPI) is served at `/api/openapi/v1.json`.
 
 ## Roadmap
 
-- **Series (Sonarr):** TVDB series/episode sync, season packs, episode file import
+- **Series (Sonarr):** daily and anime (absolute) numbering, calendar / wanted views, importing existing libraries
 - **Subtitles (Bazarr):** OpenSubtitles & co, language profiles, automatic download after import
 - **Indexers (Prowlarr):** native tracker definitions (Cardigann-style), per-indexer stats, Torznab proxy for other apps
 - **Downloads:** per-torrent limits, file selection, Usenet (NZB) support

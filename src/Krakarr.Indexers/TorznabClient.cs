@@ -125,7 +125,16 @@ public sealed class TorznabClient(IHttpClientFactory httpClientFactory, ILogger<
 
         if (!usedId && !string.IsNullOrWhiteSpace(criteria.Query))
         {
-            p.Add(("q", criteria.Query));
+            var query = criteria.Query;
+            // Without a tv-search mode the episode has to be part of the text query ("Show S01E02").
+            if (criteria.Type == SearchType.Tv && mode != "tvsearch" && criteria.Season is { } s)
+            {
+                query += criteria.Episode is { } e
+                    ? $" S{s.ToString("00", CultureInfo.InvariantCulture)}E{e.ToString("00", CultureInfo.InvariantCulture)}"
+                    : $" S{s.ToString("00", CultureInfo.InvariantCulture)}";
+            }
+
+            p.Add(("q", query));
         }
 
         if (criteria.Season is { } season && mode == "tvsearch")

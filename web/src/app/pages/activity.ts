@@ -31,6 +31,8 @@ import { CommandInfo, HistoryItem } from '../core/models';
                     <td class="w-full max-w-0">
                       @if (h.movieId) {
                         <a [routerLink]="['/movies', h.movieId]" class="block truncate hover:text-accent-300" [title]="h.sourceTitle">{{ h.sourceTitle }}</a>
+                      } @else if (h.seriesId) {
+                        <a [routerLink]="['/series', h.seriesId]" class="block truncate hover:text-accent-300" [title]="h.sourceTitle">{{ h.sourceTitle }}</a>
                       } @else { <span class="block truncate">{{ h.sourceTitle }}</span> }
                       @if (h.message) { <div class="truncate text-xs text-slate-500" [title]="h.message">{{ h.message }}</div> }
                     </td>
