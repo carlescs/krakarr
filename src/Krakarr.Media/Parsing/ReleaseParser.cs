@@ -43,6 +43,17 @@ public static partial class ReleaseParser
         return Qualities.Find(source, resolution);
     }
 
+    /// <summary>Normalized video codec ("x264", "x265", "xvid", "av1") or null.</summary>
+    public static string? ParseVideoCodec(string name)
+    {
+        var text = Separators().Replace(name, " ");
+        if (CodecX265().IsMatch(text)) return "x265";
+        if (CodecX264().IsMatch(text)) return "x264";
+        if (CodecXvid().IsMatch(text)) return "xvid";
+        if (CodecAv1().IsMatch(text)) return "av1";
+        return null;
+    }
+
     /// <summary>Lower-case, accent-free, alphanumeric-only form used to compare titles.</summary>
     public static string NormalizeTitle(string? title)
     {
@@ -197,6 +208,18 @@ public static partial class ReleaseParser
 
     [GeneratedRegex(@"[._]+")]
     private static partial Regex Separators();
+
+    [GeneratedRegex(@"(?<![a-z0-9])(?:x ?265|h ?265|hevc)(?![a-z0-9])", RegexOptions.IgnoreCase)]
+    private static partial Regex CodecX265();
+
+    [GeneratedRegex(@"(?<![a-z0-9])(?:x ?264|h ?264|avc)(?![a-z0-9])", RegexOptions.IgnoreCase)]
+    private static partial Regex CodecX264();
+
+    [GeneratedRegex(@"(?<![a-z0-9])(?:xvid|divx)(?![a-z0-9])", RegexOptions.IgnoreCase)]
+    private static partial Regex CodecXvid();
+
+    [GeneratedRegex(@"(?<![a-z0-9])av1(?![a-z0-9])", RegexOptions.IgnoreCase)]
+    private static partial Regex CodecAv1();
 
     [GeneratedRegex(@"\s{2,}")]
     private static partial Regex MultiSpace();

@@ -231,6 +231,7 @@ public static class SeriesEndpoints
             var series = await db.Series.AsNoTracking().FirstAsync(s => s.Id == file.SeriesId, ct);
             var path = System.IO.Path.Combine(series.Path, file.RelativePath);
             if (File.Exists(path)) File.Delete(path);
+            Krakarr.Media.Files.SidecarFiles.DeleteFor(path);
             await db.Episodes.Where(e => e.EpisodeFileId == id).ExecuteUpdateAsync(s => s.SetProperty(e => e.EpisodeFileId, (int?)null), ct);
             db.EpisodeFiles.Remove(file);
             db.History.Add(new HistoryEntry { EventType = HistoryEventType.FileDeleted, SourceTitle = file.RelativePath, SeriesId = file.SeriesId, QualityId = file.QualityId });

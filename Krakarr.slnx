@@ -19,6 +19,7 @@
     <Project Path="tests/Krakarr.Media.Tests/Krakarr.Media.Tests.csproj" />
     <Project Path="tests/Krakarr.Movies.Tests/Krakarr.Movies.Tests.csproj" />
     <Project Path="tests/Krakarr.Series.Tests/Krakarr.Series.Tests.csproj" />
+    <Project Path="tests/Krakarr.Subtitles.Tests/Krakarr.Subtitles.Tests.csproj" />
   </Folder>
   <Folder Name="/Solution Items/">
     <File Path="Directory.Build.props" />

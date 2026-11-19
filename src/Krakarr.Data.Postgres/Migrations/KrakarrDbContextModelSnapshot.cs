@@ -17,7 +17,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261119185934_AddSeriesLibrary";
+    public override string LastMigrationId => "20261119191642_AddSubtitles";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -193,6 +193,9 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<DateTimeOffset>("DateAdded")
                     .HasColumnType("timestamp with time zone");
 
+                b.Property<DateTimeOffset?>("LastSubtitleSearch")
+                    .HasColumnType("timestamp with time zone");
+
                 b.Property<int>("QualityId")
                     .HasColumnType("integer");
 
@@ -237,6 +240,9 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("integer");
 
                 b.Property<string>("Indexer")
+                    .HasColumnType("text");
+
+                b.Property<string>("Language")
                     .HasColumnType("text");
 
                 b.Property<string>("Message")
@@ -407,6 +413,9 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
 
                 b.Property<DateTimeOffset>("DateAdded")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<DateTimeOffset?>("LastSubtitleSearch")
                     .HasColumnType("timestamp with time zone");
 
                 b.Property<int>("MovieId")
@@ -612,6 +621,58 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("Settings");
             });
 
+        modelBuilder.Entity("Krakarr.Core.Domain.SubtitleFile", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
+
+                b.Property<DateTimeOffset>("DateAdded")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<int?>("EpisodeFileId")
+                    .HasColumnType("integer");
+
+                b.Property<bool>("Forced")
+                    .HasColumnType("boolean");
+
+                b.Property<bool>("HearingImpaired")
+                    .HasColumnType("boolean");
+
+                b.Property<string>("Language")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<int?>("MovieFileId")
+                    .HasColumnType("integer");
+
+                b.Property<string>("Path")
+                    .IsRequired()
+                    .HasColumnType("text");
+
+                b.Property<string>("Provider")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
+
+                b.Property<string>("Release")
+                    .HasColumnType("text");
+
+                b.Property<int?>("Score")
+                    .HasColumnType("integer");
+
+                b.HasKey("Id");
+
+                b.HasIndex("EpisodeFileId");
+
+                b.HasIndex("MovieFileId");
+
+                b.ToTable("SubtitleFiles");
+            });
+
         modelBuilder.Entity("Krakarr.Core.Domain.User", b =>
             {
                 var id = b.Property<int>("Id")
@@ -701,6 +762,19 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .IsRequired();
 
                 b.Navigation("QualityProfile");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.SubtitleFile", b =>
+            {
+                b.HasOne("Krakarr.Core.Domain.EpisodeFile", null)
+                    .WithMany()
+                    .HasForeignKey("EpisodeFileId")
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasOne("Krakarr.Core.Domain.MovieFile", null)
+                    .WithMany()
+                    .HasForeignKey("MovieFileId")
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
         modelBuilder.Entity("Krakarr.Core.Domain.Series", b =>

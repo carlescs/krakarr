@@ -8,7 +8,7 @@
 | **Prowlarr** – indexer management | `Krakarr.Indexers` | ✅ Torznab/Newznab indexers, capability detection, aggregated search across indexers |
 | **qBittorrent** – torrent client | `Krakarr.Downloads` | ✅ Embedded [MonoTorrent](https://github.com/alanmcgovern/monotorrent) engine: magnets, .torrent files, DHT, speed limits, seeding ratio/time limits, fast-resume — *or* drive an existing qBittorrent (tag-scoped) |
 | **Sonarr** – TV series | `Krakarr.Series` | ✅ TheTVDB metadata, seasons/episodes, monitoring, season-pack aware search, RSS sync, rename + hardlink import |
-| **Bazarr** – subtitles | `Krakarr.Subtitles` | 🚧 Provider interface; providers land in a later milestone |
+| **Bazarr** – subtitles | `Krakarr.Subtitles` | ✅ OpenSubtitles.com, wanted languages, hash + release scoring, automatic and manual search |
 
 Everything (API, web UI, torrent engine, schedulers) runs in a single .NET process inside a single Docker container.
 There is nothing to wire together: no API keys between apps, no download-client configuration, no path mappings.
@@ -63,6 +63,21 @@ Then open <http://localhost:8787>:
   in `Season {Season}` folders) and hardlinked. Samples and extras are skipped.
 - Not yet supported: daily shows (date-based numbering) and anime absolute numbering.
 
+### Subtitles
+
+- **Settings → Subtitles:** turn on automatic downloads, pick the wanted languages and paste an
+  [OpenSubtitles.com](https://www.opensubtitles.com/consumers) API key. An optional account raises the daily download quota.
+- New movie and episode files are searched within a minute of import. Files still missing a language are retried every
+  *N* hours (default 24), and changing the wanted languages re-checks everything.
+- **Scoring (0-100):** a file-hash match is 100. Otherwise title/series, year or season+episode, source, resolution,
+  release group and codec of the subtitle's release are compared with your file's original release name.
+  Automatic downloads need the minimum score (70 movies / 80 episodes), respect the hearing-impaired preference and skip
+  AI-translated subtitles unless allowed.
+- Subtitles are saved next to the video as `{video}.{lang}[.hi][.forced].srt`. Existing files named like that are detected.
+  When a video is upgraded, its old subtitles are removed and the new file is searched again.
+- The **Subtitles** page lists files missing languages. Every movie and episode has a subtitle dialog with
+  automatic search, manual search (all candidates with score and reasons) and delete.
+
 ### Using an existing qBittorrent instead of the built-in client
 
 *Settings → Download client → qBittorrent* switches Krakarr from its built-in engine to an external qBittorrent
@@ -110,7 +125,7 @@ src/
   Krakarr.Downloads/     MonoTorrent engine wrapper, grab-from-indexer        (qBittorrent)
   Krakarr.Movies/        TMDB, decision engine, search/grab, import, RSS sync (Radarr)
   Krakarr.Series/        TVDB, episode decisions, search/grab, import, RSS    (Sonarr)
-  Krakarr.Subtitles/     Subtitle provider abstraction                        (Bazarr, WIP)
+  Krakarr.Subtitles/     OpenSubtitles provider, scoring, search task, files  (Bazarr)
 web/                     Angular 22 + Tailwind 4 frontend
 tests/                   xUnit v3 unit + HTTP integration tests
 ```
@@ -161,7 +176,7 @@ API documentation (OpenAPI) is served at `/api/openapi/v1.json`.
 ## Roadmap
 
 - **Series (Sonarr):** daily and anime (absolute) numbering, calendar / wanted views, importing existing libraries
-- **Subtitles (Bazarr):** OpenSubtitles & co, language profiles, automatic download after import
+- **Subtitles (Bazarr):** more providers (Podnapisi, Addic7ed, …), embedded subtitle detection, per-series language profiles, sync/encoding fixes
 - **Indexers (Prowlarr):** native tracker definitions (Cardigann-style), per-indexer stats, Torznab proxy for other apps
 - **Downloads:** per-torrent limits, file selection, Usenet (NZB) support
 - Import of existing libraries, lists (Trakt/IMDb), notifications, multi-user

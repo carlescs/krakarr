@@ -110,6 +110,8 @@ public class MovieFile
     public string? ReleaseGroup { get; set; }
     public string? SceneName { get; set; }
     public DateTimeOffset DateAdded { get; set; } = DateTimeOffset.UtcNow;
+    /// <summary>When subtitles were last searched for this file (null = never).</summary>
+    public DateTimeOffset? LastSubtitleSearch { get; set; }
 }
 
 public enum SeriesStatus
@@ -200,6 +202,27 @@ public class EpisodeFile
     public string? ReleaseGroup { get; set; }
     public string? SceneName { get; set; }
     public DateTimeOffset DateAdded { get; set; } = DateTimeOffset.UtcNow;
+    /// <summary>When subtitles were last searched for this file (null = never).</summary>
+    public DateTimeOffset? LastSubtitleSearch { get; set; }
+}
+
+/// <summary>An external subtitle file stored next to a movie or episode file.</summary>
+public class SubtitleFile
+{
+    public int Id { get; set; }
+    public int? MovieFileId { get; set; }
+    public int? EpisodeFileId { get; set; }
+    /// <summary>ISO 639-1 code, or a regional variant such as "pt-br".</summary>
+    public required string Language { get; set; }
+    public bool HearingImpaired { get; set; }
+    public bool Forced { get; set; }
+    /// <summary>Absolute path of the subtitle file.</summary>
+    public required string Path { get; set; }
+    /// <summary>Provider it came from, or "disk" for files found next to the video.</summary>
+    public required string Provider { get; set; }
+    public int? Score { get; set; }
+    public string? Release { get; set; }
+    public DateTimeOffset DateAdded { get; set; } = DateTimeOffset.UtcNow;
 }
 
 public enum DownloadState
@@ -262,6 +285,7 @@ public enum HistoryEventType
     DownloadFailed = 2,
     Imported = 3,
     FileDeleted = 4,
+    SubtitleDownloaded = 5,
 }
 
 public class HistoryEntry
@@ -275,4 +299,6 @@ public class HistoryEntry
     public int? QualityId { get; set; }
     public string? Indexer { get; set; }
     public string? Message { get; set; }
+    /// <summary>Subtitle language for <see cref="HistoryEventType.SubtitleDownloaded"/> entries.</summary>
+    public string? Language { get; set; }
 }

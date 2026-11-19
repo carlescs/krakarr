@@ -6,21 +6,23 @@ import { Router } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
 import { Events } from '../../core/events';
 import { AgoPipe, BytesPipe } from '../../core/format';
-import { Episode, EpisodeRelease, HistoryItem, IndexerError, QualityProfile, SeasonInfo, Series } from '../../core/models';
+import { Episode, EpisodeRelease, HistoryItem, IndexerError, QualityProfile, SeasonInfo, Series, SubtitleFile } from '../../core/models';
 import { Toasts } from '../../core/toast';
 import { Modal } from '../../shared/modal';
 import { Poster } from '../../shared/poster';
 import { Progress } from '../../shared/progress';
+import { SubtitleManager } from '../../shared/subtitle-manager';
 
 const ICON_SEARCH = 'm21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z';
 const ICON_LIST = 'M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM3.75 12h.007v.008H3.75V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm-.375 5.25h.007v.008H3.75v-.008Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z';
+const ICON_CC = 'M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 0 1 .865-.501 48.172 48.172 0 0 0 3.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z';
 const ICON_BOOKMARK = 'M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z';
 
 interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
 
 @Component({
   selector: 'kr-series-detail',
-  imports: [FormsModule, DatePipe, Poster, Progress, Modal, BytesPipe, AgoPipe],
+  imports: [FormsModule, DatePipe, Poster, Progress, Modal, BytesPipe, AgoPipe, SubtitleManager],
   template: `
     @if (series(); as s) {
       <!-- Hero -->
@@ -96,7 +98,14 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
                         <td class="text-slate-400">{{ e.episodeNumber }}</td>
                         <td class="w-full max-w-0">
                           <div class="truncate" [title]="e.overview ?? ''">{{ e.title || 'TBA' }}</div>
-                          @if (e.episodeFile; as f) { <div class="truncate font-mono text-xs text-slate-500" [title]="f.relativePath">{{ f.relativePath }}</div> }
+                          @if (e.episodeFile; as f) {
+                            <div class="flex items-center gap-1.5">
+                              @for (s of subtitlesByFile().get(f.id) ?? []; track s.id) {
+                                <span class="badge bg-surface-700 px-1.5 text-[10px] uppercase text-slate-300" [title]="s.languageName + (s.hearingImpaired ? ' (HI)' : '')">{{ s.language }}</span>
+                              }
+                              <span class="truncate font-mono text-xs text-slate-500" [title]="f.relativePath">{{ f.relativePath }}</span>
+                            </div>
+                          }
                         </td>
                         <td class="whitespace-nowrap text-slate-400">{{ e.airDate ? (e.airDate | date: 'mediumDate') : 'TBA' }}</td>
                         <td>
@@ -113,6 +122,11 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
                           }
                         </td>
                         <td class="whitespace-nowrap text-right">
+                          @if (e.episodeFile) {
+                            <button class="btn-ghost btn-sm" title="Subtitles" (click)="subtitleEpisode.set(e)">
+                              <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons.cc" /></svg>
+                            </button>
+                          }
                           <button class="btn-ghost btn-sm" title="Automatic search" (click)="searchEpisode(e)">
                             <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" [attr.d]="icons.search" /></svg>
                           </button>
@@ -140,8 +154,8 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
             @for (h of history(); track h.id) {
               <li class="flex flex-wrap items-center gap-3 py-2">
                 <span class="badge w-24 justify-center"
-                      [class]="h.eventType === 'Imported' ? 'bg-emerald-500/15 text-emerald-300' : h.eventType === 'Grabbed' ? 'bg-accent-500/15 text-accent-300' : 'bg-rose-500/15 text-rose-300'">
-                  {{ h.eventType === 'DownloadFailed' ? 'Failed' : h.eventType === 'FileDeleted' ? 'Deleted' : h.eventType }}
+                      [class]="h.eventType === 'Imported' ? 'bg-emerald-500/15 text-emerald-300' : h.eventType === 'Grabbed' ? 'bg-accent-500/15 text-accent-300' : h.eventType === 'SubtitleDownloaded' ? 'bg-violet-500/15 text-violet-300' : 'bg-rose-500/15 text-rose-300'">
+                  {{ h.eventType === 'DownloadFailed' ? 'Failed' : h.eventType === 'FileDeleted' ? 'Deleted' : h.eventType === 'SubtitleDownloaded' ? 'Subtitle' : h.eventType }}
                 </span>
                 <span class="min-w-0 flex-1 truncate">{{ h.sourceTitle }}</span>
                 <span class="text-xs text-slate-500">{{ h.quality }}</span>
@@ -197,6 +211,12 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
         </kr-modal>
       }
 
+      @if (subtitleEpisode(); as e) {
+        <kr-subtitle-manager [fileRef]="{ episodeFileId: e.episodeFile!.id }" [label]="code(e) + (e.title ? ' · ' + e.title : '')"
+                             [files]="subtitlesByFile().get(e.episodeFile!.id) ?? []"
+                             (closed)="subtitleEpisode.set(null)" (changed)="loadSubtitles()" />
+      }
+
       @if (editing()) {
         <kr-modal [title]="'Edit ' + s.title" (closed)="editing.set(false)">
           <div class="space-y-4">
@@ -240,7 +260,14 @@ export class SeriesDetailPage implements OnInit {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly icons = { search: ICON_SEARCH, list: ICON_LIST, bookmark: ICON_BOOKMARK };
+  protected readonly icons = { search: ICON_SEARCH, list: ICON_LIST, bookmark: ICON_BOOKMARK, cc: ICON_CC };
+  protected readonly subtitles = signal<SubtitleFile[]>([]);
+  protected readonly subtitleEpisode = signal<Episode | null>(null);
+  protected readonly subtitlesByFile = computed(() => {
+    const map = new Map<number, SubtitleFile[]>();
+    for (const s of this.subtitles()) if (s.episodeFileId) map.set(s.episodeFileId, [...(map.get(s.episodeFileId) ?? []), s]);
+    return map;
+  });
   protected readonly series = signal<Series | null>(null);
   protected readonly episodes = signal<Episode[]>([]);
   protected readonly history = signal<HistoryItem[]>([]);
@@ -278,11 +305,14 @@ export class SeriesDetailPage implements OnInit {
     this.api.qualityProfiles().then(p => this.profiles.set(p));
     this.events.seriesUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => { if (e.id === this.id()) this.load(); });
     this.events.historyAdded.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(h => { if (h.seriesId === this.id()) this.loadHistory(); });
+    this.events.subtitlesUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => { if (e.seriesId === this.id()) this.loadSubtitles(); });
   }
+
+  async loadSubtitles() { this.subtitles.set(await this.api.subtitleFiles({ seriesId: this.id() })); }
 
   private async load() {
     try {
-      const [s] = await Promise.all([this.api.series(this.id()), this.loadEpisodes(), this.loadHistory()]);
+      const [s] = await Promise.all([this.api.series(this.id()), this.loadEpisodes(), this.loadHistory(), this.loadSubtitles()]);
       this.series.set(s);
       this.editMonitored = s.monitored;
       this.editSeasonFolder = s.seasonFolder;

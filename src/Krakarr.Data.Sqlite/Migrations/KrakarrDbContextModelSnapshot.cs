@@ -15,7 +15,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261119185931_AddSeriesLibrary";
+    public override string LastMigrationId => "20261119191639_AddSubtitles";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -181,6 +181,9 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<long>("DateAdded")
                     .HasColumnType("INTEGER");
 
+                b.Property<long?>("LastSubtitleSearch")
+                    .HasColumnType("INTEGER");
+
                 b.Property<int>("QualityId")
                     .HasColumnType("INTEGER");
 
@@ -223,6 +226,9 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("INTEGER");
 
                 b.Property<string>("Indexer")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Language")
                     .HasColumnType("TEXT");
 
                 b.Property<string>("Message")
@@ -387,6 +393,9 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("INTEGER");
 
                 b.Property<long>("DateAdded")
+                    .HasColumnType("INTEGER");
+
+                b.Property<long?>("LastSubtitleSearch")
                     .HasColumnType("INTEGER");
 
                 b.Property<int>("MovieId")
@@ -584,6 +593,56 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("Settings");
             });
 
+        modelBuilder.Entity("Krakarr.Core.Domain.SubtitleFile", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<long>("DateAdded")
+                    .HasColumnType("INTEGER");
+
+                b.Property<int?>("EpisodeFileId")
+                    .HasColumnType("INTEGER");
+
+                b.Property<bool>("Forced")
+                    .HasColumnType("INTEGER");
+
+                b.Property<bool>("HearingImpaired")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Language")
+                    .IsRequired()
+                    .HasMaxLength(16)
+                    .HasColumnType("TEXT");
+
+                b.Property<int?>("MovieFileId")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Path")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Provider")
+                    .IsRequired()
+                    .HasMaxLength(32)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Release")
+                    .HasColumnType("TEXT");
+
+                b.Property<int?>("Score")
+                    .HasColumnType("INTEGER");
+
+                b.HasKey("Id");
+
+                b.HasIndex("EpisodeFileId");
+
+                b.HasIndex("MovieFileId");
+
+                b.ToTable("SubtitleFiles");
+            });
+
         modelBuilder.Entity("Krakarr.Core.Domain.User", b =>
             {
                 b.Property<int>("Id")
@@ -671,6 +730,19 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .IsRequired();
 
                 b.Navigation("QualityProfile");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.SubtitleFile", b =>
+            {
+                b.HasOne("Krakarr.Core.Domain.EpisodeFile", null)
+                    .WithMany()
+                    .HasForeignKey("EpisodeFileId")
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasOne("Krakarr.Core.Domain.MovieFile", null)
+                    .WithMany()
+                    .HasForeignKey("MovieFileId")
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
         modelBuilder.Entity("Krakarr.Core.Domain.Series", b =>

@@ -1,7 +1,7 @@
 export type MediaType = 'Movie' | 'Series';
 export type DownloadState = 'Queued' | 'FetchingMetadata' | 'Downloading' | 'Paused' | 'Seeding' | 'Completed' | 'Error';
 export type MovieStatus = 'Announced' | 'InCinemas' | 'Released';
-export type HistoryEventType = 'Grabbed' | 'DownloadFailed' | 'Imported' | 'FileDeleted';
+export type HistoryEventType = 'Grabbed' | 'DownloadFailed' | 'Imported' | 'FileDeleted' | 'SubtitleDownloaded';
 export type CommandStatus = 'Queued' | 'Running' | 'Completed' | 'Failed';
 export type SearchType = 'Generic' | 'Movie' | 'Tv';
 
@@ -83,7 +83,7 @@ export interface TorrentStatus {
 
 export interface HistoryItem {
   id: number; eventType: HistoryEventType; date: string; sourceTitle: string; movieId?: number; seriesId?: number;
-  indexer?: string; message?: string; quality?: string;
+  indexer?: string; message?: string; quality?: string; language?: string;
 }
 
 export interface CommandInfo { id: string; name: string; status: CommandStatus; message?: string; queued: string; started?: string; ended?: string; }
@@ -114,3 +114,24 @@ export interface SystemStatus {
 }
 
 export interface DirectoryListing { path: string; parent?: string; directories: { name: string; path: string }[]; }
+
+export type HearingImpairedMode = 'PreferNormal' | 'PreferHearingImpaired' | 'ExcludeHearingImpaired';
+export interface SubtitleSettings {
+  enabled: boolean; languages: string[]; hearingImpaired: HearingImpairedMode; minimumScoreMovies: number; minimumScoreEpisodes: number;
+  searchIntervalHours: number; includeAiTranslated: boolean;
+  openSubtitles: { enabled: boolean; apiKey?: string; username?: string; password?: string };
+}
+export interface Language { code: string; name: string; }
+export interface SubtitleFile {
+  id: number; movieFileId?: number; episodeFileId?: number; language: string; languageName: string; hearingImpaired: boolean; forced: boolean;
+  fileName: string; provider: string; score?: number; release?: string; dateAdded: string;
+}
+export interface SubtitleCandidate {
+  provider: string; payload: string; language: string; releaseNames: string[]; fileName?: string; hearingImpaired: boolean; forced: boolean;
+  hashMatch: boolean; aiTranslated: boolean; trustedUploader: boolean; downloads: number;
+}
+export interface ScoredSubtitle { candidate: SubtitleCandidate; score: number; matches: string[]; rejections: string[]; acceptable: boolean; }
+export interface WantedSubtitle {
+  mediaType: 'Movie' | 'Series'; movieId?: number; seriesId?: number; movieFileId?: number; episodeFileId?: number; label: string; missingLanguages: string[];
+}
+export interface SubtitleFileRef { movieFileId?: number; episodeFileId?: number; }

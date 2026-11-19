@@ -93,3 +93,48 @@ public sealed record AutomationSettings : ISettingsSection
     public int RssSyncIntervalMinutes { get; init; } = 30;
     public bool SearchOnAdd { get; init; } = true;
 }
+
+public enum HearingImpairedMode
+{
+    /// <summary>Use normal subtitles when available, hearing-impaired ones otherwise.</summary>
+    PreferNormal = 0,
+    /// <summary>Use hearing-impaired subtitles when available.</summary>
+    PreferHearingImpaired = 1,
+    /// <summary>Never download hearing-impaired subtitles.</summary>
+    ExcludeHearingImpaired = 2,
+}
+
+public sealed record OpenSubtitlesSettings
+{
+    public bool Enabled { get; init; } = true;
+    /// <summary>Consumer API key from opensubtitles.com.</summary>
+    public string? ApiKey { get; init; }
+    /// <summary>Optional account; logged-in users get a bigger daily download quota.</summary>
+    public string? Username { get; init; }
+    public string? Password { get; init; }
+}
+
+public sealed record SubtitleSettings : ISettingsSection
+{
+    public const string PasswordMask = "********";
+    public static string SectionKey => "subtitles";
+
+    public bool Enabled { get; init; }
+    /// <summary>Wanted languages (ISO 639-1, e.g. "en", "es", "pt-br").</summary>
+    public List<string> Languages { get; init; } = ["en"];
+    public HearingImpairedMode HearingImpaired { get; init; } = HearingImpairedMode.PreferNormal;
+    /// <summary>Minimum match score (0-100) for automatic downloads.</summary>
+    public int MinimumScoreMovies { get; init; } = 70;
+    public int MinimumScoreEpisodes { get; init; } = 80;
+    /// <summary>How often files still missing subtitles are searched again.</summary>
+    public int SearchIntervalHours { get; init; } = 24;
+    public bool IncludeAiTranslated { get; init; }
+    public OpenSubtitlesSettings OpenSubtitles { get; init; } = new();
+}
+
+/// <summary>Internal bookkeeping: the language set the subtitle search last ran with.</summary>
+public sealed record SubtitleSearchState : ISettingsSection
+{
+    public static string SectionKey => "subtitles-state";
+    public string? LanguagesSignature { get; init; }
+}

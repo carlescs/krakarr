@@ -89,6 +89,8 @@ public sealed class MovieImportService(
                 File.Delete(oldPath);
             }
 
+            SidecarFiles.DeleteFor(oldPath); // subtitles of the old file; rows cascade with the MovieFile
+
             movie.MovieFileId = null;
             db.MovieFiles.Remove(old);
             await db.SaveChangesAsync(ct);

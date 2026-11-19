@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
-  IndexerError, IndexerTestResult, Episode, EpisodeRelease, MediaType, MonitorMode, Series, MediaManagementSettings, MetadataSettings, Movie, MovieLookup, Quality, QualityProfile,
+  IndexerError, IndexerTestResult, Language, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, MediaManagementSettings, MetadataSettings, Movie, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, RootFolder, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
 } from './models';
 
@@ -26,7 +26,7 @@ export function errorMessage(err: unknown): string {
 
 type SettingsMap = {
   general: GeneralSettings; media: MediaManagementSettings; metadata: MetadataSettings;
-  downloads: DownloadClientSettings; automation: AutomationSettings;
+  downloads: DownloadClientSettings; automation: AutomationSettings; subtitles: SubtitleSettings;
 };
 
 @Injectable({ providedIn: 'root' })
@@ -132,4 +132,20 @@ export class Api {
   }
   grabSeriesRelease(id: number, release: ReleaseInfo) { return this.post<unknown>(`series/${id}/releases/grab`, { release }); }
   deleteEpisodeFile(id: number) { return this.delete<void>(`episodefiles/${id}`); }
+
+  // Subtitles
+  subtitleLanguages() { return this.get<Language[]>('subtitles/languages'); }
+  testSubtitleProviders(settings: SubtitleSettings) {
+    return this.post<{ name: string; success: boolean; message: string }[]>('subtitles/providers/test', settings);
+  }
+  subtitleFiles(filter: { movieId?: number; seriesId?: number }) { return this.get<SubtitleFile[]>('subtitles/files', filter); }
+  wantedSubtitles() { return this.get<WantedSubtitle[]>('subtitles/wanted'); }
+  searchSubtitles(ref: SubtitleFileRef = {}) { return this.post<CommandInfo>('subtitles/search', { movieFileId: ref.movieFileId ?? null, episodeFileId: ref.episodeFileId ?? null }); }
+  subtitleCandidates(ref: SubtitleFileRef, language?: string) {
+    return this.get<{ label: string; results: ScoredSubtitle[]; errors: string[] }>('subtitles/candidates', { ...ref, language });
+  }
+  downloadSubtitle(ref: SubtitleFileRef, candidate: SubtitleCandidate, score: number) {
+    return this.post<SubtitleFile>('subtitles/download', { ...ref, candidate, score });
+  }
+  deleteSubtitle(id: number) { return this.delete<void>(`subtitles/${id}`); }
 }

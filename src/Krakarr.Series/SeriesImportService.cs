@@ -108,7 +108,9 @@ public sealed class SeriesImportService(
                 continue;
             }
 
-            await ImportFileAsync(series, targets, path, quality, parsed.ReleaseGroup ?? downloadParsed.ReleaseGroup, download.Name, media, ct);
+            // Keep the file's own release name when it is informative (season packs), for subtitle matching later.
+            var sceneName = ReleaseParser.Parse(fileName).IsEpisode ? Path.GetFileNameWithoutExtension(fileName) : download.Name;
+            await ImportFileAsync(series, targets, path, quality, parsed.ReleaseGroup ?? downloadParsed.ReleaseGroup, sceneName, media, ct);
             imported.AddRange(targets);
         }
 
@@ -135,6 +137,8 @@ public sealed class SeriesImportService(
             {
                 File.Delete(oldPath);
             }
+
+            SidecarFiles.DeleteFor(oldPath); // subtitles of the old file; rows cascade with the EpisodeFile
 
             foreach (var e in series.Episodes.Where(e => e.EpisodeFileId == old.Id))
             {

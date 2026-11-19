@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <InternalsVisibleTo Include="Krakarr.Subtitles.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../Krakarr.Core/Krakarr.Core.csproj" />
     <ProjectReference Include="../Krakarr.Data/Krakarr.Data.csproj" />
+    <ProjectReference Include="../Krakarr.Media/Krakarr.Media.csproj" />
   </ItemGroup>
 </Project>

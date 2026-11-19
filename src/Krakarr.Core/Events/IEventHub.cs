@@ -17,6 +17,7 @@ public static class EventNames
     public const string DownloadsUpdated = "downloadsUpdated";
     public const string MovieUpdated = "movieUpdated";
     public const string SeriesUpdated = "seriesUpdated";
+    public const string SubtitlesUpdated = "subtitlesUpdated";
     public const string CommandUpdated = "commandUpdated";
     public const string HistoryAdded = "historyAdded";
 }

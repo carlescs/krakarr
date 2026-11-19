@@ -24,8 +24,8 @@ import { CommandInfo, HistoryItem } from '../core/models';
                 @for (h of history(); track h.id) {
                   <tr>
                     <td>
-                      <span class="badge" [class]="h.eventType === 'Imported' ? 'bg-emerald-500/15 text-emerald-300' : h.eventType === 'Grabbed' ? 'bg-accent-500/15 text-accent-300' : 'bg-rose-500/15 text-rose-300'">
-                        {{ h.eventType === 'DownloadFailed' ? 'Failed' : h.eventType }}
+                      <span class="badge" [class]="h.eventType === 'Imported' ? 'bg-emerald-500/15 text-emerald-300' : h.eventType === 'Grabbed' ? 'bg-accent-500/15 text-accent-300' : h.eventType === 'SubtitleDownloaded' ? 'bg-violet-500/15 text-violet-300' : 'bg-rose-500/15 text-rose-300'">
+                        {{ h.eventType === 'DownloadFailed' ? 'Failed' : h.eventType === 'SubtitleDownloaded' ? 'Subtitle' : h.eventType }}
                       </span>
                     </td>
                     <td class="w-full max-w-0">

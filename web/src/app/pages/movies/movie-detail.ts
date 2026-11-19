@@ -6,16 +6,17 @@ import { Router } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
 import { Events } from '../../core/events';
 import { AgoPipe, BytesPipe, DurationPipe, SpeedPipe } from '../../core/format';
-import { HistoryItem, IndexerError, Movie, QualityProfile, ReleaseDecision } from '../../core/models';
+import { HistoryItem, IndexerError, Movie, QualityProfile, ReleaseDecision, SubtitleFile } from '../../core/models';
 import { Toasts } from '../../core/toast';
 import { Modal } from '../../shared/modal';
 import { Poster } from '../../shared/poster';
 import { Progress } from '../../shared/progress';
 import { StateBadge } from '../../shared/state-badge';
+import { SubtitleManager } from '../../shared/subtitle-manager';
 
 @Component({
   selector: 'kr-movie-detail',
-  imports: [FormsModule, DatePipe, Poster, Progress, Modal, StateBadge, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
+  imports: [FormsModule, DatePipe, Poster, Progress, Modal, StateBadge, SubtitleManager, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
   template: `
     @if (movie(); as m) {
       <!-- Hero -->
@@ -86,8 +87,19 @@ import { StateBadge } from '../../shared/state-badge';
             <span class="text-slate-500">Quality</span><span>{{ f.quality }}</span>
             <span class="text-slate-500">Group</span><span>{{ f.releaseGroup || '—' }}</span>
             <span class="text-slate-500">Added</span><span>{{ f.dateAdded | date: 'medium' }}</span>
+            <span class="text-slate-500">Subtitles</span>
+            <span class="flex flex-wrap items-center gap-1.5">
+              @for (s of subtitles(); track s.id) {
+                <span class="badge bg-surface-700 text-slate-200" [title]="s.provider + (s.score != null ? ' · score ' + s.score : '')">{{ s.languageName }}{{ s.hearingImpaired ? ' (HI)' : '' }}</span>
+              } @empty { <span class="text-slate-500">none</span> }
+              <button class="btn-ghost btn-sm" (click)="subtitlesOpen.set(true)">Manage</button>
+            </span>
           </div>
         </section>
+        @if (subtitlesOpen()) {
+          <kr-subtitle-manager [fileRef]="{ movieFileId: f.id }" [label]="m.title" [files]="subtitles()"
+                               (closed)="subtitlesOpen.set(false)" (changed)="loadSubtitles()" />
+        }
       }
 
       <!-- History -->
@@ -100,8 +112,8 @@ import { StateBadge } from '../../shared/state-badge';
             @for (h of history(); track h.id) {
               <li class="flex flex-wrap items-center gap-3 py-2">
                 <span class="badge w-24 justify-center"
-                      [class]="h.eventType === 'Imported' ? 'bg-emerald-500/15 text-emerald-300' : h.eventType === 'Grabbed' ? 'bg-accent-500/15 text-accent-300' : 'bg-rose-500/15 text-rose-300'">
-                  {{ h.eventType === 'DownloadFailed' ? 'Failed' : h.eventType }}
+                      [class]="h.eventType === 'Imported' ? 'bg-emerald-500/15 text-emerald-300' : h.eventType === 'Grabbed' ? 'bg-accent-500/15 text-accent-300' : h.eventType === 'SubtitleDownloaded' ? 'bg-violet-500/15 text-violet-300' : 'bg-rose-500/15 text-rose-300'">
+                  {{ h.eventType === 'DownloadFailed' ? 'Failed' : h.eventType === 'SubtitleDownloaded' ? 'Subtitle' : h.eventType }}
                 </span>
                 <span class="min-w-0 flex-1 truncate">{{ h.sourceTitle }}</span>
                 <span class="text-xs text-slate-500">{{ h.quality }}</span>
@@ -206,6 +218,8 @@ export class MovieDetailPage implements OnInit {
   protected readonly grabbing = signal<string | null>(null);
   protected readonly editing = signal(false);
   protected readonly confirmDelete = signal(false);
+  protected readonly subtitles = signal<SubtitleFile[]>([]);
+  protected readonly subtitlesOpen = signal(false);
   protected editMonitored = true;
   protected editProfileId = 0;
   protected deleteFiles = false;
@@ -218,7 +232,10 @@ export class MovieDetailPage implements OnInit {
     this.api.qualityProfiles().then(p => this.profiles.set(p));
     this.events.movieUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => { if (e.id === this.id()) this.load(); });
     this.events.historyAdded.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(h => { if (h.movieId === this.id()) this.loadHistory(); });
+    this.events.subtitlesUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => { if (e.movieId === this.id()) this.loadSubtitles(); });
   }
+
+  async loadSubtitles() { this.subtitles.set(await this.api.subtitleFiles({ movieId: this.id() })); }
 
   private async load() {
     try {
@@ -226,7 +243,7 @@ export class MovieDetailPage implements OnInit {
       this.movie.set(m);
       this.editMonitored = m.monitored;
       this.editProfileId = m.qualityProfileId;
-      await this.loadHistory();
+      await Promise.all([this.loadHistory(), this.loadSubtitles()]);
     } catch (e) {
       this.toasts.error(errorMessage(e));
     }

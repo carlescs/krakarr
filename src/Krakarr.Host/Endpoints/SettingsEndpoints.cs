@@ -30,6 +30,16 @@ public static class SettingsEndpoints
                 : !Uri.TryCreate(s.QBittorrent.Url, UriKind.Absolute, out var u) || (u.Scheme != "http" && u.Scheme != "https") ? "qBittorrent URL must be an absolute http(s) URL"
                 : null);
         MapSection<AutomationSettings>(settings, "automation");
+        MapSection<SubtitleSettings>(settings, "subtitles",
+            merge: (current, incoming) => incoming.OpenSubtitles.Password == SubtitleSettings.PasswordMask
+                ? incoming with { OpenSubtitles = incoming.OpenSubtitles with { Password = current.OpenSubtitles.Password } }
+                : incoming,
+            present: s => string.IsNullOrEmpty(s.OpenSubtitles.Password)
+                ? s
+                : s with { OpenSubtitles = s.OpenSubtitles with { Password = SubtitleSettings.PasswordMask } },
+            validate: s => s.Languages.Any(l => string.IsNullOrWhiteSpace(l)) ? "Languages must not be empty"
+                : s.MinimumScoreMovies is < 0 or > 100 || s.MinimumScoreEpisodes is < 0 or > 100 ? "Minimum scores must be between 0 and 100"
+                : null);
 
         settings.MapPost("/general/regenerate-api-key", async (ISettingsService s, CancellationToken ct) =>
         {

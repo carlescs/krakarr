@@ -138,6 +138,7 @@ public sealed class SeriesImportTests : IAsyncLifetime
         var series = await db.Series.SingleAsync();
         Assert.True(File.Exists(Path.Combine(series.Path, episodes[0].EpisodeFile!.RelativePath)));
         Assert.Equal(3, await db.EpisodeFiles.CountAsync());
+        Assert.Equal("Test.Show.S01E02.1080p.WEB-DL.x264-KRK", episodes[1].EpisodeFile!.SceneName); // per-file name, not the pack name
         var download = await db.Downloads.SingleAsync();
         Assert.True(download.Imported);
         var history = await db.History.SingleAsync();

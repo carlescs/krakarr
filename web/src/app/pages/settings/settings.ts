@@ -3,13 +3,13 @@ import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../../core/api';
 import { BytesPipe } from '../../core/format';
 import {
-  AutomationSettings, DirectoryListing, DownloadClientKind, DownloadClientSettings, DownloadClientTestResult, GeneralSettings, MediaManagementSettings, MetadataSettings, Quality,
+  AutomationSettings, DirectoryListing, Language, SubtitleSettings, DownloadClientKind, DownloadClientSettings, DownloadClientTestResult, GeneralSettings, MediaManagementSettings, MetadataSettings, Quality,
   QualityProfile, RootFolder, SystemStatus,
 } from '../../core/models';
 import { Toasts } from '../../core/toast';
 import { Modal } from '../../shared/modal';
 
-type Tab = 'media' | 'profiles' | 'downloads' | 'metadata' | 'general';
+type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'general';
 
 @Component({
   selector: 'kr-settings',
@@ -178,6 +178,67 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'metadata' | 'general';
       }
     }
 
+    <!-- Subtitles -->
+    @if (tab() === 'subtitles') {
+      @if (subtitles(); as st) {
+        <div class="space-y-6">
+          <section class="card space-y-4 p-5">
+            <label class="flex items-center gap-2 text-sm font-medium text-white"><input type="checkbox" class="accent-accent-500" [(ngModel)]="st.enabled" /> Download subtitles automatically</label>
+            <div>
+              <label class="label">Languages</label>
+              <div class="flex flex-wrap items-center gap-2">
+                @for (code of st.languages; track code) {
+                  <span class="badge bg-accent-500/15 text-accent-300">{{ languageName(code) }}
+                    <button class="ml-1 hover:text-white" (click)="st.languages = removeLanguage(st.languages, code)" aria-label="Remove">✕</button>
+                  </span>
+                }
+                <select class="input w-56" (change)="st.languages = addLanguage(st.languages, $any($event.target).value); $any($event.target).value = ''">
+                  <option value="">Add language…</option>
+                  @for (l of languages(); track l.code) {
+                    @if (!st.languages.includes(l.code)) { <option [value]="l.code">{{ l.name }}</option> }
+                  }
+                </select>
+              </div>
+              <p class="hint">Subtitles are stored next to the video as e.g. “Movie (2020).en.srt”. Existing files like that are detected automatically.</p>
+            </div>
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label class="label">Hearing impaired</label>
+                <select class="input" [(ngModel)]="st.hearingImpaired">
+                  <option value="PreferNormal">Prefer normal subtitles</option>
+                  <option value="PreferHearingImpaired">Prefer hearing impaired (SDH)</option>
+                  <option value="ExcludeHearingImpaired">Never hearing impaired</option>
+                </select>
+              </div>
+              <div><label class="label">Retry missing every (hours)</label><input class="input" type="number" min="1" [(ngModel)]="st.searchIntervalHours" /></div>
+              <div><label class="label">Minimum score · movies</label><input class="input" type="number" min="0" max="100" [(ngModel)]="st.minimumScoreMovies" /></div>
+              <div><label class="label">Minimum score · episodes</label><input class="input" type="number" min="0" max="100" [(ngModel)]="st.minimumScoreEpisodes" /></div>
+            </div>
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="st.includeAiTranslated" /> Allow AI / machine translated subtitles</label>
+            <p class="hint">Score: 100 for a file-hash match; otherwise title, year or season/episode, source, resolution, release group and codec of the subtitle's release are compared with your file.</p>
+          </section>
+          <section class="card grid gap-4 p-5 sm:grid-cols-2">
+            <h2 class="font-semibold text-white sm:col-span-2">OpenSubtitles.com</h2>
+            <div class="sm:col-span-2">
+              <label class="label">API key</label>
+              <input class="input font-mono" type="password" autocomplete="off" [(ngModel)]="st.openSubtitles.apiKey" />
+              <p class="hint">Create a consumer at opensubtitles.com → API consumers.</p>
+            </div>
+            <div><label class="label">Username (optional)</label><input class="input" autocomplete="off" [(ngModel)]="st.openSubtitles.username" /></div>
+            <div><label class="label">Password</label><input class="input" type="password" autocomplete="new-password" [(ngModel)]="st.openSubtitles.password" /></div>
+            <p class="hint sm:col-span-2">Without an account, downloads are limited to a few per day; a free account raises the quota.</p>
+            @if (subtitleTest(); as t) {
+              <div class="rounded-lg px-3 py-2 text-sm sm:col-span-2" [class]="t.success ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'">{{ t.message }}</div>
+            }
+            <div class="flex justify-end gap-2 sm:col-span-2">
+              <button class="btn-secondary" (click)="testSubtitles(st)" [disabled]="testingSubtitles()">{{ testingSubtitles() ? 'Testing…' : 'Test' }}</button>
+              <button class="btn-primary" (click)="save('subtitles', st)">Save</button>
+            </div>
+          </section>
+        </div>
+      }
+    }
+
     <!-- Metadata -->
     @if (tab() === 'metadata') {
       @if (metadata(); as m) {
@@ -302,6 +363,7 @@ export class SettingsPage implements OnInit {
     { id: 'media', label: 'Media management' },
     { id: 'profiles', label: 'Quality profiles' },
     { id: 'downloads', label: 'Download client' },
+    { id: 'subtitles', label: 'Subtitles' },
     { id: 'metadata', label: 'Metadata' },
     { id: 'general', label: 'General' },
   ];
@@ -323,6 +385,10 @@ export class SettingsPage implements OnInit {
     { id: 'QBittorrent', label: 'qBittorrent', description: 'Use an existing qBittorrent via its WebUI; only tagged torrents are managed.' },
   ];
   protected readonly clientTest = signal<DownloadClientTestResult | null>(null);
+  protected readonly subtitles = signal<SubtitleSettings | null>(null);
+  protected readonly languages = signal<Language[]>([]);
+  protected readonly subtitleTest = signal<{ success: boolean; message: string } | null>(null);
+  protected readonly testingSubtitles = signal(false);
   protected readonly testingClient = signal(false);
   protected readonly selectableQualities = computed(() => this.qualities().filter(q => q.id !== 0));
   protected readonly namingTokens = ['Movie Title', 'Movie CleanTitle', 'Original Title', 'Release Year', 'Quality', 'Release Group', 'TmdbId', 'ImdbId']
@@ -349,13 +415,33 @@ export class SettingsPage implements OnInit {
     this.metadata.set(metadata);
     this.general.set(general);
     this.status.set(status);
+    const [subs, langs] = await Promise.all([this.api.settings('subtitles'), this.api.subtitleLanguages()]);
+    this.subtitles.set(subs);
+    this.languages.set(langs);
+  }
+
+  protected languageName(code: string) { return this.languages().find(l => l.code === code)?.name ?? code; }
+  protected addLanguage(list: string[], code: string) { return code && !list.includes(code) ? [...list, code] : list; }
+  protected removeLanguage(list: string[], code: string) { return list.filter(c => c !== code); }
+
+  async testSubtitles(settings: SubtitleSettings) {
+    this.testingSubtitles.set(true);
+    try {
+      const results = await this.api.testSubtitleProviders(settings);
+      const r = results[0];
+      this.subtitleTest.set(r ? { success: r.success, message: r.message } : { success: false, message: 'No providers' });
+    } catch (e) {
+      this.subtitleTest.set({ success: false, message: errorMessage(e) });
+    } finally {
+      this.testingSubtitles.set(false);
+    }
   }
 
   protected qualitiesFor(p: QualityProfile) {
     return this.qualities().filter(q => p.allowedQualityIds.includes(q.id)).sort((a, b) => b.weight - a.weight);
   }
 
-  async save<K extends 'media' | 'downloads' | 'automation' | 'metadata'>(section: K, value: Parameters<Api['saveSettings']>[1] & object) {
+  async save<K extends 'media' | 'downloads' | 'automation' | 'metadata' | 'subtitles'>(section: K, value: Parameters<Api['saveSettings']>[1] & object) {
     try {
       await this.api.saveSettings(section, value as never);
       this.toasts.success('Settings saved');

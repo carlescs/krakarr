@@ -19,6 +19,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
     public DbSet<Season> Seasons => Set<Season>();
     public DbSet<Episode> Episodes => Set<Episode>();
     public DbSet<EpisodeFile> EpisodeFiles => Set<EpisodeFile>();
+    public DbSet<SubtitleFile> SubtitleFiles => Set<SubtitleFile>();
     public DbSet<Download> Downloads => Set<Download>();
     public DbSet<HistoryEntry> History => Set<HistoryEntry>();
 
@@ -81,6 +82,16 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
         {
             e.HasIndex(x => x.SeriesId);
             e.HasOne<Series>().WithMany().HasForeignKey(x => x.SeriesId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<SubtitleFile>(e =>
+        {
+            e.Property(x => x.Language).HasMaxLength(16);
+            e.Property(x => x.Provider).HasMaxLength(32);
+            e.HasOne<MovieFile>().WithMany().HasForeignKey(x => x.MovieFileId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<EpisodeFile>().WithMany().HasForeignKey(x => x.EpisodeFileId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => x.MovieFileId);
+            e.HasIndex(x => x.EpisodeFileId);
         });
 
         b.Entity<Download>(e =>
