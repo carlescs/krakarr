@@ -76,6 +76,18 @@ public static class DownloadEndpoints
         group.MapDelete("/{hash}", (string hash, bool? deleteData, ITorrentEngine engine) =>
             Control(() => engine.RemoveAsync(hash, deleteData ?? false)));
 
+        group.MapGet("/{hash}/details", async (string hash, ITorrentEngine engine, CancellationToken ct) =>
+        {
+            try
+            {
+                return await engine.GetDetailsAsync(hash, ct) is { } details ? Results.Ok(details) : Results.NotFound();
+            }
+            catch (Exception ex) when (ex is QBittorrentException or InvalidOperationException)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
+            }
+        });
+
         // Which client is active and whether it is reachable.
         group.MapGet("/client", async (DownloadClientRouter router, ISettingsService settings, CancellationToken ct) =>
         {

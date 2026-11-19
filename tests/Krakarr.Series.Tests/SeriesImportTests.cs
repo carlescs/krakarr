@@ -33,6 +33,7 @@ public sealed class SeriesImportTests : IAsyncLifetime
         public Task<IReadOnlyList<(string Path, long Length)>> GetFilesAsync(string infoHash, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<(string Path, long Length)>>(Files);
         public void MarkImported(string infoHash) { }
+        public Task<TorrentDetails?> GetDetailsAsync(string infoHash, CancellationToken ct = default) => Task.FromResult<TorrentDetails?>(null);
     }
 
     private sealed class Unused : ITvdbClient, IIndexerSearchService, IDownloadService

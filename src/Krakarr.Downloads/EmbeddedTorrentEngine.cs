@@ -542,6 +542,158 @@ public sealed class EmbeddedTorrentEngine(
         }
     }
 
+    public async Task<TorrentDetails?> GetDetailsAsync(string infoHash, CancellationToken ct = default)
+    {
+        if (!_managers.TryGetValue(infoHash, out var manager) || !_rows.TryGetValue(infoHash, out var row))
+        {
+            return null;
+        }
+
+        var status = BuildStatus(row, manager);
+        var torrent = manager.HasMetadata ? manager.Torrent : null;
+
+        var files = manager.HasMetadata
+            ? manager.Files.Select((f, i) => new TorrentFileDetails(
+                i, f.Path, f.Length, Math.Round(f.BitField.PercentComplete, 2), PriorityName(f.Priority), null)).ToList()
+            : [];
+
+        var peers = new List<TorrentPeerDetails>();
+        foreach (var peer in await manager.GetPeersAsync())
+        {
+            var flags = new List<string>();
+            var desc = new List<string>();
+            if (peer.IsInterested && !peer.AmChoking) { flags.Add("U"); desc.Add("U = uploading to peer"); }
+            if (peer.AmInterested && !peer.IsChoking) { flags.Add("D"); desc.Add("D = downloading from peer"); }
+            if (peer.AmInterested && peer.IsChoking) { flags.Add("d"); desc.Add("d = interested, peer is choking"); }
+            if (peer.ConnectionDirection == MonoTorrent.Direction.Incoming) { flags.Add("I"); desc.Add("I = incoming connection"); }
+            if (peer.EncryptionType != MonoTorrent.Connections.EncryptionType.PlainText) { flags.Add("E"); desc.Add("E = encrypted"); }
+            peers.Add(new TorrentPeerDetails
+            {
+                Address = peer.Uri is { } uri ? $"{uri.Host}:{uri.Port}" : "unknown",
+                Client = PeerClients.Describe(peer.ClientApp.ShortId ?? peer.ClientApp.ToString()),
+                Progress = Math.Round(peer.BitField.PercentComplete, 1),
+                DownloadRate = peer.Monitor.DownloadRate,
+                UploadRate = peer.Monitor.UploadRate,
+                Downloaded = peer.Monitor.DataBytesReceived,
+                Uploaded = peer.Monitor.DataBytesSent,
+                Flags = string.Join(' ', flags),
+                FlagsDescription = string.Join(", ", desc),
+                Connection = (peer.Uri?.Scheme is "ipv4" or "ipv6" or null ? "BT" : peer.Uri.Scheme.ToUpperInvariant())
+                    + peer.EncryptionType switch
+                    {
+                        MonoTorrent.Connections.EncryptionType.RC4Full => " · Encrypted (RC4)",
+                        MonoTorrent.Connections.EncryptionType.RC4Header => " · Encrypted (RC4 header)",
+                        _ => string.Empty,
+                    },
+                IsSeeder = peer.IsSeeder,
+            });
+        }
+
+        var trackers = new List<TorrentTrackerDetails>
+        {
+            new() { Url = "** [DHT] **", Status = manager.CanUseDht ? "Working" : "Disabled" },
+            new() { Url = "** [PeX] **", Status = manager.Settings.AllowPeerExchange && !(torrent?.IsPrivate ?? false) ? "Working" : "Disabled" },
+            new() { Url = "** [LSD] **", Status = manager.CanUseLocalPeerDiscovery ? "Working" : "Disabled" },
+        };
+        var tierIndex = 0;
+        foreach (var tier in manager.TrackerManager.Tiers)
+        {
+            MonoTorrent.Trackers.ScrapeInfo? scrape = tier.ScrapeInfo.Count > 0 ? tier.ScrapeInfo.Values.First() : null;
+            foreach (var tracker in tier.Trackers)
+            {
+                var active = ReferenceEquals(tier.ActiveTracker, tracker);
+                trackers.Add(new TorrentTrackerDetails
+                {
+                    Url = tracker.Uri.ToString(),
+                    Tier = tierIndex,
+                    Status = tracker.Status switch
+                    {
+                        MonoTorrent.Trackers.TrackerState.Ok => "Working",
+                        MonoTorrent.Trackers.TrackerState.Connecting => "Updating",
+                        MonoTorrent.Trackers.TrackerState.Offline => "Not working",
+                        MonoTorrent.Trackers.TrackerState.InvalidResponse => "Not working",
+                        _ => "Not contacted",
+                    },
+                    Seeds = active ? scrape?.Complete : null,
+                    Leechers = active ? scrape?.Incomplete : null,
+                    Downloaded = active ? scrape?.Downloaded : null,
+                    Message = !string.IsNullOrEmpty(tracker.FailureMessage) ? tracker.FailureMessage : string.IsNullOrEmpty(tracker.WarningMessage) ? null : tracker.WarningMessage,
+                    NextAnnounceSeconds = active && tracker.UpdateInterval > TimeSpan.Zero
+                        ? (long)Math.Max(0, (tracker.UpdateInterval - tracker.TimeSinceLastAnnounce).TotalSeconds)
+                        : null,
+                });
+            }
+
+            tierIndex++;
+        }
+
+        string? pieces = null;
+        if (manager.HasMetadata)
+        {
+            var bitfield = manager.Bitfield;
+            var states = new int[bitfield.Length];
+            for (var i = 0; i < states.Length; i++) states[i] = bitfield[i] ? 2 : 0;
+            pieces = PieceMap.Build(states);
+        }
+
+        var running = manager.State is TorrentState.Downloading or TorrentState.Seeding or TorrentState.Metadata;
+        var v1 = manager.InfoHashes.V1?.ToHex().ToLowerInvariant();
+        var v2 = manager.InfoHashes.V2?.ToHex().ToLowerInvariant();
+        return new TorrentDetails
+        {
+            Status = status,
+            Client = "Built-in (MonoTorrent)",
+            ClientState = manager.State.ToString(),
+            InfoHashV1 = v1,
+            InfoHashV2 = v2,
+            MagnetUri = row.MagnetUri ?? BuildMagnet(v1, status.Name, torrent),
+            Comment = string.IsNullOrWhiteSpace(torrent?.Comment) ? null : torrent.Comment,
+            CreatedBy = string.IsNullOrWhiteSpace(torrent?.CreatedBy) ? null : torrent.CreatedBy,
+            CreationDate = torrent is { CreationDate.Year: > 1970 } ? new DateTimeOffset(DateTime.SpecifyKind(torrent.CreationDate, DateTimeKind.Utc)) : null,
+            IsPrivate = torrent?.IsPrivate,
+            PieceSize = torrent?.PieceLength,
+            PieceCount = torrent?.PieceCount,
+            PiecesHave = manager.HasMetadata ? manager.Bitfield.TrueCount : null,
+            TotalSize = torrent?.Size,
+            SelectedSize = manager.HasMetadata ? manager.Files.Where(f => f.Priority != MonoTorrent.Priority.DoNotDownload).Sum(f => f.Length) : null,
+            SessionDownloaded = manager.Monitor.DataBytesReceived,
+            SessionUploaded = manager.Monitor.DataBytesSent,
+            Wasted = manager.HashFails * (long)(torrent?.PieceLength ?? 0),
+            TimeActiveSeconds = running && manager.StartTime > DateTime.MinValue ? (long)(DateTime.Now - manager.StartTime).TotalSeconds : null,
+            SeedingTimeSeconds = row.CompletedAt is { } done && status.State == DownloadState.Seeding ? (long)(DateTimeOffset.UtcNow - done).TotalSeconds : null,
+            Connections = manager.OpenConnections,
+            ConnectionsLimit = manager.Settings.MaximumConnections,
+            SeedsConnected = manager.Peers.Seeds,
+            PeersConnected = manager.Peers.Leechs,
+            PeersTotal = manager.Peers.Available,
+            DownloadLimit = manager.Settings.MaximumDownloadRate,
+            UploadLimit = manager.Settings.MaximumUploadRate,
+            ContentPath = manager.HasMetadata && manager.Files.Count == 1 ? manager.Files[0].FullPath : manager.ContainingDirectory,
+            Tags = [row.Category],
+            WebSeeds = torrent?.HttpSeeds.Select(u => u.ToString()).ToList() ?? [],
+            Files = files,
+            Peers = peers.OrderByDescending(p => p.DownloadRate + p.UploadRate).ThenByDescending(p => p.Progress).ToList(),
+            Trackers = trackers,
+            Pieces = pieces,
+        };
+    }
+
+    private static string PriorityName(MonoTorrent.Priority p) => p switch
+    {
+        MonoTorrent.Priority.DoNotDownload => "Skip",
+        MonoTorrent.Priority.Lowest or MonoTorrent.Priority.Low => "Low",
+        MonoTorrent.Priority.Normal => "Normal",
+        MonoTorrent.Priority.High => "High",
+        _ => "Maximum",
+    };
+
+    private static string? BuildMagnet(string? v1, string name, Torrent? torrent)
+    {
+        if (v1 is null) return null;
+        var trackers = torrent?.AnnounceUrls.SelectMany(t => t).Select(u => "&tr=" + Uri.EscapeDataString(u)) ?? [];
+        return $"magnet:?xt=urn:btih:{v1}&dn={Uri.EscapeDataString(name)}{string.Concat(trackers)}";
+    }
+
     public void MarkImported(string infoHash)
     {
         if (_rows.TryGetValue(infoHash, out var cached))

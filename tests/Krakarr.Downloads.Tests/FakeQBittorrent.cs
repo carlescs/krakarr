@@ -77,12 +77,37 @@ public sealed class FakeQBittorrent : HttpMessageHandler
                         added_on = 1_700_000_000L, completion_on = t.Progress >= 1 ? 1_700_000_100L : -1L,
                     });
                 return Json(list);
+            case "/api/v2/torrents/properties":
+                return Raw("""
+                    {"save_path":"/downloads/","creation_date":1700000000,"piece_size":4194304,"comment":"Krakarr test","created_by":"mktorrent 1.1",
+                     "total_wasted":1024,"total_uploaded":500,"total_uploaded_session":100,"total_downloaded":1000,"total_downloaded_session":900,
+                     "up_limit":-1,"dl_limit":512000,"time_elapsed":3600,"seeding_time":600,"nb_connections":5,"nb_connections_limit":100,
+                     "share_ratio":0.5,"seeds":2,"seeds_total":10,"peers":3,"peers_total":20,"pieces_have":3,"pieces_num":4,"reannounce":1500,
+                     "dl_speed_avg":2048,"up_speed_avg":64,"last_seen":1700000100,"total_size":1000,"is_private":true}
+                    """);
+            case "/api/v2/torrents/trackers":
+                return Raw("""
+                    [{"url":"** [DHT] **","status":2,"tier":-1,"num_peers":12,"num_seeds":4,"num_leeches":8,"num_downloaded":-1,"msg":""},
+                     {"url":"http://tracker.example/announce","status":4,"tier":0,"num_peers":0,"num_seeds":-1,"num_leeches":-1,"num_downloaded":-1,"msg":"Connection refused"}]
+                    """);
+            case "/api/v2/sync/torrentPeers":
+                return Raw("""
+                    {"full_update":true,"rid":1,"peers":{"10.0.0.5:51413":{"client":"Transmission 4.0.5","connection":"μTP","country":"Spain","country_code":"es",
+                     "dl_speed":20480,"downloaded":4096000,"flags":"D X E","flags_desc":"D = Currently downloading (interested and not choked)\nX = Peer from PEX\nE = Encrypted traffic",
+                     "ip":"10.0.0.5","port":51413,"progress":1,"up_speed":0,"uploaded":0}}}
+                    """);
+            case "/api/v2/torrents/pieceStates":
+                return Raw("[2,2,1,0]");
+            case "/api/v2/torrents/webseeds":
+                return Raw("""[{"url":"https://mirror.example/file.mkv"}]""");
             case "/api/v2/torrents/files":
                 return Json(new[] { new { name = "Movie.2020.1080p/Movie.2020.1080p.mkv", size = 900L }, new { name = "Movie.2020.1080p/info.nfo", size = 1L } });
             default:
                 return new HttpResponseMessage(HttpStatusCode.NotFound);
         }
     }
+
+    private static HttpResponseMessage Raw(string json) => new(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") };
 
     private static HttpResponseMessage Text(string s) => new(HttpStatusCode.OK) { Content = new StringContent(s, Encoding.UTF8, "text/plain") };
     private static HttpResponseMessage Json(object o) => new(HttpStatusCode.OK) { Content = new StringContent(JsonSerializer.Serialize(o), Encoding.UTF8, "application/json") };

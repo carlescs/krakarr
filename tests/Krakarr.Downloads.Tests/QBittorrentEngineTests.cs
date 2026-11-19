@@ -200,4 +200,76 @@ public sealed class QBittorrentEngineTests : IAsyncLifetime
         await _engine.RemoveAsync(Hash, deleteData: false);
         Assert.Empty(_fake.Torrents);
     }
+
+    [Fact]
+    public async Task Details_combine_all_qbittorrent_endpoints()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        _fake.Torrents.Add(new(Hash, "Movie.2020.1080p", "krakarr", Progress: 0.75));
+        await _engine.SyncAsync(_settings, ct);
+
+        var d = await _engine.GetDetailsAsync(Hash, ct);
+
+        Assert.NotNull(d);
+        Assert.Equal("qBittorrent v4.6.3", d.Client);
+        Assert.Equal("downloading", d.ClientState);
+        Assert.Equal("Krakarr test", d.Comment);
+        Assert.Equal("mktorrent 1.1", d.CreatedBy);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1700000000), d.CreationDate);
+        Assert.True(d.IsPrivate);
+        Assert.Equal(4194304, d.PieceSize);
+        Assert.Equal((3, 4), (d.PiecesHave!.Value, d.PieceCount!.Value));
+        Assert.Equal("2210", d.Pieces);
+        Assert.Equal((2, 10, 3, 20), (d.SeedsConnected!.Value, d.SeedsTotal!.Value, d.PeersConnected!.Value, d.PeersTotal!.Value));
+        Assert.Equal(512000, d.DownloadLimit);
+        Assert.Equal(0, d.UploadLimit); // -1 = unlimited
+        Assert.Equal(3600, d.TimeActiveSeconds);
+        Assert.Equal(1500, d.NextAnnounceSeconds);
+        Assert.Equal(["movies", "krakarr"], d.Tags);
+        Assert.Equal(["https://mirror.example/file.mkv"], d.WebSeeds);
+
+        Assert.Equal(2, d.Files.Count);
+        Assert.Equal("Movie.2020.1080p/Movie.2020.1080p.mkv", d.Files[0].Path);
+
+        var peer = Assert.Single(d.Peers);
+        Assert.Equal("10.0.0.5:51413", peer.Address);
+        Assert.Equal("Transmission 4.0.5", peer.Client);
+        Assert.Equal(100, peer.Progress);
+        Assert.True(peer.IsSeeder);
+        Assert.Equal("μTP", peer.Connection);
+        Assert.Equal("Spain", peer.Country);
+        Assert.Contains("X = Peer from PEX", peer.FlagsDescription);
+
+        Assert.Equal(2, d.Trackers.Count);
+        Assert.Equal(("** [DHT] **", "Working", 4), (d.Trackers[0].Url, d.Trackers[0].Status, d.Trackers[0].Seeds!.Value));
+        Assert.Equal(("Not working", "Connection refused"), (d.Trackers[1].Status, d.Trackers[1].Message));
+        Assert.Null(d.Trackers[1].Seeds); // -1 = unknown
+
+        Assert.Null(await _engine.GetDetailsAsync("ffffffffffffffffffffffffffffffffffffffff", ct)); // untagged / unknown
+    }
+
+    [Theory]
+    [InlineData(new[] { 2, 2, 2, 2 }, "2222")]
+    [InlineData(new[] { 0, 1, 2 }, "012")]
+    [InlineData(new int[0], "")]
+    public void Piece_map_keeps_small_torrents_exact(int[] states, string expected) => Assert.Equal(expected, PieceMap.Build(states));
+
+    [Fact]
+    public void Piece_map_downsamples_large_torrents()
+    {
+        var states = Enumerable.Range(0, 3000).Select(i => i < 1500 ? 2 : i == 1600 ? 1 : 0).ToArray();
+        var map = PieceMap.Build(states);
+        Assert.Equal(PieceMap.MaxBuckets, map.Length);
+        Assert.Equal(new string('2', 150), map[..150]);
+        Assert.Equal('1', map[160]); // a single downloading piece marks its bucket as partial
+        Assert.Equal('0', map[^1]);
+    }
+
+    [Theory]
+    [InlineData("MO3002", "MonoTorrent 3.0.0.2")]
+    [InlineData("-qB4630-", "qBittorrent 4.6.3.0")]
+    [InlineData("-TR400A-", "Transmission 4.0.0.10")]
+    [InlineData("M7-2-1", "M7-2-1")]
+    [InlineData("-ZZ1234-", "-ZZ1234-")]
+    public void Describes_peer_clients(string id, string expected) => Assert.Equal(expected, PeerClients.Describe(id));
 }

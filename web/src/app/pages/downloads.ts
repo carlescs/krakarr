@@ -9,10 +9,11 @@ import { Toasts } from '../core/toast';
 import { Modal } from '../shared/modal';
 import { Progress } from '../shared/progress';
 import { StateBadge } from '../shared/state-badge';
+import { TorrentDetailsDialog } from '../shared/torrent-details';
 
 @Component({
   selector: 'kr-downloads',
-  imports: [FormsModule, RouterLink, Modal, Progress, StateBadge, BytesPipe, SpeedPipe, DurationPipe],
+  imports: [FormsModule, RouterLink, Modal, Progress, StateBadge, TorrentDetailsDialog, BytesPipe, SpeedPipe, DurationPipe],
   template: `
     <div class="mb-6 flex flex-wrap items-center gap-3">
       <h1 class="page-title">Downloads</h1>
@@ -38,7 +39,7 @@ import { StateBadge } from '../shared/state-badge';
           <div class="card p-4">
             <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
               <kr-state-badge [state]="d.state" />
-              <span class="min-w-0 flex-1 truncate font-medium text-slate-100" [title]="d.name">{{ d.name }}</span>
+              <button class="min-w-0 flex-1 truncate text-left font-medium text-slate-100 hover:text-accent-300" [title]="d.name + ' — show details'" (click)="details.set(d)">{{ d.name }}</button>
               @if (d.movieId) {
                 <a [routerLink]="['/movies', d.movieId]" class="badge bg-accent-500/15 text-accent-300 hover:bg-accent-500/25">Movie</a>
               }
@@ -53,6 +54,7 @@ import { StateBadge } from '../shared/state-badge';
                 } @else {
                   <button class="btn-ghost btn-sm" (click)="pause(d)" title="Pause">❚❚</button>
                 }
+                <button class="btn-ghost btn-sm" (click)="details.set(d)" title="Details">ⓘ</button>
                 <button class="btn-ghost btn-sm text-rose-300" (click)="removing.set(d)" title="Remove">✕</button>
               </div>
             </div>
@@ -96,6 +98,10 @@ import { StateBadge } from '../shared/state-badge';
       </kr-modal>
     }
 
+    @if (details(); as d) {
+      <kr-torrent-details [hash]="d.infoHash" [name]="d.name" (closed)="details.set(null)" />
+    }
+
     @if (removing(); as d) {
       <kr-modal title="Remove torrent" (closed)="removing.set(null)">
         <p class="break-all text-sm text-slate-300">{{ d.name }}</p>
@@ -122,6 +128,7 @@ export class DownloadsPage implements OnInit, OnDestroy {
   private clientTimer?: ReturnType<typeof setInterval>;
   protected readonly busy = signal(false);
   protected readonly removing = signal<TorrentStatus | null>(null);
+  protected readonly details = signal<TorrentStatus | null>(null);
   protected magnet = '';
   protected category = 'manual';
   protected file: File | null = null;

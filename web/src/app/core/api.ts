@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
-  IndexerError, IndexerTestResult, Language, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, MediaManagementSettings, MetadataSettings, Movie, MovieLookup, Quality, QualityProfile,
+  IndexerError, IndexerTestResult, Language, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, MediaManagementSettings, MetadataSettings, Movie, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, RootFolder, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
 } from './models';
 
@@ -92,6 +92,7 @@ export class Api {
   grabRelease(release: ReleaseInfo, category?: string) { return this.post<unknown>('downloads/release', { release, category }); }
   pauseDownload(hash: string) { return this.post<void>(`downloads/${hash}/pause`); }
   resumeDownload(hash: string) { return this.post<void>(`downloads/${hash}/resume`); }
+  downloadDetails(hash: string) { return this.get<TorrentDetails>(`downloads/${hash}/details`); }
   removeDownload(hash: string, deleteData: boolean) { return this.delete<void>(`downloads/${hash}`, { deleteData }); }
 
   // Movies

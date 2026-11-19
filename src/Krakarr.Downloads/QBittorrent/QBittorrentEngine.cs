@@ -329,6 +329,181 @@ public sealed class QBittorrentEngine(
         return files.Select(f => (Path.Combine(root, f.Name.Replace('\\', '/')), f.Size)).ToList();
     }
 
+    public async Task<TorrentDetails?> GetDetailsAsync(string infoHash, CancellationToken ct = default)
+    {
+        var settings = (await GetSettingsAsync(ct)).QBittorrent;
+        var api = await GetApiAsync(settings, ct);
+        var torrent = await FindTaggedAsync(api, settings, infoHash, ct);
+        if (torrent is null || !_statuses.TryGetValue(infoHash, out var status))
+        {
+            return null;
+        }
+
+        var id = Uri.EscapeDataString(torrent.Hash);
+        var version = await SafeAsync(() => api.GetVersionAsync(ct));
+        using var info = await api.GetJsonAsync($"api/v2/torrents/info?hashes={id}", ct);
+        using var props = await api.GetJsonAsync($"api/v2/torrents/properties?hash={id}", ct);
+        using var files = await api.GetJsonAsync($"api/v2/torrents/files?hash={id}", ct);
+        using var trackers = await api.GetJsonAsync($"api/v2/torrents/trackers?hash={id}", ct);
+        using var peers = await SafeAsync(() => api.GetJsonAsync($"api/v2/sync/torrentPeers?hash={id}&rid=0", ct));
+        using var pieces = await SafeAsync(() => api.GetJsonAsync($"api/v2/torrents/pieceStates?hash={id}", ct));
+        using var webSeeds = await SafeAsync(() => api.GetJsonAsync($"api/v2/torrents/webseeds?hash={id}", ct));
+
+        return MapDetails(status, version, info.RootElement.EnumerateArray().FirstOrDefault(), props.RootElement, files.RootElement,
+            trackers.RootElement, peers?.RootElement, pieces?.RootElement, webSeeds?.RootElement);
+    }
+
+    /// <summary>Maps qBittorrent WebUI API JSON to <see cref="TorrentDetails"/> (public for tests).</summary>
+    public static TorrentDetails MapDetails(
+        TorrentStatus status, string? version, System.Text.Json.JsonElement info, System.Text.Json.JsonElement props,
+        System.Text.Json.JsonElement files, System.Text.Json.JsonElement trackers, System.Text.Json.JsonElement? peers,
+        System.Text.Json.JsonElement? pieces, System.Text.Json.JsonElement? webSeeds)
+    {
+        static DateTimeOffset? Unix(long? seconds) => seconds is > 0 ? DateTimeOffset.FromUnixTimeSeconds(seconds.Value) : null;
+        static long? Positive(long? v) => v is >= 0 ? v : null;
+
+        var fileList = files.ValueKind == System.Text.Json.JsonValueKind.Array
+            ? files.EnumerateArray().Select((f, i) => new TorrentFileDetails(
+                (int)(J.Long(f, "index") ?? i),
+                J.Str(f, "name") ?? $"file {i}",
+                J.Long(f, "size") ?? 0,
+                Math.Round((J.Double(f, "progress") ?? 0) * 100, 2),
+                (J.Long(f, "priority") ?? 1) switch { 0 => "Skip", 6 => "High", 7 => "Maximum", _ => "Normal" },
+                J.Double(f, "availability") is >= 0 and var a ? Math.Round(a, 3) : null)).ToList()
+            : [];
+
+        var trackerList = trackers.ValueKind == System.Text.Json.JsonValueKind.Array
+            ? trackers.EnumerateArray().Select(t => (J.Long(t, "status") ?? 1) == 0
+                ? new TorrentTrackerDetails { Url = J.Str(t, "url") ?? "?", Tier = (int)(J.Long(t, "tier") ?? -1), Status = "Disabled", Message = J.Str(t, "msg") }
+                : new TorrentTrackerDetails
+            {
+                Url = J.Str(t, "url") ?? "?",
+                Tier = (int)(J.Long(t, "tier") ?? -1),
+                Status = (J.Long(t, "status") ?? 1) switch
+                {
+                    0 => "Disabled", 1 => "Not contacted", 2 => "Working", 3 => "Updating", 4 => "Not working", _ => "Unknown",
+                },
+                Seeds = J.Long(t, "num_seeds") is >= 0 and var s ? (int)s : null,
+                Leechers = J.Long(t, "num_leeches") is >= 0 and var l ? (int)l : null,
+                Peers = J.Long(t, "num_peers") is >= 0 and var p ? (int)p : null,
+                Downloaded = J.Long(t, "num_downloaded") is >= 0 and var d ? (int)d : null,
+                Message = J.Str(t, "msg"),
+            }).ToList()
+            : [];
+
+        var peerList = new List<TorrentPeerDetails>();
+        if (peers is { } pr && pr.TryGetProperty("peers", out var peerMap) && peerMap.ValueKind == System.Text.Json.JsonValueKind.Object)
+        {
+            foreach (var p in peerMap.EnumerateObject())
+            {
+                var v = p.Value;
+                peerList.Add(new TorrentPeerDetails
+                {
+                    Address = p.Name,
+                    Client = J.Str(v, "client"),
+                    Progress = Math.Round((J.Double(v, "progress") ?? 0) * 100, 1),
+                    DownloadRate = J.Long(v, "dl_speed") ?? 0,
+                    UploadRate = J.Long(v, "up_speed") ?? 0,
+                    Downloaded = J.Long(v, "downloaded") ?? 0,
+                    Uploaded = J.Long(v, "uploaded") ?? 0,
+                    Flags = J.Str(v, "flags"),
+                    FlagsDescription = J.Str(v, "flags_desc")?.Replace("\n", ", "),
+                    Connection = J.Str(v, "connection"),
+                    Country = J.Str(v, "country") is { } country && country != "N/A" ? country : null,
+                    IsSeeder = J.Double(v, "progress") is { } prog ? prog >= 1 : null,
+                });
+            }
+        }
+
+        string? pieceMap = null;
+        if (pieces is { ValueKind: System.Text.Json.JsonValueKind.Array } ps)
+        {
+            pieceMap = PieceMap.Build(ps.EnumerateArray().Select(x => x.TryGetInt32(out var n) ? n : 0).ToList());
+        }
+
+        var tags = (J.Str(info, "tags") ?? string.Empty).Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList();
+        var category = J.Str(info, "category");
+        if (!string.IsNullOrEmpty(category)) tags.Insert(0, category);
+
+        return new TorrentDetails
+        {
+            Status = status,
+            Client = version is null ? "qBittorrent" : $"qBittorrent {version}",
+            ClientState = J.Str(info, "state"),
+            InfoHashV1 = J.Str(info, "infohash_v1") ?? J.Str(props, "infohash_v1") ?? (J.Str(info, "hash") is { Length: 40 } h ? h : null),
+            InfoHashV2 = J.Str(info, "infohash_v2") ?? J.Str(props, "infohash_v2"),
+            MagnetUri = J.Str(info, "magnet_uri"),
+            Comment = J.Str(props, "comment"),
+            CreatedBy = J.Str(props, "created_by"),
+            CreationDate = Unix(J.Long(props, "creation_date")),
+            IsPrivate = J.Bool(props, "is_private") ?? J.Bool(props, "isPrivate") ?? J.Bool(info, "private"),
+            PieceSize = Positive(J.Long(props, "piece_size")),
+            PieceCount = J.Long(props, "pieces_num") is > 0 and var pn ? (int)pn : null,
+            PiecesHave = J.Long(props, "pieces_have") is >= 0 and var ph ? (int)ph : null,
+            TotalSize = Positive(J.Long(info, "total_size") ?? J.Long(props, "total_size")),
+            SelectedSize = Positive(J.Long(info, "size")),
+            SessionDownloaded = Positive(J.Long(props, "total_downloaded_session")),
+            SessionUploaded = Positive(J.Long(props, "total_uploaded_session")),
+            Wasted = Positive(J.Long(props, "total_wasted")),
+            Availability = J.Double(info, "availability") is >= 0 and var av ? Math.Round(av, 3) : null,
+            TimeActiveSeconds = Positive(J.Long(props, "time_elapsed") ?? J.Long(info, "time_active")),
+            SeedingTimeSeconds = Positive(J.Long(props, "seeding_time") ?? J.Long(info, "seeding_time")),
+            Connections = J.Long(props, "nb_connections") is >= 0 and var nc ? (int)nc : null,
+            ConnectionsLimit = J.Long(props, "nb_connections_limit") is > 0 and var ncl ? (int)ncl : null,
+            SeedsConnected = J.Long(props, "seeds") is >= 0 and var sc ? (int)sc : null,
+            SeedsTotal = J.Long(props, "seeds_total") is >= 0 and var st ? (int)st : null,
+            PeersConnected = J.Long(props, "peers") is >= 0 and var pc ? (int)pc : null,
+            PeersTotal = J.Long(props, "peers_total") is >= 0 and var pt ? (int)pt : null,
+            DownloadLimit = Math.Max(0, J.Long(props, "dl_limit") ?? J.Long(info, "dl_limit") ?? 0),
+            UploadLimit = Math.Max(0, J.Long(props, "up_limit") ?? J.Long(info, "up_limit") ?? 0),
+            AverageDownloadRate = Positive(J.Long(props, "dl_speed_avg")),
+            AverageUploadRate = Positive(J.Long(props, "up_speed_avg")),
+            LastActivity = Unix(J.Long(info, "last_activity")),
+            LastSeenComplete = Unix(J.Long(props, "last_seen") ?? J.Long(info, "seen_complete")),
+            NextAnnounceSeconds = Positive(J.Long(props, "reannounce")),
+            ContentPath = J.Str(info, "content_path"),
+            Tags = tags,
+            WebSeeds = webSeeds is { ValueKind: System.Text.Json.JsonValueKind.Array } ws ? ws.EnumerateArray().Select(w => J.Str(w, "url")).OfType<string>().ToList() : [],
+            Files = fileList,
+            Peers = peerList.OrderByDescending(p => p.DownloadRate + p.UploadRate).ThenByDescending(p => p.Progress).ToList(),
+            Trackers = trackerList,
+            Pieces = pieceMap,
+        };
+    }
+
+    private static async Task<T?> SafeAsync<T>(Func<Task<T>> call) where T : class
+    {
+        try
+        {
+            return await call();
+        }
+        catch (Exception ex) when (ex is QBittorrentException or System.Text.Json.JsonException)
+        {
+            return null; // optional endpoints (older qBittorrent versions)
+        }
+    }
+
+    /// <summary>Tolerant JSON readers: qBittorrent field types differ between versions.</summary>
+    private static class J
+    {
+        private static System.Text.Json.JsonElement? Get(System.Text.Json.JsonElement e, string name) =>
+            e.ValueKind == System.Text.Json.JsonValueKind.Object && e.TryGetProperty(name, out var v) ? v : null;
+
+        public static string? Str(System.Text.Json.JsonElement e, string name) => Get(e, name) is { } v && v.ValueKind == System.Text.Json.JsonValueKind.String
+            ? (string.IsNullOrWhiteSpace(v.GetString()) ? null : v.GetString())
+            : null;
+
+        public static long? Long(System.Text.Json.JsonElement e, string name) => Get(e, name) is { } v && v.ValueKind == System.Text.Json.JsonValueKind.Number
+            ? (v.TryGetInt64(out var l) ? l : (long)v.GetDouble())
+            : null;
+
+        public static double? Double(System.Text.Json.JsonElement e, string name) => Get(e, name) is { } v && v.ValueKind == System.Text.Json.JsonValueKind.Number ? v.GetDouble() : null;
+
+        public static bool? Bool(System.Text.Json.JsonElement e, string name) => Get(e, name) is { } v
+            ? v.ValueKind switch { System.Text.Json.JsonValueKind.True => true, System.Text.Json.JsonValueKind.False => false, _ => null }
+            : null;
+    }
+
     /// <summary>Seeding is governed by qBittorrent's own share limits.</summary>
     public void MarkImported(string infoHash)
     {

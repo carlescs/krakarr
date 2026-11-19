@@ -146,3 +146,23 @@ export interface SeriesImportCandidate {
   folderName: string; path: string; parsedTitle: string; parsedYear?: number; match?: SeriesLookup; confidence: MatchConfidence;
   alreadyInLibrary: boolean; videoFileCount: number; episodeFileCount: number; error?: string;
 }
+
+export interface TorrentFileDetails { index: number; path: string; size: number; progress: number; priority: string; availability?: number | null; }
+export interface TorrentPeerDetails {
+  address: string; client?: string; progress: number; downloadRate: number; uploadRate: number; downloaded: number; uploaded: number;
+  flags?: string; flagsDescription?: string; connection?: string; country?: string; isSeeder?: boolean;
+}
+export interface TorrentTrackerDetails {
+  url: string; tier: number; status: string; seeds?: number | null; leechers?: number | null; peers?: number | null; downloaded?: number | null;
+  message?: string | null; nextAnnounceSeconds?: number | null;
+}
+export interface TorrentDetails {
+  status: TorrentStatus; client: string; clientState?: string; infoHashV1?: string; infoHashV2?: string; magnetUri?: string; comment?: string;
+  createdBy?: string; creationDate?: string; isPrivate?: boolean; pieceSize?: number; pieceCount?: number; piecesHave?: number;
+  totalSize?: number; selectedSize?: number; sessionDownloaded?: number; sessionUploaded?: number; wasted?: number; availability?: number;
+  timeActiveSeconds?: number; seedingTimeSeconds?: number; connections?: number; connectionsLimit?: number; seedsConnected?: number;
+  seedsTotal?: number; peersConnected?: number; peersTotal?: number; downloadLimit?: number; uploadLimit?: number;
+  averageDownloadRate?: number; averageUploadRate?: number; lastActivity?: string; lastSeenComplete?: string; nextAnnounceSeconds?: number;
+  contentPath?: string; tags: string[]; webSeeds: string[]; files: TorrentFileDetails[]; peers: TorrentPeerDetails[];
+  trackers: TorrentTrackerDetails[]; pieces?: string;
+}

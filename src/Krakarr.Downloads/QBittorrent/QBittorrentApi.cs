@@ -176,6 +176,13 @@ public sealed class QBittorrentApi : IDisposable
         return await response.Content.ReadFromJsonAsync<List<QbtFile>>(ct) ?? [];
     }
 
+    /// <summary>Raw JSON GET for endpoints whose shape varies between qBittorrent versions.</summary>
+    public async Task<System.Text.Json.JsonDocument> GetJsonAsync(string relativeUrl, CancellationToken ct = default)
+    {
+        using var response = await SendAsync(() => new HttpRequestMessage(HttpMethod.Get, relativeUrl), ct);
+        return await System.Text.Json.JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
+    }
+
     public Task CreateTagAsync(string tag, CancellationToken ct = default) =>
         PostFormAsync("api/v2/torrents/createTags", new() { ["tags"] = tag }, ct);
 
