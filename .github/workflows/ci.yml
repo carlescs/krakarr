@@ -13,7 +13,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-      - run: dotnet build Krakarr.slnx -c Release
+      # The frontend job builds the UI; skip the MSBuild web build here.
+      - run: dotnet build Krakarr.slnx -c Release -p:SkipWebBuild=true
       - run: dotnet test --solution Krakarr.slnx -c Release --no-build
 
   frontend:

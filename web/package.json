@@ -7,7 +7,7 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "build:host": "ng build && rm -rf ../src/Krakarr.Host/wwwroot && cp -r dist/krakarr/browser ../src/Krakarr.Host/wwwroot"
+    "build:host": "ng build"
   },
   "private": true,
   "packageManager": "npm@10.9.9",

@@ -105,26 +105,25 @@ embedded engine) → *download completes* → *import* (pick main video, rename 
 
 ## Development
 
-Prerequisites: .NET 11 SDK, Node.js 22.
+Prerequisites: .NET 11 SDK, Node.js 22+.
 
 ```bash
-# Backend (http://localhost:8787, data in src/Krakarr.Host/data)
+# Run everything at http://localhost:8787 (data in src/Krakarr.Host/data).
+# The first build runs `npm ci` and builds the Angular UI into src/Krakarr.Host/wwwroot;
+# later builds only rebuild the UI when files under web/ change.
 dotnet run --project src/Krakarr.Host
 ```
 
 ```bash
-# Frontend dev server with hot reload (http://localhost:4200, proxies /api and /hubs to :8787)
+# Frontend hot reload: run the backend without the UI build, plus the Angular dev server
+# (http://localhost:4200, proxies /api and /hubs to :8787)
+dotnet run --project src/Krakarr.Host -p:SkipWebBuild=true
 cd web && npm ci && npm start
 ```
 
 ```bash
-# Build the SPA into the host's wwwroot so the backend serves it
-cd web && npm run build:host
-```
-
-```bash
 # Tests
-dotnet test --solution Krakarr.slnx
+dotnet test --solution Krakarr.slnx -p:SkipWebBuild=true
 cd web && npx ng test --watch=false
 ```
 

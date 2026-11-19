@@ -6,6 +6,7 @@ WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
+# Builds into ../src/Krakarr.Host/wwwroot (see web/angular.json).
 RUN npx ng build --configuration production
 
 # ---- 2. .NET backend ----------------------------------------------------------------------
@@ -14,10 +15,11 @@ ARG TARGETARCH
 WORKDIR /src
 COPY global.json Directory.Build.props Directory.Packages.props ./
 COPY src/ src/
-RUN dotnet restore src/Krakarr.Host/Krakarr.Host.csproj -a $TARGETARCH
+# The web UI is built in the Node stage, so skip the MSBuild web build (no Node in this image).
+RUN dotnet restore src/Krakarr.Host/Krakarr.Host.csproj -a $TARGETARCH -p:SkipWebBuild=true
 RUN dotnet publish src/Krakarr.Host/Krakarr.Host.csproj -c Release -a $TARGETARCH --no-restore -o /app \
-    /p:UseAppHost=false /p:DebugType=none
-COPY --from=web /src/web/dist/krakarr/browser /app/wwwroot
+    -p:SkipWebBuild=true -p:UseAppHost=false -p:DebugType=none
+COPY --from=web /src/src/Krakarr.Host/wwwroot /app/wwwroot
 
 # ---- 3. Runtime ---------------------------------------------------------------------------
 FROM mcr.microsoft.com/dotnet/aspnet:11.0

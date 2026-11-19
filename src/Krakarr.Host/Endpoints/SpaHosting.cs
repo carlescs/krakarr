@@ -28,8 +28,20 @@ public static class SpaHosting
                 IFileInfo file = env.WebRootFileProvider.GetFileInfo("index.html");
                 if (!file.Exists)
                 {
+                    var webRoot = System.Net.WebUtility.HtmlEncode(env.WebRootPath ?? Path.Combine(env.ContentRootPath, "wwwroot"));
                     return Results.Text(
-                        "<html><body style=\"font-family:sans-serif\"><h1>Krakarr</h1><p>The web UI has not been built. Run <code>npm run build</code> in <code>web/</code>, or use <code>ng serve</code> during development.</p></body></html>",
+                        $"""
+                        <html><body style="font-family:sans-serif;max-width:46rem;margin:3rem auto;line-height:1.5">
+                        <h1>Krakarr</h1>
+                        <p>The web UI has not been built (no <code>index.html</code> in <code>{webRoot}</code>).</p>
+                        <ul>
+                          <li>Build it with <code>dotnet build src/Krakarr.Host</code> (requires Node.js 22+), or run <code>npm ci</code> and <code>npm run build</code> in the <code>web</code> folder.</li>
+                          <li>Then <strong>restart Krakarr</strong>; the web root is only detected at startup.</li>
+                          <li>For frontend development, run <code>npm start</code> in the <code>web</code> folder and open <a href="http://localhost:4200">http://localhost:4200</a>.</li>
+                        </ul>
+                        <p>The API is running: <a href="api/v1/health">api/v1/health</a></p>
+                        </body></html>
+                        """,
                         "text/html");
                 }
 

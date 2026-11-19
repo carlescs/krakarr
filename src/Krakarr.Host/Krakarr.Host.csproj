@@ -13,4 +13,52 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
   </ItemGroup>
+
+  <!--
+    Web UI: `dotnet build` / `dotnet run` / `dotnet publish` build the Angular app in ../../web into wwwroot.
+    Requires Node.js 22+. Pass -p:SkipWebBuild=true to skip (Docker and CI build the UI separately).
+  -->
+  <PropertyGroup>
+    <SkipWebBuild Condition="'$(SkipWebBuild)' == ''">false</SkipWebBuild>
+    <WebUiDir>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../../web/'))</WebUiDir>
+    <WebUiOutput>$(MSBuildProjectDirectory)/wwwroot/</WebUiOutput>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <WebUiSource Include="$(WebUiDir)src/**/*;$(WebUiDir)public/**/*" />
+    <WebUiSource Include="$(WebUiDir)angular.json;$(WebUiDir)package.json;$(WebUiDir)package-lock.json;$(WebUiDir)tsconfig*.json;$(WebUiDir).postcssrc.json" />
+  </ItemGroup>
+
+  <Target Name="EnsureNode" Condition="'$(SkipWebBuild)' != 'true'">
+    <Exec Command="node --version" ContinueOnError="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ExitCode" PropertyName="NodeExitCode" />
+    </Exec>
+    <Error Condition="'$(NodeExitCode)' != '0'"
+           Text="Node.js 22+ is required to build the Krakarr web UI. Install it from https://nodejs.org, or build with -p:SkipWebBuild=true and run 'npm start' in the web folder." />
+  </Target>
+
+  <Target Name="NpmInstall" DependsOnTargets="EnsureNode"
+          Condition="'$(SkipWebBuild)' != 'true' And !Exists('$(WebUiDir)node_modules')">
+    <Message Importance="high" Text="Restoring web UI packages (npm ci)..." />
+    <Exec Command="npm ci --no-audit --no-fund" WorkingDirectory="$(WebUiDir)" />
+  </Target>
+
+  <Target Name="BuildWebUi" BeforeTargets="Build" DependsOnTargets="EnsureNode;NpmInstall"
+          Condition="'$(SkipWebBuild)' != 'true'"
+          Inputs="@(WebUiSource)" Outputs="$(WebUiOutput)index.html">
+    <Message Importance="high" Text="Building web UI (ng build)..." />
+    <Exec Command="npx ng build" WorkingDirectory="$(WebUiDir)" EnvironmentVariables="NG_CLI_ANALYTICS=false" />
+  </Target>
+
+  <!-- wwwroot may be (re)generated after evaluation, so add its files to publish explicitly. -->
+  <Target Name="IncludeWebUiInPublish" BeforeTargets="ComputeFilesToPublish" Condition="Exists('$(WebUiOutput)index.html')">
+    <ItemGroup>
+      <_WebUiFile Include="$(WebUiOutput)**/*" />
+      <ResolvedFileToPublish Include="@(_WebUiFile->'%(FullPath)')" Exclude="@(ResolvedFileToPublish)">
+        <RelativePath>wwwroot/%(_WebUiFile.RecursiveDir)%(_WebUiFile.Filename)%(_WebUiFile.Extension)</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
 </Project>
