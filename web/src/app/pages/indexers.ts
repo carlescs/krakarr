@@ -1,9 +1,13 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../core/api';
-import { Indexer, IndexerTestResult } from '../core/models';
+import { Indexer, IndexerCategory, IndexerTestResult } from '../core/models';
 import { Toasts } from '../core/toast';
+import { CategoryPicker } from '../shared/category-picker';
 import { Modal } from '../shared/modal';
+
+const MOVIE_RANGE: [number, number] = [2000, 2999];
+const TV_RANGE: [number, number] = [5000, 5999];
 
 const blankIndexer = (): Indexer => ({
   id: 0, name: '', protocol: 'Torznab', baseUrl: '', apiPath: '/api', apiKey: '', movieCategories: [2000], tvCategories: [5000],
@@ -12,7 +16,7 @@ const blankIndexer = (): Indexer => ({
 
 @Component({
   selector: 'kr-indexers',
-  imports: [FormsModule, Modal],
+  imports: [FormsModule, Modal, CategoryPicker],
   template: `
     <div class="mb-6 flex items-center gap-3">
       <h1 class="page-title mr-auto">Indexers</h1>
@@ -62,8 +66,33 @@ const blankIndexer = (): Indexer => ({
             <p class="hint">Base URL of the Torznab endpoint. The API path is appended (Jackett: …/torznab with path “/api”).</p>
           </div>
           <div class="sm:col-span-2"><label class="label">API key</label><input class="input font-mono" [(ngModel)]="f.apiKey" autocomplete="off" /></div>
-          <div><label class="label">Movie categories</label><input class="input" [ngModel]="f.movieCategories.join(',')" (ngModelChange)="f.movieCategories = parseCats($event)" /></div>
-          <div><label class="label">TV categories</label><input class="input" [ngModel]="f.tvCategories.join(',')" (ngModelChange)="f.tvCategories = parseCats($event)" /></div>
+          <div class="flex items-center gap-2 sm:col-span-2">
+            <span class="text-sm text-slate-400">
+              @if (categories().length > 0) { {{ categories().length }} categories from the indexer. }
+              @else if (capsError()) { <span class="text-rose-300">Could not load categories: {{ capsError() }}</span> }
+              @else { Categories can be loaded from the indexer once the URL and API key are filled in. }
+            </span>
+            <span class="flex-1"></span>
+            <button type="button" class="btn-secondary btn-sm" (click)="loadCategories(f)" [disabled]="loadingCaps() || !f.baseUrl">
+              {{ loadingCaps() ? 'Loading…' : categories().length > 0 ? 'Reload categories' : 'Load categories' }}
+            </button>
+          </div>
+          <div>
+            <label class="label">Movie categories</label>
+            @if (categories().length > 0) {
+              <kr-category-picker [categories]="categories()" [range]="movieRange" [(selected)]="f.movieCategories" />
+            } @else {
+              <input class="input" [ngModel]="f.movieCategories.join(',')" (ngModelChange)="f.movieCategories = parseCats($event)" />
+            }
+          </div>
+          <div>
+            <label class="label">TV categories</label>
+            @if (categories().length > 0) {
+              <kr-category-picker [categories]="categories()" [range]="tvRange" [(selected)]="f.tvCategories" />
+            } @else {
+              <input class="input" [ngModel]="f.tvCategories.join(',')" (ngModelChange)="f.tvCategories = parseCats($event)" />
+            }
+          </div>
           <div><label class="label">Priority</label><input class="input" type="number" min="1" max="50" [(ngModel)]="f.priority" /><p class="hint">Lower wins ties between equal releases.</p></div>
           <div><label class="label">Minimum seeders</label><input class="input" type="number" min="0" [(ngModel)]="f.minimumSeeders" /></div>
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="f.enabled" /> Enabled</label>
@@ -95,6 +124,11 @@ export class IndexersPage implements OnInit {
   protected readonly test = signal<IndexerTestResult | null>(null);
   protected readonly testing = signal(false);
   protected readonly saving = signal(false);
+  protected readonly categories = signal<IndexerCategory[]>([]);
+  protected readonly capsError = signal<string | null>(null);
+  protected readonly loadingCaps = signal(false);
+  protected readonly movieRange = MOVIE_RANGE;
+  protected readonly tvRange = TV_RANGE;
 
   ngOnInit() { this.load(); }
 
@@ -104,12 +138,48 @@ export class IndexersPage implements OnInit {
 
   edit(i: Indexer | null) {
     this.test.set(null);
-    this.form.set(i ? structuredClone(i) : blankIndexer());
+    this.categories.set([]);
+    this.capsError.set(null);
+    const form = i ? structuredClone(i) : blankIndexer();
+    this.form.set(form);
+    if (i) this.loadCategories(form);
+  }
+
+  async loadCategories(f: Indexer) {
+    this.loadingCaps.set(true);
+    this.capsError.set(null);
+    try {
+      const result = await this.api.indexerCapabilities(f);
+      if (result.success && result.capabilities) this.applyCategories(f, result.capabilities.categories);
+      else this.capsError.set(result.message ?? 'Unknown error');
+    } catch (e) {
+      this.capsError.set(errorMessage(e));
+    } finally {
+      this.loadingCaps.set(false);
+    }
+  }
+
+  /** Shows the indexer's categories; if none of the current selection exists there, picks the standard ones it offers. */
+  private applyCategories(f: Indexer, categories: IndexerCategory[]) {
+    this.categories.set(categories);
+    const known = new Set(categories.map(c => c.id));
+    const suggest = ([min, max]: [number, number]) => {
+      const inRange = categories.filter(c => c.id >= min && c.id <= max);
+      const parents = inRange.filter(c => c.parentId == null);
+      return (parents.length > 0 ? parents : inRange).map(c => c.id);
+    };
+    if (categories.length > 0 && !f.movieCategories.some(id => known.has(id))) f.movieCategories = suggest(MOVIE_RANGE);
+    if (categories.length > 0 && !f.tvCategories.some(id => known.has(id))) f.tvCategories = suggest(TV_RANGE);
+    this.form.set({ ...f });
   }
 
   async runTest(f: Indexer) {
     this.testing.set(true);
-    try { this.test.set(await this.api.testIndexer(f)); }
+    try {
+      const result = await this.api.testIndexer(f);
+      this.test.set(result);
+      if (result.success && result.capabilities) this.applyCategories(f, result.capabilities.categories);
+    }
     catch (e) { this.test.set({ success: false, message: errorMessage(e) }); }
     finally { this.testing.set(false); }
   }

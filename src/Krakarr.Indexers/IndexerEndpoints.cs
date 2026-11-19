@@ -78,6 +78,20 @@ public static class IndexerEndpoints
             }
         });
 
+        // Capabilities (search modes + categories) of a possibly unsaved indexer configuration.
+        group.MapPost("/capabilities", async (Indexer input, ITorznabClient client, CancellationToken ct) =>
+        {
+            if (Validate(input) is { } problem) return problem;
+            try
+            {
+                return Results.Ok(new IndexerTestResult(true, null, await client.GetCapabilitiesAsync(input, forceRefresh: true, ct)));
+            }
+            catch (Exception ex) when (ex is IndexerException or HttpRequestException or TaskCanceledException)
+            {
+                return Results.Ok(new IndexerTestResult(false, ex.Message, null));
+            }
+        });
+
         // Manual search across indexers (Prowlarr-style).
         app.MapGet("/api/v1/search", async (
             string? query, SearchType? type, string? imdbId, int? tmdbId, int? tvdbId, int? season, int? episode, string? indexerIds,

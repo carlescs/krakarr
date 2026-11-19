@@ -23,9 +23,10 @@ export interface Indexer {
 
 export interface IndexerCapabilities {
   searchAvailable: boolean; movieSearchAvailable: boolean; movieSearchParams: string[];
-  tvSearchAvailable: boolean; tvSearchParams: string[]; categories: { id: number; name: string }[];
+  tvSearchAvailable: boolean; tvSearchParams: string[]; categories: IndexerCategory[];
 }
 
+export interface IndexerCategory { id: number; name: string; parentId?: number | null; }
 export interface IndexerTestResult { success: boolean; message?: string; capabilities?: IndexerCapabilities; }
 export interface IndexerError { indexerId: number; indexerName: string; message: string; }
 

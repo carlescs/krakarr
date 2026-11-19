@@ -73,6 +73,7 @@ export class Api {
   saveIndexer(i: Indexer) { return i.id ? this.put<Indexer>(`indexers/${i.id}`, i) : this.post<Indexer>('indexers', i); }
   deleteIndexer(id: number) { return this.delete<void>(`indexers/${id}`); }
   testIndexer(i: Indexer) { return this.post<IndexerTestResult>('indexers/test', i); }
+  indexerCapabilities(i: Indexer) { return this.post<IndexerTestResult>('indexers/capabilities', i); }
   search(query: string, type: SearchType) {
     return this.get<{ results: SearchResult[]; errors: IndexerError[] }>('search', { query, type });
   }

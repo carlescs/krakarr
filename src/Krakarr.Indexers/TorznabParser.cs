@@ -110,11 +110,19 @@ public static class TorznabParser
         var movie = ReadMode(searching?.Element("movie-search"));
         var tv = ReadMode(searching?.Element("tv-search"));
 
-        var categories = root.Element("categories")?.Elements("category")
-            .SelectMany(c => new[] { c }.Concat(c.Elements("subcat")))
-            .Select(c => new IndexerCategory(ParseInt((string?)c.Attribute("id")) ?? 0, (string?)c.Attribute("name") ?? string.Empty))
-            .Where(c => c.Id > 0)
-            .ToList() ?? [];
+        // Parents followed by their subcategories (subcats keep a reference to the parent).
+        var categories = new List<IndexerCategory>();
+        foreach (var parent in root.Element("categories")?.Elements("category") ?? [])
+        {
+            var parentId = ParseInt((string?)parent.Attribute("id")) ?? 0;
+            if (parentId <= 0) continue;
+            categories.Add(new IndexerCategory(parentId, (string?)parent.Attribute("name") ?? string.Empty));
+            foreach (var sub in parent.Elements("subcat"))
+            {
+                var id = ParseInt((string?)sub.Attribute("id")) ?? 0;
+                if (id > 0) categories.Add(new IndexerCategory(id, (string?)sub.Attribute("name") ?? string.Empty, parentId));
+            }
+        }
 
         return new IndexerCapabilities
         {
@@ -175,7 +183,8 @@ public static class TorznabParser
         DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var d) ? d : null;
 }
 
-public sealed record IndexerCategory(int Id, string Name);
+/// <summary>A category advertised by an indexer; <paramref name="ParentId"/> is set for subcategories.</summary>
+public sealed record IndexerCategory(int Id, string Name, int? ParentId = null);
 
 public sealed record IndexerCapabilities
 {

@@ -89,6 +89,9 @@ public class TorznabTests
         Assert.Contains("imdbid", caps.MovieSearchParams);
         Assert.Contains("tvdbid", caps.TvSearchParams);
         Assert.Equal(3, caps.Categories.Count);
+        Assert.Equal(new IndexerCategory(2000, "Movies"), caps.Categories[0]);
+        Assert.Equal(new IndexerCategory(2040, "Movies/HD", 2000), caps.Categories[1]);
+        Assert.Equal(new IndexerCategory(5000, "TV"), caps.Categories[2]);
     }
 
     [Fact]
