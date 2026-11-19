@@ -1,7 +1,7 @@
 services:
   krakarr:
-    image: krakarr:latest
-    build: .
+    image: ghcr.io/carlescs/krakarr:latest   # or a version: ghcr.io/carlescs/krakarr:0.1.0, or :edge for main
+    # build: .                               # build locally instead of pulling
     container_name: krakarr
     restart: unless-stopped
     environment:

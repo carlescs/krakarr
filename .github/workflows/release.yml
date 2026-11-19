@@ -1,0 +1,186 @@
+name: Release
+
+# Every push to main runs CI, then:
+#   - computes the next semantic version from Conventional Commits since the last vX.Y.Z tag
+#     (feat → minor, fix/perf → patch, breaking → major; before 1.0 breaking bumps minor),
+#   - publishes a multi-arch image to ghcr.io/<owner>/krakarr (always tagged "edge" + sha),
+#   - when a release is due, also tags the image X.Y.Z / X.Y / X / latest and creates the
+#     git tag + GitHub release with generated notes.
+# "Run workflow" creates a release by hand (auto/patch/minor/major, an explicit version, or a prerelease).
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.github/ISSUE_TEMPLATE/**'
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump (auto = derive from commits; falls back to patch)
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+      version:
+        description: Explicit version (e.g. 1.4.0) — overrides bump
+        type: string
+        required: false
+      prerelease:
+        description: Prerelease identifier (e.g. rc, beta) — creates X.Y.Z-rc.N
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/krakarr
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  version:
+    name: Determine version
+    runs-on: ubuntu-latest
+    needs: ci
+    outputs:
+      release: ${{ steps.next.outputs.release }}
+      version: ${{ steps.next.outputs.version }}
+      tag: ${{ steps.next.outputs.tag }}
+      prerelease: ${{ steps.next.outputs.prerelease }}
+      build-version: ${{ steps.build.outputs.version }}
+    steps:
+      - name: Only main can be released
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Releases can only be created from main (got ${{ github.ref }})"
+          exit 1
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Compute next version
+        id: next
+        env:
+          BUMP: ${{ inputs.bump || 'auto' }}
+          EXPLICIT: ${{ inputs.version }}
+          PRE: ${{ inputs.prerelease }}
+        run: |
+          args=(--bump "$BUMP" --notes-file release-notes.md)
+          [ -n "$EXPLICIT" ] && args+=(--version "$EXPLICIT")
+          [ -n "$PRE" ] && args+=(--prerelease "$PRE")
+          [ "${{ github.event_name }}" = "workflow_dispatch" ] && args+=(--manual)
+          node scripts/release/next-version.mjs "${args[@]}"
+      - name: Version used for this build
+        id: build
+        run: |
+          if [ "${{ steps.next.outputs.release }}" = "true" ]; then
+            echo "version=${{ steps.next.outputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            # Not a release: a sortable dev version based on the commit count.
+            echo "version=0.0.0-edge.$(git rev-list --count HEAD)+${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Summary
+        run: |
+          {
+            echo "### Version"
+            if [ "${{ steps.next.outputs.release }}" = "true" ]; then
+              echo "Releasing **${{ steps.next.outputs.tag }}** (bump: ${{ steps.next.outputs.bump }}, previous: ${{ steps.next.outputs.previous || 'none' }})"
+              echo; cat release-notes.md
+            else
+              echo "No release: no feat/fix/perf/breaking commits since ${{ steps.next.outputs.previous || 'the beginning' }}. Publishing **edge** image only."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: steps.next.outputs.release == 'true'
+        with:
+          name: release-notes
+          path: release-notes.md
+
+  image:
+    name: Build & publish image
+    runs-on: ubuntu-latest
+    needs: version
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=edge
+            type=sha,format=short
+            type=semver,pattern={{version}},value=${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.release == 'true' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.release == 'true' && needs.version.outputs.prerelease == 'false' }}
+            type=semver,pattern={{major}},value=${{ needs.version.outputs.version }},enable=${{ needs.version.outputs.release == 'true' && needs.version.outputs.prerelease == 'false' && !startsWith(needs.version.outputs.version, '0.') }}
+            type=raw,value=latest,enable=${{ needs.version.outputs.release == 'true' && needs.version.outputs.prerelease == 'false' }}
+          labels: |
+            org.opencontainers.image.title=Krakarr
+            org.opencontainers.image.version=${{ needs.version.outputs.build-version }}
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ needs.version.outputs.build-version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+      - name: Summary
+        run: |
+          {
+            echo "### Image"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    name: Tag & GitHub release
+    runs-on: ubuntu-latest
+    needs: [version, image]
+    if: needs.version.outputs.release == 'true'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          {
+            echo
+            echo "### Docker"
+            echo '```bash'
+            echo "docker pull ${IMAGE}:${{ needs.version.outputs.version }}"
+            echo '```'
+          } >> release-notes.md
+          flags=()
+          [ "${{ needs.version.outputs.prerelease }}" = "true" ] && flags+=(--prerelease) || flags+=(--latest)
+          gh release create "$TAG" --repo "${{ github.repository }}" --target "${{ github.sha }}" \
+            --title "Krakarr $TAG" --notes-file release-notes.md "${flags[@]}"

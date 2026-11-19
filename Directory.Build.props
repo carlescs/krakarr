@@ -8,6 +8,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <!-- Npgsql.EntityFrameworkCore.PostgreSQL 11 is RC and pins EF Core RC exactly; we run it on EF Core 11 GA. -->
     <NoWarn>$(NoWarn);NU1608</NoWarn>
-    <Version>0.1.0</Version>
+    <!-- Real versions come from git tags (vX.Y.Z) and are passed by CI: -p:Version=1.2.3 -->
+    <Version Condition="'$(Version)' == ''">0.0.0-dev</Version>
   </PropertyGroup>
 </Project>

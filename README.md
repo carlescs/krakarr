@@ -21,9 +21,21 @@ There is nothing to wire together: no API keys between apps, no download-client 
 
 ## Quick start (Docker)
 
+Images are published to the GitHub Container Registry for `linux/amd64` and `linux/arm64`:
+
 ```bash
-docker compose up -d --build
+docker run -d --name krakarr -p 8787:8787 -p 6881:6881 -p 6881:6881/udp \
+  -v ./config:/config -v /path/to/data:/data ghcr.io/carlescs/krakarr:latest
 ```
+
+Or edit `docker-compose.yml` (volumes) and run `docker compose up -d`. Image tags:
+
+| Tag | Meaning |
+|---|---|
+| `latest` | Newest stable release |
+| `X.Y.Z`, `X.Y`, `X` | A specific release (`X` only from 1.0 on) |
+| `X.Y.Z-rc.N` | Prereleases |
+| `edge`, `sha-<commit>` | Every push to `main` |
 
 Then open <http://localhost:8787>:
 
@@ -195,6 +207,31 @@ dotnet ef migrations add <Name> --project src/Krakarr.Data.Postgres --startup-pr
 ```
 
 API documentation (OpenAPI) is served at `/api/openapi/v1.json`.
+
+### Commits, versions and releases
+
+- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org): `feat(series): add calendar`,
+  `fix: crash on empty folder`, `feat!: …` or a `BREAKING CHANGE:` footer for breaking changes.
+  CI checks every pushed commit. Enable the same check locally with `git config core.hooksPath .githooks`.
+- Versions are [SemVer](https://semver.org) git tags (`vX.Y.Z`). They are computed by `scripts/release/next-version.mjs`:
+
+  | Commit | Bump |
+  |---|---|
+  | `feat` | minor |
+  | `fix` / `perf` | patch |
+  | breaking | major (minor while the version is below 1.0) |
+  | `docs`, `chore`, `ci`, `test`, `refactor`, … | none |
+- **CI** (`.github/workflows/ci.yml`) runs commit linting, backend and frontend tests on pull requests and on every push to `main`.
+- **Release** (`.github/workflows/release.yml`), on every push to `main`:
+  1. Runs CI.
+  2. Publishes `ghcr.io/carlescs/krakarr:edge`.
+  3. If the new commits warrant a version, it also creates the `vX.Y.Z` tag, a GitHub release with grouped notes, and the
+     `X.Y.Z`/`X.Y`/`latest` image tags.
+- **Manual release:** *Actions → Release → Run workflow*:
+  - `bump`: `auto` (from commits, at least a patch), `patch`, `minor` or `major`.
+  - `version`: an explicit version, e.g. `1.0.0`.
+  - `prerelease`: an identifier such as `rc`, which produces `X.Y.Z-rc.N`.
+- Local builds report version `0.0.0-dev`. CI passes the real one with `-p:Version=` and `--build-arg VERSION=`.
 
 ### Notes
 
