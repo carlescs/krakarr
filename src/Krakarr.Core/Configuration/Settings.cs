@@ -34,9 +34,41 @@ public sealed record MetadataSettings : ISettingsSection
     public string Language { get; init; } = "en-US";
 }
 
+public enum DownloadClientKind
+{
+    /// <summary>The torrent engine built into Krakarr (MonoTorrent).</summary>
+    Embedded = 0,
+    /// <summary>An external qBittorrent instance, driven through its WebUI API.</summary>
+    QBittorrent = 1,
+}
+
+public sealed record QBittorrentSettings
+{
+    /// <summary>Placeholder returned instead of the stored password; sending it back keeps the stored value.</summary>
+    public const string PasswordMask = "********";
+
+    public string Url { get; init; } = "http://localhost:8080";
+    public string? Username { get; init; } = "admin";
+    public string? Password { get; init; }
+    /// <summary>Every torrent Krakarr adds gets this tag; only torrents with it are listed or controlled.</summary>
+    public string Tag { get; init; } = "krakarr";
+    /// <summary>Optional category override; empty keeps Krakarr's per-grab category (movies, manual, ...).</summary>
+    public string? Category { get; init; }
+    /// <summary>Optional save path passed to qBittorrent; empty uses qBittorrent's default.</summary>
+    public string? SavePath { get; init; }
+    /// <summary>Remote path mapping: path prefix as qBittorrent sees it ...</summary>
+    public string? RemotePathPrefix { get; init; }
+    /// <summary>... and the same location as Krakarr sees it.</summary>
+    public string? LocalPathPrefix { get; init; }
+}
+
 public sealed record DownloadClientSettings : ISettingsSection
 {
     public static string SectionKey => "downloads";
+    public DownloadClientKind Client { get; init; } = DownloadClientKind.Embedded;
+    public QBittorrentSettings QBittorrent { get; init; } = new();
+
+    // ---- Built-in engine options (ignored when using qBittorrent) ----
     public string? DownloadDirectory { get; init; }
     public int ListenPort { get; init; } = 6881;
     /// <summary>KiB/s, 0 = unlimited.</summary>

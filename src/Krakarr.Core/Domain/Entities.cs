@@ -153,10 +153,18 @@ public enum DownloadState
     Error = 6,
 }
 
-/// <summary>A torrent tracked by the embedded download engine.</summary>
+public static class DownloadClients
+{
+    public const string Embedded = "embedded";
+    public const string QBittorrent = "qbittorrent";
+}
+
+/// <summary>A torrent tracked by Krakarr, in the built-in engine or an external client.</summary>
 public class Download
 {
     public int Id { get; set; }
+    /// <summary>Which client owns the torrent (<see cref="DownloadClients"/>).</summary>
+    public string Client { get; set; } = DownloadClients.Embedded;
     /// <summary>Lower-case hex info hash (v1 or v2).</summary>
     public required string InfoHash { get; set; }
     public required string Name { get; set; }

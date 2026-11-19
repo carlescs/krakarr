@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../../core/api';
 import { BytesPipe } from '../../core/format';
 import {
-  AutomationSettings, DirectoryListing, DownloadClientSettings, GeneralSettings, MediaManagementSettings, MetadataSettings, Quality,
+  AutomationSettings, DirectoryListing, DownloadClientKind, DownloadClientSettings, DownloadClientTestResult, GeneralSettings, MediaManagementSettings, MetadataSettings, Quality,
   QualityProfile, RootFolder, SystemStatus,
 } from '../../core/models';
 import { Toasts } from '../../core/toast';
@@ -83,6 +83,67 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'metadata' | 'general';
     <!-- Download client -->
     @if (tab() === 'downloads') {
       @if (downloads(); as d) {
+        <section class="card mb-6 p-5">
+          <h2 class="mb-3 font-semibold text-white">Download client</h2>
+          <div class="grid gap-3 sm:grid-cols-2">
+            @for (opt of clientOptions; track opt.id) {
+              <label class="flex cursor-pointer gap-3 rounded-lg border p-4 transition"
+                     [class]="d.client === opt.id ? 'border-accent-500 bg-accent-500/5' : 'border-surface-700 hover:border-surface-600'">
+                <input type="radio" name="client" class="mt-1 accent-accent-500" [value]="opt.id" [(ngModel)]="d.client" (ngModelChange)="clientTest.set(null)" />
+                <span>
+                  <span class="block text-sm font-medium text-white">{{ opt.label }}</span>
+                  <span class="block text-xs text-slate-400">{{ opt.description }}</span>
+                </span>
+              </label>
+            }
+          </div>
+        </section>
+
+        @if (d.client === 'QBittorrent') {
+          <section class="card grid gap-4 p-5 sm:grid-cols-2">
+            <h2 class="font-semibold text-white sm:col-span-2">qBittorrent</h2>
+            <div class="sm:col-span-2">
+              <label class="label">WebUI URL</label>
+              <input class="input font-mono" [(ngModel)]="d.qBittorrent.url" placeholder="http://qbittorrent:8080" />
+            </div>
+            <div><label class="label">Username</label><input class="input" [(ngModel)]="d.qBittorrent.username" autocomplete="off" /></div>
+            <div><label class="label">Password</label><input class="input" type="password" [(ngModel)]="d.qBittorrent.password" autocomplete="new-password" /></div>
+            <div>
+              <label class="label">Tag</label>
+              <input class="input" [(ngModel)]="d.qBittorrent.tag" />
+              <p class="hint">Krakarr tags every torrent it adds and only shows and manages torrents with this tag.</p>
+            </div>
+            <div>
+              <label class="label">Category (optional)</label>
+              <input class="input" [(ngModel)]="d.qBittorrent.category" placeholder="per download (movies, manual…)" />
+            </div>
+            <div class="sm:col-span-2">
+              <label class="label">Save path (optional)</label>
+              <input class="input font-mono" [(ngModel)]="d.qBittorrent.savePath" placeholder="qBittorrent default" />
+            </div>
+            <div>
+              <label class="label">Remote path (as qBittorrent sees it)</label>
+              <input class="input font-mono" [(ngModel)]="d.qBittorrent.remotePathPrefix" placeholder="/downloads" />
+            </div>
+            <div>
+              <label class="label">Local path (as Krakarr sees it)</label>
+              <input class="input font-mono" [(ngModel)]="d.qBittorrent.localPathPrefix" placeholder="/data/downloads" />
+            </div>
+            <p class="hint sm:col-span-2">
+              Only needed when qBittorrent runs in another container and sees the downloads under a different path.
+              Seeding limits are managed by qBittorrent's own share-limit settings.
+            </p>
+            @if (clientTest(); as t) {
+              <div class="rounded-lg px-3 py-2 text-sm sm:col-span-2" [class]="t.success ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'">
+                @if (t.success) { Connected to {{ t.version }} · {{ t.message }} } @else { {{ t.message }} }
+              </div>
+            }
+            <div class="flex justify-end gap-2 sm:col-span-2">
+              <button class="btn-secondary" (click)="testClient(d)" [disabled]="testingClient()">{{ testingClient() ? 'Testing…' : 'Test' }}</button>
+              <button class="btn-primary" (click)="save('downloads', d)">Save</button>
+            </div>
+          </section>
+        } @else {
         <section class="card grid gap-4 p-5 sm:grid-cols-2">
           <h2 class="font-semibold text-white sm:col-span-2">Built-in torrent client</h2>
           <div class="sm:col-span-2"><label class="label">Download directory</label><input class="input font-mono" [(ngModel)]="d.downloadDirectory" [placeholder]="status()?.downloadDirectory ?? ''" />
@@ -97,6 +158,7 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'metadata' | 'general';
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="d.enablePortForwarding" /> UPnP / NAT-PMP port forwarding</label>
           <div class="flex justify-end sm:col-span-2"><button class="btn-primary" (click)="save('downloads', d)">Save</button></div>
         </section>
+        }
       }
       @if (automation(); as a) {
         <section class="card mt-6 grid gap-4 p-5 sm:grid-cols-2">
@@ -244,6 +306,12 @@ export class SettingsPage implements OnInit {
   protected readonly status = signal<SystemStatus | null>(null);
   protected readonly profileForm = signal<QualityProfile | null>(null);
   protected readonly browser = signal<DirectoryListing | null>(null);
+  protected readonly clientOptions: { id: DownloadClientKind; label: string; description: string }[] = [
+    { id: 'Embedded', label: 'Built-in', description: 'Krakarr downloads torrents itself. Nothing else to run.' },
+    { id: 'QBittorrent', label: 'qBittorrent', description: 'Use an existing qBittorrent via its WebUI; only tagged torrents are managed.' },
+  ];
+  protected readonly clientTest = signal<DownloadClientTestResult | null>(null);
+  protected readonly testingClient = signal(false);
   protected readonly selectableQualities = computed(() => this.qualities().filter(q => q.id !== 0));
   protected readonly namingTokens = ['Movie Title', 'Movie CleanTitle', 'Original Title', 'Release Year', 'Quality', 'Release Group', 'TmdbId', 'ImdbId']
     .map(t => `{${t}}`).join(', ');
@@ -279,6 +347,13 @@ export class SettingsPage implements OnInit {
     } catch (e) {
       this.toasts.error(errorMessage(e));
     }
+  }
+
+  async testClient(settings: DownloadClientSettings) {
+    this.testingClient.set(true);
+    try { this.clientTest.set(await this.api.testDownloadClient(settings)); }
+    catch (e) { this.clientTest.set({ success: false, message: errorMessage(e) }); }
+    finally { this.testingClient.set(false); }
   }
 
   // Root folders

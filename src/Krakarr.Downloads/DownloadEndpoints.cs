@@ -1,4 +1,7 @@
+using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
+using Krakarr.Data;
+using Krakarr.Downloads.QBittorrent;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -68,24 +71,54 @@ public static class DownloadEndpoints
             }
         });
 
-        group.MapPost("/{hash}/pause", async (string hash, ITorrentEngine engine) =>
+        group.MapPost("/{hash}/pause", (string hash, ITorrentEngine engine) => Control(() => engine.PauseAsync(hash)));
+        group.MapPost("/{hash}/resume", (string hash, ITorrentEngine engine) => Control(() => engine.ResumeAsync(hash)));
+        group.MapDelete("/{hash}", (string hash, bool? deleteData, ITorrentEngine engine) =>
+            Control(() => engine.RemoveAsync(hash, deleteData ?? false)));
+
+        // Which client is active and whether it is reachable.
+        group.MapGet("/client", async (DownloadClientRouter router, ISettingsService settings, CancellationToken ct) =>
         {
-            try { await engine.PauseAsync(hash); return Results.NoContent(); }
-            catch (KeyNotFoundException) { return Results.NotFound(); }
+            var s = await settings.GetAsync<DownloadClientSettings>(ct);
+            var client = router.Get(s.Client);
+            return new
+            {
+                Kind = s.Client,
+                Connected = client.LastError is null,
+                Error = client.LastError,
+                Tag = s.Client == DownloadClientKind.QBittorrent ? s.QBittorrent.Tag : null,
+            };
         });
 
-        group.MapPost("/{hash}/resume", async (string hash, ITorrentEngine engine) =>
+        // Test a (possibly unsaved) configuration. A masked password means "use the stored one".
+        group.MapPost("/client/test", async (DownloadClientSettings input, DownloadClientRouter router, ISettingsService settings, CancellationToken ct) =>
         {
-            try { await engine.ResumeAsync(hash); return Results.NoContent(); }
-            catch (KeyNotFoundException) { return Results.NotFound(); }
-        });
+            if (input.QBittorrent.Password == QBittorrentSettings.PasswordMask)
+            {
+                var stored = await settings.GetAsync<DownloadClientSettings>(ct);
+                input = input with { QBittorrent = input.QBittorrent with { Password = stored.QBittorrent.Password } };
+            }
 
-        group.MapDelete("/{hash}", async (string hash, bool? deleteData, ITorrentEngine engine) =>
-        {
-            await engine.RemoveAsync(hash, deleteData ?? false);
-            return Results.NoContent();
+            return await router.Get(input.Client).TestAsync(input, ct);
         });
 
         return app;
+    }
+
+    private static async Task<IResult> Control(Func<Task> action)
+    {
+        try
+        {
+            await action();
+            return Results.NoContent();
+        }
+        catch (KeyNotFoundException)
+        {
+            return Results.NotFound();
+        }
+        catch (Exception ex) when (ex is QBittorrentException or InvalidOperationException)
+        {
+            return Results.Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
+        }
     }
 }

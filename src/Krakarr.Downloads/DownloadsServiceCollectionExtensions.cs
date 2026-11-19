@@ -1,3 +1,4 @@
+using Krakarr.Downloads.QBittorrent;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Krakarr.Downloads;
@@ -6,9 +7,21 @@ public static class DownloadsServiceCollectionExtensions
 {
     public static IServiceCollection AddKrakarrDownloads(this IServiceCollection services)
     {
-        services.AddSingleton<TorrentEngine>();
-        services.AddSingleton<ITorrentEngine>(sp => sp.GetRequiredService<TorrentEngine>());
-        services.AddHostedService(sp => sp.GetRequiredService<TorrentEngine>());
+        // Built-in engine (runs only while selected).
+        services.AddSingleton<EmbeddedTorrentEngine>();
+        services.AddSingleton<IDownloadClientImpl>(sp => sp.GetRequiredService<EmbeddedTorrentEngine>());
+        services.AddHostedService(sp => sp.GetRequiredService<EmbeddedTorrentEngine>());
+
+        // External qBittorrent (syncs only while selected).
+        services.AddSingleton<QBittorrentApiFactory>();
+        services.AddSingleton<QBittorrentEngine>();
+        services.AddSingleton<IDownloadClientImpl>(sp => sp.GetRequiredService<QBittorrentEngine>());
+        services.AddHostedService(sp => sp.GetRequiredService<QBittorrentEngine>());
+
+        // Everyone else talks to whichever client is selected.
+        services.AddSingleton<DownloadClientRouter>();
+        services.AddSingleton<ITorrentEngine>(sp => sp.GetRequiredService<DownloadClientRouter>());
+
         services.AddScoped<IDownloadService, DownloadService>();
         services.AddHttpClient(DownloadService.HttpClientName, c =>
             {

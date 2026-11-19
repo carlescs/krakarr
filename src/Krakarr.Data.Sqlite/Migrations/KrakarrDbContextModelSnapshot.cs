@@ -15,7 +15,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261119174027_InitialCreate";
+    public override string LastMigrationId => "20261119181535_AddDownloadClient";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -34,6 +34,13 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<string>("Category")
                     .IsRequired()
                     .HasColumnType("TEXT");
+
+                b.Property<string>("Client")
+                    .IsRequired()
+                    .ValueGeneratedOnAdd()
+                    .HasMaxLength(32)
+                    .HasColumnType("TEXT")
+                    .HasDefaultValue("embedded");
 
                 b.Property<long?>("CompletedAt")
                     .HasColumnType("INTEGER");

@@ -54,7 +54,7 @@ public sealed class MovieImportService(
         }
 
         var media = await settings.GetAsync<MediaManagementSettings>(ct);
-        var video = FindMainVideoFile(download, media.MinimumVideoFileSizeMb);
+        var video = await FindMainVideoFileAsync(download, media.MinimumVideoFileSizeMb, ct);
         if (video is null)
         {
             await FailAsync(download, "Import failed: no video file found in download", ct);
@@ -129,9 +129,9 @@ public sealed class MovieImportService(
         await eventHub.PublishAsync(EventNames.HistoryAdded, entry, ct);
     }
 
-    private (string Path, long Length)? FindMainVideoFile(Download download, int minSizeMb)
+    private async Task<(string Path, long Length)?> FindMainVideoFileAsync(Download download, int minSizeMb, CancellationToken ct)
     {
-        IEnumerable<(string Path, long Length)> files = engine.GetFiles(download.InfoHash);
+        IEnumerable<(string Path, long Length)> files = await engine.GetFilesAsync(download.InfoHash, ct);
         if (!files.Any())
         {
             var root = Path.Combine(download.SavePath, download.Name);

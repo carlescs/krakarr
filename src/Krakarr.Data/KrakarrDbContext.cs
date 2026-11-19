@@ -71,6 +71,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
             e.HasIndex(x => x.InfoHash).IsUnique();
             e.HasIndex(x => x.MovieId);
             e.Property(x => x.InfoHash).HasMaxLength(64);
+            e.Property(x => x.Client).HasMaxLength(32).HasDefaultValue(DownloadClients.Embedded);
         });
 
         b.Entity<HistoryEntry>(e =>

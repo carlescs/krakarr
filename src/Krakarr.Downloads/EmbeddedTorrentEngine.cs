@@ -13,126 +13,70 @@ using MonoTorrent.Client;
 
 namespace Krakarr.Downloads;
 
-public sealed record AddTorrentOptions
-{
-    public string Category { get; init; } = "default";
-    public string? SavePath { get; init; }
-    public bool Paused { get; init; }
-    public MediaType? MediaType { get; init; }
-    public int? MovieId { get; init; }
-    public int? SeriesId { get; init; }
-    public int? QualityId { get; init; }
-    public string? IndexerName { get; init; }
-    public string? DisplayName { get; init; }
-}
-
-public sealed record TorrentStatus
-{
-    public int Id { get; init; }
-    public required string InfoHash { get; init; }
-    public required string Name { get; init; }
-    public DownloadState State { get; init; }
-    public double Progress { get; init; }
-    public long Size { get; init; }
-    public long Downloaded { get; init; }
-    public long Uploaded { get; init; }
-    public long DownloadRate { get; init; }
-    public long UploadRate { get; init; }
-    public int Seeds { get; init; }
-    public int Leechers { get; init; }
-    public double Ratio { get; init; }
-    public long? EtaSeconds { get; init; }
-    public required string Category { get; init; }
-    public required string SavePath { get; init; }
-    public DateTimeOffset Added { get; init; }
-    public DateTimeOffset? CompletedAt { get; init; }
-    public int? MovieId { get; init; }
-    public bool Imported { get; init; }
-    public string? ImportMessage { get; init; }
-    public string? ErrorMessage { get; init; }
-}
-
-public interface ITorrentEngine
-{
-    Task<Download> AddMagnetAsync(string magnetUri, AddTorrentOptions options, CancellationToken ct = default);
-    Task<Download> AddTorrentAsync(byte[] torrentData, AddTorrentOptions options, CancellationToken ct = default);
-    Task PauseAsync(string infoHash);
-    Task ResumeAsync(string infoHash);
-    Task RemoveAsync(string infoHash, bool deleteData);
-    IReadOnlyList<TorrentStatus> GetStatuses();
-    /// <summary>Absolute paths of the files in a torrent, or empty if unknown/not yet available.</summary>
-    IReadOnlyList<(string Path, long Length)> GetFiles(string infoHash);
-    /// <summary>Marks a download as imported so the seeding policy can apply.</summary>
-    void MarkImported(string infoHash);
-}
-
-/// <summary>Hosts the embedded MonoTorrent engine and keeps the Download table in sync with it.</summary>
-public sealed class TorrentEngine(
+/// <summary>
+/// Hosts the embedded MonoTorrent engine and keeps its Download rows in sync with it.
+/// The engine only runs while "Built-in" is the selected download client.
+/// </summary>
+public sealed class EmbeddedTorrentEngine(
     IServiceScopeFactory scopeFactory,
     KrakarrPaths paths,
     SettingsCache settingsCache,
     IEventHub eventHub,
-    ILogger<TorrentEngine> logger) : BackgroundService, ITorrentEngine
+    ILogger<EmbeddedTorrentEngine> logger) : BackgroundService, IDownloadClientImpl
 {
     private readonly ConcurrentDictionary<string, TorrentManager> _managers = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, Download> _rows = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, long> _uploadBaseline = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, long> _downloadBaseline = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _lock = new(1, 1);
-    private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private ClientEngine? _engine;
     private DownloadClientSettings _settings = new();
     private volatile bool _settingsDirty;
 
     private ClientEngine Engine => _engine ?? throw new InvalidOperationException("Torrent engine is not started");
 
+    public DownloadClientKind Kind => DownloadClientKind.Embedded;
+
+    public string? LastError { get; private set; }
+
+    public Task<DownloadClientTestResult> TestAsync(DownloadClientSettings settings, CancellationToken ct = default) =>
+        Task.FromResult(new DownloadClientTestResult(true, "MonoTorrent (built-in)", null));
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        try
-        {
-            await StartEngineAsync(stoppingToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to start torrent engine");
-            _ready.TrySetException(ex);
-            return;
-        }
-
-        _ready.TrySetResult();
         settingsCache.Changed += key =>
         {
             if (key == DownloadClientSettings.SectionKey) _settingsDirty = true;
         };
 
-        var tick = 0;
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
         try
         {
-            while (await timer.WaitForNextTickAsync(stoppingToken))
+            while (!stoppingToken.IsCancellationRequested)
             {
-                tick++;
+                if (!await IsSelectedAsync(stoppingToken))
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+                    continue;
+                }
+
                 try
                 {
-                    if (_settingsDirty)
-                    {
-                        _settingsDirty = false;
-                        await ApplySettingsAsync(stoppingToken);
-                    }
-
-                    var statuses = GetStatuses();
-                    await eventHub.PublishAsync(EventNames.DownloadsUpdated, statuses, stoppingToken);
-
-                    // Persist state every 5 seconds.
-                    if (tick % 5 == 0)
-                    {
-                        await PersistAsync(statuses, stoppingToken);
-                    }
+                    await StartEngineAsync(stoppingToken);
+                    LastError = null;
+                    _ready.TrySetResult();
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
-                    logger.LogError(ex, "Torrent engine tick failed");
+                    logger.LogError(ex, "Failed to start torrent engine");
+                    LastError = ex.Message;
+                    await ShutdownEngineAsync();
+                    await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+                    continue;
                 }
+
+                await RunAsync(stoppingToken);
+                await ShutdownEngineAsync();
             }
         }
         catch (OperationCanceledException)
@@ -140,23 +84,81 @@ public sealed class TorrentEngine(
         }
     }
 
+    /// <summary>Runs the engine until the host stops or another download client is selected.</summary>
+    private async Task RunAsync(CancellationToken stoppingToken)
+    {
+        var tick = 0;
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        while (await timer.WaitForNextTickAsync(stoppingToken))
+        {
+            tick++;
+            try
+            {
+                if (_settingsDirty)
+                {
+                    _settingsDirty = false;
+                    if (!await IsSelectedAsync(stoppingToken))
+                    {
+                        logger.LogInformation("Another download client was selected; stopping the built-in torrent engine");
+                        return;
+                    }
+
+                    await ApplySettingsAsync(stoppingToken);
+                }
+
+                var statuses = GetStatuses();
+                await eventHub.PublishAsync(EventNames.DownloadsUpdated, statuses, stoppingToken);
+
+                // Persist state every 5 seconds.
+                if (tick % 5 == 0)
+                {
+                    await PersistAsync(statuses, stoppingToken);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogError(ex, "Torrent engine tick failed");
+            }
+        }
+    }
+
+    private async Task<bool> IsSelectedAsync(CancellationToken ct)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var settings = await scope.ServiceProvider.GetRequiredService<ISettingsService>().GetAsync<DownloadClientSettings>(ct);
+        return settings.Client == DownloadClientKind.Embedded;
+    }
+
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
         await base.StopAsync(cancellationToken);
-        if (_engine is not null)
-        {
-            try
-            {
-                await PersistAsync(GetStatuses(), CancellationToken.None);
-                await _engine.StopAllAsync(TimeSpan.FromSeconds(5));
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Error while stopping torrent engine");
-            }
+        await ShutdownEngineAsync();
+    }
 
-            _engine.Dispose();
+    private async Task ShutdownEngineAsync()
+    {
+        if (_engine is null)
+        {
+            return;
         }
+
+        try
+        {
+            await PersistAsync(GetStatuses(), CancellationToken.None);
+            await _engine.StopAllAsync(TimeSpan.FromSeconds(5));
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Error while stopping torrent engine");
+        }
+
+        _engine.Dispose();
+        _engine = null;
+        _managers.Clear();
+        _rows.Clear();
+        _uploadBaseline.Clear();
+        _downloadBaseline.Clear();
+        _ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 
     private async Task StartEngineAsync(CancellationToken ct)
@@ -169,7 +171,7 @@ public sealed class TorrentEngine(
         logger.LogInformation("Torrent engine listening on port {Port}", _settings.ListenPort);
 
         var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-        var rows = await db.Downloads.AsNoTracking().ToListAsync(ct);
+        var rows = await db.Downloads.AsNoTracking().Where(d => d.Client == DownloadClients.Embedded).ToListAsync(ct);
         foreach (var row in rows)
         {
             try
@@ -255,6 +257,7 @@ public sealed class TorrentEngine(
 
     private Download NewRow(string hash, string name, AddTorrentOptions o) => new()
     {
+        Client = DownloadClients.Embedded,
         InfoHash = hash,
         Name = name,
         Category = string.IsNullOrWhiteSpace(o.Category) ? "default" : o.Category,
@@ -269,7 +272,7 @@ public sealed class TorrentEngine(
 
     private async Task<Download> AddRowAsync(Download row, CancellationToken ct)
     {
-        await _ready.Task.WaitAsync(ct);
+        await _ready.Task.WaitAsync(TimeSpan.FromSeconds(30), ct);
         await _lock.WaitAsync(ct);
         try
         {
@@ -383,14 +386,14 @@ public sealed class TorrentEngine(
         }
     }
 
-    public IReadOnlyList<(string Path, long Length)> GetFiles(string infoHash)
+    public Task<IReadOnlyList<(string Path, long Length)>> GetFilesAsync(string infoHash, CancellationToken ct = default)
     {
         if (!_managers.TryGetValue(infoHash, out var manager) || !manager.HasMetadata)
         {
-            return [];
+            return Task.FromResult<IReadOnlyList<(string Path, long Length)>>([]);
         }
 
-        return manager.Files.Select(f => (f.FullPath, f.Length)).ToList();
+        return Task.FromResult<IReadOnlyList<(string Path, long Length)>>(manager.Files.Select(f => (f.FullPath, f.Length)).ToList());
     }
 
     public IReadOnlyList<TorrentStatus> GetStatuses()
@@ -458,7 +461,8 @@ public sealed class TorrentEngine(
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-        var rows = await db.Downloads.ToDictionaryAsync(d => d.InfoHash, StringComparer.OrdinalIgnoreCase, ct);
+        var rows = await db.Downloads.Where(d => d.Client == DownloadClients.Embedded)
+            .ToDictionaryAsync(d => d.InfoHash, StringComparer.OrdinalIgnoreCase, ct);
         var completedNow = new List<Download>();
 
         foreach (var status in statuses)

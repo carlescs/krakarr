@@ -18,7 +18,17 @@ public static class SettingsEndpoints
         MapSection<GeneralSettings>(settings, "general", (current, incoming) => incoming with { ApiKey = current.ApiKey });
         MapSection<MediaManagementSettings>(settings, "media");
         MapSection<MetadataSettings>(settings, "metadata");
-        MapSection<DownloadClientSettings>(settings, "downloads");
+        MapSection<DownloadClientSettings>(settings, "downloads",
+            merge: (current, incoming) => incoming.QBittorrent.Password == QBittorrentSettings.PasswordMask
+                ? incoming with { QBittorrent = incoming.QBittorrent with { Password = current.QBittorrent.Password } }
+                : incoming,
+            present: s => string.IsNullOrEmpty(s.QBittorrent.Password)
+                ? s
+                : s with { QBittorrent = s.QBittorrent with { Password = QBittorrentSettings.PasswordMask } },
+            validate: s => s.Client != DownloadClientKind.QBittorrent ? null
+                : string.IsNullOrWhiteSpace(s.QBittorrent.Tag) ? "A qBittorrent tag is required so Krakarr only manages its own torrents"
+                : !Uri.TryCreate(s.QBittorrent.Url, UriKind.Absolute, out var u) || (u.Scheme != "http" && u.Scheme != "https") ? "qBittorrent URL must be an absolute http(s) URL"
+                : null);
         MapSection<AutomationSettings>(settings, "automation");
 
         settings.MapPost("/general/regenerate-api-key", async (ISettingsService s, CancellationToken ct) =>
@@ -112,15 +122,26 @@ public static class SettingsEndpoints
         return app;
     }
 
-    private static void MapSection<T>(RouteGroupBuilder group, string name, Func<T, T, T>? merge = null)
+    private static void MapSection<T>(
+        RouteGroupBuilder group,
+        string name,
+        Func<T, T, T>? merge = null,
+        Func<T, T>? present = null,
+        Func<T, string?>? validate = null)
         where T : class, ISettingsSection, new()
     {
-        group.MapGet($"/{name}", (ISettingsService s, CancellationToken ct) => s.GetAsync<T>(ct));
+        present ??= v => v;
+        group.MapGet($"/{name}", async (ISettingsService s, CancellationToken ct) => present(await s.GetAsync<T>(ct)));
         group.MapPut($"/{name}", async (T input, ISettingsService s, CancellationToken ct) =>
         {
             var value = merge is null ? input : merge(await s.GetAsync<T>(ct), input);
+            if (validate?.Invoke(value) is { } error)
+            {
+                return Results.Problem(error, statusCode: StatusCodes.Status400BadRequest);
+            }
+
             await s.SaveAsync(value, ct);
-            return value;
+            return Results.Ok(present(value));
         });
     }
 

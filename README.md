@@ -6,7 +6,7 @@
 |---|---|---|
 | **Radarr** – movie library & automation | `Krakarr.Movies` | ✅ TMDB lookup, library, quality profiles, auto/interactive search, RSS sync, rename + hardlink import |
 | **Prowlarr** – indexer management | `Krakarr.Indexers` | ✅ Torznab/Newznab indexers, capability detection, aggregated search across indexers |
-| **qBittorrent** – torrent client | `Krakarr.Downloads` | ✅ Embedded [MonoTorrent](https://github.com/alanmcgovern/monotorrent) engine: magnets, .torrent files, DHT, speed limits, seeding ratio/time limits, fast-resume |
+| **qBittorrent** – torrent client | `Krakarr.Downloads` | ✅ Embedded [MonoTorrent](https://github.com/alanmcgovern/monotorrent) engine: magnets, .torrent files, DHT, speed limits, seeding ratio/time limits, fast-resume — *or* drive an existing qBittorrent (tag-scoped) |
 | **Sonarr** – TV series | `Krakarr.Series` | 🚧 TVDB lookup + data model; full library management is the next milestone |
 | **Bazarr** – subtitles | `Krakarr.Subtitles` | 🚧 Provider interface; providers land in a later milestone |
 
@@ -45,6 +45,23 @@ Then open <http://localhost:8787>:
 > **Why one `/data` mount?** Krakarr keeps seeding the original download and **hardlinks** it into your library,
 > so a movie takes disk space only once. Hardlinks only work within a single filesystem *and* a single mount,
 > so put downloads and media under one host directory and mount it once.
+
+### Using an existing qBittorrent instead of the built-in client
+
+*Settings → Download client → qBittorrent* switches Krakarr from its built-in engine to an external qBittorrent
+(WebUI API, qBittorrent 4.x and 5.x). Switching takes effect immediately; no restart is needed.
+
+- **Tag-scoped:** every torrent Krakarr adds gets the configured tag (default `krakarr`). Krakarr only lists,
+  pauses, resumes, deletes and imports torrents that carry that tag. The rest of your qBittorrent is left alone.
+  Tagging a torrent by hand in qBittorrent makes it show up in Krakarr as a manual download.
+- **Category / save path:** optional overrides. By default each grab uses Krakarr's category (`movies`, `manual`, …).
+- **Remote path mapping:** if qBittorrent runs in another container and sees downloads as e.g. `/downloads`
+  while Krakarr sees `/data/downloads`, set *Remote path* = `/downloads` and *Local path* = `/data/downloads`.
+  For hardlinks, both containers should mount the same host directory.
+- **Seeding** is controlled by qBittorrent's own share limits. The built-in seed ratio/time options don't apply.
+- Use **Test** to check the URL, credentials and tag before saving. The password is never sent back to the browser.
+
+Each client keeps its own list of torrents, so switching back and forth never mixes them up.
 
 ### Environment variables
 

@@ -2,7 +2,7 @@ import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http'
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import {
-  AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, GeneralSettings, HistoryItem, Indexer,
+  AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
   IndexerError, IndexerTestResult, MediaManagementSettings, MetadataSettings, Movie, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, RootFolder, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
 } from './models';
@@ -79,6 +79,8 @@ export class Api {
 
   // Downloads
   downloads() { return this.get<TorrentStatus[]>('downloads'); }
+  downloadClientStatus() { return this.get<DownloadClientStatus>('downloads/client'); }
+  testDownloadClient(settings: DownloadClientSettings) { return this.post<DownloadClientTestResult>('downloads/client/test', settings); }
   addMagnet(magnet: string, category?: string) { return this.post<unknown>('downloads/magnet', { magnet, category }); }
   addTorrentFile(file: File, category?: string) {
     const form = new FormData();

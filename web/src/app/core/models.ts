@@ -72,7 +72,15 @@ export interface MediaManagementSettings {
   renameFiles: boolean; movieFolderFormat: string; movieFileFormat: string; useHardlinks: boolean; minimumVideoFileSizeMb: number;
 }
 export interface MetadataSettings { tmdbApiKey?: string; tvdbApiKey?: string; tvdbPin?: string; language: string; }
+export type DownloadClientKind = 'Embedded' | 'QBittorrent';
+export interface QBittorrentSettings {
+  url: string; username?: string; password?: string; tag: string; category?: string; savePath?: string;
+  remotePathPrefix?: string; localPathPrefix?: string;
+}
+export interface DownloadClientTestResult { success: boolean; version?: string; message?: string; }
+export interface DownloadClientStatus { kind: DownloadClientKind; connected: boolean; error?: string; tag?: string; }
 export interface DownloadClientSettings {
+  client: DownloadClientKind; qBittorrent: QBittorrentSettings;
   downloadDirectory?: string; listenPort: number; maxDownloadRateKiB: number; maxUploadRateKiB: number; maxConnections: number;
   seedRatioLimit: number; seedTimeLimitMinutes: number; enableDht: boolean; enablePortForwarding: boolean;
 }

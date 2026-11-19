@@ -14,7 +14,10 @@ public interface ISettingsService
 /// <summary>Settings sections stored as JSON in the database, with an in-memory cache.</summary>
 public sealed class SettingsService(KrakarrDbContext db, SettingsCache cache) : ISettingsService
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
+    };
 
     public async Task<T> GetAsync<T>(CancellationToken ct = default) where T : class, ISettingsSection, new()
     {

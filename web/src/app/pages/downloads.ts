@@ -1,10 +1,10 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../core/api';
 import { Events } from '../core/events';
 import { BytesPipe, DurationPipe, SpeedPipe } from '../core/format';
-import { TorrentStatus } from '../core/models';
+import { DownloadClientStatus, TorrentStatus } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Modal } from '../shared/modal';
 import { Progress } from '../shared/progress';
@@ -15,10 +15,20 @@ import { StateBadge } from '../shared/state-badge';
   imports: [FormsModule, RouterLink, Modal, Progress, StateBadge, BytesPipe, SpeedPipe, DurationPipe],
   template: `
     <div class="mb-6 flex flex-wrap items-center gap-3">
-      <h1 class="page-title mr-auto">Downloads</h1>
+      <h1 class="page-title">Downloads</h1>
+      @if (client(); as c) {
+        <span class="badge bg-surface-700 text-slate-300">{{ c.kind === 'QBittorrent' ? 'qBittorrent · tag ' + c.tag : 'Built-in client' }}</span>
+      }
+      <span class="mr-auto"></span>
       <span class="text-sm text-slate-400">↓ {{ totalDown() | speed }} · ↑ {{ totalUp() | speed }}</span>
       <button class="btn-primary" (click)="addOpen.set(true)">+ Add torrent</button>
     </div>
+
+    @if (client()?.error; as err) {
+      <div class="card mb-4 border-rose-500/30 px-5 py-3 text-sm text-rose-300">
+        Cannot reach the download client: {{ err }} — check <a routerLink="/settings" class="underline">Settings → Download client</a>.
+      </div>
+    }
 
     @if (list().length === 0) {
       <div class="card px-6 py-12 text-center text-sm text-slate-400">No torrents. Grab a release or add a magnet link.</div>
@@ -96,7 +106,7 @@ import { StateBadge } from '../shared/state-badge';
     }
   `,
 })
-export class DownloadsPage implements OnInit {
+export class DownloadsPage implements OnInit, OnDestroy {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
   private readonly events = inject(Events);
@@ -105,6 +115,8 @@ export class DownloadsPage implements OnInit {
   protected readonly totalDown = computed(() => this.list().reduce((s, d) => s + d.downloadRate, 0));
   protected readonly totalUp = computed(() => this.list().reduce((s, d) => s + d.uploadRate, 0));
   protected readonly addOpen = signal(false);
+  protected readonly client = signal<DownloadClientStatus | null>(null);
+  private clientTimer?: ReturnType<typeof setInterval>;
   protected readonly busy = signal(false);
   protected readonly removing = signal<TorrentStatus | null>(null);
   protected magnet = '';
@@ -113,9 +125,14 @@ export class DownloadsPage implements OnInit {
   protected deleteData = false;
 
   async ngOnInit() {
+    const refreshClient = () => this.api.downloadClientStatus().then(c => this.client.set(c)).catch(() => {});
+    refreshClient();
+    this.clientTimer = setInterval(refreshClient, 10000);
     // Prime the list before the first SignalR tick arrives.
     if (this.events.downloads().length === 0) this.events.downloads.set(await this.api.downloads());
   }
+
+  ngOnDestroy() { clearInterval(this.clientTimer); }
 
   async add() {
     this.busy.set(true);
