@@ -9,7 +9,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Krakarr.Movies;
 
-public sealed record AddMovieRequest(int TmdbId, int QualityProfileId, string RootFolderPath, bool Monitored = true, bool SearchForMovie = true);
+/// <param name="ExistingPath">Use this existing folder as-is (library import) instead of building one from the naming format.</param>
+public sealed record AddMovieRequest(int TmdbId, int QualityProfileId, string RootFolderPath, bool Monitored = true, bool SearchForMovie = true, string? ExistingPath = null);
 
 public sealed class MovieService(
     KrakarrDbContext db,
@@ -52,7 +53,13 @@ public sealed class MovieService(
             QualityProfileId = request.QualityProfileId,
             Path = string.Empty,
         };
-        movie.Path = Path.Combine(request.RootFolderPath, MovieNaming.BuildFolderName(movie, media.MovieFolderFormat));
+        movie.Path = request.ExistingPath is { Length: > 0 } existing
+            ? Path.TrimEndingDirectorySeparator(existing)
+            : Path.Combine(request.RootFolderPath, MovieNaming.BuildFolderName(movie, media.MovieFolderFormat));
+        if (await db.Movies.AnyAsync(m => m.Path == movie.Path, ct))
+        {
+            throw new InvalidOperationException($"Another movie already uses {movie.Path}");
+        }
 
         db.Movies.Add(movie);
         await db.SaveChangesAsync(ct);

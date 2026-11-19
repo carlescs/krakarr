@@ -26,6 +26,7 @@ type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
         <option value="ended">Ended</option>
         <option value="unmonitored">Unmonitored</option>
       </select>
+      <a routerLink="/series/import" class="btn-secondary">Import library</a>
       <a routerLink="/series/add" class="btn-primary">+ Add series</a>
     </div>
 

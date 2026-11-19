@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
-  IndexerError, IndexerTestResult, Language, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, MediaManagementSettings, MetadataSettings, Movie, MovieLookup, Quality, QualityProfile,
+  IndexerError, IndexerTestResult, Language, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, MediaManagementSettings, MetadataSettings, Movie, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, RootFolder, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
 } from './models';
 
@@ -148,4 +148,14 @@ export class Api {
     return this.post<SubtitleFile>('subtitles/download', { ...ref, candidate, score });
   }
   deleteSubtitle(id: number) { return this.delete<void>(`subtitles/${id}`); }
+
+  // Library import
+  scanMovieImport(rootFolderId: number) { return this.get<MovieImportCandidate[]>('movies/import/scan', { rootFolderId }); }
+  importMovies(items: { path: string; tmdbId: number; qualityProfileId: number; monitored: boolean; searchForMovie: boolean }[]) {
+    return this.post<CommandInfo>('movies/import', items);
+  }
+  scanSeriesImport(rootFolderId: number) { return this.get<SeriesImportCandidate[]>('series/import/scan', { rootFolderId }); }
+  importSeries(items: { path: string; tvdbId: number; qualityProfileId: number; monitor: MonitorMode; searchForMissing: boolean }[]) {
+    return this.post<CommandInfo>('series/import', items);
+  }
 }

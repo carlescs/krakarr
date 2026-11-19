@@ -32,7 +32,9 @@ Then open <http://localhost:8787>:
 3. **Settings → Metadata:** paste a [TMDB API key](https://www.themoviedb.org/settings/api) (v3 key or v4 read token).
 4. **Indexers:** add one or more Torznab/Newznab feeds and press *Test*.
 5. **Movies → Add movie:** search, add, and Krakarr searches, downloads and imports it for you.
-6. **Series:** add a root folder of type *Series* (e.g. `/data/media/tv`) and a [TheTVDB API key](https://thetvdb.com/api-information)
+6. **Already have a library?** *Movies → Import library* / *Series → Import library* scans a root folder and matches each
+   sub-folder by its name (see [Library import](#library-import)).
+7. **Series:** add a root folder of type *Series* (e.g. `/data/media/tv`) and a [TheTVDB API key](https://thetvdb.com/api-information)
    in *Settings → Metadata*, then **Series → Add series**.
 
 ### Volumes & ports
@@ -62,6 +64,32 @@ Then open <http://localhost:8787>:
   *Settings → Media management* formats (default `{Series Title} - S{Season}E{Episode} - {Episode Title} [{Quality}]`
   in `Season {Season}` folders) and hardlinked. Samples and extras are skipped.
 - Not yet supported: daily shows (date-based numbering) and anime absolute numbering.
+
+### Library import
+
+*Movies → Import library* and *Series → Import library* adopt folders that already exist in a root folder, **in place**.
+Nothing is moved or renamed.
+
+- **Matching** uses the folder name. `Title (Year)`, `Title [Year]` and release-style names
+  (`The.Matrix.1999.1080p.BluRay-GRP`) are understood, and id tags win when present: `{tmdb-603}`, `[tmdbid-603]`,
+  `{imdb-tt0133093}`, `{tvdb-81189}`, `[tvdbid-81189]`.
+- **Confidence:**
+
+  | Level | Meaning |
+  |---|---|
+  | Exact | Id tag in the folder name |
+  | High | Title + year match |
+  | Medium | Title match, year missing or off by one |
+  | Low | Top search result only |
+  | None | No result |
+
+  Exact, High and Medium are pre-selected. Any row's match can be changed with a search.
+- **Movies:** the largest video file in the folder becomes the movie file (samples skipped). Its quality is read from the file name.
+- **Series:** every video file is mapped to episodes using `S01E02`/`1x02`, or an episode number inside a `Season N`/`Specials` folder.
+  Multi-episode files are supported and duplicates keep the best quality. Files that can't be mapped are listed in the
+  task result (*Activity*). Season folders are detected automatically.
+- Optionally search right away for missing movies/episodes. Imported files are picked up by the subtitle search,
+  and existing `video.en.srt` files are recognised.
 
 ### Subtitles
 
@@ -175,8 +203,8 @@ API documentation (OpenAPI) is served at `/api/openapi/v1.json`.
 
 ## Roadmap
 
-- **Series (Sonarr):** daily and anime (absolute) numbering, calendar / wanted views, importing existing libraries
+- **Series (Sonarr):** daily and anime (absolute) numbering, calendar / wanted views
 - **Subtitles (Bazarr):** more providers (Podnapisi, Addic7ed, …), embedded subtitle detection, per-series language profiles, sync/encoding fixes
 - **Indexers (Prowlarr):** native tracker definitions (Cardigann-style), per-indexer stats, Torznab proxy for other apps
 - **Downloads:** per-torrent limits, file selection, Usenet (NZB) support
-- Import of existing libraries, lists (Trakt/IMDb), notifications, multi-user
+- Lists (Trakt/IMDb), notifications, multi-user, optional renaming of imported libraries

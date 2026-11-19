@@ -18,6 +18,7 @@ public static class SeriesModule
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<ITvdbClient, TvdbClient>();
         services.AddScoped<SeriesService>();
+        services.AddScoped<LibraryImport.SeriesLibraryImport>();
         services.AddScheduledTask<SeriesImportService>();
         services.AddScheduledTask<SeriesRssSyncTask>();
         services.AddScheduledTask<SeriesRefreshTask>();

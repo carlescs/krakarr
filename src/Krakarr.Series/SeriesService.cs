@@ -10,8 +10,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Krakarr.Series;
 
+/// <param name="ExistingPath">Use this existing folder as-is (library import) instead of building one from the naming format.</param>
 public sealed record AddSeriesRequest(
-    int TvdbId, int QualityProfileId, string RootFolderPath, MonitorMode Monitor = MonitorMode.All, bool SeasonFolder = true, bool SearchForMissing = true);
+    int TvdbId, int QualityProfileId, string RootFolderPath, MonitorMode Monitor = MonitorMode.All, bool SeasonFolder = true, bool SearchForMissing = true,
+    string? ExistingPath = null);
 
 public sealed class SeriesService(
     KrakarrDbContext db,
@@ -42,7 +44,7 @@ public sealed class SeriesService(
             throw new InvalidOperationException("Series is already in the library");
         if (!await db.QualityProfiles.AnyAsync(p => p.Id == request.QualityProfileId, ct))
             throw new InvalidOperationException("Quality profile does not exist");
-        if (string.IsNullOrWhiteSpace(request.RootFolderPath))
+        if (string.IsNullOrWhiteSpace(request.RootFolderPath) && string.IsNullOrWhiteSpace(request.ExistingPath))
             throw new InvalidOperationException("A root folder is required");
 
         var info = await tvdb.GetSeriesAsync(request.TvdbId, ct);
@@ -58,7 +60,11 @@ public sealed class SeriesService(
             Monitored = request.Monitor != MonitorMode.None,
         };
         ApplyInfo(series, info);
-        series.Path = Path.Combine(request.RootFolderPath, SeriesNaming.BuildSeriesFolder(series, media.SeriesFolderFormat));
+        series.Path = request.ExistingPath is { Length: > 0 } existing
+            ? Path.TrimEndingDirectorySeparator(existing)
+            : Path.Combine(request.RootFolderPath, SeriesNaming.BuildSeriesFolder(series, media.SeriesFolderFormat));
+        if (await db.Series.AnyAsync(s => s.Path == series.Path, ct))
+            throw new InvalidOperationException($"Another series already uses {series.Path}");
 
         foreach (var e in info.Episodes)
         {

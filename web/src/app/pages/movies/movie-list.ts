@@ -24,6 +24,7 @@ type Filter = 'all' | 'missing' | 'downloaded' | 'unmonitored';
         <option value="downloaded">Downloaded</option>
         <option value="unmonitored">Unmonitored</option>
       </select>
+      <a routerLink="/movies/import" class="btn-secondary">Import library</a>
       <a routerLink="/movies/add" class="btn-primary">+ Add movie</a>
     </div>
 

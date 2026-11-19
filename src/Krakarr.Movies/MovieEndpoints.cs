@@ -60,6 +60,52 @@ public static class MovieEndpoints
             return movie is null ? Results.NotFound() : Results.Ok(ToDto(movie, ActiveProgress(engine)));
         });
 
+        // Library import: scan a root folder for existing movie folders, then import selected ones in place.
+        group.MapGet("/import/scan", async (int rootFolderId, KrakarrDbContext db, LibraryImport.MovieLibraryImport import, CancellationToken ct) =>
+        {
+            var root = await db.RootFolders.AsNoTracking().FirstOrDefaultAsync(r => r.Id == rootFolderId && r.MediaType == MediaType.Movie, ct);
+            if (root is null) return Results.NotFound();
+            if (!Directory.Exists(root.Path)) return Results.Problem($"Root folder {root.Path} is not accessible", statusCode: 400);
+            return Results.Ok(await import.ScanAsync(root, ct));
+        });
+
+        group.MapPost("/import", async (List<LibraryImport.MovieImportItem> items, KrakarrDbContext db, ICommandQueue commands, CancellationToken ct) =>
+        {
+            if (items.Count == 0) return Results.Problem("Nothing to import", statusCode: 400);
+            var roots = await db.RootFolders.AsNoTracking().Where(r => r.MediaType == MediaType.Movie).Select(r => r.Path).ToListAsync(ct);
+            var invalid = items.Where(i => !roots.Any(r => Krakarr.Media.Files.MediaFolder.IsDirectChild(r, i.Path)) || !Directory.Exists(i.Path)).ToList();
+            if (invalid.Count > 0)
+            {
+                return Results.Problem($"Not a folder inside a movie root folder: {string.Join(", ", invalid.Select(i => i.Path))}", statusCode: 400);
+            }
+
+            var command = commands.Enqueue($"Library import ({items.Count} movie(s))", async (sp, token) =>
+            {
+                var import = sp.GetRequiredService<LibraryImport.MovieLibraryImport>();
+                var lines = new List<string>();
+                foreach (var item in items)
+                {
+                    try
+                    {
+                        var line = await import.ImportAsync(item, token);
+                        lines.Add(line);
+                        if (item.SearchForMovie && line.Contains("no video file", StringComparison.Ordinal))
+                        {
+                            var movieId = await sp.GetRequiredService<KrakarrDbContext>().Movies.Where(m => m.TmdbId == item.TmdbId).Select(m => m.Id).FirstAsync(token);
+                            await sp.GetRequiredService<MovieService>().AutoSearchAsync(movieId, token);
+                        }
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException or MetadataException)
+                    {
+                        lines.Add($"{System.IO.Path.GetFileName(item.Path)}: {ex.Message}");
+                    }
+                }
+
+                return string.Join(" · ", lines);
+            });
+            return Results.Accepted(value: command);
+        });
+
         group.MapGet("/lookup", async (string term, ITmdbClient tmdb, KrakarrDbContext db, CancellationToken ct) =>
         {
             try

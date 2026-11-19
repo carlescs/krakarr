@@ -30,6 +30,8 @@ public interface ITmdbClient
 {
     Task<IReadOnlyList<MovieLookup>> SearchAsync(string query, int? year, CancellationToken ct = default);
     Task<MovieLookup> GetMovieAsync(int tmdbId, CancellationToken ct = default);
+    /// <summary>Finds a movie by IMDb id ("tt0133093"); null when TMDB does not know it.</summary>
+    Task<MovieLookup?> FindByImdbAsync(string imdbId, CancellationToken ct = default);
 }
 
 /// <summary>Minimal TMDB v3 client. Accepts either a v3 API key or a v4 read access token.</summary>
@@ -50,6 +52,13 @@ public sealed class TmdbClient(IHttpClientFactory httpClientFactory, ISettingsSe
     {
         var movie = await GetAsync<TmdbMovie>($"3/movie/{tmdbId.ToString(CultureInfo.InvariantCulture)}", ct);
         return Map(movie);
+    }
+
+    public async Task<MovieLookup?> FindByImdbAsync(string imdbId, CancellationToken ct = default)
+    {
+        var result = await GetAsync<TmdbFindResponse>($"3/find/{Uri.EscapeDataString(imdbId)}?external_source=imdb_id", ct);
+        var first = result.MovieResults.FirstOrDefault();
+        return first is null ? null : await GetMovieAsync(first.Id, ct);
     }
 
     private async Task<T> GetAsync<T>(string relative, CancellationToken ct)
@@ -100,6 +109,8 @@ public sealed class TmdbClient(IHttpClientFactory httpClientFactory, ISettingsSe
     };
 
     private sealed record TmdbSearchResponse([property: JsonPropertyName("results")] List<TmdbMovie> Results);
+
+    private sealed record TmdbFindResponse([property: JsonPropertyName("movie_results")] List<TmdbMovie> MovieResults);
 
     private sealed record TmdbMovie
     {

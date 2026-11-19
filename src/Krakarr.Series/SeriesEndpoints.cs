@@ -67,6 +67,51 @@ public static class SeriesEndpoints
             return list.Select(s => ToDto(s, today, downloading));
         });
 
+        // Library import: scan a root folder for existing show folders, then import selected ones in place.
+        group.MapGet("/import/scan", async (int rootFolderId, KrakarrDbContext db, LibraryImport.SeriesLibraryImport import, CancellationToken ct) =>
+        {
+            var root = await db.RootFolders.AsNoTracking().FirstOrDefaultAsync(r => r.Id == rootFolderId && r.MediaType == MediaType.Series, ct);
+            if (root is null) return Results.NotFound();
+            if (!Directory.Exists(root.Path)) return Results.Problem($"Root folder {root.Path} is not accessible", statusCode: 400);
+            return Results.Ok(await import.ScanAsync(root, ct));
+        });
+
+        group.MapPost("/import", async (List<LibraryImport.SeriesImportItem> items, KrakarrDbContext db, ICommandQueue commands, CancellationToken ct) =>
+        {
+            if (items.Count == 0) return Results.Problem("Nothing to import", statusCode: 400);
+            var roots = await db.RootFolders.AsNoTracking().Where(r => r.MediaType == MediaType.Series).Select(r => r.Path).ToListAsync(ct);
+            var invalid = items.Where(i => !roots.Any(r => Krakarr.Media.Files.MediaFolder.IsDirectChild(r, i.Path)) || !Directory.Exists(i.Path)).ToList();
+            if (invalid.Count > 0)
+            {
+                return Results.Problem($"Not a folder inside a series root folder: {string.Join(", ", invalid.Select(i => i.Path))}", statusCode: 400);
+            }
+
+            var command = commands.Enqueue($"Library import ({items.Count} series)", async (sp, token) =>
+            {
+                var import = sp.GetRequiredService<LibraryImport.SeriesLibraryImport>();
+                var lines = new List<string>();
+                foreach (var item in items)
+                {
+                    try
+                    {
+                        lines.Add(await import.ImportAsync(item, token));
+                        if (item.SearchForMissing && item.Monitor != MonitorMode.None)
+                        {
+                            var seriesId = await sp.GetRequiredService<KrakarrDbContext>().Series.Where(s => s.TvdbId == item.TvdbId).Select(s => s.Id).FirstAsync(token);
+                            lines.Add(await sp.GetRequiredService<SeriesService>().AutoSearchAsync(seriesId, null, null, token));
+                        }
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException or TvdbException)
+                    {
+                        lines.Add($"{System.IO.Path.GetFileName(item.Path)}: {ex.Message}");
+                    }
+                }
+
+                return string.Join(" · ", lines);
+            });
+            return Results.Accepted(value: command);
+        });
+
         group.MapGet("/lookup", async (string term, ITvdbClient tvdb, KrakarrDbContext db, CancellationToken ct) =>
         {
             try

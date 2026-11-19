@@ -14,6 +14,7 @@ public static class MoviesServiceCollectionExtensions
         });
         services.AddScoped<ITmdbClient, TmdbClient>();
         services.AddScoped<MovieService>();
+        services.AddScoped<LibraryImport.MovieLibraryImport>();
         services.AddScheduledTask<MovieImportService>();
         services.AddScheduledTask<MovieRssSyncTask>();
         services.AddScheduledTask<MovieRefreshTask>();

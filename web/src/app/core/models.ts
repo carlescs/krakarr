@@ -135,3 +135,13 @@ export interface WantedSubtitle {
   mediaType: 'Movie' | 'Series'; movieId?: number; seriesId?: number; movieFileId?: number; episodeFileId?: number; label: string; missingLanguages: string[];
 }
 export interface SubtitleFileRef { movieFileId?: number; episodeFileId?: number; }
+
+export type MatchConfidence = 'None' | 'Low' | 'Medium' | 'High' | 'Exact';
+export interface MovieImportCandidate {
+  folderName: string; path: string; parsedTitle: string; parsedYear?: number; match?: MovieLookup; confidence: MatchConfidence;
+  alreadyInLibrary: boolean; videoFile?: { name: string; size: number; quality: string }; videoFileCount: number; error?: string;
+}
+export interface SeriesImportCandidate {
+  folderName: string; path: string; parsedTitle: string; parsedYear?: number; match?: SeriesLookup; confidence: MatchConfidence;
+  alreadyInLibrary: boolean; videoFileCount: number; episodeFileCount: number; error?: string;
+}

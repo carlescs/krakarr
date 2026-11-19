@@ -11,9 +11,11 @@ export const routes: Routes = [
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'movies' },
       { path: 'movies', loadComponent: () => import('./pages/movies/movie-list').then(m => m.MovieListPage), title: 'Movies · Krakarr' },
+      { path: 'movies/import', loadComponent: () => import('./pages/library-import').then(m => m.LibraryImportPage), data: { kind: 'movies' }, title: 'Import movies · Krakarr' },
       { path: 'movies/add', loadComponent: () => import('./pages/movies/add-movie').then(m => m.AddMoviePage), title: 'Add movie · Krakarr' },
       { path: 'movies/:id', loadComponent: () => import('./pages/movies/movie-detail').then(m => m.MovieDetailPage), title: 'Movie · Krakarr' },
       { path: 'series', loadComponent: () => import('./pages/series/series-list').then(m => m.SeriesListPage), title: 'Series · Krakarr' },
+      { path: 'series/import', loadComponent: () => import('./pages/library-import').then(m => m.LibraryImportPage), data: { kind: 'series' }, title: 'Import series · Krakarr' },
       { path: 'series/add', loadComponent: () => import('./pages/series/add-series').then(m => m.AddSeriesPage), title: 'Add series · Krakarr' },
       { path: 'series/:id', loadComponent: () => import('./pages/series/series-detail').then(m => m.SeriesDetailPage), title: 'Series · Krakarr' },
       { path: 'subtitles', loadComponent: () => import('./pages/subtitles').then(m => m.SubtitlesPage), title: 'Subtitles · Krakarr' },
