@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Krakarr.Core/Krakarr.Core.csproj" />
+    <ProjectReference Include="../Krakarr.Data/Krakarr.Data.csproj" />
+    <PackageReference Include="MonoTorrent" />
+  </ItemGroup>
+</Project>

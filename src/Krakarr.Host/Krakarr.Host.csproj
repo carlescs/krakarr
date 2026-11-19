@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="../Krakarr.Core/Krakarr.Core.csproj" />
+    <ProjectReference Include="../Krakarr.Data/Krakarr.Data.csproj" />
+    <ProjectReference Include="../Krakarr.Data.Sqlite/Krakarr.Data.Sqlite.csproj" />
+    <ProjectReference Include="../Krakarr.Data.Postgres/Krakarr.Data.Postgres.csproj" />
+    <ProjectReference Include="../Krakarr.Media/Krakarr.Media.csproj" />
+    <ProjectReference Include="../Krakarr.Indexers/Krakarr.Indexers.csproj" />
+    <ProjectReference Include="../Krakarr.Downloads/Krakarr.Downloads.csproj" />
+    <ProjectReference Include="../Krakarr.Movies/Krakarr.Movies.csproj" />
+    <ProjectReference Include="../Krakarr.Series/Krakarr.Series.csproj" />
+    <ProjectReference Include="../Krakarr.Subtitles/Krakarr.Subtitles.csproj" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
+  </ItemGroup>
+</Project>

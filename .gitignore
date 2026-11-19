@@ -1,0 +1,15 @@
+bin/
+obj/
+*.user
+.vs/
+.idea/
+node_modules/
+web/dist/
+web/.angular/
+src/Krakarr.Host/wwwroot/
+/config/
+/data/
+*.db
+*.db-shm
+*.db-wal
+TestResults/

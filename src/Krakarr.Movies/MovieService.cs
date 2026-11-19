@@ -1,0 +1,177 @@
+using Krakarr.Core.Configuration;
+using Krakarr.Core.Domain;
+using Krakarr.Core.Events;
+using Krakarr.Data;
+using Krakarr.Downloads;
+using Krakarr.Indexers;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+
+namespace Krakarr.Movies;
+
+public sealed record AddMovieRequest(int TmdbId, int QualityProfileId, string RootFolderPath, bool Monitored = true, bool SearchForMovie = true);
+
+public sealed class MovieService(
+    KrakarrDbContext db,
+    ITmdbClient tmdb,
+    ISettingsService settings,
+    IIndexerSearchService indexerSearch,
+    IDownloadService downloads,
+    IEventHub eventHub,
+    ILogger<MovieService> logger)
+{
+    public async Task<Movie> AddAsync(AddMovieRequest request, CancellationToken ct = default)
+    {
+        if (await db.Movies.AnyAsync(m => m.TmdbId == request.TmdbId, ct))
+        {
+            throw new InvalidOperationException("Movie is already in the library");
+        }
+
+        if (!await db.QualityProfiles.AnyAsync(p => p.Id == request.QualityProfileId, ct))
+        {
+            throw new InvalidOperationException("Quality profile does not exist");
+        }
+
+        var lookup = await tmdb.GetMovieAsync(request.TmdbId, ct);
+        var media = await settings.GetAsync<MediaManagementSettings>(ct);
+
+        var movie = new Movie
+        {
+            TmdbId = lookup.TmdbId,
+            ImdbId = lookup.ImdbId,
+            Title = lookup.Title,
+            OriginalTitle = lookup.OriginalTitle,
+            SortTitle = ReleaseSortTitle(lookup.Title),
+            Year = lookup.Year,
+            Overview = lookup.Overview,
+            PosterUrl = lookup.PosterUrl,
+            FanartUrl = lookup.FanartUrl,
+            Runtime = lookup.Runtime,
+            Status = MapStatus(lookup.Status),
+            Monitored = request.Monitored,
+            QualityProfileId = request.QualityProfileId,
+            Path = string.Empty,
+        };
+        movie.Path = Path.Combine(request.RootFolderPath, MovieNaming.BuildFolderName(movie, media.MovieFolderFormat));
+
+        db.Movies.Add(movie);
+        await db.SaveChangesAsync(ct);
+        logger.LogInformation("Added movie {Title} ({Year})", movie.Title, movie.Year);
+        await eventHub.PublishAsync(EventNames.MovieUpdated, new { movie.Id }, ct);
+        return movie;
+    }
+
+    public async Task RefreshAsync(Movie movie, CancellationToken ct = default)
+    {
+        var lookup = await tmdb.GetMovieAsync(movie.TmdbId, ct);
+        movie.ImdbId = lookup.ImdbId ?? movie.ImdbId;
+        movie.Title = lookup.Title;
+        movie.OriginalTitle = lookup.OriginalTitle;
+        movie.SortTitle = ReleaseSortTitle(lookup.Title);
+        movie.Year = lookup.Year;
+        movie.Overview = lookup.Overview;
+        movie.PosterUrl = lookup.PosterUrl ?? movie.PosterUrl;
+        movie.FanartUrl = lookup.FanartUrl ?? movie.FanartUrl;
+        movie.Runtime = lookup.Runtime;
+        movie.Status = MapStatus(lookup.Status);
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>Searches all indexers for a movie and evaluates every release.</summary>
+    public async Task<(IReadOnlyList<ReleaseDecision> Decisions, IReadOnlyList<IndexerError> Errors)> SearchAsync(Movie movie, CancellationToken ct = default)
+    {
+        var profile = movie.QualityProfile ?? await db.QualityProfiles.FirstAsync(p => p.Id == movie.QualityProfileId, ct);
+        var existing = await ExistingQualityAsync(movie, ct);
+
+        var result = await indexerSearch.SearchAsync(new SearchCriteria
+        {
+            Type = SearchType.Movie,
+            Query = movie.Year > 0 ? $"{movie.Title} {movie.Year}" : movie.Title,
+            ImdbId = movie.ImdbId,
+            TmdbId = movie.TmdbId,
+        }, ct: ct);
+
+        movie.LastSearched = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        return (MovieDecisionEngine.Evaluate(movie, profile, existing, result.Releases), result.Errors);
+    }
+
+    /// <summary>Searches and grabs the best approved release. Returns a human readable outcome.</summary>
+    public async Task<string> AutoSearchAsync(int movieId, CancellationToken ct = default)
+    {
+        var movie = await db.Movies.Include(m => m.QualityProfile).FirstOrDefaultAsync(m => m.Id == movieId, ct)
+            ?? throw new KeyNotFoundException($"Movie {movieId} not found");
+
+        if (await HasActiveDownloadAsync(movie.Id, ct))
+        {
+            return $"{movie.Title}: a download is already in progress";
+        }
+
+        var (decisions, errors) = await SearchAsync(movie, ct);
+        var best = decisions.FirstOrDefault(d => d.Approved);
+        if (best is null)
+        {
+            var suffix = errors.Count > 0 ? $" ({errors.Count} indexer error(s))" : string.Empty;
+            return $"{movie.Title}: no acceptable releases among {decisions.Count} result(s){suffix}";
+        }
+
+        await GrabAsync(movie, best.Release, ct);
+        return $"{movie.Title}: grabbed {best.Release.Title}";
+    }
+
+    public async Task<Download> GrabAsync(Movie movie, ReleaseInfo release, CancellationToken ct = default)
+    {
+        var quality = Media.Parsing.ReleaseParser.ParseQuality(release.Title);
+        var download = await downloads.GrabAsync(release, new AddTorrentOptions
+        {
+            Category = "movies",
+            MediaType = MediaType.Movie,
+            MovieId = movie.Id,
+            QualityId = quality.Id,
+            DisplayName = release.Title,
+        }, ct);
+
+        var entry = new HistoryEntry
+        {
+            EventType = HistoryEventType.Grabbed,
+            SourceTitle = release.Title,
+            MovieId = movie.Id,
+            QualityId = quality.Id,
+            Indexer = release.IndexerName,
+        };
+        db.History.Add(entry);
+        await db.SaveChangesAsync(ct);
+        await eventHub.PublishAsync(EventNames.HistoryAdded, entry, ct);
+        logger.LogInformation("Grabbed {Release} for {Movie}", release.Title, movie.Title);
+        return download;
+    }
+
+    public Task<bool> HasActiveDownloadAsync(int movieId, CancellationToken ct = default) =>
+        db.Downloads.AnyAsync(d => d.MovieId == movieId && !d.Imported && d.ImportMessage == null, ct);
+
+    private async Task<Quality?> ExistingQualityAsync(Movie movie, CancellationToken ct)
+    {
+        if (movie.MovieFileId is not { } fileId) return null;
+        var file = await db.MovieFiles.AsNoTracking().FirstOrDefaultAsync(f => f.Id == fileId, ct);
+        return file is null ? null : Qualities.FindById(file.QualityId);
+    }
+
+    private static string ReleaseSortTitle(string title)
+    {
+        var t = title.Trim();
+        foreach (var article in new[] { "The ", "A ", "An " })
+        {
+            if (t.StartsWith(article, StringComparison.OrdinalIgnoreCase)) return t[article.Length..].ToLowerInvariant();
+        }
+
+        return t.ToLowerInvariant();
+    }
+
+    private static MovieStatus MapStatus(string? status) => status switch
+    {
+        "Released" => MovieStatus.Released,
+        "In Production" or "Post Production" => MovieStatus.InCinemas,
+        _ => MovieStatus.Announced,
+    };
+}

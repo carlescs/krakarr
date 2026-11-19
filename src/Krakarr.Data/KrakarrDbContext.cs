@@ -1,0 +1,82 @@
+using Krakarr.Core.Domain;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+
+namespace Krakarr.Data;
+
+public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbContext(options)
+{
+    public const string SqliteProviderName = "Microsoft.EntityFrameworkCore.Sqlite";
+
+    public DbSet<User> Users => Set<User>();
+    public DbSet<SettingEntry> Settings => Set<SettingEntry>();
+    public DbSet<RootFolder> RootFolders => Set<RootFolder>();
+    public DbSet<QualityProfile> QualityProfiles => Set<QualityProfile>();
+    public DbSet<Indexer> Indexers => Set<Indexer>();
+    public DbSet<Movie> Movies => Set<Movie>();
+    public DbSet<MovieFile> MovieFiles => Set<MovieFile>();
+    public DbSet<Series> Series => Set<Series>();
+    public DbSet<Episode> Episodes => Set<Episode>();
+    public DbSet<Download> Downloads => Set<Download>();
+    public DbSet<HistoryEntry> History => Set<HistoryEntry>();
+
+    protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
+    {
+        if (Database.ProviderName == SqliteProviderName)
+        {
+            // SQLite cannot order/compare DateTimeOffset natively; store as sortable binary ticks.
+            configurationBuilder.Properties<DateTimeOffset>().HaveConversion<DateTimeOffsetToBinaryConverter>();
+            configurationBuilder.Properties<DateTimeOffset?>().HaveConversion<DateTimeOffsetToBinaryConverter>();
+        }
+    }
+
+    protected override void OnModelCreating(ModelBuilder b)
+    {
+        b.Entity<User>(e =>
+        {
+            e.HasIndex(x => x.Username).IsUnique();
+            e.Property(x => x.Username).HasMaxLength(100);
+        });
+
+        b.Entity<SettingEntry>(e =>
+        {
+            e.HasKey(x => x.Key);
+            e.Property(x => x.Key).HasMaxLength(100);
+        });
+
+        b.Entity<RootFolder>(e => e.HasIndex(x => x.Path).IsUnique());
+
+        b.Entity<Indexer>(e => e.HasIndex(x => x.Name).IsUnique());
+
+        b.Entity<Movie>(e =>
+        {
+            e.HasIndex(x => x.TmdbId).IsUnique();
+            e.HasIndex(x => x.ImdbId);
+            e.HasOne(x => x.QualityProfile).WithMany().HasForeignKey(x => x.QualityProfileId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.MovieFile).WithOne().HasForeignKey<Movie>(x => x.MovieFileId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        b.Entity<MovieFile>(e => e.HasIndex(x => x.MovieId));
+
+        b.Entity<Series>(e =>
+        {
+            e.HasIndex(x => x.TvdbId).IsUnique();
+            e.HasMany(x => x.Episodes).WithOne().HasForeignKey(x => x.SeriesId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<Episode>(e => e.HasIndex(x => new { x.SeriesId, x.SeasonNumber, x.EpisodeNumber }));
+
+        b.Entity<Download>(e =>
+        {
+            e.HasIndex(x => x.InfoHash).IsUnique();
+            e.HasIndex(x => x.MovieId);
+            e.Property(x => x.InfoHash).HasMaxLength(64);
+        });
+
+        b.Entity<HistoryEntry>(e =>
+        {
+            e.HasIndex(x => x.Date);
+            e.HasIndex(x => x.MovieId);
+        });
+    }
+}

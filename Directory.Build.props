@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- Npgsql.EntityFrameworkCore.PostgreSQL 11 is RC and pins EF Core RC exactly; we run it on EF Core 11 GA. -->
+    <NoWarn>$(NoWarn);NU1608</NoWarn>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+</Project>

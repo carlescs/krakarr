@@ -1,0 +1,25 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Krakarr.Core/Krakarr.Core.csproj" />
+    <Project Path="src/Krakarr.Data.Postgres/Krakarr.Data.Postgres.csproj" />
+    <Project Path="src/Krakarr.Data.Sqlite/Krakarr.Data.Sqlite.csproj" />
+    <Project Path="src/Krakarr.Data/Krakarr.Data.csproj" />
+    <Project Path="src/Krakarr.Downloads/Krakarr.Downloads.csproj" />
+    <Project Path="src/Krakarr.Host/Krakarr.Host.csproj" />
+    <Project Path="src/Krakarr.Indexers/Krakarr.Indexers.csproj" />
+    <Project Path="src/Krakarr.Media/Krakarr.Media.csproj" />
+    <Project Path="src/Krakarr.Movies/Krakarr.Movies.csproj" />
+    <Project Path="src/Krakarr.Series/Krakarr.Series.csproj" />
+    <Project Path="src/Krakarr.Subtitles/Krakarr.Subtitles.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Krakarr.Indexers.Tests/Krakarr.Indexers.Tests.csproj" />
+    <Project Path="tests/Krakarr.Media.Tests/Krakarr.Media.Tests.csproj" />
+    <Project Path="tests/Krakarr.Movies.Tests/Krakarr.Movies.Tests.csproj" />
+  </Folder>
+  <Folder Name="/Solution Items/">
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+  </Folder>
+</Solution>
