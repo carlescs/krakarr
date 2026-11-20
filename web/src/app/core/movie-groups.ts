@@ -1,11 +1,11 @@
-import { Movie, MovieCollection } from './models';
+import { MovieCollection, MovieListItem } from './models';
 
 /** A section of the movie list: one TMDB collection, or the movies that belong to none. */
 export interface MovieGroup {
   key: string;
   title: string;
   collection: MovieCollection | null;
-  movies: Movie[];
+  movies: MovieListItem[];
   downloaded: number;
 }
 
@@ -16,9 +16,9 @@ export const OTHER_MOVIES_KEY = 'other';
  * movies are ordered by year, so a franchise reads in release order. Movies outside any collection (or in one the
  * collection list doesn't know yet) come last as "Other movies", in their original order. Empty groups are left out.
  */
-export function groupByCollection(movies: readonly Movie[], collections: readonly MovieCollection[]): MovieGroup[] {
-  const byId = new Map<number, Movie[]>();
-  const other: Movie[] = [];
+export function groupByCollection(movies: readonly MovieListItem[], collections: readonly MovieCollection[]): MovieGroup[] {
+  const byId = new Map<number, MovieListItem[]>();
+  const other: MovieListItem[] = [];
   const known = new Set(collections.map(c => c.id));
   for (const m of movies) {
     if (m.collectionId != null && known.has(m.collectionId)) {
@@ -40,6 +40,6 @@ export function groupByCollection(movies: readonly Movie[], collections: readonl
   return groups;
 }
 
-function group(key: string, title: string, collection: MovieCollection | null, movies: Movie[]): MovieGroup {
+function group(key: string, title: string, collection: MovieCollection | null, movies: MovieListItem[]): MovieGroup {
   return { key, title, collection, movies, downloaded: movies.filter(m => m.hasFile).length };
 }

@@ -53,6 +53,9 @@ public sealed record MovieDto
     public int? CollectionId { get; init; }
 }
 
+/// <summary>Row of the library grid: only what the movie list shows, so the whole library stays a small payload.</summary>
+public sealed record MovieListItemDto(int Id, string Title, int Year, string? PosterUrl, bool Monitored, bool HasFile, string? Quality, double? DownloadProgress, int? CollectionId);
+
 public sealed record MovieCollectionDto(int Id, int TmdbId, string Name, string? PosterUrl);
 
 public sealed record UpdateMovieRequest(bool Monitored, int QualityProfileId, MinimumAvailability? MinimumAvailability = null);
@@ -67,12 +70,18 @@ public static class MovieEndpoints
     {
         var group = app.MapGroup("/api/v1/movies").WithTags("Movies");
 
-        group.MapGet("/", async (KrakarrDbContext db, ITorrentEngine engine, Krakarr.Data.ISettingsService settings, CancellationToken ct) =>
+        group.MapGet("/", async (KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
         {
-            var movies = await db.Movies.AsNoTracking().Include(m => m.MovieFile).OrderBy(m => m.SortTitle).ToListAsync(ct);
+            // The grid only needs a handful of columns: skip overviews, paths and release dates of the whole library.
+            var rows = await db.Movies.AsNoTracking().OrderBy(m => m.SortTitle)
+                .Select(m => new { m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, m.CollectionId, QualityId = m.MovieFile != null ? m.MovieFile.QualityId : (int?)null })
+                .ToListAsync(ct);
             var progress = ActiveProgress(engine);
-            var region = await ReleaseRegionAsync(settings, ct);
-            return movies.Select(m => ToDto(m, progress, region));
+            return rows.Select(m => new MovieListItemDto(
+                m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, m.QualityId is not null,
+                m.QualityId is { } q ? Qualities.FindById(q).Name : null,
+                progress.TryGetValue(m.Id, out var p) ? p : null,
+                m.CollectionId));
         });
 
         // Collections that have movies in the library, for grouping the movie list.

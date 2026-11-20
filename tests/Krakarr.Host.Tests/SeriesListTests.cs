@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Krakarr.Host.Tests;
 
-/// <summary>The series list builds its counts from projected episode columns, not loaded episodes.</summary>
+/// <summary>The series list aggregates its counts in SQL; they must match the detail endpoint, which loads the episodes.</summary>
 public sealed class SeriesListTests : IClassFixture<KrakarrFactory>
 {
     private readonly KrakarrFactory _factory;
@@ -27,6 +27,7 @@ public sealed class SeriesListTests : IClassFixture<KrakarrFactory>
             series.Seasons.Add(new Season { SeasonNumber = 1, Monitored = true });
             series.Seasons.Add(new Season { SeasonNumber = 2, Monitored = true });
             db.Series.Add(series);
+            db.Series.Add(new Krakarr.Core.Domain.Series { TmdbId = 78, Title = "Empty Show", Year = 2021, Path = "/tv/empty", QualityProfileId = profile });
             await db.SaveChangesAsync(ct);
 
             // One double-episode file (counted once in the size), one special, an aired episode without a file and a future one.
@@ -49,16 +50,22 @@ public sealed class SeriesListTests : IClassFixture<KrakarrFactory>
         var show = list!.Single(s => s.GetProperty("title").GetString() == "Counted Show");
         Assert.Equal(3, show.GetProperty("episodeCount").GetInt32());
         Assert.Equal(2, show.GetProperty("episodeFileCount").GetInt32());
-        Assert.Equal(105, show.GetProperty("sizeOnDisk").GetInt64());
         Assert.Equal("2099-01-01", show.GetProperty("nextAiring").GetString());
+        Assert.Equal(0, show.GetProperty("downloadingCount").GetInt32());
+        Assert.False(show.TryGetProperty("seasons", out _), "the list must stay slim");
 
-        var seasons = show.GetProperty("seasons").EnumerateArray()
+        var empty = list!.Single(s => s.GetProperty("title").GetString() == "Empty Show");
+        Assert.Equal(0, empty.GetProperty("episodeCount").GetInt32());
+        Assert.Equal(JsonValueKind.Null, empty.GetProperty("nextAiring").ValueKind);
+
+        // The single-series endpoint (loaded entities) must agree with the aggregated list.
+        var single = await client.GetFromJsonAsync<JsonElement>($"/api/v1/series/{show.GetProperty("id").GetInt32()}", ct);
+        Assert.Equal(3, single.GetProperty("episodeCount").GetInt32());
+        Assert.Equal(2, single.GetProperty("episodeFileCount").GetInt32());
+        Assert.Equal(105, single.GetProperty("sizeOnDisk").GetInt64());
+
+        var seasons = single.GetProperty("seasons").EnumerateArray()
             .Select(s => $"{s.GetProperty("seasonNumber").GetInt32()}:{s.GetProperty("episodeCount").GetInt32()}/{s.GetProperty("episodeFileCount").GetInt32()}/{s.GetProperty("totalEpisodeCount").GetInt32()}/{s.GetProperty("sizeOnDisk").GetInt64()}");
         Assert.Equal(["0:1/1/1/5", "1:3/2/3/100", "2:0/0/1/0"], seasons);
-
-        // The single-series endpoint (loaded entities) must agree with the projected list.
-        var single = await client.GetFromJsonAsync<JsonElement>($"/api/v1/series/{show.GetProperty("id").GetInt32()}", ct);
-        Assert.Equal(105, single.GetProperty("sizeOnDisk").GetInt64());
-        Assert.Equal(3, single.GetProperty("episodeCount").GetInt32());
     }
 }
