@@ -13,7 +13,7 @@ import { TorrentDetailsDialog } from '../shared/torrent-details';
 
 const SHOW_SEEDING_KEY = 'krakarr.downloads.showSeeding';
 
-/** Seeding torrents are hidden unless the user chose to show them. */
+/** The list shows either seeding torrents or everything else; the default is the non-seeding view. */
 function readShowSeeding(): boolean {
   try { return localStorage.getItem(SHOW_SEEDING_KEY) === 'true'; } catch { return false; }
 }
@@ -28,11 +28,15 @@ function readShowSeeding(): boolean {
         <span class="badge bg-surface-700 text-slate-300">{{ c.kind === 'QBittorrent' ? 'qBittorrent · tag ' + c.tag : 'Built-in client' }}</span>
       }
       <span class="mr-auto"></span>
-      @if (seedingCount() > 0) {
-        <label class="flex items-center gap-2 text-sm text-slate-300">
-          <input type="checkbox" class="accent-accent-500" [checked]="showSeeding()" (change)="toggleSeeding($any($event.target).checked)" />
-          Show seeding ({{ seedingCount() }})
-        </label>
+      @if (seedingCount() > 0 || showSeeding()) {
+        <div class="inline-flex rounded-lg bg-surface-800 p-0.5 text-sm" role="radiogroup" aria-label="Show">
+          <button type="button" role="radio" [attr.aria-checked]="!showSeeding()" [class]="segment(!showSeeding())" (click)="toggleSeeding(false)">
+            Downloading ({{ list().length - seedingCount() }})
+          </button>
+          <button type="button" role="radio" [attr.aria-checked]="showSeeding()" [class]="segment(showSeeding())" (click)="toggleSeeding(true)">
+            Seeding ({{ seedingCount() }})
+          </button>
+        </div>
       }
       <span class="text-sm text-slate-400 max-sm:hidden">↓ {{ totalDown() | speed }} · ↑ {{ totalUp() | speed }}</span>
       <button class="btn-primary" (click)="addOpen.set(true)">+ Add torrent</button>
@@ -47,7 +51,8 @@ function readShowSeeding(): boolean {
     @if (visible().length === 0) {
       <div class="card px-6 py-12 text-center text-sm text-slate-400">
         @if (list().length === 0) { No torrents. Grab a release or add a magnet link. }
-        @else { Nothing downloading. {{ seedingCount() }} seeding torrent(s) hidden — <button class="underline hover:text-slate-200" (click)="toggleSeeding(true)">show them</button>. }
+        @else if (showSeeding()) { Nothing seeding — <button class="underline hover:text-slate-200" (click)="toggleSeeding(false)">show downloads</button>. }
+        @else { Nothing downloading. {{ seedingCount() }} torrent(s) seeding — <button class="underline hover:text-slate-200" (click)="toggleSeeding(true)">show them</button>. }
       </div>
     } @else {
       <div class="space-y-2">
@@ -139,7 +144,10 @@ export class DownloadsPage implements OnInit, OnDestroy {
   protected readonly list = computed(() => this.events.downloads());
   protected readonly showSeeding = signal(readShowSeeding());
   protected readonly seedingCount = computed(() => this.list().filter(d => d.state === 'Seeding').length);
-  protected readonly visible = computed(() => this.showSeeding() ? this.list() : this.list().filter(d => d.state !== 'Seeding'));
+  protected readonly visible = computed(() => {
+    const seeding = this.showSeeding();
+    return this.list().filter(d => (d.state === 'Seeding') === seeding);
+  });
   protected readonly totalDown = computed(() => this.list().reduce((s, d) => s + d.downloadRate, 0));
   protected readonly totalUp = computed(() => this.list().reduce((s, d) => s + d.uploadRate, 0));
   protected readonly addOpen = signal(false);
@@ -178,6 +186,11 @@ export class DownloadsPage implements OnInit, OnDestroy {
     } finally {
       this.busy.set(false);
     }
+  }
+
+  protected segment(active: boolean) {
+    return 'rounded-md px-3 py-1 font-medium transition-colors pointer-coarse:min-h-9 '
+      + (active ? 'bg-surface-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200');
   }
 
   protected toggleSeeding(show: boolean) {
