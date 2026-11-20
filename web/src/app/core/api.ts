@@ -38,9 +38,10 @@ type SettingsMap = {
 export class Api {
   private readonly http = inject(HttpClient);
 
-  private get<T>(url: string, params?: Record<string, string | number | boolean | undefined>) {
+  private get<T>(url: string, params?: Record<string, string | number | boolean | null | undefined>) {
     let p = new HttpParams();
-    for (const [k, v] of Object.entries(params ?? {})) if (v !== undefined && v !== '') p = p.set(k, String(v));
+    // Skip null too: `String(null)` would send "null", which the API can't bind to an int? (400).
+    for (const [k, v] of Object.entries(params ?? {})) if (v != null && v !== '') p = p.set(k, String(v));
     return firstValueFrom(this.http.get<T>(`${API}/${url}`, { params: p }));
   }
   private post<T>(url: string, body: unknown = {}) { return firstValueFrom(this.http.post<T>(`${API}/${url}`, body)); }
