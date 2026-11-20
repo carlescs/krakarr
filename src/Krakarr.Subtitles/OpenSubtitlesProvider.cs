@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
+using Krakarr.Core.Http;
 using Microsoft.Extensions.Configuration;
 
 namespace Krakarr.Subtitles;
@@ -135,10 +136,18 @@ public sealed class OpenSubtitlesProvider(IHttpClientFactory httpClientFactory, 
         var fileName = Str(doc.RootElement, "file_name") ?? candidate.FileName ?? "subtitle.srt";
 
         var http = httpClientFactory.CreateClient(HttpClientName);
-        using var fileResponse = await http.GetAsync(link, ct);
+        using var fileResponse = await http.GetAsync(link, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!fileResponse.IsSuccessStatusCode)
             throw new SubtitleProviderException($"Subtitle download failed with HTTP {(int)fileResponse.StatusCode}");
-        var bytes = await fileResponse.Content.ReadAsByteArrayAsync(ct);
+        byte[] bytes;
+        try
+        {
+            bytes = await fileResponse.Content.ReadAsByteArrayAsync(BoundedContent.MaxSubtitleBytes, ct);
+        }
+        catch (ResponseTooLargeException ex)
+        {
+            throw new SubtitleProviderException($"Subtitle download failed: {ex.Message}");
+        }
         var ext = Path.GetExtension(fileName);
         return new SubtitleContent(bytes, string.IsNullOrEmpty(ext) ? ".srt" : ext.ToLowerInvariant());
     }

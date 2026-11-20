@@ -34,8 +34,10 @@ public sealed class SeriesRssSyncTask(
         }
 
         _lastRun = time.GetUtcNow();
-        var seriesIds = await db.Series.Where(s => s.Monitored).Select(s => s.Id).ToListAsync(cancellationToken);
-        if (seriesIds.Count == 0) return;
+        // Only the fields needed to match releases; a series (with all its episodes) is loaded only when it has candidates.
+        var monitored = await db.Series.AsNoTracking().Where(s => s.Monitored)
+            .Select(s => new { s.Id, s.Title, s.TvdbId, s.TmdbId }).ToListAsync(cancellationToken);
+        if (monitored.Count == 0) return;
 
         var feed = await indexerSearch.SearchAsync(new SearchCriteria { Type = SearchType.Tv, Rss = true }, ct: cancellationToken);
         logger.LogInformation("RSS sync (series): {Count} release(s) from indexers", feed.Releases.Count);
@@ -49,15 +51,19 @@ public sealed class SeriesRssSyncTask(
 
         var today = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
         var busy = await seriesService.ActiveEpisodeIdsAsync(cancellationToken);
-        foreach (var id in seriesIds)
+        foreach (var info in monitored)
         {
-            var series = await seriesService.LoadAsync(id, cancellationToken);
-            if (series?.QualityProfile is null) continue;
-            var candidates = (byTitle.GetValueOrDefault(SeriesNaming.NormalizedTitle(series.Title)) ?? [])
-                .Concat(feed.Releases.Where(r => (series.TvdbId is not null && r.TvdbId == series.TvdbId) || (series.TmdbId is not null && r.TmdbId == series.TmdbId)))
+            var candidates = (byTitle.GetValueOrDefault(SeriesNaming.NormalizedTitle(info.Title)) ?? [])
+                .Concat(feed.Releases.Where(r => (info.TvdbId is not null && r.TvdbId == info.TvdbId) || (info.TmdbId is not null && r.TmdbId == info.TmdbId)))
                 .Distinct()
                 .ToList();
             if (candidates.Count == 0) continue;
+
+            // Every operation below saves its own changes, so drop the previous series from the change tracker
+            // instead of accumulating the whole library in this scope's DbContext.
+            db.ChangeTracker.Clear();
+            var series = await seriesService.LoadAsync(info.Id, cancellationToken);
+            if (series?.QualityProfile is null) continue;
 
             var decisions = EpisodeDecisionEngine.Evaluate(series, series.QualityProfile, series.Episodes, candidates, null, requireMonitored: true, today);
             foreach (var decision in EpisodeDecisionEngine.SelectGrabs(decisions, busy))
@@ -86,8 +92,9 @@ public sealed class SeriesRefreshTask(KrakarrDbContext db, SeriesService seriesS
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         var failures = 0;
-        foreach (var id in await db.Series.Select(s => s.Id).ToListAsync(cancellationToken))
+        foreach (var id in await db.Series.AsNoTracking().Select(s => s.Id).ToListAsync(cancellationToken))
         {
+            db.ChangeTracker.Clear(); // RefreshAsync saves; don't keep every refreshed series (and its episodes) tracked
             var series = await seriesService.LoadAsync(id, cancellationToken);
             if (series is null) continue;
             try

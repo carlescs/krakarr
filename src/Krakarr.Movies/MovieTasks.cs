@@ -72,8 +72,11 @@ public sealed class MovieRefreshTask(KrakarrDbContext db, MovieService movies, I
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        foreach (var movie in await db.Movies.ToListAsync(cancellationToken))
+        foreach (var id in await db.Movies.AsNoTracking().Select(m => m.Id).ToListAsync(cancellationToken))
         {
+            db.ChangeTracker.Clear(); // RefreshAsync saves; keep only the current movie tracked
+            var movie = await db.Movies.FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
+            if (movie is null) continue;
             try
             {
                 await movies.RefreshAsync(movie, cancellationToken);
