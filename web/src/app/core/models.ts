@@ -55,7 +55,16 @@ export interface Movie {
   path: string; added: string; hasFile: boolean; movieFile?: MovieFile; downloadProgress?: number;
   inCinemas?: string | null; digitalRelease?: string | null; physicalRelease?: string | null;
   releases: MovieRelease[]; releaseRegion?: string | null; minimumAvailability: MinimumAvailability; isAvailable: boolean;
+  collectionId?: number | null;
 }
+
+/** Row of the movie grid (GET /movies). */
+export interface MovieListItem {
+  id: number; title: string; year: number; posterUrl?: string | null; monitored: boolean; hasFile: boolean;
+  quality?: string | null; downloadProgress?: number | null; collectionId?: number | null;
+}
+/** A TMDB collection ("The Lord of the Rings Collection") with at least one movie in the library. */
+export interface MovieCollection { id: number; tmdbId: number; name: string; posterUrl?: string | null; }
 
 export type CalendarEntryKind = 'Movie' | 'Episode';
 export interface CalendarEntry {
@@ -91,6 +100,11 @@ export interface Series {
   network?: string; runtime: number; status: SeriesStatus; monitored: boolean; seasonFolder: boolean; qualityProfileId: number; path: string;
   added: string; episodeCount: number; episodeFileCount: number; sizeOnDisk: number; nextAiring?: string; downloadingCount: number;
   seasons: SeasonInfo[];
+}
+/** Row of the series grid (GET /series). */
+export interface SeriesListItem {
+  id: number; title: string; year: number; posterUrl?: string | null; status: SeriesStatus; monitored: boolean;
+  episodeCount: number; episodeFileCount: number; nextAiring?: string | null; downloadingCount: number;
 }
 export interface EpisodeFile { id: number; relativePath: string; size: number; quality: string; releaseGroup?: string; dateAdded: string; }
 export interface Episode {

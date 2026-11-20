@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Krakarr.Data.Postgres.Migrations;
 
 /// <inheritdoc />
-public partial class _20261120161249_UserRoles : Migration
+public partial class _20261120162801_UserRoles : Migration
 {
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)

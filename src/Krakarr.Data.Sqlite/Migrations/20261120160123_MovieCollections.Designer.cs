@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Krakarr.Data.Sqlite.Migrations;
 
 [DbContext(typeof(KrakarrDbContext))]
-[Migration("20261120161245_UserRoles")]
-partial class _20261120161245_UserRoles
+[Migration("20261120160123_MovieCollections")]
+partial class _20261120160123_MovieCollections
 {
     /// <inheritdoc />
     protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -325,6 +325,9 @@ partial class _20261120161245_UserRoles
                 b.Property<long>("Added")
                     .HasColumnType("INTEGER");
 
+                b.Property<int?>("CollectionId")
+                    .HasColumnType("INTEGER");
+
                 b.Property<DateOnly?>("DigitalRelease")
                     .HasColumnType("TEXT");
 
@@ -396,6 +399,8 @@ partial class _20261120161245_UserRoles
 
                 b.HasKey("Id");
 
+                b.HasIndex("CollectionId");
+
                 b.HasIndex("DigitalRelease");
 
                 b.HasIndex("ImdbId");
@@ -413,6 +418,37 @@ partial class _20261120161245_UserRoles
                     .IsUnique();
 
                 b.ToTable("Movies");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.MovieCollection", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("FanartUrl")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("PosterUrl")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("SortName")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<int>("TmdbId")
+                    .HasColumnType("INTEGER");
+
+                b.HasKey("Id");
+
+                b.HasIndex("TmdbId")
+                    .IsUnique();
+
+                b.ToTable("MovieCollections");
             });
 
         modelBuilder.Entity("Krakarr.Core.Domain.MovieFile", b =>
@@ -687,14 +723,6 @@ partial class _20261120161245_UserRoles
                     .IsRequired()
                     .HasColumnType("TEXT");
 
-                b.Property<int>("Role")
-                    .HasColumnType("INTEGER");
-
-                b.Property<string>("SecurityStamp")
-                    .IsRequired()
-                    .HasMaxLength(64)
-                    .HasColumnType("TEXT");
-
                 b.Property<string>("Username")
                     .IsRequired()
                     .HasMaxLength(100)
@@ -735,6 +763,11 @@ partial class _20261120161245_UserRoles
 
         modelBuilder.Entity("Krakarr.Core.Domain.Movie", b =>
             {
+                b.HasOne("Krakarr.Core.Domain.MovieCollection", "Collection")
+                    .WithMany()
+                    .HasForeignKey("CollectionId")
+                    .OnDelete(DeleteBehavior.SetNull);
+
                 b.HasOne("Krakarr.Core.Domain.MovieFile", "MovieFile")
                     .WithOne()
                     .HasForeignKey("Krakarr.Core.Domain.Movie", "MovieFileId")
@@ -745,6 +778,8 @@ partial class _20261120161245_UserRoles
                     .HasForeignKey("QualityProfileId")
                     .OnDelete(DeleteBehavior.Restrict)
                     .IsRequired();
+
+                b.Navigation("Collection");
 
                 b.Navigation("MovieFile");
 

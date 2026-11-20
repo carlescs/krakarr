@@ -143,6 +143,25 @@ public static class EpisodeDecisionEngine
         return new EpisodeDecision { Release = release, Parsed = parsed, Episodes = mapped, Rejections = rejections.Distinct().ToList() };
     }
 
+    /// <summary>
+    /// Library episodes a release name covers, ignoring the ones the series does not know (lenient: used for
+    /// manual downloads, whose files are mapped again at import). A season pack covers the season's aired episodes.
+    /// </summary>
+    public static IReadOnlyList<Episode> MapEpisodes(IReadOnlyCollection<Episode> episodes, ParsedRelease parsed, DateOnly today)
+    {
+        if (parsed.SeasonNumber is not { } season)
+        {
+            return [];
+        }
+
+        return parsed.IsSeasonPack
+            ? episodes.Where(e => e.SeasonNumber == season && (e.HasAired(today) || e.EpisodeFileId is not null)).ToList()
+            : parsed.EpisodeNumbers
+                .Select(n => episodes.FirstOrDefault(e => e.SeasonNumber == season && e.EpisodeNumber == n))
+                .OfType<Episode>()
+                .ToList();
+    }
+
     /// <summary>Approved first, then best quality, larger coverage (season packs), propers, seeders, indexer priority.</summary>
     public static IReadOnlyList<EpisodeDecision> Rank(IEnumerable<EpisodeDecision> decisions) =>
         decisions

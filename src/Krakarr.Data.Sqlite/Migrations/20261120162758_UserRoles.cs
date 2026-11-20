@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Krakarr.Data.Sqlite.Migrations;
 
 /// <inheritdoc />
-public partial class _20261120161245_UserRoles : Migration
+public partial class _20261120162758_UserRoles : Migration
 {
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)

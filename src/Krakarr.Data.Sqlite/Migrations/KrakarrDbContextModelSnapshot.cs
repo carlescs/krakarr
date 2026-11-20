@@ -15,7 +15,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261120161245_UserRoles";
+    public override string LastMigrationId => "20261120162758_UserRoles";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -327,6 +327,9 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<long>("Added")
                     .HasColumnType("INTEGER");
 
+                b.Property<int?>("CollectionId")
+                    .HasColumnType("INTEGER");
+
                 b.Property<DateOnly?>("DigitalRelease")
                     .HasColumnType("TEXT");
 
@@ -398,6 +401,8 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.HasKey("Id");
 
+                b.HasIndex("CollectionId");
+
                 b.HasIndex("DigitalRelease");
 
                 b.HasIndex("ImdbId");
@@ -415,6 +420,37 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .IsUnique();
 
                 b.ToTable("Movies");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.MovieCollection", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("FanartUrl")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("PosterUrl")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("SortName")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.Property<int>("TmdbId")
+                    .HasColumnType("INTEGER");
+
+                b.HasKey("Id");
+
+                b.HasIndex("TmdbId")
+                    .IsUnique();
+
+                b.ToTable("MovieCollections");
             });
 
         modelBuilder.Entity("Krakarr.Core.Domain.MovieFile", b =>
@@ -737,6 +773,11 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
         modelBuilder.Entity("Krakarr.Core.Domain.Movie", b =>
             {
+                b.HasOne("Krakarr.Core.Domain.MovieCollection", "Collection")
+                    .WithMany()
+                    .HasForeignKey("CollectionId")
+                    .OnDelete(DeleteBehavior.SetNull);
+
                 b.HasOne("Krakarr.Core.Domain.MovieFile", "MovieFile")
                     .WithOne()
                     .HasForeignKey("Krakarr.Core.Domain.Movie", "MovieFileId")
@@ -747,6 +788,8 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .HasForeignKey("QualityProfileId")
                     .OnDelete(DeleteBehavior.Restrict)
                     .IsRequired();
+
+                b.Navigation("Collection");
 
                 b.Navigation("MovieFile");
 
