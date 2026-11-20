@@ -7,56 +7,14 @@ using Krakarr.Data;
 
 namespace Krakarr.Series;
 
-public sealed record SeriesLookup
-{
-    public int TmdbId { get; init; }
-    public required string Title { get; init; }
-    public int Year { get; init; }
-    public string? Overview { get; init; }
-    public string? PosterUrl { get; init; }
-    public string? Network { get; init; }
-    public string? Status { get; init; }
-    /// <summary>Local series id when the show is already in the library.</summary>
-    public int? SeriesId { get; init; }
-}
-
-public sealed record EpisodeInfo
-{
-    public int TmdbId { get; init; }
-    public int SeasonNumber { get; init; }
-    public int EpisodeNumber { get; init; }
-    public int? AbsoluteNumber { get; init; }
-    public string? Title { get; init; }
-    public string? Overview { get; init; }
-    public DateOnly? AirDate { get; init; }
-    public int Runtime { get; init; }
-}
-
-public sealed record SeriesInfo
-{
-    public int TmdbId { get; init; }
-    /// <summary>TheTVDB id from TMDB's external ids; indexers search and tag TV releases by it.</summary>
-    public int? TvdbId { get; init; }
-    public required string Title { get; init; }
-    public int Year { get; init; }
-    public string? Overview { get; init; }
-    public string? PosterUrl { get; init; }
-    public string? FanartUrl { get; init; }
-    public string? Network { get; init; }
-    /// <summary>Normalised to "Continuing", "Ended" or "Upcoming".</summary>
-    public string? Status { get; init; }
-    public int Runtime { get; init; }
-    public string? ImdbId { get; init; }
-    public DateOnly? FirstAired { get; init; }
-    public IReadOnlyList<EpisodeInfo> Episodes { get; init; } = [];
-}
-
 public interface ITmdbTvClient
 {
     Task<IReadOnlyList<SeriesLookup>> SearchAsync(string query, CancellationToken ct = default);
     Task<SeriesInfo> GetSeriesAsync(int tmdbId, CancellationToken ct = default);
     /// <summary>Finds a show by its TheTVDB id (library folders tagged {tvdb-81189}, series added before TMDB); null when unknown.</summary>
     Task<SeriesLookup?> FindByTvdbAsync(int tvdbId, CancellationToken ct = default);
+    /// <summary>The show's TheTVDB id from TMDB's external ids; null when TMDB has none.</summary>
+    Task<int?> GetTvdbIdAsync(int tmdbId, CancellationToken ct = default);
 }
 
 /// <summary>TMDB TV client: search, show details with external ids, and every season's episodes.</summary>
@@ -77,6 +35,13 @@ public sealed class TmdbTvClient(TmdbApi api, ISettingsService settings) : ITmdb
         var meta = await settings.GetAsync<MetadataSettings>(ct);
         var result = await api.GetAsync<FindResponse>(meta, $"3/find/{tvdbId.ToString(CultureInfo.InvariantCulture)}?external_source=tvdb_id", ct);
         return result.TvResults.Select(Map).FirstOrDefault();
+    }
+
+    public async Task<int?> GetTvdbIdAsync(int tmdbId, CancellationToken ct = default)
+    {
+        var meta = await settings.GetAsync<MetadataSettings>(ct);
+        var ids = await api.GetAsync<ExternalIds>(meta, $"3/tv/{tmdbId.ToString(CultureInfo.InvariantCulture)}/external_ids", ct);
+        return ids.TvdbId is > 0 ? ids.TvdbId : null;
     }
 
     public async Task<SeriesInfo> GetSeriesAsync(int tmdbId, CancellationToken ct = default)
@@ -146,11 +111,11 @@ public sealed class TmdbTvClient(TmdbApi api, ISettingsService settings) : ITmdb
             .ToList();
     }
 
-    /// <summary>TMDB statuses: Returning Series, In Production, Planned, Pilot, Ended, Canceled.</summary>
+    /// <summary>TMDB statuses: Returning Series, In Production, Planned, Pilot, Ended, Canceled (TheTVDB: Continuing, Ended, Upcoming).</summary>
     public static string NormalizeStatus(string? status) => status?.ToLowerInvariant() switch
     {
         "ended" or "canceled" or "cancelled" => "Ended",
-        "planned" or "in production" or "pilot" => "Upcoming",
+        "planned" or "in production" or "pilot" or "upcoming" => "Upcoming",
         _ => "Continuing",
     };
 

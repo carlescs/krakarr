@@ -10,7 +10,7 @@ import { Poster } from '../shared/poster';
 
 type Kind = 'movies' | 'series';
 type Filter = 'all' | 'matched' | 'unmatched' | 'existing';
-type Match = { id: number; title: string; year: number; posterUrl?: string; overview?: string };
+type Match = { id: number; tvdbId?: number; title: string; year: number; posterUrl?: string; overview?: string };
 
 interface Row {
   folderName: string;
@@ -151,7 +151,7 @@ const CONFIDENCE_STYLE: Record<MatchConfidence, string> = {
           <button class="btn-primary" [disabled]="looking()">{{ looking() ? 'Searching…' : 'Search' }}</button>
         </form>
         <div class="max-h-[55vh] space-y-2 overflow-y-auto">
-          @for (c of lookupResults(); track c.id) {
+          @for (c of lookupResults(); track c.id + '-' + (c.tvdbId ?? 0)) {
             <button class="flex w-full items-center gap-3 rounded-lg p-2 text-left hover:bg-surface-800" (click)="choose(row, c)">
               <kr-poster class="w-10 shrink-0" [url]="c.posterUrl" [title]="c.title" />
               <div class="min-w-0">
@@ -260,7 +260,7 @@ export class LibraryImportPage implements OnInit {
   }
 
   private fromMovie(m: MovieLookup): Match { return { id: m.tmdbId, title: m.title, year: m.year, posterUrl: m.posterUrl, overview: m.overview }; }
-  private fromSeries(s: SeriesLookup): Match { return { id: s.tmdbId, title: s.title, year: s.year, posterUrl: s.posterUrl, overview: s.overview }; }
+  private fromSeries(s: SeriesLookup): Match { return { id: s.tmdbId ?? 0, tvdbId: s.tvdbId, title: s.title, year: s.year, posterUrl: s.posterUrl, overview: s.overview }; }
 
   selectAll(on: boolean) {
     for (const r of this.rows()) r.selected = on && !!r.match && !r.alreadyInLibrary;
@@ -310,7 +310,7 @@ export class LibraryImportPage implements OnInit {
         })));
       } else {
         await this.api.importSeries(selected.map(r => ({
-          path: r.path, tmdbId: r.match!.id, qualityProfileId: this.profileId, monitor: this.monitor, searchForMissing: this.search,
+          path: r.path, tmdbId: r.match!.id || undefined, tvdbId: r.match!.tvdbId, qualityProfileId: this.profileId, monitor: this.monitor, searchForMissing: this.search,
         })));
       }
       this.toasts.success(`Importing ${selected.length} folder(s) — progress is shown in Activity`);

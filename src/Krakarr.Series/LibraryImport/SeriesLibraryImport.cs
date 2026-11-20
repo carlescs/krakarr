@@ -27,7 +27,7 @@ public sealed record SeriesImportCandidate
 }
 
 public sealed record SeriesImportItem(
-    string Path, int TmdbId, int QualityProfileId, MonitorMode Monitor = MonitorMode.All, bool SearchForMissing = false);
+    string Path, int? TmdbId, int? TvdbId, int QualityProfileId, MonitorMode Monitor = MonitorMode.All, bool SearchForMissing = false);
 
 /// <summary>A video file of an existing series folder mapped to season/episode numbers.</summary>
 public sealed record MappedFile(string Path, long Size, int Season, IReadOnlyList<int> Episodes, Quality Quality, string? ReleaseGroup);
@@ -35,15 +35,16 @@ public sealed record MappedFile(string Path, long Size, int Season, IReadOnlyLis
 /// <summary>Scans a series root folder for existing show folders and imports them in place.</summary>
 public sealed partial class SeriesLibraryImport(
     KrakarrDbContext db,
-    ITmdbTvClient tmdb,
+    ISeriesMetadata metadata,
     SeriesService seriesService,
     IEventHub eventHub,
     ILogger<SeriesLibraryImport> logger)
 {
     public async Task<IReadOnlyList<SeriesImportCandidate>> ScanAsync(RootFolder root, CancellationToken ct = default)
     {
-        var known = await db.Series.AsNoTracking().Select(s => new { s.Path, s.TmdbId }).ToListAsync(ct);
-        var knownTmdb = known.Select(k => k.TmdbId).ToHashSet();
+        var known = await db.Series.AsNoTracking().Select(s => new { s.Path, s.TmdbId, s.TvdbId }).ToListAsync(ct);
+        var knownTmdb = known.Where(k => k.TmdbId is not null).Select(k => k.TmdbId!.Value).ToHashSet();
+        var knownTvdb = known.Where(k => k.TvdbId is not null).Select(k => k.TvdbId!.Value).ToHashSet();
         var folders = MediaFolder.SubFolders(root.Path)
             .Where(d => !known.Any(k => MediaFolder.SamePath(k.Path, d.FullName)))
             .ToList();
@@ -77,7 +78,8 @@ public sealed partial class SeriesLibraryImport(
                     ParsedYear = parsed.Year,
                     Match = match.Series,
                     Confidence = match.Confidence,
-                    AlreadyInLibrary = match.Series is not null && knownTmdb.Contains(match.Series.TmdbId),
+                    AlreadyInLibrary = match.Series is { } m
+                        && ((m.TmdbId is { } t && knownTmdb.Contains(t)) || (m.TvdbId is { } v && knownTvdb.Contains(v))),
                     VideoFileCount = files.Count,
                     EpisodeFileCount = mapped,
                     Error = error,
@@ -93,13 +95,7 @@ public sealed partial class SeriesLibraryImport(
 
     public async Task<SeriesMatch> MatchAsync(ParsedFolder folder, CancellationToken ct = default)
     {
-        // A {tvdb-…} tag (Sonarr/Plex naming) is resolved through TMDB's external id lookup.
-        if (folder.TmdbId is null && folder.TvdbId is { } tvdb && await tmdb.FindByTvdbAsync(tvdb, ct) is { } byTvdb)
-        {
-            return new SeriesMatch(byTvdb, MatchConfidence.Exact);
-        }
-
-        var results = await tmdb.SearchAsync(folder.Title, ct);
+        var results = await metadata.SearchAsync(folder.Title, ct);
         return SeriesMatcher.Pick(folder, results);
     }
 
@@ -111,7 +107,7 @@ public sealed partial class SeriesLibraryImport(
         var seasonFolders = files.Any(f => System.IO.Path.GetRelativePath(path, f.Path).Contains(System.IO.Path.DirectorySeparatorChar));
 
         var added = await seriesService.AddAsync(new AddSeriesRequest(
-            item.TmdbId, item.QualityProfileId, System.IO.Path.GetDirectoryName(path) ?? path, item.Monitor, seasonFolders,
+            item.TmdbId, item.TvdbId, item.QualityProfileId, System.IO.Path.GetDirectoryName(path) ?? path, item.Monitor, seasonFolders,
             SearchForMissing: false, ExistingPath: path), ct);
 
         var series = await seriesService.LoadAsync(added.Id, ct) ?? throw new InvalidOperationException("Series vanished during import");

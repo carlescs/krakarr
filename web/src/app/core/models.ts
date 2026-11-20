@@ -53,7 +53,7 @@ export interface MovieLookup {
 }
 
 export interface SeriesLookup {
-  tmdbId: number; title: string; year: number; overview?: string; posterUrl?: string; network?: string; status?: string; seriesId?: number;
+  tmdbId?: number; tvdbId?: number; title: string; year: number; overview?: string; posterUrl?: string; network?: string; status?: string; seriesId?: number;
 }
 export type SeriesStatus = 'Continuing' | 'Ended' | 'Upcoming';
 export type MonitorMode = 'All' | 'Future' | 'Missing' | 'FirstSeason' | 'LatestSeason' | 'None';
@@ -61,7 +61,7 @@ export interface SeasonInfo {
   seasonNumber: number; monitored: boolean; episodeCount: number; episodeFileCount: number; totalEpisodeCount: number; sizeOnDisk: number;
 }
 export interface Series {
-  id: number; tmdbId: number; tvdbId?: number; imdbId?: string; title: string; year: number; overview?: string; posterUrl?: string; fanartUrl?: string;
+  id: number; tmdbId?: number; tvdbId?: number; imdbId?: string; title: string; year: number; overview?: string; posterUrl?: string; fanartUrl?: string;
   network?: string; runtime: number; status: SeriesStatus; monitored: boolean; seasonFolder: boolean; qualityProfileId: number; path: string;
   added: string; episodeCount: number; episodeFileCount: number; sizeOnDisk: number; nextAiring?: string; downloadingCount: number;
   seasons: SeasonInfo[];
@@ -94,7 +94,8 @@ export interface MediaManagementSettings {
   renameFiles: boolean; movieFolderFormat: string; movieFileFormat: string; useHardlinks: boolean; minimumVideoFileSizeMb: number;
   seriesFolderFormat: string; seasonFolderFormat: string; episodeFileFormat: string;
 }
-export interface MetadataSettings { tmdbApiKey?: string; language: string; }
+export type SeriesMetadataSource = 'Tmdb' | 'Tvdb';
+export interface MetadataSettings { tmdbApiKey?: string; seriesSource: SeriesMetadataSource; tvdbApiKey?: string; tvdbPin?: string; language: string; }
 export type DownloadClientKind = 'Embedded' | 'QBittorrent';
 export interface QBittorrentSettings {
   url: string; username?: string; password?: string; tag: string; category?: string; savePath?: string;

@@ -246,8 +246,24 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
           <div>
             <label class="label">TMDB API key or read access token</label>
             <input class="input font-mono" type="password" autocomplete="off" [(ngModel)]="m.tmdbApiKey" />
-            <p class="hint">Free at themoviedb.org → Settings → API. Used for movie and series metadata.</p>
+            <p class="hint">Free at themoviedb.org → Settings → API. Always used for movies.</p>
           </div>
+          <div class="max-w-xs">
+            <label class="label">Series metadata source</label>
+            <select class="input" [(ngModel)]="m.seriesSource">
+              <option value="Tmdb">TMDB</option>
+              <option value="Tvdb">TheTVDB</option>
+            </select>
+            <p class="hint">Where shows, seasons and episodes come from. Existing series switch on their next refresh.</p>
+          </div>
+          @if (m.seriesSource === 'Tvdb') {
+            <div>
+              <label class="label">TheTVDB API key</label>
+              <input class="input font-mono" type="password" autocomplete="off" [(ngModel)]="m.tvdbApiKey" />
+              <p class="hint">From thetvdb.com → Dashboard → API keys.</p>
+            </div>
+            <div class="max-w-xs"><label class="label">TheTVDB subscriber PIN (optional)</label><input class="input" [(ngModel)]="m.tvdbPin" /></div>
+          }
           <div class="max-w-xs"><label class="label">Language</label><input class="input" [(ngModel)]="m.language" placeholder="en-US" /></div>
           <div class="flex justify-end"><button class="btn-primary" (click)="save('metadata', m)">Save</button></div>
         </section>

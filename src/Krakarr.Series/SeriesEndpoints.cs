@@ -16,7 +16,7 @@ public sealed record SeasonDto(int SeasonNumber, bool Monitored, int EpisodeCoun
 public sealed record SeriesDto
 {
     public int Id { get; init; }
-    public int TmdbId { get; init; }
+    public int? TmdbId { get; init; }
     public int? TvdbId { get; init; }
     public string? ImdbId { get; init; }
     public required string Title { get; init; }
@@ -99,7 +99,7 @@ public static class SeriesEndpoints
                         lines.Add(await import.ImportAsync(item, token));
                         if (item.SearchForMissing && item.Monitor != MonitorMode.None)
                         {
-                            var seriesId = await sp.GetRequiredService<KrakarrDbContext>().Series.Where(s => s.TmdbId == item.TmdbId).Select(s => s.Id).FirstAsync(token);
+                            var seriesId = await sp.GetRequiredService<KrakarrDbContext>().Series.Where(s => s.Path == System.IO.Path.TrimEndingDirectorySeparator(item.Path)).Select(s => s.Id).FirstAsync(token);
                             lines.Add(await sp.GetRequiredService<SeriesService>().AutoSearchAsync(seriesId, null, null, token));
                         }
                     }
@@ -114,14 +114,21 @@ public static class SeriesEndpoints
             return Results.Accepted(value: command);
         });
 
-        group.MapGet("/lookup", async (string term, ITmdbTvClient tmdb, KrakarrDbContext db, CancellationToken ct) =>
+        group.MapGet("/lookup", async (string term, ISeriesMetadata metadata, KrakarrDbContext db, CancellationToken ct) =>
         {
             try
             {
-                var results = await tmdb.SearchAsync(term, ct);
-                var ids = results.Select(r => r.TmdbId).ToList();
-                var existing = await db.Series.AsNoTracking().Where(s => ids.Contains(s.TmdbId)).ToDictionaryAsync(s => s.TmdbId, s => s.Id, ct);
-                return Results.Ok(results.Select(r => r with { SeriesId = existing.TryGetValue(r.TmdbId, out var id) ? id : null }));
+                var results = await metadata.SearchAsync(term, ct);
+                var tmdbIds = results.Where(r => r.TmdbId is not null).Select(r => r.TmdbId).ToList();
+                var tvdbIds = results.Where(r => r.TvdbId is not null).Select(r => r.TvdbId).ToList();
+                var existing = await db.Series.AsNoTracking()
+                    .Where(s => tmdbIds.Contains(s.TmdbId) || tvdbIds.Contains(s.TvdbId))
+                    .Select(s => new { s.Id, s.TmdbId, s.TvdbId })
+                    .ToListAsync(ct);
+                return Results.Ok(results.Select(r => r with
+                {
+                    SeriesId = existing.FirstOrDefault(s => (r.TmdbId is not null && s.TmdbId == r.TmdbId) || (r.TvdbId is not null && s.TvdbId == r.TvdbId))?.Id,
+                }));
             }
             catch (MetadataException ex)
             {

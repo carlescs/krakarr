@@ -27,11 +27,21 @@ public sealed record MediaManagementSettings : ISettingsSection
     public int MinimumVideoFileSizeMb { get; init; } = 50;
 }
 
+/// <summary>Where series, season and episode metadata comes from. Movies always use TMDB.</summary>
+public enum SeriesMetadataSource
+{
+    Tmdb = 0,
+    Tvdb = 1,
+}
+
 public sealed record MetadataSettings : ISettingsSection
 {
     public static string SectionKey => "metadata";
-    /// <summary>TMDB v3 API key or v4 read access token, used for both movies and series.</summary>
+    /// <summary>TMDB v3 API key or v4 read access token. Used for movies, and for series when <see cref="SeriesSource"/> is TMDB.</summary>
     public string? TmdbApiKey { get; init; }
+    public SeriesMetadataSource SeriesSource { get; init; } = SeriesMetadataSource.Tmdb;
+    public string? TvdbApiKey { get; init; }
+    public string? TvdbPin { get; init; }
     public string Language { get; init; } = "en-US";
 }
 

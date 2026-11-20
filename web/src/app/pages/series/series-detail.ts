@@ -38,7 +38,7 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
               @if (s.runtime) { <span>{{ s.runtime }} min</span><span>·</span> }
               <span>{{ s.status }}</span>
               @if (s.nextAiring) { <span>·</span><span>Next: {{ s.nextAiring | date: 'mediumDate' }}</span> }
-              @if (s.tmdbId > 0) { <span>·</span><a class="hover:text-white" [href]="'https://www.themoviedb.org/tv/' + s.tmdbId" target="_blank" rel="noopener">TMDB</a> }
+              @if (s.tmdbId) { <span>·</span><a class="hover:text-white" [href]="'https://www.themoviedb.org/tv/' + s.tmdbId" target="_blank" rel="noopener">TMDB</a> }
               @if (s.tvdbId) { <span>·</span><a class="hover:text-white" [href]="'https://thetvdb.com/dereferrer/series/' + s.tvdbId" target="_blank" rel="noopener">TVDB</a> }
               @if (s.imdbId) { <span>·</span><a class="hover:text-white" [href]="'https://www.imdb.com/title/' + s.imdbId" target="_blank" rel="noopener">IMDb</a> }
             </div>
@@ -391,7 +391,7 @@ export class SeriesDetailPage implements OnInit {
 
   async refresh() {
     await this.api.refreshSeries(this.id());
-    this.toasts.show('Refreshing from TMDB…');
+    this.toasts.show('Refreshing metadata…');
   }
 
   async interactive(target: ReleaseTarget) {

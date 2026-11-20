@@ -54,7 +54,7 @@ public sealed class SeriesRssSyncTask(
             var series = await seriesService.LoadAsync(id, cancellationToken);
             if (series?.QualityProfile is null) continue;
             var candidates = (byTitle.GetValueOrDefault(SeriesNaming.NormalizedTitle(series.Title)) ?? [])
-                .Concat(feed.Releases.Where(r => (series.TvdbId is not null && r.TvdbId == series.TvdbId) || (series.TmdbId > 0 && r.TmdbId == series.TmdbId)))
+                .Concat(feed.Releases.Where(r => (series.TvdbId is not null && r.TvdbId == series.TvdbId) || (series.TmdbId is not null && r.TmdbId == series.TmdbId)))
                 .Distinct()
                 .ToList();
             if (candidates.Count == 0) continue;
@@ -76,7 +76,7 @@ public sealed class SeriesRssSyncTask(
     }
 }
 
-/// <summary>Refreshes series metadata and episode lists from TMDB twice a day.</summary>
+/// <summary>Refreshes series metadata and episode lists from the configured source (TMDB or TheTVDB) twice a day.</summary>
 public sealed class SeriesRefreshTask(KrakarrDbContext db, SeriesService seriesService, ILogger<SeriesRefreshTask> logger) : IScheduledTask
 {
     public string Name => "Refresh series metadata";
@@ -85,6 +85,7 @@ public sealed class SeriesRefreshTask(KrakarrDbContext db, SeriesService seriesS
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
+        var failures = 0;
         foreach (var id in await db.Series.Select(s => s.Id).ToListAsync(cancellationToken))
         {
             var series = await seriesService.LoadAsync(id, cancellationToken);
@@ -92,15 +93,12 @@ public sealed class SeriesRefreshTask(KrakarrDbContext db, SeriesService seriesS
             try
             {
                 await seriesService.RefreshAsync(series, cancellationToken);
-            }
-            catch (MetadataException ex) when (series.TmdbId <= 0)
-            {
-                logger.LogWarning("Could not match {Title} on TMDB: {Message}", series.Title, ex.Message);
+                failures = 0;
             }
             catch (MetadataException ex)
             {
                 logger.LogWarning("Could not refresh {Title}: {Message}", series.Title, ex.Message);
-                return; // likely missing key / TMDB down; don't spam
+                if (++failures >= 3) return; // likely a missing key or the source is down; don't spam
             }
         }
     }

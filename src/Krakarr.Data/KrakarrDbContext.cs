@@ -76,6 +76,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
         {
             e.HasIndex(x => new { x.SeriesId, x.SeasonNumber, x.EpisodeNumber });
             e.HasIndex(x => x.TmdbId);
+            e.HasIndex(x => x.TvdbId);
             e.HasOne(x => x.EpisodeFile).WithMany().HasForeignKey(x => x.EpisodeFileId).OnDelete(DeleteBehavior.SetNull);
         });
 

@@ -15,7 +15,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261120045818_SeriesTmdbMetadata";
+    public override string LastMigrationId => "20261120050523_ClearSeriesIdPlaceholders";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -158,7 +158,10 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<string>("Title")
                     .HasColumnType("TEXT");
 
-                b.Property<int>("TmdbId")
+                b.Property<int?>("TmdbId")
+                    .HasColumnType("INTEGER");
+
+                b.Property<int?>("TvdbId")
                     .HasColumnType("INTEGER");
 
                 b.HasKey("Id");
@@ -166,6 +169,8 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.HasIndex("EpisodeFileId");
 
                 b.HasIndex("TmdbId");
+
+                b.HasIndex("TvdbId");
 
                 b.HasIndex("SeriesId", "SeasonNumber", "EpisodeNumber");
 
@@ -559,7 +564,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .IsRequired()
                     .HasColumnType("TEXT");
 
-                b.Property<int>("TmdbId")
+                b.Property<int?>("TmdbId")
                     .HasColumnType("INTEGER");
 
                 b.Property<int?>("TvdbId")

@@ -75,6 +75,8 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
         public Task<SeriesLookup?> FindByTvdbAsync(int tvdbId, CancellationToken ct = default) =>
             Task.FromResult(tvdbId == 424242 ? new SeriesLookup { TmdbId = 9001, Title = "Test Show", Year = 2021 } : null);
 
+        public Task<int?> GetTvdbIdAsync(int tmdbId, CancellationToken ct = default) => Task.FromResult<int?>(tmdbId == 9001 ? 424242 : null);
+
         public Task<IReadOnlyList<SeriesLookup>> SearchAsync(string query, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<SeriesLookup>>(query.Contains("test show", StringComparison.OrdinalIgnoreCase)
                 ? [new SeriesLookup { TmdbId = 9001, Title = "Test Show", Year = 2021 }] : []);
@@ -93,6 +95,23 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
         });
     }
 
+    /// <summary>TheTVDB's view of the same show: different episode ids, and a renamed second episode.</summary>
+    private sealed class FakeTvdb : ITvdbClient
+    {
+        public Task<IReadOnlyList<SeriesLookup>> SearchAsync(string query, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<SeriesLookup>>([new SeriesLookup { TvdbId = 424242, Title = "Test Show", Year = 2021 }]);
+
+        public Task<SeriesInfo> GetSeriesAsync(int tvdbId, CancellationToken ct = default) => Task.FromResult(new SeriesInfo
+        {
+            TvdbId = 424242, Title = "Test Show (TVDB)", Year = 2021,
+            Episodes =
+            [
+                new EpisodeInfo { TvdbId = 71, SeasonNumber = 1, EpisodeNumber = 1, AirDate = new DateOnly(2021, 1, 1) },
+                new EpisodeInfo { TvdbId = 72, SeasonNumber = 1, EpisodeNumber = 2, Title = "Renamed", AirDate = new DateOnly(2021, 1, 8) },
+            ],
+        });
+    }
+
     private sealed class Unused : IIndexerSearchService, IDownloadService
     {
         public Task<IndexerSearchResult> SearchAsync(SearchCriteria criteria, IReadOnlyCollection<int>? indexerIds = null, CancellationToken ct = default) => throw new NotSupportedException();
@@ -107,6 +126,8 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
         services.AddDbContext<KrakarrDbContext>(o => o.UseSqlite(_connection));
         services.AddKrakarrData();
         services.AddSingleton<ITmdbTvClient, FakeTmdb>();
+        services.AddSingleton<ITvdbClient, FakeTvdb>();
+        services.AddScoped<ISeriesMetadata, SeriesMetadata>();
         services.AddSingleton<IIndexerSearchService, Unused>();
         services.AddSingleton<IDownloadService, Unused>();
         services.AddSingleton<IEventHub, NullEventHub>();
@@ -160,7 +181,7 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
         Assert.Equal(6, row.VideoFileCount);
         Assert.Equal(5, row.EpisodeFileCount); // Bloopers has no episode number
 
-        var summary = await import.ImportAsync(new SeriesImportItem(row.Path, 9001, 1), ct);
+        var summary = await import.ImportAsync(new SeriesImportItem(row.Path, 9001, null, 1), ct);
         Assert.StartsWith("Test Show: 4 episode(s) linked", summary);
         Assert.Contains("S01E02.720p", summary.Replace("Test.Show.", ""));
         Assert.Contains("(duplicate)", summary);
@@ -188,9 +209,40 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
     {
         using var scope = _services.CreateScope();
         var import = scope.ServiceProvider.GetRequiredService<SeriesLibraryImport>();
-        var m = await import.MatchAsync(FolderNameParser.Parse("Something Else {tvdb-424242}"), TestContext.Current.CancellationToken);
-        Assert.Equal(9001, m.Series!.TmdbId);
+        var ct = TestContext.Current.CancellationToken;
+        var m = await import.MatchAsync(FolderNameParser.Parse("Something Else {tvdb-424242}"), ct);
+        Assert.Equal(424242, m.Series!.TvdbId);
         Assert.Equal(MatchConfidence.Exact, m.Confidence);
+
+        // Adding by the TVDB id alone resolves the TMDB show while TMDB is the source.
+        var added = await scope.ServiceProvider.GetRequiredService<SeriesService>().AddAsync(new AddSeriesRequest(null, 424242, 1, "/tv"), ct);
+        Assert.Equal(9001, added.TmdbId);
+        Assert.Equal(424242, added.TvdbId);
+        Assert.Equal("Test Show", added.Title);
+    }
+
+    [Fact]
+    public async Task Switching_the_source_to_tvdb_refreshes_from_tvdb_and_keeps_episodes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var scope = _services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<SeriesService>();
+        var added = await service.AddAsync(new AddSeriesRequest(9001, null, 1, "/tv"), ct);
+        var s01e02 = added.Episodes.Single(e => e is { SeasonNumber: 1, EpisodeNumber: 2 }).Id;
+
+        await scope.ServiceProvider.GetRequiredService<ISettingsService>().SaveAsync(new MetadataSettings { SeriesSource = SeriesMetadataSource.Tvdb }, ct);
+        await service.RefreshAsync((await service.LoadAsync(added.Id, ct))!, ct);
+
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        var series = await db.Series.AsNoTracking().Include(x => x.Episodes).SingleAsync(ct);
+        Assert.Equal("Test Show (TVDB)", series.Title);
+        Assert.Equal(9001, series.TmdbId); // kept
+        Assert.Equal(2, series.Episodes.Count); // TVDB's list wins
+        var e2 = series.Episodes.Single(e => e.EpisodeNumber == 2);
+        Assert.Equal(s01e02, e2.Id);
+        Assert.Equal("Renamed", e2.Title);
+        Assert.Equal(72, e2.TvdbId);
+        Assert.Equal(3, e2.TmdbId); // TMDB id kept for switching back
     }
 
     [Fact]
@@ -201,8 +253,8 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
         var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
         var service = scope.ServiceProvider.GetRequiredService<SeriesService>();
 
-        // As left by the migration: placeholder TMDB id, TVDB id kept, episode ids cleared.
-        var legacy = new Core.Domain.Series { TmdbId = -1, TvdbId = 424242, Title = "Test Show", Path = "/tv/Test Show", QualityProfileId = 1 };
+        // As left by the migrations: TVDB id kept, TMDB id unknown, episode ids cleared.
+        var legacy = new Core.Domain.Series { TvdbId = 424242, Title = "Test Show", Path = "/tv/Test Show", QualityProfileId = 1 };
         legacy.Seasons.Add(new Season { SeasonNumber = 1 });
         legacy.Episodes.Add(new Episode { SeasonNumber = 1, EpisodeNumber = 1, Monitored = true });
         db.Series.Add(legacy);

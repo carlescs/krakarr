@@ -5,15 +5,16 @@ namespace Krakarr.Series.LibraryImport;
 
 public sealed record SeriesMatch(SeriesLookup? Series, MatchConfidence Confidence);
 
-/// <summary>Picks the TMDB result that best fits a library folder.</summary>
+/// <summary>Picks the metadata search result that best fits a library folder.</summary>
 public static class SeriesMatcher
 {
     public static SeriesMatch Pick(ParsedFolder folder, IReadOnlyList<SeriesLookup> candidates)
     {
-        if (folder.TmdbId is { } tmdb)
+        // Id tags win: {tmdb-…} and {tvdb-…} both work whatever the metadata source, the other id is resolved on add.
+        if (folder.TmdbId is not null || folder.TvdbId is not null)
         {
-            var byId = candidates.FirstOrDefault(c => c.TmdbId == tmdb)
-                ?? new SeriesLookup { TmdbId = tmdb, Title = folder.Title, Year = folder.Year ?? 0 };
+            var byId = candidates.FirstOrDefault(c => (folder.TmdbId is not null && c.TmdbId == folder.TmdbId) || (folder.TvdbId is not null && c.TvdbId == folder.TvdbId))
+                ?? new SeriesLookup { TmdbId = folder.TmdbId, TvdbId = folder.TvdbId, Title = folder.Title, Year = folder.Year ?? 0 };
             return new SeriesMatch(byId, MatchConfidence.Exact);
         }
 

@@ -36,11 +36,11 @@ public sealed class SeriesImportTests : IAsyncLifetime
         public Task<TorrentDetails?> GetDetailsAsync(string infoHash, CancellationToken ct = default) => Task.FromResult<TorrentDetails?>(null);
     }
 
-    private sealed class Unused : ITmdbTvClient, IIndexerSearchService, IDownloadService
+    private sealed class Unused : ISeriesMetadata, IIndexerSearchService, IDownloadService
     {
         public Task<IReadOnlyList<SeriesLookup>> SearchAsync(string query, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<SeriesInfo> GetSeriesAsync(int tmdbId, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<SeriesLookup?> FindByTvdbAsync(int tvdbId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<SeriesMetadataSource> SourceAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<SeriesInfo> GetSeriesAsync(SeriesIds ids, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IndexerSearchResult> SearchAsync(SearchCriteria criteria, IReadOnlyCollection<int>? indexerIds = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<Download> GrabAsync(ReleaseInfo release, AddTorrentOptions options, CancellationToken ct = default) => throw new NotSupportedException();
     }
@@ -54,7 +54,7 @@ public sealed class SeriesImportTests : IAsyncLifetime
         services.AddKrakarrData();
         services.AddKrakarrMedia();
         var unused = new Unused();
-        services.AddSingleton<ITmdbTvClient>(unused);
+        services.AddSingleton<ISeriesMetadata>(unused);
         services.AddSingleton<IIndexerSearchService>(unused);
         services.AddSingleton<IDownloadService>(unused);
         services.AddSingleton<ITorrentEngine>(_engine);

@@ -13,12 +13,12 @@ namespace Krakarr.Series;
 
 /// <param name="ExistingPath">Use this existing folder as-is (library import) instead of building one from the naming format.</param>
 public sealed record AddSeriesRequest(
-    int TmdbId, int QualityProfileId, string RootFolderPath, MonitorMode Monitor = MonitorMode.All, bool SeasonFolder = true, bool SearchForMissing = true,
+    int? TmdbId, int? TvdbId, int QualityProfileId, string RootFolderPath, MonitorMode Monitor = MonitorMode.All, bool SeasonFolder = true, bool SearchForMissing = true,
     string? ExistingPath = null);
 
 public sealed class SeriesService(
     KrakarrDbContext db,
-    ITmdbTvClient tmdb,
+    ISeriesMetadata metadata,
     ISettingsService settings,
     IIndexerSearchService indexerSearch,
     IDownloadService downloads,
@@ -41,19 +41,23 @@ public sealed class SeriesService(
 
     public async Task<Core.Domain.Series> AddAsync(AddSeriesRequest request, CancellationToken ct = default)
     {
-        if (await db.Series.AnyAsync(s => s.TmdbId == request.TmdbId, ct))
+        var ids = new SeriesIds(request.TmdbId, request.TvdbId);
+        if (ids.IsEmpty)
+            throw new InvalidOperationException("A TMDB or TheTVDB id is required");
+        if (await InLibraryAsync(ids, null, ct))
             throw new InvalidOperationException("Series is already in the library");
         if (!await db.QualityProfiles.AnyAsync(p => p.Id == request.QualityProfileId, ct))
             throw new InvalidOperationException("Quality profile does not exist");
         if (string.IsNullOrWhiteSpace(request.RootFolderPath) && string.IsNullOrWhiteSpace(request.ExistingPath))
             throw new InvalidOperationException("A root folder is required");
 
-        var info = await tmdb.GetSeriesAsync(request.TmdbId, ct);
+        var info = await metadata.GetSeriesAsync(ids, ct);
+        if (await InLibraryAsync(new SeriesIds(info.TmdbId, info.TvdbId), null, ct))
+            throw new InvalidOperationException("Series is already in the library");
         var media = await settings.GetAsync<MediaManagementSettings>(ct);
 
         var series = new Core.Domain.Series
         {
-            TmdbId = info.TmdbId,
             Title = info.Title,
             Path = string.Empty,
             QualityProfileId = request.QualityProfileId,
@@ -69,7 +73,7 @@ public sealed class SeriesService(
 
         foreach (var e in info.Episodes)
         {
-            series.Episodes.Add(new Episode { TmdbId = e.TmdbId, SeasonNumber = e.SeasonNumber, EpisodeNumber = e.EpisodeNumber, Monitored = false });
+            series.Episodes.Add(new Episode { TmdbId = e.TmdbId, TvdbId = e.TvdbId, SeasonNumber = e.SeasonNumber, EpisodeNumber = e.EpisodeNumber, Monitored = false });
             Update(series.Episodes[^1], e);
         }
 
@@ -119,28 +123,26 @@ public sealed class SeriesService(
         }
     }
 
-    /// <summary>Re-reads metadata and episodes from TMDB. New episodes inherit their season's monitoring.</summary>
+    /// <summary>
+    /// Re-reads metadata and episodes from the configured source. New episodes inherit their season's monitoring.
+    /// After switching sources, episodes are matched by the new source's id when known, else by season/episode number.
+    /// </summary>
     public async Task RefreshAsync(Core.Domain.Series series, CancellationToken ct = default)
     {
-        if (series.TmdbId <= 0)
-        {
-            // Added while series metadata came from TheTVDB: resolve the TMDB id through the stored TVDB id.
-            var found = series.TvdbId is { } tvdbId ? await tmdb.FindByTvdbAsync(tvdbId, ct) : null;
-            if (found is null) throw new MetadataException($"{series.Title}: no TMDB show found for TVDB id {series.TvdbId}");
-            if (await db.Series.AnyAsync(s => s.TmdbId == found.TmdbId && s.Id != series.Id, ct))
-                throw new MetadataException($"{series.Title}: TMDB show {found.TmdbId} is already in the library");
-            series.TmdbId = found.TmdbId;
-        }
-
-        var info = await tmdb.GetSeriesAsync(series.TmdbId, ct);
+        var info = await metadata.GetSeriesAsync(new SeriesIds(series.TmdbId, series.TvdbId), ct);
+        if (await InLibraryAsync(new SeriesIds(info.TmdbId, info.TvdbId), series.Id, ct))
+            throw new MetadataException($"{series.Title}: another series in the library has the same TMDB/TheTVDB id");
         ApplyInfo(series, info);
 
-        var byTmdb = series.Episodes.Where(e => e.TmdbId > 0).GroupBy(e => e.TmdbId).ToDictionary(g => g.Key, g => g.First());
+        var byTmdb = series.Episodes.Where(e => e.TmdbId is not null).GroupBy(e => e.TmdbId!.Value).ToDictionary(g => g.Key, g => g.First());
+        var byTvdb = series.Episodes.Where(e => e.TvdbId is not null).GroupBy(e => e.TvdbId!.Value).ToDictionary(g => g.Key, g => g.First());
         var seen = new HashSet<Episode>();
         foreach (var e in info.Episodes)
         {
-            var episode = (e.TmdbId > 0 ? byTmdb.GetValueOrDefault(e.TmdbId) : null)
-                ?? series.Episodes.FirstOrDefault(x => x.SeasonNumber == e.SeasonNumber && x.EpisodeNumber == e.EpisodeNumber && !seen.Contains(x));
+            var episode = (e.TmdbId is { } tmdbEp ? byTmdb.GetValueOrDefault(tmdbEp) : null)
+                ?? (e.TvdbId is { } tvdbEp ? byTvdb.GetValueOrDefault(tvdbEp) : null);
+            if (episode is not null && seen.Contains(episode)) episode = null;
+            episode ??= series.Episodes.FirstOrDefault(x => x.SeasonNumber == e.SeasonNumber && x.EpisodeNumber == e.EpisodeNumber && !seen.Contains(x));
             if (episode is null)
             {
                 var season = series.Seasons.FirstOrDefault(s => s.SeasonNumber == e.SeasonNumber);
@@ -150,11 +152,12 @@ public sealed class SeriesService(
                     series.Seasons.Add(season);
                 }
 
-                episode = new Episode { TmdbId = e.TmdbId, Monitored = series.Monitored && season.Monitored && e.SeasonNumber > 0 };
+                episode = new Episode { Monitored = series.Monitored && season.Monitored && e.SeasonNumber > 0 };
                 series.Episodes.Add(episode);
             }
 
-            episode.TmdbId = e.TmdbId;
+            episode.TmdbId = e.TmdbId ?? episode.TmdbId;
+            episode.TvdbId = e.TvdbId ?? episode.TvdbId;
             episode.SeasonNumber = e.SeasonNumber;
             episode.EpisodeNumber = e.EpisodeNumber;
             Update(episode, e);
@@ -173,8 +176,14 @@ public sealed class SeriesService(
         await eventHub.PublishAsync(EventNames.SeriesUpdated, new { series.Id }, ct);
     }
 
+    /// <summary>True when another series (not <paramref name="exceptId"/>) has one of these ids.</summary>
+    private Task<bool> InLibraryAsync(SeriesIds ids, int? exceptId, CancellationToken ct) =>
+        db.Series.AnyAsync(s => s.Id != exceptId
+            && ((ids.TmdbId != null && s.TmdbId == ids.TmdbId) || (ids.TvdbId != null && s.TvdbId == ids.TvdbId)), ct);
+
     private static void ApplyInfo(Core.Domain.Series s, SeriesInfo info)
     {
+        s.TmdbId = info.TmdbId ?? s.TmdbId;
         s.TvdbId = info.TvdbId ?? s.TvdbId;
         s.Title = info.Title;
         s.SortTitle = SortTitle(info.Title);
@@ -227,7 +236,7 @@ public sealed class SeriesService(
             Query = SeriesNaming.BaseTitle(series.Title),
             TvdbId = series.TvdbId,
             // Only fall back to the TMDB id: indexers that know both prefer it, but TV releases are mostly tagged by TVDB id.
-            TmdbId = series.TvdbId is null && series.TmdbId > 0 ? series.TmdbId : null,
+            TmdbId = series.TvdbId is null ? series.TmdbId : null,
             Season = season,
             Episode = episode?.EpisodeNumber,
         }, ct: ct);

@@ -14,8 +14,8 @@ Single-container replacement for Radarr, Sonarr, Bazarr, Prowlarr and qBittorren
 - `src/Krakarr.Host`: ASP.NET Core host, auth, settings/system endpoints, SignalR, serves the SPA from `wwwroot`.
 - `src/Krakarr.Core`: domain entities, quality catalogue, settings records, scheduler/command queue.
 - `src/Krakarr.Data`: `KrakarrDbContext`. Migrations live in `Krakarr.Data.Sqlite` and `Krakarr.Data.Postgres`.
-- Feature modules: `Krakarr.Indexers`, `Krakarr.Downloads` (built-in MonoTorrent + qBittorrent), `Krakarr.Movies`, `Krakarr.Series` (TMDB TV), `Krakarr.Subtitles` (OpenSubtitles.com; `ISubtitleProvider` for more), `Krakarr.Media` (parser, naming, file transfer, download contents).
-- Movies and Series follow the same shape: a TMDB metadata client (shared transport `Krakarr.Core/Metadata/TmdbApi`), `*DecisionEngine` (pure, unit tested), `*Service` (add/search/grab), `*ImportService` and RSS/refresh tasks (`IScheduledTask`), `LibraryImport/` (folder matching + in-place import of existing libraries), and `*Endpoints`.
+- Feature modules: `Krakarr.Indexers`, `Krakarr.Downloads` (built-in MonoTorrent + qBittorrent), `Krakarr.Movies`, `Krakarr.Series` (TMDB or TheTVDB, chosen in settings), `Krakarr.Subtitles` (OpenSubtitles.com; `ISubtitleProvider` for more), `Krakarr.Media` (parser, naming, file transfer, download contents).
+- Movies and Series follow the same shape: a metadata client (TMDB transport shared in `Krakarr.Core/Metadata/TmdbApi`; series go through `ISeriesMetadata`, which picks `TmdbTvClient` or `TvdbClient`), `*DecisionEngine` (pure, unit tested), `*Service` (add/search/grab), `*ImportService` and RSS/refresh tasks (`IScheduledTask`), `LibraryImport/` (folder matching + in-place import of existing libraries), and `*Endpoints`.
 - `web/`: Angular app. It builds into `src/Krakarr.Host/wwwroot`, which is gitignored.
 - `tests/`: xUnit v3 projects, run on Microsoft.Testing.Platform.
 
