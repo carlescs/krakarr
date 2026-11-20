@@ -191,6 +191,8 @@ Each client keeps its own list of torrents, so switching back and forth never mi
 | `Database__Provider` | `sqlite` | `sqlite` or `postgres` |
 | `Database__ConnectionString` | `/config/krakarr.db` | e.g. `Host=postgres;Database=krakarr;Username=krakarr;Password=…` |
 | `AllowedHosts` | `*` | Host names Krakarr answers to, separated by `;` (e.g. `krakarr.example.com;192.168.1.10`). Set it to block DNS rebinding attacks |
+| `Krakarr__TrustedProxies` | *(loopback only)* | Reverse proxies allowed to set `X-Forwarded-For`/`X-Forwarded-Proto`: IPs or CIDR ranges separated by `,` (e.g. `172.16.0.0/12` for a proxy container on a Docker network). Headers from anyone else are ignored |
+| `Krakarr__SecureCookies` | `false` | Always mark the login cookie `Secure` (set it when Krakarr is only reached over HTTPS) |
 | `Krakarr__SetupToken` | *(generated)* | Preset the first-run setup token instead of using a random one (useful for automated deployments) |
 | `Krakarr__Auth__AttemptsPerMinutePerIp` | `10` | Requests per minute and client IP to the login, setup and password endpoints |
 | `Krakarr__Auth__FailuresBeforeLockout` | `5` | Failed logins for one username before it is locked temporarily (30 s, doubling up to 15 min) |
@@ -205,6 +207,9 @@ Any setting can also be placed in `/config/config.json` (environment variables w
   temporarily, and failed logins are logged as warnings (with the client IP) for tools like fail2ban.
 - **Expose it carefully.** Krakarr serves plain HTTP. Put a TLS reverse proxy in front before exposing it to the
   internet, and set `AllowedHosts`.
+- **Reverse proxies must be trusted explicitly.** `X-Forwarded-For`/`X-Forwarded-Proto` are only honoured from loopback
+  and `Krakarr__TrustedProxies`, so clients cannot fake their IP (rate limits, logs) or HTTPS. If your proxy runs in
+  another container or host, add its address or network; Krakarr logs a warning naming the address it ignored.
 
 ## Architecture
 

@@ -10,6 +10,7 @@ using Krakarr.Data.Sqlite;
 using Krakarr.Downloads;
 using Krakarr.Host.Auth;
 using Krakarr.Host.Endpoints;
+using Krakarr.Host.Hosting;
 using Krakarr.Host.Hubs;
 using Krakarr.Indexers;
 using Krakarr.Media;
@@ -105,7 +106,10 @@ builder.Services
         o.Cookie.Name = "krakarr_auth";
         o.Cookie.HttpOnly = true;
         o.Cookie.SameSite = SameSiteMode.Strict;
-        o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        // Krakarr__SecureCookies=true marks the cookie Secure regardless of the scheme (for HTTPS-only deployments).
+        o.Cookie.SecurePolicy = builder.Configuration.GetValue<bool>("Krakarr:SecureCookies")
+            ? CookieSecurePolicy.Always
+            : CookieSecurePolicy.SameAsRequest;
         o.ExpireTimeSpan = TimeSpan.FromDays(30);
         o.SlidingExpiration = true;
         // APIs answer 401/403 instead of redirecting to a login page.
@@ -148,12 +152,12 @@ builder.Services.AddRateLimiter(o =>
     };
 });
 
-builder.Services.Configure<ForwardedHeadersOptions>(o =>
-{
-    o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-    o.KnownIPNetworks.Clear();
-    o.KnownProxies.Clear();
-});
+// Only trusted reverse proxies may set X-Forwarded-For/Proto (loopback by default, plus Krakarr__TrustedProxies);
+// otherwise clients could spoof their IP (rate limits, logs) and the scheme (Secure cookie). Parsed eagerly so a
+// typo fails at startup instead of silently trusting nobody.
+var trustedProxies = builder.Configuration[TrustedProxies.SettingName];
+TrustedProxies.Parse(trustedProxies);
+builder.Services.Configure<ForwardedHeadersOptions>(o => TrustedProxies.Configure(o, trustedProxies));
 
 var app = builder.Build();
 
@@ -168,6 +172,7 @@ using (var scope = app.Services.CreateScope())
 app.Logger.LogInformation("Krakarr {Version} starting. Config: {Config}, DB: {Provider}", SystemEndpoints.Version, configDir, dbOptions.Provider);
 
 // ---- Pipeline ------------------------------------------------------------------------------
+app.UseUntrustedProxyWarning();
 app.UseForwardedHeaders();
 if (!string.IsNullOrEmpty(urlBase))
 {
