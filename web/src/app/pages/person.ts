@@ -7,6 +7,31 @@ import { DiscoverAdd } from '../shared/discover-add';
 import { MediaCard, discoverKey } from '../shared/media-card';
 
 type MediaFilter = 'all' | 'movie' | 'series';
+export type CreditOrder = 'newest' | 'oldest' | 'title' | 'rating';
+
+const ORDER_KEY = 'krakarr.person.order';
+const ORDERS: CreditOrder[] = ['newest', 'oldest', 'title', 'rating'];
+
+function storedOrder(): CreditOrder {
+  try {
+    const v = localStorage.getItem(ORDER_KEY) as CreditOrder | null;
+    return v && ORDERS.includes(v) ? v : 'newest';
+  } catch { return 'newest'; }
+}
+
+/** Release date as a sortable string; titles without one are announced/upcoming, so they count as newest. */
+const dateKey = (c: PersonCredit) => c.date ?? (c.year ? `${c.year}` : '9999');
+
+/** Credits in the chosen order (a new array; ties keep the server order). */
+export function sortCredits(credits: PersonCredit[], order: CreditOrder): PersonCredit[] {
+  const compare: Record<CreditOrder, (a: PersonCredit, b: PersonCredit) => number> = {
+    newest: (a, b) => dateKey(b).localeCompare(dateKey(a)),
+    oldest: (a, b) => dateKey(a).localeCompare(dateKey(b)),
+    title: (a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base', numeric: true }),
+    rating: (a, b) => (b.rating ?? 0) - (a.rating ?? 0) || dateKey(b).localeCompare(dateKey(a)),
+  };
+  return [...credits].sort(compare[order]);
+}
 
 /** A credit as a discover item, so it renders with the shared poster card and add dialog. */
 export function creditItem(c: PersonCredit): DiscoverItem {
@@ -86,16 +111,28 @@ export function age(birthday: string, until: Date = new Date()): number {
           <option value="movie">Movies</option>
           <option value="series">Series</option>
         </select>
+        <select class="input w-auto" [value]="order()" (change)="setOrder($any($event.target).value)" aria-label="Sort by">
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="title">Title</option>
+          <option value="rating">Rating</option>
+        </select>
       </div>
 
-      @if (shown().length === 0) {
+      @if (sections().length === 0) {
         <p class="text-sm text-slate-500">No credits to show.</p>
-      } @else {
-        <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 2xl:grid-cols-8">
-          @for (c of shown(); track c.key) {
-            <kr-media-card [item]="c.item" [caption]="c.credit.role" (add)="selected.set($event)" />
-          }
-        </div>
+      }
+      @for (s of sections(); track s.kind) {
+        <section class="mb-8">
+          <h2 class="mb-3 flex items-baseline gap-2 text-lg font-semibold text-white">
+            {{ s.label }} <span class="text-sm font-normal text-slate-500">{{ s.credits.length }}</span>
+          </h2>
+          <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 2xl:grid-cols-8">
+            @for (c of s.credits; track c.key) {
+              <kr-media-card [item]="c.item" [caption]="c.credit.role" (add)="selected.set($event)" />
+            }
+          </div>
+        </section>
       }
 
       @if (selected(); as d) {
@@ -117,6 +154,7 @@ export class PersonPage {
   protected readonly error = signal<string | null>(null);
   protected readonly department = signal('Acting');
   protected readonly media = signal<MediaFilter>('all');
+  protected readonly order = signal<CreditOrder>(storedOrder());
   protected readonly bioExpanded = signal(false);
   protected readonly selected = signal<DiscoverItem | null>(null);
 
@@ -125,16 +163,23 @@ export class PersonPage {
     return p ? departments(p.credits, p.knownForDepartment) : [];
   });
 
-  protected readonly shown = computed(() => {
+  /** Movies, then series, each sorted; empty sections are left out. */
+  protected readonly sections = computed(() => {
     const p = this.person();
     if (!p) return [];
     const department = this.department(), media = this.media();
-    return p.credits
-      .filter(c => c.department === department && (media === 'all' || c.kind === media))
-      .map(credit => {
-        const item = creditItem(credit);
-        return { credit, item, key: discoverKey(item) };
-      });
+    const inDepartment = sortCredits(p.credits.filter(c => c.department === department), this.order());
+    return (['movie', 'series'] as const)
+      .filter(kind => media === 'all' || media === kind)
+      .map(kind => ({
+        kind,
+        label: kind === 'movie' ? 'Movies' : 'Series',
+        credits: inDepartment.filter(c => c.kind === kind).map(credit => {
+          const item = creditItem(credit);
+          return { credit, item, key: discoverKey(item) };
+        }),
+      }))
+      .filter(s => s.credits.length > 0);
   });
 
   /** Distinct library titles among the person's credits. */
@@ -177,6 +222,11 @@ export class PersonPage {
       credits: p.credits.map(c => c.kind !== d.kind || c.tmdbId !== d.item.tmdbId ? c
         : d.kind === 'movie' ? { ...c, movieId: libraryId } : { ...c, seriesId: libraryId }),
     });
+  }
+
+  protected setOrder(order: CreditOrder) {
+    this.order.set(order);
+    try { localStorage.setItem(ORDER_KEY, order); } catch { /* storage unavailable */ }
   }
 
   protected back() { history.back(); }
