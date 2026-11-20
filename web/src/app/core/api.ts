@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
-  IndexerError, IndexerTestResult, Language, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, MediaManagementSettings, MetadataSettings, Movie, MovieLookup, Quality, QualityProfile,
+  IndexerError, IndexerTestResult, Language, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
 } from './models';
 
@@ -137,6 +137,8 @@ export class Api {
   monitorSeason(seriesId: number, season: number, monitored: boolean) { return this.put<void>(`series/${seriesId}/seasons/${season}`, { monitored }); }
   monitorEpisode(id: number, monitored: boolean) { return this.put<void>(`episodes/${id}`, { monitored }); }
   refreshSeries(id: number) { return this.post<CommandInfo>(`series/${id}/refresh`); }
+  organizePreview(id: number) { return this.get<OrganizePreview>(`series/${id}/organize`); }
+  organizeSeries(id: number, renameFolder: boolean) { return this.post<CommandInfo>(`series/${id}/organize`, { renameFolder }); }
   searchSeries(id: number, seasonNumber?: number, episodeIds?: number[]) {
     return this.post<CommandInfo>(`series/${id}/search`, { seasonNumber: seasonNumber ?? null, episodeIds: episodeIds ?? null });
   }

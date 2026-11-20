@@ -6,7 +6,7 @@ import { Router } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
 import { Events } from '../../core/events';
 import { AgoPipe, BytesPipe } from '../../core/format';
-import { Episode, EpisodeRelease, HistoryItem, IndexerError, QualityProfile, SeasonInfo, Series, SubtitleFile } from '../../core/models';
+import { Episode, EpisodeRelease, HistoryItem, IndexerError, OrganizePreview, QualityProfile, SeasonInfo, Series, SubtitleFile } from '../../core/models';
 import { Toasts } from '../../core/toast';
 import { Modal } from '../../shared/modal';
 import { Poster } from '../../shared/poster';
@@ -56,6 +56,7 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
             <div class="mt-5 flex flex-wrap gap-2">
               <button class="btn-primary" (click)="searchMissing()">Search missing</button>
               <button class="btn-secondary" (click)="refresh()">Refresh</button>
+              <button class="btn-secondary" (click)="openOrganize()" title="Rename files and folders to match the naming settings">Organize</button>
               <button class="btn-secondary" (click)="toggleSeries()">{{ s.monitored ? 'Unmonitor' : 'Monitor' }}</button>
               <button class="btn-ghost" (click)="editing.set(true)">Edit</button>
               <button class="btn-ghost text-rose-300" (click)="confirmDelete.set(true)">Delete</button>
@@ -241,6 +242,48 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
         </kr-modal>
       }
 
+      @if (organizing()) {
+        <kr-modal [title]="'Organize ' + s.title" width="max-w-4xl" (closed)="organizing.set(false)">
+          @if (organizePreview(); as p) {
+            @if (!p.newPath && p.files.length === 0) {
+              <p class="py-6 text-center text-sm text-slate-400">Everything already follows the naming settings.</p>
+            } @else {
+              @if (p.newPath) {
+                <label class="mb-4 flex items-start gap-2 text-sm">
+                  <input type="checkbox" class="mt-0.5 accent-accent-500" [(ngModel)]="organizeFolder" />
+                  <span class="min-w-0">
+                    Also rename the series folder
+                    <span class="mt-1 block break-all font-mono text-xs text-slate-500">{{ p.path }}</span>
+                    <span class="block break-all font-mono text-xs text-emerald-300">→ {{ p.newPath }}</span>
+                  </span>
+                </label>
+              }
+              @if (p.files.length > 0) {
+                <p class="mb-2 text-sm text-slate-400">{{ organizableCount() }} of {{ p.files.length }} file{{ p.files.length === 1 ? '' : 's' }} will be renamed. Subtitles move with their video.</p>
+                <ul class="divide-y divide-surface-800 text-xs sm:max-h-[55vh] sm:overflow-auto">
+                  @for (f of p.files; track f.episodeFileId) {
+                    <li class="py-2 font-mono" [class.opacity-60]="f.problem">
+                      <div class="break-all text-slate-500">{{ f.existing }}</div>
+                      @if (f.problem) {
+                        <div class="font-sans text-rose-300">Skipped: {{ f.problem }}</div>
+                      } @else {
+                        <div class="break-all text-emerald-300">→ {{ f.new }}</div>
+                      }
+                    </li>
+                  }
+                </ul>
+              }
+            }
+          } @else {
+            <p class="py-6 text-center text-sm text-slate-400">Loading…</p>
+          }
+          <ng-container footer>
+            <button class="btn-ghost" (click)="organizing.set(false)">Cancel</button>
+            <button class="btn-primary" (click)="organize()" [disabled]="!canOrganize()">Organize</button>
+          </ng-container>
+        </kr-modal>
+      }
+
       @if (confirmDelete()) {
         <kr-modal [title]="'Delete ' + s.title" (closed)="confirmDelete.set(false)">
           <p class="text-sm text-slate-300">Remove this series from the library?</p>
@@ -299,6 +342,10 @@ export class SeriesDetailPage implements OnInit {
   protected readonly grabbing = signal<string | null>(null);
   protected readonly editing = signal(false);
   protected readonly confirmDelete = signal(false);
+  protected readonly organizing = signal(false);
+  protected readonly organizePreview = signal<OrganizePreview | null>(null);
+  protected readonly organizableCount = computed(() => this.organizePreview()?.files.filter(f => !f.problem).length ?? 0);
+  protected organizeFolder = true;
   protected editMonitored = true;
   protected editSeasonFolder = true;
   protected editProfileId = 0;
@@ -410,6 +457,34 @@ export class SeriesDetailPage implements OnInit {
   async refresh() {
     await this.api.refreshSeries(this.id());
     this.toasts.show('Refreshing metadata…');
+  }
+
+  async openOrganize() {
+    this.organizePreview.set(null);
+    this.organizeFolder = true;
+    this.organizing.set(true);
+    try {
+      this.organizePreview.set(await this.api.organizePreview(this.id()));
+    } catch (e) {
+      this.organizing.set(false);
+      this.toasts.error(errorMessage(e));
+    }
+  }
+
+  protected canOrganize() {
+    const p = this.organizePreview();
+    return !!p && (this.organizableCount() > 0 || (!!p.newPath && this.organizeFolder));
+  }
+
+  async organize() {
+    const p = this.organizePreview();
+    try {
+      await this.api.organizeSeries(this.id(), !!p?.newPath && this.organizeFolder);
+      this.organizing.set(false);
+      this.toasts.show('Organizing files…');
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+    }
   }
 
   async interactive(target: ReleaseTarget) {

@@ -114,6 +114,9 @@ export interface HistoryItem {
 export interface CommandInfo { id: string; name: string; status: CommandStatus; message?: string; queued: string; started?: string; ended?: string; }
 
 export interface GeneralSettings { apiKey: string; instanceName: string; }
+export interface OrganizeItem { episodeFileId: number; existing: string; new: string; problem?: string | null; }
+export interface OrganizePreview { path: string; newPath?: string | null; files: OrganizeItem[]; }
+
 export interface MediaManagementSettings {
   renameFiles: boolean; movieFolderFormat: string; movieFileFormat: string; useHardlinks: boolean; minimumVideoFileSizeMb: number;
   seriesFolderFormat: string; seasonFolderFormat: string; episodeFileFormat: string;

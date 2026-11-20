@@ -23,6 +23,7 @@ public static class SeriesModule
         services.AddScoped<ISeriesMetadata, SeriesMetadata>();
         services.AddScoped<ISeriesDiscovery, TmdbSeriesDiscovery>();
         services.AddScoped<SeriesService>();
+        services.AddScoped<SeriesOrganizer>();
         services.AddScoped<LibraryImport.SeriesLibraryImport>();
         services.AddScheduledTask<SeriesImportService>();
         services.AddScheduledTask<SeriesRssSyncTask>();
