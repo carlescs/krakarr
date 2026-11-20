@@ -1,4 +1,4 @@
-import { Component, DestroyRef, OnInit, computed, effect, inject, input, numberAttribute, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, effect, inject, input, numberAttribute, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -381,17 +381,26 @@ export class SeriesDetailPage implements OnInit {
   protected readonly profileName = computed(() => this.profiles().find(p => p.id === this.series()?.qualityProfileId)?.name ?? '');
 
   constructor() {
+    // The router reuses this component when navigating between series (/series/1 → /series/2),
+    // so (re)load whenever the id changes rather than only once in ngOnInit.
+    effect(() => {
+      const id = this.id();
+      untracked(() => {
+        this.reset();
+        this.load(id);
+      });
+    });
+
     // Live download progress while torrents for this show are active.
     let lastActive = false;
     effect(() => {
       const active = this.events.downloads().some(d => d.seriesId === this.id() && !d.imported);
-      if (active || lastActive) this.loadEpisodes();
+      if (active || lastActive) untracked(() => this.loadEpisodes());
       lastActive = active;
     });
   }
 
   ngOnInit() {
-    this.load();
     this.api.qualityProfiles().then(p => this.profiles.set(p));
     this.languages.load().catch(() => {});
     this.events.seriesUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => { if (e.id === this.id()) this.load(); });
@@ -399,11 +408,37 @@ export class SeriesDetailPage implements OnInit {
     this.events.subtitlesUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => { if (e.seriesId === this.id()) this.loadSubtitles(); });
   }
 
-  async loadSubtitles() { this.subtitles.set(await this.api.subtitleFiles({ seriesId: this.id() })); }
+  async loadSubtitles() {
+    const id = this.id();
+    const files = await this.api.subtitleFiles({ seriesId: id });
+    if (id === this.id()) this.subtitles.set(files);
+  }
 
-  private async load() {
+  /** Clears everything tied to the previous series so nothing leaks across navigations. */
+  private reset() {
+    this.series.set(null);
+    this.episodes.set([]);
+    this.history.set([]);
+    this.subtitles.set([]);
+    this.subtitleEpisode.set(null);
+    this.expanded.set(new Set<number>());
+    this.expandedInitialised = false;
+    this.releaseTarget.set(null);
+    this.releases.set([]);
+    this.searchErrors.set([]);
+    this.searching.set(false);
+    this.grabbing.set(null);
+    this.editing.set(false);
+    this.confirmDelete.set(false);
+    this.organizing.set(false);
+    this.organizePreview.set(null);
+    this.deleteFiles = false;
+  }
+
+  private async load(id = this.id()) {
     try {
-      const [s] = await Promise.all([this.api.series(this.id()), this.loadEpisodes(), this.loadHistory(), this.loadSubtitles()]);
+      const [s] = await Promise.all([this.api.series(id), this.loadEpisodes(), this.loadHistory(), this.loadSubtitles()]);
+      if (id !== this.id()) return; // navigated to another series meanwhile
       this.series.set(s);
       this.editMonitored = s.monitored;
       this.editSeasonFolder = s.seasonFolder;
@@ -420,15 +455,26 @@ export class SeriesDetailPage implements OnInit {
     }
   }
 
-  private loadingEpisodes = false;
+  /** Series id whose episodes are being fetched, so overlapping refreshes for the same series are skipped. */
+  private loadingEpisodesFor: number | null = null;
   private async loadEpisodes() {
-    if (this.loadingEpisodes) return;
-    this.loadingEpisodes = true;
-    try { this.episodes.set(await this.api.episodes(this.id())); }
-    finally { this.loadingEpisodes = false; }
+    const id = this.id();
+    if (this.loadingEpisodesFor === id) return;
+    this.loadingEpisodesFor = id;
+    try {
+      const episodes = await this.api.episodes(id);
+      if (id === this.id()) this.episodes.set(episodes);
+    } finally {
+      if (this.loadingEpisodesFor === id) this.loadingEpisodesFor = null;
+    }
   }
 
-  private async loadHistory() { if (this.auth.isStaff()) this.history.set((await this.api.history(undefined, 1, 50, this.id())).items); }
+  private async loadHistory() {
+    if (!this.auth.isStaff()) return;
+    const id = this.id();
+    const page = await this.api.history(undefined, 1, 50, id);
+    if (id === this.id()) this.history.set(page.items);
+  }
 
   protected episodesFor(season: number) {
     return this.episodes().filter(e => e.seasonNumber === season).sort((a, b) => b.episodeNumber - a.episodeNumber);
@@ -489,8 +535,10 @@ export class SeriesDetailPage implements OnInit {
     this.organizePreview.set(null);
     this.organizeFolder = true;
     this.organizing.set(true);
+    const id = this.id();
     try {
-      this.organizePreview.set(await this.api.organizePreview(this.id()));
+      const preview = await this.api.organizePreview(id);
+      if (id === this.id()) this.organizePreview.set(preview);
     } catch (e) {
       this.organizing.set(false);
       this.toasts.error(errorMessage(e));
@@ -514,11 +562,13 @@ export class SeriesDetailPage implements OnInit {
   }
 
   async interactive(target: ReleaseTarget) {
+    const id = this.id();
     this.releaseTarget.set(target);
     this.releases.set([]);
     this.searching.set(true);
     try {
-      const res = await this.api.seriesReleases(this.id(), target.season, target.episodeId);
+      const res = await this.api.seriesReleases(id, target.season, target.episodeId);
+      if (id !== this.id()) return;
       this.releases.set(res.releases);
       this.searchErrors.set(res.errors);
     } catch (e) {

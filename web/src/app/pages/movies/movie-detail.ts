@@ -1,4 +1,4 @@
-import { Component, DestroyRef, OnInit, computed, inject, input, numberAttribute, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, effect, inject, input, numberAttribute, signal, untracked } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -297,8 +297,19 @@ export class MovieDetailPage implements OnInit {
   protected readonly downloads = computed(() => this.events.downloads().filter(d => d.movieId === this.id() && !d.imported));
   protected readonly profileName = computed(() => this.profiles().find(p => p.id === this.movie()?.qualityProfileId)?.name ?? '');
 
+  constructor() {
+    // The router reuses this component when navigating between movies (/movies/1 → /movies/2),
+    // so (re)load whenever the id changes rather than only once in ngOnInit.
+    effect(() => {
+      const id = this.id();
+      untracked(() => {
+        this.reset();
+        this.load(id);
+      });
+    });
+  }
+
   ngOnInit() {
-    this.load();
     this.languages.load().catch(() => {});
     this.api.qualityProfiles().then(p => this.profiles.set(p));
     this.events.movieUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => { if (e.id === this.id()) this.load(); });
@@ -308,11 +319,32 @@ export class MovieDetailPage implements OnInit {
 
   protected availabilityLabel(value: MinimumAvailability) { return AVAILABILITY_OPTIONS.find(o => o.value === value)?.label ?? value; }
 
-  async loadSubtitles() { this.subtitles.set(await this.api.subtitleFiles({ movieId: this.id() })); }
+  async loadSubtitles() {
+    const id = this.id();
+    const files = await this.api.subtitleFiles({ movieId: id });
+    if (id === this.id()) this.subtitles.set(files);
+  }
 
-  private async load() {
+  /** Clears everything tied to the previous movie so nothing leaks across navigations. */
+  private reset() {
+    this.movie.set(null);
+    this.history.set([]);
+    this.subtitles.set([]);
+    this.releases.set([]);
+    this.searchErrors.set([]);
+    this.releasesOpen.set(false);
+    this.searching.set(false);
+    this.grabbing.set(null);
+    this.editing.set(false);
+    this.confirmDelete.set(false);
+    this.subtitlesOpen.set(false);
+    this.deleteFiles = false;
+  }
+
+  private async load(id = this.id()) {
     try {
-      const m = await this.api.movie(this.id());
+      const m = await this.api.movie(id);
+      if (id !== this.id()) return; // navigated to another movie meanwhile
       this.movie.set(m);
       this.editMonitored = m.monitored;
       this.editProfileId = m.qualityProfileId;
@@ -326,7 +358,9 @@ export class MovieDetailPage implements OnInit {
 
   private async loadHistory() {
     if (!this.auth.isStaff()) return;
-    this.history.set((await this.api.history(this.id(), 1, 50)).items);
+    const id = this.id();
+    const page = await this.api.history(id, 1, 50);
+    if (id === this.id()) this.history.set(page.items);
   }
 
   async autoSearch() {
@@ -335,10 +369,12 @@ export class MovieDetailPage implements OnInit {
   }
 
   async interactiveSearch() {
+    const id = this.id();
     this.releasesOpen.set(true);
     this.searching.set(true);
     try {
-      const res = await this.api.movieReleases(this.id());
+      const res = await this.api.movieReleases(id);
+      if (id !== this.id()) return;
       this.releases.set(res.releases);
       this.searchErrors.set(res.errors);
     } catch (e) {
