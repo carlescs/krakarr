@@ -15,7 +15,7 @@ namespace Krakarr.Series;
 /// <param name="ExistingPath">Use this existing folder as-is (library import) instead of building one from the naming format.</param>
 public sealed record AddSeriesRequest(
     int? TmdbId, int? TvdbId, int QualityProfileId, string RootFolderPath, MonitorMode Monitor = MonitorMode.All, bool SeasonFolder = true, bool SearchForMissing = true,
-    string? ExistingPath = null);
+    string? ExistingPath = null, IReadOnlyList<string>? Languages = null);
 
 public sealed class SeriesService(
     KrakarrDbContext db,
@@ -62,6 +62,7 @@ public sealed class SeriesService(
             Title = info.Title,
             Path = string.Empty,
             QualityProfileId = request.QualityProfileId,
+            Languages = request.Languages is null ? null : MediaLanguages.Clean(request.Languages),
             SeasonFolder = request.SeasonFolder,
             Monitored = request.Monitor != MonitorMode.None,
         };
@@ -246,7 +247,8 @@ public sealed class SeriesService(
         await db.SaveChangesAsync(ct);
 
         var scope = new SearchScope(season, episode is null ? null : new HashSet<int> { episode.Id });
-        var decisions = EpisodeDecisionEngine.Evaluate(series, series.QualityProfile!, series.Episodes, result.Releases, scope, requireMonitored, Today);
+        var languages = (await settings.GetAsync<LanguageSettings>(ct)).For(series.Languages);
+        var decisions = EpisodeDecisionEngine.Evaluate(series, series.QualityProfile!, series.Episodes, result.Releases, scope, requireMonitored, Today, languages);
         return (decisions, result.Errors);
     }
 

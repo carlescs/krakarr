@@ -87,6 +87,11 @@ public class Indexer
     public bool EnableRss { get; set; } = true;
     public int Priority { get; set; } = 25;
     public int MinimumSeeders { get; set; } = 1;
+    /// <summary>
+    /// Audio language assumed for releases from this indexer whose names carry no language tag
+    /// (<see cref="MediaLanguages"/> code). Null = English, the scene convention.
+    /// </summary>
+    public string? DefaultLanguage { get; set; }
     public DateTimeOffset Added { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -123,6 +128,8 @@ public class Movie
     public MinimumAvailability MinimumAvailability { get; set; } = MinimumAvailability.Released;
     public bool Monitored { get; set; } = true;
     public int QualityProfileId { get; set; }
+    /// <summary>Wanted audio languages for this item, most preferred first; null = the global default (<c>LanguageSettings</c>).</summary>
+    public List<string>? Languages { get; set; }
     public QualityProfile? QualityProfile { get; set; }
     /// <summary>Absolute path of the movie's folder.</summary>
     public required string Path { get; set; }
@@ -201,6 +208,8 @@ public class Series
     /// <summary>Put episodes in "Season NN" sub-folders.</summary>
     public bool SeasonFolder { get; set; } = true;
     public int QualityProfileId { get; set; }
+    /// <summary>Wanted audio languages for this item, most preferred first; null = the global default (<c>LanguageSettings</c>).</summary>
+    public List<string>? Languages { get; set; }
     public QualityProfile? QualityProfile { get; set; }
     /// <summary>Absolute path of the series folder.</summary>
     public required string Path { get; set; }

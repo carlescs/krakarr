@@ -18,6 +18,10 @@ public static partial class ReleaseParser
         var (season, episodes) = ParseEpisodes(normalized);
         var (mediaTitle, year) = season is not null ? ParseSeriesTitle(normalized) : ParseMovieTitle(normalized);
 
+        // Language tags come after the title, so titles like "French Kiss" or "The Italian Job" are not mistaken for one.
+        var titleEnd = mediaTitle is null ? -1 : normalized.IndexOf(mediaTitle, StringComparison.OrdinalIgnoreCase);
+        var tail = titleEnd >= 0 ? normalized[(titleEnd + mediaTitle!.Length)..] : normalized;
+
         return new ParsedRelease
         {
             ReleaseTitle = releaseTitle,
@@ -29,7 +33,21 @@ public static partial class ReleaseParser
             ReleaseGroup = ParseReleaseGroup(title),
             SeasonNumber = season,
             EpisodeNumbers = episodes,
+            Languages = ParseLanguages(tail),
+            IsMultiLanguage = MultiLanguageRegex().IsMatch(tail),
         };
+    }
+
+    /// <summary>Audio languages tagged in a (separator-normalized) release name, in order of appearance.</summary>
+    public static IReadOnlyList<string> ParseLanguages(string text)
+    {
+        List<string>? found = null;
+        foreach (Match m in LanguageRegex.Matches(text))
+        {
+            if (LanguageTokens.TryGetValue(m.Value, out var code) && !(found ??= []).Contains(code)) found.Add(code);
+        }
+
+        return found ?? (IReadOnlyList<string>)[];
     }
 
     public static bool IsVideoFile(string path) =>
@@ -202,6 +220,23 @@ public static partial class ReleaseParser
         t = MultiSpace().Replace(t, " ");
         return t.Trim();
     }
+
+    private static readonly Dictionary<string, string> LanguageTokens = MediaLanguages.All
+        .SelectMany(l => l.Tokens.Select(t => (Token: t, l.Code)))
+        .ToDictionary(x => x.Token, x => x.Code, StringComparer.OrdinalIgnoreCase);
+
+    // Subtitle tags ("ENG SUBS", "SUB ITA") name the subtitles, not the audio, so they are skipped.
+    private const string NotSubtitles = @"(?<!\bsubs? )(?<!\bsubbed )";
+    private const string NotFollowedBySubtitles = @"(?! ?(?:sub|subs|subbed|subtitles?|subtitulado)(?![a-z0-9]))";
+
+    private static readonly Regex LanguageRegex = new(
+        NotSubtitles + "(?<![a-z0-9])(?:"
+        + string.Join('|', LanguageTokens.Keys.OrderByDescending(t => t.Length).Select(Regex.Escape))
+        + ")(?![a-z0-9])" + NotFollowedBySubtitles,
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    [GeneratedRegex(NotSubtitles + @"(?<![a-z0-9])(?:multi|dual(?: audio)?)(?![a-z0-9])" + NotFollowedBySubtitles, RegexOptions.IgnoreCase)]
+    private static partial Regex MultiLanguageRegex();
 
     [GeneratedRegex(@"^(?:\[[^\]]*\]\s*)+")]
     private static partial Regex LeadingTag();

@@ -8,6 +8,10 @@ public sealed record ReleaseDecision
     public required ReleaseInfo Release { get; init; }
     public required ParsedRelease Parsed { get; init; }
     public Quality Quality => Parsed.Quality;
+    /// <summary>Audio languages of the release (see <see cref="ReleaseLanguages.Resolve"/>).</summary>
+    public IReadOnlyList<string> Languages { get; init; } = [];
+    /// <summary>Position of the release's best wanted language (lower is better); <see cref="int.MaxValue"/> when unwanted.</summary>
+    public int LanguageRank { get; init; }
     public IReadOnlyList<string> Rejections { get; init; } = [];
     public bool Approved => Rejections.Count == 0;
 }
@@ -19,16 +23,21 @@ public static class MovieDecisionEngine
         Movie movie,
         QualityProfile profile,
         Quality? existingFileQuality,
-        IEnumerable<ReleaseInfo> releases)
+        IEnumerable<ReleaseInfo> releases,
+        IReadOnlyList<string>? languages = null)
     {
-        var decisions = releases.Select(r => Evaluate(movie, profile, existingFileQuality, r)).ToList();
+        var decisions = releases.Select(r => Evaluate(movie, profile, existingFileQuality, r, languages)).ToList();
         return Rank(decisions);
     }
 
-    public static ReleaseDecision Evaluate(Movie movie, QualityProfile profile, Quality? existingFileQuality, ReleaseInfo release)
+    /// <param name="languages">Wanted audio languages, most preferred first; null or empty = any.</param>
+    public static ReleaseDecision Evaluate(Movie movie, QualityProfile profile, Quality? existingFileQuality, ReleaseInfo release,
+        IReadOnlyList<string>? languages = null)
     {
         var parsed = ReleaseParser.Parse(release.Title);
         var rejections = new List<string>();
+        var releaseLanguages = ReleaseLanguages.Resolve(parsed, release);
+        var languageRank = ReleaseLanguages.PreferenceRank(releaseLanguages, languages);
 
         var idMatch = (release.TmdbId is { } tmdb && tmdb == movie.TmdbId)
             || (release.ImdbId is { } imdb && movie.ImdbId is not null && $"tt{imdb:D7}".Equals(movie.ImdbId, StringComparison.OrdinalIgnoreCase));
@@ -53,6 +62,11 @@ public static class MovieDecisionEngine
             {
                 rejections.Add($"Year mismatch ({year} vs {movie.Year})");
             }
+        }
+
+        if (languageRank is null)
+        {
+            rejections.Add(ReleaseLanguages.Rejection(releaseLanguages, languages!));
         }
 
         if (parsed.Quality == Qualities.Unknown)
@@ -97,13 +111,18 @@ public static class MovieDecisionEngine
             }
         }
 
-        return new ReleaseDecision { Release = release, Parsed = parsed, Rejections = rejections };
+        return new ReleaseDecision
+        {
+            Release = release, Parsed = parsed, Rejections = rejections,
+            Languages = releaseLanguages, LanguageRank = languageRank ?? int.MaxValue,
+        };
     }
 
-    /// <summary>Approved first, then best quality, propers/repacks, seeders and indexer priority.</summary>
+    /// <summary>Approved first, then preferred language, best quality, propers/repacks, seeders and indexer priority.</summary>
     public static IReadOnlyList<ReleaseDecision> Rank(IEnumerable<ReleaseDecision> decisions) =>
         decisions
             .OrderByDescending(d => d.Approved)
+            .ThenBy(d => d.LanguageRank)
             .ThenByDescending(d => d.Quality.Weight)
             .ThenByDescending(d => d.Parsed.IsProper || d.Parsed.IsRepack)
             .ThenByDescending(d => d.Release.Seeders ?? 0)

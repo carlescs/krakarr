@@ -43,6 +43,8 @@ public sealed record MovieDto
     public bool IsAvailable { get; init; }
     public bool Monitored { get; init; }
     public int QualityProfileId { get; init; }
+    /// <summary>The movie's own wanted audio languages; null = the global default (<c>GET /languages</c>).</summary>
+    public IReadOnlyList<string>? Languages { get; init; }
     public required string Path { get; init; }
     public DateTimeOffset Added { get; init; }
     public bool HasFile { get; init; }
@@ -58,9 +60,10 @@ public sealed record MovieListItemDto(int Id, string Title, int Year, string? Po
 
 public sealed record MovieCollectionDto(int Id, int TmdbId, string Name, string? PosterUrl);
 
-public sealed record UpdateMovieRequest(bool Monitored, int QualityProfileId, MinimumAvailability? MinimumAvailability = null);
+/// <param name="Languages">Wanted audio languages, most preferred first; null = use the global default.</param>
+public sealed record UpdateMovieRequest(bool Monitored, int QualityProfileId, MinimumAvailability? MinimumAvailability = null, IReadOnlyList<string>? Languages = null);
 
-public sealed record ReleaseDecisionDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections);
+public sealed record ReleaseDecisionDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections, IReadOnlyList<string> Languages);
 
 public sealed record GrabMovieReleaseRequest(ReleaseInfo Release);
 
@@ -187,6 +190,7 @@ public static class MovieEndpoints
             movie.Monitored = req.Monitored;
             movie.QualityProfileId = req.QualityProfileId;
             if (req.MinimumAvailability is { } availability) movie.MinimumAvailability = availability;
+            movie.Languages = req.Languages is null ? null : MediaLanguages.Clean(req.Languages);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         });
@@ -236,7 +240,7 @@ public static class MovieEndpoints
             var (decisions, errors) = await movies.SearchAsync(movie, ct);
             return Results.Ok(new
             {
-                Releases = decisions.Select(d => new ReleaseDecisionDto(d.Release, d.Quality.Name, d.Quality.Weight, d.Approved, d.Rejections)),
+                Releases = decisions.Select(d => new ReleaseDecisionDto(d.Release, d.Quality.Name, d.Quality.Weight, d.Approved, d.Rejections, d.Languages)),
                 Errors = errors,
             });
         });
@@ -314,6 +318,7 @@ public static class MovieEndpoints
         IsAvailable = MovieReleases.IsAvailable(m, MovieService.Today),
         Monitored = m.Monitored,
         QualityProfileId = m.QualityProfileId,
+        Languages = m.Languages,
         Path = m.Path,
         Added = m.Added,
         HasFile = m.MovieFile is not null,

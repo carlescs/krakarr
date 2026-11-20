@@ -14,6 +14,10 @@ public sealed record ParsedRelease
     public string? ReleaseGroup { get; init; }
     public int? SeasonNumber { get; init; }
     public IReadOnlyList<int> EpisodeNumbers { get; init; } = [];
+    /// <summary>Audio languages tagged in the name (<see cref="MediaLanguages"/> codes), in order of appearance.</summary>
+    public IReadOnlyList<string> Languages { get; init; } = [];
+    /// <summary>Tagged MULTi / DUAL: several audio tracks, usually including the original (English) one.</summary>
+    public bool IsMultiLanguage { get; init; }
     public bool IsSeasonPack => SeasonNumber is not null && EpisodeNumbers.Count == 0;
     public bool IsEpisode => EpisodeNumbers.Count > 0;
 }

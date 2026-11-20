@@ -11,6 +11,10 @@ public sealed record EpisodeDecision
     public IReadOnlyList<Episode> Episodes { get; init; } = [];
     public IReadOnlyList<string> Rejections { get; init; } = [];
     public Quality Quality => Parsed.Quality;
+    /// <summary>Audio languages of the release (see <see cref="ReleaseLanguages.Resolve"/>).</summary>
+    public IReadOnlyList<string> Languages { get; init; } = [];
+    /// <summary>Position of the release's best wanted language (lower is better); <see cref="int.MaxValue"/> when unwanted.</summary>
+    public int LanguageRank { get; init; }
     public bool Approved => Rejections.Count == 0;
     public bool IsSeasonPack => Parsed.IsSeasonPack;
 }
@@ -23,21 +27,28 @@ public static class EpisodeDecisionEngine
 {
     /// <param name="episodes">All episodes of the series, with <see cref="Episode.EpisodeFile"/> loaded.</param>
     /// <param name="requireMonitored">Automatic searches/RSS only grab monitored episodes.</param>
+    /// <param name="languages">Wanted audio languages, most preferred first; null or empty = any.</param>
     public static IReadOnlyList<EpisodeDecision> Evaluate(
         Core.Domain.Series series, QualityProfile profile, IReadOnlyCollection<Episode> episodes, IEnumerable<ReleaseInfo> releases,
-        SearchScope? scope, bool requireMonitored, DateOnly today) =>
-        Rank(releases.Select(r => Evaluate(series, profile, episodes, r, scope, requireMonitored, today)));
+        SearchScope? scope, bool requireMonitored, DateOnly today, IReadOnlyList<string>? languages = null) =>
+        Rank(releases.Select(r => Evaluate(series, profile, episodes, r, scope, requireMonitored, today, languages)));
 
     public static EpisodeDecision Evaluate(
         Core.Domain.Series series, QualityProfile profile, IReadOnlyCollection<Episode> episodes, ReleaseInfo release,
-        SearchScope? scope, bool requireMonitored, DateOnly today)
+        SearchScope? scope, bool requireMonitored, DateOnly today, IReadOnlyList<string>? languages = null)
     {
         var parsed = ReleaseParser.Parse(release.Title);
         var rejections = new List<string>();
+        var releaseLanguages = ReleaseLanguages.Resolve(parsed, release);
+        var languageRank = ReleaseLanguages.PreferenceRank(releaseLanguages, languages);
 
         if (parsed.SeasonNumber is not { } season)
         {
-            return new EpisodeDecision { Release = release, Parsed = parsed, Rejections = ["Not a TV episode or season release"] };
+            return new EpisodeDecision
+            {
+                Release = release, Parsed = parsed, Rejections = ["Not a TV episode or season release"],
+                Languages = releaseLanguages, LanguageRank = languageRank ?? int.MaxValue,
+            };
         }
 
         // Series match
@@ -83,6 +94,11 @@ public static class EpisodeDecisionEngine
             {
                 rejections.Add("Does not contain the requested episode");
             }
+        }
+
+        if (languageRank is null)
+        {
+            rejections.Add(ReleaseLanguages.Rejection(releaseLanguages, languages!));
         }
 
         // Quality
@@ -140,7 +156,11 @@ public static class EpisodeDecisionEngine
             }
         }
 
-        return new EpisodeDecision { Release = release, Parsed = parsed, Episodes = mapped, Rejections = rejections.Distinct().ToList() };
+        return new EpisodeDecision
+        {
+            Release = release, Parsed = parsed, Episodes = mapped, Rejections = rejections.Distinct().ToList(),
+            Languages = releaseLanguages, LanguageRank = languageRank ?? int.MaxValue,
+        };
     }
 
     /// <summary>
@@ -162,10 +182,11 @@ public static class EpisodeDecisionEngine
                 .ToList();
     }
 
-    /// <summary>Approved first, then best quality, larger coverage (season packs), propers, seeders, indexer priority.</summary>
+    /// <summary>Approved first, then preferred language, best quality, larger coverage (season packs), propers, seeders, indexer priority.</summary>
     public static IReadOnlyList<EpisodeDecision> Rank(IEnumerable<EpisodeDecision> decisions) =>
         decisions
             .OrderByDescending(d => d.Approved)
+            .ThenBy(d => d.LanguageRank)
             .ThenByDescending(d => d.Quality.Weight)
             .ThenByDescending(d => d.Episodes.Count)
             .ThenByDescending(d => d.Parsed.IsProper || d.Parsed.IsRepack)

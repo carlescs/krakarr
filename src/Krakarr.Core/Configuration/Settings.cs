@@ -47,6 +47,21 @@ public sealed record MetadataSettings : ISettingsSection
     public string? ReleaseRegion { get; init; }
 }
 
+/// <summary>Audio languages releases must have to be grabbed. Movies and series use these unless they set their own.</summary>
+public sealed record LanguageSettings : ISettingsSection
+{
+    public static string SectionKey => "languages";
+
+    /// <summary>
+    /// Wanted audio languages (<see cref="Domain.MediaLanguages"/> codes), most preferred first. Releases in none of them are
+    /// rejected, and among acceptable releases an earlier language wins over a better quality. Empty = any language.
+    /// </summary>
+    public List<string> Preferred { get; init; } = [];
+
+    /// <summary>The languages that apply to an item: its own list when it has one, otherwise <see cref="Preferred"/>.</summary>
+    public IReadOnlyList<string> For(IReadOnlyList<string>? itemLanguages) => itemLanguages ?? Preferred;
+}
+
 public enum DownloadClientKind
 {
     /// <summary>The torrent engine built into Krakarr (MonoTorrent).</summary>
