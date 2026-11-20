@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Events;
@@ -21,6 +22,8 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 var inContainer = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true";
@@ -113,6 +116,37 @@ builder.Services
 builder.Services.AddAuthorizationBuilder()
     .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
 
+// Brute-force protection: per-IP rate limit on credential endpoints + per-username lockout (LoginThrottle).
+builder.Services.Configure<AuthSecurityOptions>(builder.Configuration.GetSection(AuthSecurityOptions.SectionName));
+builder.Services.TryAddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<LoginThrottle>();
+builder.Services.AddSingleton<SetupTokenStore>();
+builder.Services.AddRateLimiter(o =>
+{
+    o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    o.AddPolicy(AuthEndpoints.RateLimitPolicy, ctx =>
+    {
+        var limit = Math.Max(1, ctx.RequestServices.GetRequiredService<IOptions<AuthSecurityOptions>>().Value.AttemptsPerMinutePerIp);
+        return RateLimitPartition.GetFixedWindowLimiter(ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = limit,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        });
+    });
+    o.OnRejected = (ctx, _) =>
+    {
+        if (ctx.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            ctx.HttpContext.Response.Headers.RetryAfter = ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        ctx.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("Krakarr.Auth")
+            .LogWarning("Rate limited {Path} from {Ip}", ctx.HttpContext.Request.Path, ctx.HttpContext.Connection.RemoteIpAddress);
+        return ValueTask.CompletedTask;
+    };
+});
+
 builder.Services.Configure<ForwardedHeadersOptions>(o =>
 {
     o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
@@ -126,6 +160,8 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     await scope.ServiceProvider.GetRequiredService<DatabaseSeeder>().InitializeAsync();
+    var setupRequired = !await scope.ServiceProvider.GetRequiredService<KrakarrDbContext>().Users.AnyAsync();
+    app.Services.GetRequiredService<SetupTokenStore>().Initialize(setupRequired);
 }
 
 app.Logger.LogInformation("Krakarr {Version} starting. Config: {Config}, DB: {Provider}", SystemEndpoints.Version, configDir, dbOptions.Provider);
@@ -142,6 +178,7 @@ app.UseStatusCodePages();
 app.UseKrakarrStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapOpenApi("/api/openapi/{documentName}.json");
 app.MapAuthEndpoints();

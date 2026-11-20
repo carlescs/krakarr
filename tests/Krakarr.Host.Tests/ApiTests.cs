@@ -17,7 +17,7 @@ public sealed class ApiTests : IClassFixture<KrakarrFactory>
     {
         var client = NewClient();
         var status = await client.GetFromJsonAsync<JsonElement>("/api/v1/auth/status", TestContext.Current.CancellationToken);
-        var creds = new { username = "admin", password = "correct-horse" };
+        var creds = new { username = "admin", password = "correct-horse", setupToken = KrakarrFactory.TestSetupToken };
         var url = status.GetProperty("setupRequired").GetBoolean() ? "/api/v1/auth/setup" : "/api/v1/auth/login";
         var res = await client.PostAsJsonAsync(url, creds, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.NoContent, res.StatusCode);
@@ -46,7 +46,7 @@ public sealed class ApiTests : IClassFixture<KrakarrFactory>
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/v1/movies", ct)).StatusCode);
 
         // Setup can only run once.
-        var again = await NewClient().PostAsJsonAsync("/api/v1/auth/setup", new { username = "evil", password = "12345678" }, ct);
+        var again = await NewClient().PostAsJsonAsync("/api/v1/auth/setup", new { username = "evil", password = "12345678", setupToken = KrakarrFactory.TestSetupToken }, ct);
         Assert.Equal(HttpStatusCode.Conflict, again.StatusCode);
 
         var wrong = await NewClient().PostAsJsonAsync("/api/v1/auth/login", new { username = "admin", password = "nope-nope" }, ct);
@@ -142,5 +142,52 @@ public sealed class ApiTests : IClassFixture<KrakarrFactory>
 
         // Reset so other tests keep using the built-in client.
         (await client.PutAsJsonAsync("/api/v1/settings/downloads", new { client = "Embedded" }, ct)).EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task Repeated_failed_logins_lock_the_username()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = NewClient();
+        for (var i = 0; i < 5; i++)
+        {
+            var res = await client.PostAsJsonAsync("/api/v1/auth/login", new { username = "ghost", password = "wrong-password" }, ct);
+            Assert.Equal(HttpStatusCode.Unauthorized, res.StatusCode);
+        }
+
+        var locked = await client.PostAsJsonAsync("/api/v1/auth/login", new { username = "Ghost ", password = "wrong-password" }, ct);
+        Assert.Equal(HttpStatusCode.TooManyRequests, locked.StatusCode);
+        Assert.True(locked.Headers.RetryAfter?.Delta > TimeSpan.Zero);
+    }
+
+    [Fact]
+    public async Task Deleting_files_outside_root_folders_is_refused()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = await LoggedInClientAsync();
+        var outside = Directory.CreateTempSubdirectory("krakarr-outside");
+        File.WriteAllText(Path.Combine(outside.FullName, "keep.txt"), "x");
+        try
+        {
+            int id;
+            using (var scope = _factory.Services.CreateScope())
+            {
+                // Simulates a movie stored with an arbitrary path (e.g. added before path validation existed).
+                var db = scope.ServiceProvider.GetRequiredService<Krakarr.Data.KrakarrDbContext>();
+                var movie = new Krakarr.Core.Domain.Movie { TmdbId = 987654, Title = "Evil", Path = outside.FullName, QualityProfileId = 1 };
+                db.Movies.Add(movie);
+                await db.SaveChangesAsync(ct);
+                id = movie.Id;
+            }
+
+            var res = await client.DeleteAsync($"/api/v1/movies/{id}?deleteFiles=true", ct);
+            Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+            Assert.True(File.Exists(Path.Combine(outside.FullName, "keep.txt")));
+            Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/v1/movies/{id}", ct)).StatusCode);
+        }
+        finally
+        {
+            outside.Delete(true);
+        }
     }
 }
