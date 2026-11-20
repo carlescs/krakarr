@@ -177,6 +177,13 @@ public static class SeriesEndpoints
             if (series is null) return Results.NotFound();
             if (deleteFiles == true && Directory.Exists(series.Path))
             {
+                // Only ever delete strictly inside a configured root folder (never a root itself or anything outside).
+                var roots = await db.RootFolders.AsNoTracking().Select(r => r.Path).ToListAsync(ct);
+                if (!Krakarr.Media.Files.LibraryPaths.CanDeleteRecursively(roots, series.Path))
+                {
+                    return Results.Problem($"Refusing to delete {series.Path}: it is not inside a configured root folder", statusCode: StatusCodes.Status400BadRequest);
+                }
+
                 Directory.Delete(series.Path, recursive: true);
             }
 

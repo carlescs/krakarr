@@ -19,6 +19,7 @@ export function errorMessage(err: unknown): string {
     if (body?.detail) return body.detail;
     if (body?.title) return body.title;
     if (err.status === 0) return 'Cannot reach the Krakarr server';
+    if (err.status === 429) return 'Too many attempts. Please wait a minute and try again.';
     return `${err.status} ${err.statusText}`;
   }
   return err instanceof Error ? err.message : String(err);
@@ -47,7 +48,7 @@ export class Api {
   // Auth
   authStatus() { return this.get<AuthStatus>('auth/status'); }
   login(username: string, password: string) { return this.post<void>('auth/login', { username, password }); }
-  setup(username: string, password: string) { return this.post<void>('auth/setup', { username, password }); }
+  setup(username: string, password: string, setupToken: string) { return this.post<void>('auth/setup', { username, password, setupToken }); }
   logout() { return this.post<void>('auth/logout'); }
   changeCredentials(username: string, password: string) { return this.post<void>('auth/password', { username, password }); }
 

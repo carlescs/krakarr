@@ -178,6 +178,13 @@ public static class MovieEndpoints
 
             if (deleteFiles == true && Directory.Exists(movie.Path))
             {
+                // Only ever delete strictly inside a configured root folder (never a root itself or anything outside).
+                var roots = await db.RootFolders.AsNoTracking().Select(r => r.Path).ToListAsync(ct);
+                if (!Krakarr.Media.Files.LibraryPaths.CanDeleteRecursively(roots, movie.Path))
+                {
+                    return Results.Problem($"Refusing to delete {movie.Path}: it is not inside a configured root folder", statusCode: StatusCodes.Status400BadRequest);
+                }
+
                 Directory.Delete(movie.Path, recursive: true);
             }
 

@@ -21,7 +21,7 @@ public sealed class CalendarTests : IClassFixture<KrakarrFactory>
         var ct = TestContext.Current.CancellationToken;
         var status = await client.GetFromJsonAsync<JsonElement>("/api/v1/auth/status", ct);
         var url = status.GetProperty("setupRequired").GetBoolean() ? "/api/v1/auth/setup" : "/api/v1/auth/login";
-        (await client.PostAsJsonAsync(url, new { username = "admin", password = "correct-horse" }, ct)).EnsureSuccessStatusCode();
+        (await client.PostAsJsonAsync(url, new { username = "admin", password = "correct-horse", setupToken = KrakarrFactory.TestSetupToken }, ct)).EnsureSuccessStatusCode();
         return client;
     }
 

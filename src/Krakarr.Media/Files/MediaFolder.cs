@@ -34,6 +34,23 @@ public static class MediaFolder
         return parent is not null && string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)), parent, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// True when <paramref name="path"/> lies strictly below <paramref name="root"/> (never the root itself), after resolving
+    /// "." and ".." segments. Used to keep destructive operations inside configured root folders.
+    /// </summary>
+    public static bool IsInside(string root, string path)
+    {
+        if (string.IsNullOrWhiteSpace(root) || string.IsNullOrWhiteSpace(path)) return false;
+        var fullRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root));
+        var fullPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        var prefix = Path.EndsInDirectorySeparator(fullRoot) ? fullRoot : fullRoot + Path.DirectorySeparatorChar; // "/" stays "/"
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        return fullPath.Length > prefix.Length && fullPath.StartsWith(prefix, comparison);
+    }
+
+    /// <summary>Normalized absolute form of <paramref name="path"/> without a trailing separator.</summary>
+    public static string Normalize(string path) => Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+
     public static bool SamePath(string a, string b) =>
         string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)), StringComparison.Ordinal);
 }

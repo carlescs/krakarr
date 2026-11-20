@@ -5,6 +5,7 @@ using Krakarr.Core.Metadata;
 using Krakarr.Data;
 using Krakarr.Downloads;
 using Krakarr.Indexers;
+using Krakarr.Media.Files;
 using Krakarr.Media.Parsing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -65,9 +66,9 @@ public sealed class SeriesService(
             Monitored = request.Monitor != MonitorMode.None,
         };
         ApplyInfo(series, info);
-        series.Path = request.ExistingPath is { Length: > 0 } existing
-            ? Path.TrimEndingDirectorySeparator(existing)
-            : Path.Combine(request.RootFolderPath, SeriesNaming.BuildSeriesFolder(series, media.SeriesFolderFormat));
+        var roots = await db.RootFolders.AsNoTracking().Where(r => r.MediaType == MediaType.Series).Select(r => r.Path).ToListAsync(ct);
+        series.Path = LibraryPaths.ResolveItemFolder(roots, request.RootFolderPath, request.ExistingPath,
+            () => SeriesNaming.BuildSeriesFolder(series, media.SeriesFolderFormat));
         if (await db.Series.AnyAsync(s => s.Path == series.Path, ct))
             throw new InvalidOperationException($"Another series already uses {series.Path}");
 

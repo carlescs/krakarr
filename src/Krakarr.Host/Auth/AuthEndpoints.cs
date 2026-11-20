@@ -9,8 +9,17 @@ namespace Krakarr.Host.Auth;
 
 public sealed record CredentialsRequest(string Username, string Password);
 
+/// <param name="SetupToken">One-time token from the startup log or the config folder's <c>setup-token</c> file.</param>
+public sealed record SetupRequest(string Username, string Password, string? SetupToken);
+
 public static class AuthEndpoints
 {
+    /// <summary>Per-IP rate limit applied to the login, setup and password endpoints.</summary>
+    public const string RateLimitPolicy = "auth";
+    private const string LogCategory = "Krakarr.Auth";
+
+    private static string ClientIp(HttpContext http) => http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/auth").WithTags("Auth").AllowAnonymous();
@@ -22,48 +31,86 @@ public static class AuthEndpoints
             Username = http.User.Identity?.Name,
         });
 
-        group.MapPost("/setup", async (CredentialsRequest req, HttpContext http, KrakarrDbContext db, IPasswordHasher<User> hasher, CancellationToken ct) =>
+        group.MapPost("/setup", async (SetupRequest req, HttpContext http, KrakarrDbContext db, IPasswordHasher<User> hasher,
+            SetupTokenStore setupToken, ILoggerFactory loggers, CancellationToken ct) =>
         {
-            if (await db.Users.AnyAsync(ct))
+            // Serialize setup so concurrent requests cannot both pass the "no users yet" check.
+            await setupToken.Lock.WaitAsync(ct);
+            try
             {
-                return Results.Problem("Setup has already been completed", statusCode: StatusCodes.Status409Conflict);
+                if (await db.Users.AnyAsync(ct))
+                {
+                    return Results.Problem("Setup has already been completed", statusCode: StatusCodes.Status409Conflict);
+                }
+
+                if (!setupToken.Validate(req.SetupToken))
+                {
+                    loggers.CreateLogger(LogCategory).LogWarning("Rejected setup attempt with an invalid setup token from {Ip}", ClientIp(http));
+                    return Results.Problem(
+                        "Invalid setup token. It is printed in the Krakarr log at startup and saved as 'setup-token' in the config folder.",
+                        statusCode: StatusCodes.Status403Forbidden);
+                }
+
+                if (Validate(new CredentialsRequest(req.Username, req.Password)) is { } problem) return problem;
+
+                var user = new User { Username = req.Username.Trim(), PasswordHash = string.Empty };
+                user.PasswordHash = hasher.HashPassword(user, req.Password);
+                db.Users.Add(user);
+                await db.SaveChangesAsync(ct);
+                setupToken.Consume();
+                await SignInAsync(http, user);
+                return Results.NoContent();
+            }
+            finally
+            {
+                setupToken.Lock.Release();
+            }
+        }).RequireRateLimiting(RateLimitPolicy);
+
+        group.MapPost("/login", async (CredentialsRequest req, HttpContext http, KrakarrDbContext db, IPasswordHasher<User> hasher,
+            LoginThrottle throttle, ILoggerFactory loggers, CancellationToken ct) =>
+        {
+            var username = (req.Username ?? string.Empty).Trim();
+            var password = req.Password ?? string.Empty;
+            var logger = loggers.CreateLogger(LogCategory);
+
+            if (throttle.RetryAfter(username) is { } wait)
+            {
+                var seconds = (int)Math.Ceiling(wait.TotalSeconds);
+                http.Response.Headers.RetryAfter = seconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                logger.LogWarning("Rejected login for locked username {Username} from {Ip}", username, ClientIp(http));
+                return Results.Problem($"Too many failed login attempts. Try again in {seconds} seconds.", statusCode: StatusCodes.Status429TooManyRequests);
             }
 
-            if (Validate(req) is { } problem) return problem;
-
-            var user = new User { Username = req.Username.Trim(), PasswordHash = string.Empty };
-            user.PasswordHash = hasher.HashPassword(user, req.Password);
-            db.Users.Add(user);
-            await db.SaveChangesAsync(ct);
-            await SignInAsync(http, user);
-            return Results.NoContent();
-        });
-
-        group.MapPost("/login", async (CredentialsRequest req, HttpContext http, KrakarrDbContext db, IPasswordHasher<User> hasher, CancellationToken ct) =>
-        {
-            var user = await db.Users.FirstOrDefaultAsync(u => u.Username == req.Username.Trim(), ct);
+            var user = await db.Users.FirstOrDefaultAsync(u => u.Username == username, ct);
+            var result = PasswordVerificationResult.Failed;
             if (user is null)
             {
                 // Hash anyway to keep timing similar for unknown users.
-                hasher.HashPassword(new User { Username = "x", PasswordHash = "x" }, req.Password ?? string.Empty);
-                return Results.Problem("Invalid username or password", statusCode: StatusCodes.Status401Unauthorized);
+                hasher.HashPassword(new User { Username = "x", PasswordHash = "x" }, password);
             }
-
-            var result = hasher.VerifyHashedPassword(user, user.PasswordHash, req.Password ?? string.Empty);
-            if (result == PasswordVerificationResult.Failed)
+            else
             {
+                result = hasher.VerifyHashedPassword(user, user.PasswordHash, password);
+            }
+
+            if (user is null || result == PasswordVerificationResult.Failed)
+            {
+                throttle.RecordFailure(username);
+                logger.LogWarning("Failed login for username {Username} from {Ip}", username, ClientIp(http));
                 return Results.Problem("Invalid username or password", statusCode: StatusCodes.Status401Unauthorized);
             }
 
+            throttle.RecordSuccess(username);
             if (result == PasswordVerificationResult.SuccessRehashNeeded)
             {
-                user.PasswordHash = hasher.HashPassword(user, req.Password!);
+                user.PasswordHash = hasher.HashPassword(user, password);
                 await db.SaveChangesAsync(ct);
             }
 
             await SignInAsync(http, user);
             return Results.NoContent();
-        });
+        }).RequireRateLimiting(RateLimitPolicy);
 
         group.MapPost("/logout", async (HttpContext http) =>
         {
@@ -81,7 +128,7 @@ public static class AuthEndpoints
             await db.SaveChangesAsync(ct);
             await SignInAsync(http, user);
             return Results.NoContent();
-        }).WithTags("Auth");
+        }).WithTags("Auth").RequireRateLimiting(RateLimitPolicy);
 
         return app;
     }
