@@ -1,5 +1,6 @@
 import { Component, OnDestroy, OnInit, computed, inject, input, output, signal } from '@angular/core';
 import { DatePipe, DecimalPipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../core/api';
 import { BytesPipe, DurationPipe, SpeedPipe } from '../core/format';
 import { TorrentDetails } from '../core/models';
@@ -12,7 +13,7 @@ type Tab = 'overview' | 'files' | 'peers' | 'trackers';
 /** Live details of one torrent (works for the built-in engine and qBittorrent). */
 @Component({
   selector: 'kr-torrent-details',
-  imports: [Modal, Progress, StateBadge, BytesPipe, SpeedPipe, DurationPipe, DatePipe, DecimalPipe],
+  imports: [RouterLink, Modal, Progress, StateBadge, BytesPipe, SpeedPipe, DurationPipe, DatePipe, DecimalPipe],
   template: `
     <kr-modal [title]="details()?.status?.name ?? name()" width="max-w-6xl" (closed)="closed.emit()">
       @if (error()) {
@@ -22,6 +23,12 @@ type Tab = 'overview' | 'files' | 'peers' | 'trackers';
         <!-- Header -->
         <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
           <kr-state-badge [state]="d.status.state" />
+          @if (d.status.movieId) {
+            <a [routerLink]="['/movies', d.status.movieId]" class="badge bg-accent-500/15 text-accent-300 hover:bg-accent-500/25" title="Open the movie" (click)="closed.emit()">Movie</a>
+          }
+          @if (d.status.seriesId) {
+            <a [routerLink]="['/series', d.status.seriesId]" class="badge bg-violet-500/15 text-violet-300 hover:bg-violet-500/25" title="Open the series" (click)="closed.emit()">Series</a>
+          }
           @if (d.clientState) { <span class="badge bg-surface-700 font-mono text-slate-300" title="Client state">{{ d.clientState }}</span> }
           <span class="text-slate-400">{{ d.status.progress | number: '1.0-2' }}% of {{ d.status.size | bytes }}</span>
           <span class="text-slate-400">↓ {{ d.status.downloadRate | speed }}</span>
