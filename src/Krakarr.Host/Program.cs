@@ -76,7 +76,7 @@ builder.Services.AddKrakarrMedia();
 builder.Services.AddKrakarrIndexers();
 builder.Services.AddKrakarrDownloads();
 builder.Services.AddKrakarrMovies();
-builder.Services.AddKrakarrSeries(builder.Configuration);
+builder.Services.AddKrakarrSeries();
 builder.Services.AddKrakarrSubtitles();
 
 // ---- Web: JSON, SignalR, auth --------------------------------------------------------------

@@ -19,7 +19,7 @@ internal static class TestData
     {
         var series = new Core.Domain.Series
         {
-            Id = 1, TvdbId = 73244, Title = "The Office", Year = 2005, Path = "/media/tv/The Office", QualityProfileId = 1, QualityProfile = Hd1080,
+            Id = 1, TmdbId = 2316, TvdbId = 73244, Title = "The Office", Year = 2005, Path = "/media/tv/The Office", QualityProfileId = 1, QualityProfile = Hd1080,
         };
         var id = 1;
         void Add(int s, int e, DateOnly? aired) =>

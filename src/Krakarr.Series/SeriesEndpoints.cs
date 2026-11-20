@@ -1,5 +1,6 @@
 using Krakarr.Core.Domain;
 using Krakarr.Core.Jobs;
+using Krakarr.Core.Metadata;
 using Krakarr.Data;
 using Krakarr.Downloads;
 using Microsoft.AspNetCore.Builder;
@@ -15,7 +16,8 @@ public sealed record SeasonDto(int SeasonNumber, bool Monitored, int EpisodeCoun
 public sealed record SeriesDto
 {
     public int Id { get; init; }
-    public int TvdbId { get; init; }
+    public int TmdbId { get; init; }
+    public int? TvdbId { get; init; }
     public string? ImdbId { get; init; }
     public required string Title { get; init; }
     public int Year { get; init; }
@@ -97,11 +99,11 @@ public static class SeriesEndpoints
                         lines.Add(await import.ImportAsync(item, token));
                         if (item.SearchForMissing && item.Monitor != MonitorMode.None)
                         {
-                            var seriesId = await sp.GetRequiredService<KrakarrDbContext>().Series.Where(s => s.TvdbId == item.TvdbId).Select(s => s.Id).FirstAsync(token);
+                            var seriesId = await sp.GetRequiredService<KrakarrDbContext>().Series.Where(s => s.TmdbId == item.TmdbId).Select(s => s.Id).FirstAsync(token);
                             lines.Add(await sp.GetRequiredService<SeriesService>().AutoSearchAsync(seriesId, null, null, token));
                         }
                     }
-                    catch (Exception ex) when (ex is InvalidOperationException or TvdbException)
+                    catch (Exception ex) when (ex is InvalidOperationException or MetadataException)
                     {
                         lines.Add($"{System.IO.Path.GetFileName(item.Path)}: {ex.Message}");
                     }
@@ -112,16 +114,16 @@ public static class SeriesEndpoints
             return Results.Accepted(value: command);
         });
 
-        group.MapGet("/lookup", async (string term, ITvdbClient tvdb, KrakarrDbContext db, CancellationToken ct) =>
+        group.MapGet("/lookup", async (string term, ITmdbTvClient tmdb, KrakarrDbContext db, CancellationToken ct) =>
         {
             try
             {
-                var results = await tvdb.SearchAsync(term, ct);
-                var ids = results.Select(r => r.TvdbId).ToList();
-                var existing = await db.Series.AsNoTracking().Where(s => ids.Contains(s.TvdbId)).ToDictionaryAsync(s => s.TvdbId, s => s.Id, ct);
-                return Results.Ok(results.Select(r => r with { SeriesId = existing.TryGetValue(r.TvdbId, out var id) ? id : null }));
+                var results = await tmdb.SearchAsync(term, ct);
+                var ids = results.Select(r => r.TmdbId).ToList();
+                var existing = await db.Series.AsNoTracking().Where(s => ids.Contains(s.TmdbId)).ToDictionaryAsync(s => s.TmdbId, s => s.Id, ct);
+                return Results.Ok(results.Select(r => r with { SeriesId = existing.TryGetValue(r.TmdbId, out var id) ? id : null }));
             }
-            catch (TvdbException ex)
+            catch (MetadataException ex)
             {
                 return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest);
             }
@@ -140,7 +142,7 @@ public static class SeriesEndpoints
 
                 return Results.Created($"/api/v1/series/{series.Id}", ToDto(series, Today(time), new Dictionary<int, int>()));
             }
-            catch (Exception ex) when (ex is InvalidOperationException or TvdbException)
+            catch (Exception ex) when (ex is InvalidOperationException or MetadataException)
             {
                 return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest);
             }
@@ -315,6 +317,7 @@ public static class SeriesEndpoints
         return new SeriesDto
         {
             Id = s.Id,
+            TmdbId = s.TmdbId,
             TvdbId = s.TvdbId,
             ImdbId = s.ImdbId,
             Title = s.Title,

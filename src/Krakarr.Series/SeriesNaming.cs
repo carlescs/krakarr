@@ -39,7 +39,8 @@ public static partial class SeriesNaming
         ["Series Title"] = s.Title,
         ["Series CleanTitle"] = new string(s.Title.Where(c => char.IsLetterOrDigit(c) || c == ' ').ToArray()),
         ["Series Year"] = s.Year > 0 && !TrailingYear().IsMatch(s.Title) ? s.Year.ToString(CultureInfo.InvariantCulture) : null,
-        ["TvdbId"] = s.TvdbId.ToString(CultureInfo.InvariantCulture),
+        ["TmdbId"] = s.TmdbId > 0 ? s.TmdbId.ToString(CultureInfo.InvariantCulture) : null,
+        ["TvdbId"] = s.TvdbId?.ToString(CultureInfo.InvariantCulture),
         ["ImdbId"] = s.ImdbId,
     };
 

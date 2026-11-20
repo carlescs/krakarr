@@ -116,7 +116,7 @@ export class Api {
   series(id: number) { return this.get<Series>(`series/${id}`); }
   episodes(seriesId: number) { return this.get<Episode[]>(`series/${seriesId}/episodes`); }
   lookupSeries(term: string) { return this.get<SeriesLookup[]>('series/lookup', { term }); }
-  addSeries(req: { tvdbId: number; qualityProfileId: number; rootFolderPath: string; monitor: MonitorMode; seasonFolder: boolean; searchForMissing: boolean }) {
+  addSeries(req: { tmdbId: number; qualityProfileId: number; rootFolderPath: string; monitor: MonitorMode; seasonFolder: boolean; searchForMissing: boolean }) {
     return this.post<Series>('series', req);
   }
   updateSeries(id: number, monitored: boolean, qualityProfileId: number, seasonFolder: boolean) {
@@ -157,7 +157,7 @@ export class Api {
     return this.post<CommandInfo>('movies/import', items);
   }
   scanSeriesImport(rootFolderId: number) { return this.get<SeriesImportCandidate[]>('series/import/scan', { rootFolderId }); }
-  importSeries(items: { path: string; tvdbId: number; qualityProfileId: number; monitor: MonitorMode; searchForMissing: boolean }[]) {
+  importSeries(items: { path: string; tmdbId: number; qualityProfileId: number; monitor: MonitorMode; searchForMissing: boolean }[]) {
     return this.post<CommandInfo>('series/import', items);
   }
 }

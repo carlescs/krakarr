@@ -1,3 +1,4 @@
+using Krakarr.Core.Metadata;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Jobs;
 using Krakarr.Data;

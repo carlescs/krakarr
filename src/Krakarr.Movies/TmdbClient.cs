@@ -1,14 +1,10 @@
 using System.Globalization;
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using System.Text.Json.Serialization;
 using Krakarr.Core.Configuration;
+using Krakarr.Core.Metadata;
 using Krakarr.Data;
-using Microsoft.Extensions.Configuration;
 
 namespace Krakarr.Movies;
-
-public sealed class MetadataException(string message) : Exception(message);
 
 public sealed record MovieLookup
 {
@@ -35,11 +31,8 @@ public interface ITmdbClient
 }
 
 /// <summary>Minimal TMDB v3 client. Accepts either a v3 API key or a v4 read access token.</summary>
-public sealed class TmdbClient(IHttpClientFactory httpClientFactory, ISettingsService settings, IConfiguration configuration) : ITmdbClient
+public sealed class TmdbClient(TmdbApi api, ISettingsService settings) : ITmdbClient
 {
-    public const string HttpClientName = "tmdb";
-    private const string ImageBase = "https://image.tmdb.org/t/p/";
-
     public async Task<IReadOnlyList<MovieLookup>> SearchAsync(string query, int? year, CancellationToken ct = default)
     {
         var path = $"3/search/movie?query={Uri.EscapeDataString(query)}&include_adult=false";
@@ -61,38 +54,8 @@ public sealed class TmdbClient(IHttpClientFactory httpClientFactory, ISettingsSe
         return first is null ? null : await GetMovieAsync(first.Id, ct);
     }
 
-    private async Task<T> GetAsync<T>(string relative, CancellationToken ct)
-    {
-        var meta = await settings.GetAsync<MetadataSettings>(ct);
-        if (string.IsNullOrWhiteSpace(meta.TmdbApiKey))
-        {
-            throw new MetadataException("TMDB API key is not configured (Settings → Metadata)");
-        }
-
-        var baseUrl = (configuration["Tmdb:BaseUrl"] ?? "https://api.themoviedb.org/").TrimEnd('/') + "/";
-        var sep = relative.Contains('?') ? '&' : '?';
-        var url = $"{baseUrl}{relative}{sep}language={Uri.EscapeDataString(meta.Language)}";
-
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        var key = meta.TmdbApiKey.Trim();
-        if (key.Length > 40)
-        {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
-        }
-        else
-        {
-            request.RequestUri = new Uri($"{url}&api_key={Uri.EscapeDataString(key)}");
-        }
-
-        var http = httpClientFactory.CreateClient(HttpClientName);
-        using var response = await http.SendAsync(request, ct);
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new MetadataException($"TMDB request failed with HTTP {(int)response.StatusCode}");
-        }
-
-        return await response.Content.ReadFromJsonAsync<T>(ct) ?? throw new MetadataException("Empty TMDB response");
-    }
+    private async Task<T> GetAsync<T>(string relative, CancellationToken ct) =>
+        await api.GetAsync<T>(await settings.GetAsync<MetadataSettings>(ct), relative, ct);
 
     private static MovieLookup Map(TmdbMovie m) => new()
     {
@@ -102,8 +65,8 @@ public sealed class TmdbClient(IHttpClientFactory httpClientFactory, ISettingsSe
         OriginalTitle = m.OriginalTitle,
         Year = DateOnly.TryParse(m.ReleaseDate, CultureInfo.InvariantCulture, out var d) ? d.Year : 0,
         Overview = m.Overview,
-        PosterUrl = m.PosterPath is null ? null : ImageBase + "w500" + m.PosterPath,
-        FanartUrl = m.BackdropPath is null ? null : ImageBase + "original" + m.BackdropPath,
+        PosterUrl = TmdbApi.Image(m.PosterPath, "w500"),
+        FanartUrl = TmdbApi.Image(m.BackdropPath, "original"),
         Runtime = m.Runtime ?? 0,
         Status = m.Status,
     };

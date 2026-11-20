@@ -5,15 +5,15 @@ namespace Krakarr.Series.LibraryImport;
 
 public sealed record SeriesMatch(SeriesLookup? Series, MatchConfidence Confidence);
 
-/// <summary>Picks the TheTVDB result that best fits a library folder.</summary>
+/// <summary>Picks the TMDB result that best fits a library folder.</summary>
 public static class SeriesMatcher
 {
     public static SeriesMatch Pick(ParsedFolder folder, IReadOnlyList<SeriesLookup> candidates)
     {
-        if (folder.TvdbId is { } tvdb)
+        if (folder.TmdbId is { } tmdb)
         {
-            var byId = candidates.FirstOrDefault(c => c.TvdbId == tvdb)
-                ?? new SeriesLookup { TvdbId = tvdb, Title = folder.Title, Year = folder.Year ?? 0 };
+            var byId = candidates.FirstOrDefault(c => c.TmdbId == tmdb)
+                ?? new SeriesLookup { TmdbId = tmdb, Title = folder.Title, Year = folder.Year ?? 0 };
             return new SeriesMatch(byId, MatchConfidence.Exact);
         }
 

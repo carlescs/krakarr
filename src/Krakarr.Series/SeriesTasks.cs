@@ -1,6 +1,7 @@
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Jobs;
+using Krakarr.Core.Metadata;
 using Krakarr.Data;
 using Krakarr.Indexers;
 using Krakarr.Media.Parsing;
@@ -53,7 +54,7 @@ public sealed class SeriesRssSyncTask(
             var series = await seriesService.LoadAsync(id, cancellationToken);
             if (series?.QualityProfile is null) continue;
             var candidates = (byTitle.GetValueOrDefault(SeriesNaming.NormalizedTitle(series.Title)) ?? [])
-                .Concat(feed.Releases.Where(r => r.TvdbId == series.TvdbId))
+                .Concat(feed.Releases.Where(r => (series.TvdbId is not null && r.TvdbId == series.TvdbId) || (series.TmdbId > 0 && r.TmdbId == series.TmdbId)))
                 .Distinct()
                 .ToList();
             if (candidates.Count == 0) continue;
@@ -75,7 +76,7 @@ public sealed class SeriesRssSyncTask(
     }
 }
 
-/// <summary>Refreshes series metadata and episode lists from TheTVDB twice a day.</summary>
+/// <summary>Refreshes series metadata and episode lists from TMDB twice a day.</summary>
 public sealed class SeriesRefreshTask(KrakarrDbContext db, SeriesService seriesService, ILogger<SeriesRefreshTask> logger) : IScheduledTask
 {
     public string Name => "Refresh series metadata";
@@ -92,10 +93,14 @@ public sealed class SeriesRefreshTask(KrakarrDbContext db, SeriesService seriesS
             {
                 await seriesService.RefreshAsync(series, cancellationToken);
             }
-            catch (TvdbException ex)
+            catch (MetadataException ex) when (series.TmdbId <= 0)
+            {
+                logger.LogWarning("Could not match {Title} on TMDB: {Message}", series.Title, ex.Message);
+            }
+            catch (MetadataException ex)
             {
                 logger.LogWarning("Could not refresh {Title}: {Message}", series.Title, ex.Message);
-                return; // likely missing key / TVDB down; don't spam
+                return; // likely missing key / TMDB down; don't spam
             }
         }
     }

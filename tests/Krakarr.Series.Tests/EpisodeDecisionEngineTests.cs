@@ -47,6 +47,14 @@ public class EpisodeDecisionEngineTests
         Assert.True(d.Approved, string.Join(", ", d.Rejections));
     }
 
+    [Fact]
+    public void Matches_by_tmdb_id_even_when_title_differs()
+    {
+        var release = Release("Office.Show.S02E01.1080p.WEB-DL-GRP") with { TmdbId = 2316 };
+        var d = EpisodeDecisionEngine.Evaluate(Office(), Hd1080, Office().Episodes, release, null, true, Today);
+        Assert.True(d.Approved, string.Join(", ", d.Rejections));
+    }
+
     [Theory]
     [InlineData("The.Office.S03E01.1080p.WEB-DL-GRP", "Unknown episode S03E01")]
     [InlineData("The.Office.S01E02.720p.HDTV.x264-GRP", "not wanted")]

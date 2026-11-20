@@ -30,10 +30,8 @@ public sealed record MediaManagementSettings : ISettingsSection
 public sealed record MetadataSettings : ISettingsSection
 {
     public static string SectionKey => "metadata";
-    /// <summary>TMDB v3 API key or v4 read access token.</summary>
+    /// <summary>TMDB v3 API key or v4 read access token, used for both movies and series.</summary>
     public string? TmdbApiKey { get; init; }
-    public string? TvdbApiKey { get; init; }
-    public string? TvdbPin { get; init; }
     public string Language { get; init; } = "en-US";
 }
 

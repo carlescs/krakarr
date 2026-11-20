@@ -41,7 +41,7 @@ public static class EpisodeDecisionEngine
         }
 
         // Series match
-        var idMatch = release.TvdbId is { } tvdb && tvdb == series.TvdbId;
+        var idMatch = (release.TvdbId is { } tvdb && tvdb == series.TvdbId) || (release.TmdbId is { } tmdb && tmdb > 0 && tmdb == series.TmdbId);
         if (!idMatch)
         {
             var normalized = ReleaseParser.NormalizeTitle(parsed.Title);

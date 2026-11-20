@@ -63,7 +63,8 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
 
         b.Entity<Series>(e =>
         {
-            e.HasIndex(x => x.TvdbId).IsUnique();
+            e.HasIndex(x => x.TmdbId).IsUnique();
+            e.HasIndex(x => x.TvdbId);
             e.HasOne(x => x.QualityProfile).WithMany().HasForeignKey(x => x.QualityProfileId).OnDelete(DeleteBehavior.Restrict);
             e.HasMany(x => x.Seasons).WithOne().HasForeignKey(x => x.SeriesId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Episodes).WithOne().HasForeignKey(x => x.SeriesId).OnDelete(DeleteBehavior.Cascade);
@@ -74,7 +75,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
         b.Entity<Episode>(e =>
         {
             e.HasIndex(x => new { x.SeriesId, x.SeasonNumber, x.EpisodeNumber });
-            e.HasIndex(x => x.TvdbId);
+            e.HasIndex(x => x.TmdbId);
             e.HasOne(x => x.EpisodeFile).WithMany().HasForeignKey(x => x.EpisodeFileId).OnDelete(DeleteBehavior.SetNull);
         });
 

@@ -246,13 +246,8 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
           <div>
             <label class="label">TMDB API key or read access token</label>
             <input class="input font-mono" type="password" autocomplete="off" [(ngModel)]="m.tmdbApiKey" />
-            <p class="hint">Free at themoviedb.org → Settings → API. Used for movie metadata.</p>
+            <p class="hint">Free at themoviedb.org → Settings → API. Used for movie and series metadata.</p>
           </div>
-          <div>
-            <label class="label">TheTVDB API key</label>
-            <input class="input font-mono" type="password" autocomplete="off" [(ngModel)]="m.tvdbApiKey" />
-          </div>
-          <div class="max-w-xs"><label class="label">TheTVDB subscriber PIN (optional)</label><input class="input" [(ngModel)]="m.tvdbPin" /></div>
           <div class="max-w-xs"><label class="label">Language</label><input class="input" [(ngModel)]="m.language" placeholder="en-US" /></div>
           <div class="flex justify-end"><button class="btn-primary" (click)="save('metadata', m)">Save</button></div>
         </section>
@@ -393,7 +388,7 @@ export class SettingsPage implements OnInit {
   protected readonly selectableQualities = computed(() => this.qualities().filter(q => q.id !== 0));
   protected readonly namingTokens = ['Movie Title', 'Movie CleanTitle', 'Original Title', 'Release Year', 'Quality', 'Release Group', 'TmdbId', 'ImdbId']
     .map(t => `{${t}}`).join(', ');
-  protected readonly episodeTokens = ['Series Title', 'Series CleanTitle', 'Series Year', 'Season', 'Episode', 'Episode Title', 'Quality', 'Release Group', 'TvdbId']
+  protected readonly episodeTokens = ['Series Title', 'Series CleanTitle', 'Series Year', 'Season', 'Episode', 'Episode Title', 'Quality', 'Release Group', 'TmdbId', 'TvdbId']
     .map(t => `{${t}}`).join(', ');
   protected browsePath = '/';
   protected rootMediaType: 'Movie' | 'Series' = 'Movie';

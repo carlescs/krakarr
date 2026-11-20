@@ -15,7 +15,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261119191639_AddSubtitles";
+    public override string LastMigrationId => "20261120045818_SeriesTmdbMetadata";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -158,14 +158,14 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<string>("Title")
                     .HasColumnType("TEXT");
 
-                b.Property<int>("TvdbId")
+                b.Property<int>("TmdbId")
                     .HasColumnType("INTEGER");
 
                 b.HasKey("Id");
 
                 b.HasIndex("EpisodeFileId");
 
-                b.HasIndex("TvdbId");
+                b.HasIndex("TmdbId");
 
                 b.HasIndex("SeriesId", "SeasonNumber", "EpisodeNumber");
 
@@ -559,10 +559,10 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .IsRequired()
                     .HasColumnType("TEXT");
 
-                b.Property<int?>("TmdbId")
+                b.Property<int>("TmdbId")
                     .HasColumnType("INTEGER");
 
-                b.Property<int>("TvdbId")
+                b.Property<int?>("TvdbId")
                     .HasColumnType("INTEGER");
 
                 b.Property<int>("Year")
@@ -572,8 +572,10 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.HasIndex("QualityProfileId");
 
-                b.HasIndex("TvdbId")
+                b.HasIndex("TmdbId")
                     .IsUnique();
+
+                b.HasIndex("TvdbId");
 
                 b.ToTable("Series");
             });

@@ -13,18 +13,18 @@ import { Poster } from '../../shared/poster';
   template: `
     <h1 class="page-title mb-6">Add series</h1>
     <form class="mb-8 flex gap-3" (ngSubmit)="search()">
-      <input class="input flex-1 !py-3 !text-base" name="term" [(ngModel)]="term" placeholder="Search TheTVDB, e.g. “Breaking Bad”" autofocus />
+      <input class="input flex-1 !py-3 !text-base" name="term" [(ngModel)]="term" placeholder="Search TMDB, e.g. “Breaking Bad”" autofocus />
       <button class="btn-primary px-6" [disabled]="searching() || !term.trim()">{{ searching() ? 'Searching…' : 'Search' }}</button>
     </form>
 
     @if (error()) {
       <div class="card mb-6 border-rose-500/30 px-5 py-4 text-sm text-rose-300">
-        {{ error() }} @if (error()!.includes('TVDB')) { — <a routerLink="/settings" class="underline">open settings</a> }
+        {{ error() }} @if (error()!.includes('TMDB')) { — <a routerLink="/settings" class="underline">open settings</a> }
       </div>
     }
 
     <div class="space-y-3">
-      @for (r of results(); track r.tvdbId) {
+      @for (r of results(); track r.tmdbId) {
         <div class="card flex gap-4 p-4">
           <kr-poster class="w-20 shrink-0 sm:w-24" [url]="r.posterUrl" [title]="r.title" />
           <div class="min-w-0 flex-1">
@@ -135,7 +135,7 @@ export class AddSeriesPage implements OnInit {
     this.adding.set(true);
     try {
       const created = await this.api.addSeries({
-        tvdbId: show.tvdbId, qualityProfileId: this.profileId, rootFolderPath: this.rootFolder, monitor: this.monitor,
+        tmdbId: show.tmdbId, qualityProfileId: this.profileId, rootFolderPath: this.rootFolder, monitor: this.monitor,
         seasonFolder: this.seasonFolder, searchForMissing: this.searchNow,
       });
       this.toasts.success(`Added ${created.title}`);

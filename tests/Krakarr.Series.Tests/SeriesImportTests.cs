@@ -36,10 +36,11 @@ public sealed class SeriesImportTests : IAsyncLifetime
         public Task<TorrentDetails?> GetDetailsAsync(string infoHash, CancellationToken ct = default) => Task.FromResult<TorrentDetails?>(null);
     }
 
-    private sealed class Unused : ITvdbClient, IIndexerSearchService, IDownloadService
+    private sealed class Unused : ITmdbTvClient, IIndexerSearchService, IDownloadService
     {
         public Task<IReadOnlyList<SeriesLookup>> SearchAsync(string query, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<SeriesInfo> GetSeriesAsync(int tvdbId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<SeriesInfo> GetSeriesAsync(int tmdbId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<SeriesLookup?> FindByTvdbAsync(int tvdbId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IndexerSearchResult> SearchAsync(SearchCriteria criteria, IReadOnlyCollection<int>? indexerIds = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<Download> GrabAsync(ReleaseInfo release, AddTorrentOptions options, CancellationToken ct = default) => throw new NotSupportedException();
     }
@@ -53,7 +54,7 @@ public sealed class SeriesImportTests : IAsyncLifetime
         services.AddKrakarrData();
         services.AddKrakarrMedia();
         var unused = new Unused();
-        services.AddSingleton<ITvdbClient>(unused);
+        services.AddSingleton<ITmdbTvClient>(unused);
         services.AddSingleton<IIndexerSearchService>(unused);
         services.AddSingleton<IDownloadService>(unused);
         services.AddSingleton<ITorrentEngine>(_engine);
@@ -68,7 +69,7 @@ public sealed class SeriesImportTests : IAsyncLifetime
         await db.Database.EnsureCreatedAsync();
         var profile = new QualityProfile { Name = "HD", AllowedQualityIds = [Qualities.WebDl1080.Id, Qualities.Bluray1080.Id], CutoffQualityId = Qualities.Bluray1080.Id };
         db.QualityProfiles.Add(profile);
-        var series = new Core.Domain.Series { TvdbId = 1, Title = "Test Show", Year = 2021, Path = Path.Combine(_root.FullName, "tv", "Test Show (2021)"), QualityProfile = profile };
+        var series = new Core.Domain.Series { TmdbId = 1, Title = "Test Show", Year = 2021, Path = Path.Combine(_root.FullName, "tv", "Test Show (2021)"), QualityProfile = profile };
         for (var e = 1; e <= 3; e++)
             series.Episodes.Add(new Episode { SeasonNumber = 1, EpisodeNumber = e, Title = $"Chapter {e}", AirDate = new DateOnly(2021, 1, e) });
         series.Seasons.Add(new Season { SeasonNumber = 1 });

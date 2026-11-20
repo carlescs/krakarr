@@ -135,8 +135,10 @@ public enum MonitorMode
 public class Series
 {
     public int Id { get; set; }
-    public int TvdbId { get; set; }
-    public int? TmdbId { get; set; }
+    /// <summary>TMDB TV id: the series' identity. Non-positive for series added before TMDB until the next refresh resolves it.</summary>
+    public int TmdbId { get; set; }
+    /// <summary>TheTVDB id from TMDB's external ids; indexers search and tag TV releases by it.</summary>
+    public int? TvdbId { get; set; }
     public string? ImdbId { get; set; }
     public required string Title { get; set; }
     public string SortTitle { get; set; } = string.Empty;
@@ -174,7 +176,8 @@ public class Episode
 {
     public int Id { get; set; }
     public int SeriesId { get; set; }
-    public int TvdbId { get; set; }
+    /// <summary>TMDB episode id; 0 when unknown.</summary>
+    public int TmdbId { get; set; }
     public int SeasonNumber { get; set; }
     public int EpisodeNumber { get; set; }
     public int? AbsoluteNumber { get; set; }

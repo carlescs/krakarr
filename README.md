@@ -9,7 +9,7 @@
 | **Radarr** – movie library & automation | `Krakarr.Movies` | ✅ TMDB lookup, library, quality profiles, auto/interactive search, RSS sync, rename + hardlink import |
 | **Prowlarr** – indexer management | `Krakarr.Indexers` | ✅ Torznab/Newznab indexers, capability detection, aggregated search across indexers |
 | **qBittorrent** – torrent client | `Krakarr.Downloads` | ✅ Embedded [MonoTorrent](https://github.com/alanmcgovern/monotorrent) engine: magnets, .torrent files, DHT, speed limits, seeding ratio/time limits, fast-resume — *or* drive an existing qBittorrent (tag-scoped) |
-| **Sonarr** – TV series | `Krakarr.Series` | ✅ TheTVDB metadata, seasons/episodes, monitoring, season-pack aware search, RSS sync, rename + hardlink import |
+| **Sonarr** – TV series | `Krakarr.Series` | ✅ TMDB metadata, seasons/episodes, monitoring, season-pack aware search, RSS sync, rename + hardlink import |
 | **Bazarr** – subtitles | `Krakarr.Subtitles` | ✅ OpenSubtitles.com, wanted languages, hash + release scoring, automatic and manual search |
 
 Everything (API, web UI, torrent engine, schedulers) runs in a single .NET process inside a single Docker container.
@@ -48,8 +48,8 @@ Then open <http://localhost:8787>:
 5. **Movies → Add movie:** search, add, and Krakarr searches, downloads and imports it for you.
 6. **Already have a library?** *Movies → Import library* / *Series → Import library* scans a root folder and matches each
    sub-folder by its name (see [Library import](#library-import)).
-7. **Series:** add a root folder of type *Series* (e.g. `/data/media/tv`) and a [TheTVDB API key](https://thetvdb.com/api-information)
-   in *Settings → Metadata*, then **Series → Add series**.
+7. **Series:** add a root folder of type *Series* (e.g. `/data/media/tv`), then **Series → Add series**. The same TMDB key
+   is used for series metadata.
 
 ### Volumes & ports
 
@@ -66,7 +66,9 @@ Then open <http://localhost:8787>:
 
 ### TV series
 
-- **Metadata** comes from TheTVDB v4 (series, seasons, episodes in the default order, translations in your language).
+- **Metadata** comes from TMDB, like movies (series, seasons, episodes in TMDB's order, in your metadata language). The
+  show's TheTVDB id is read from TMDB's external ids and used for indexer searches and release matching.
+  Series added before the switch to TMDB are matched through their TheTVDB id on the next refresh.
   Series are refreshed every 12 hours; new episodes inherit their season's monitoring.
 - **Monitoring** on add: all, future, missing, first season, latest season or none. Specials are never monitored automatically.
   Seasons and episodes can be toggled individually.
@@ -86,7 +88,8 @@ Nothing is moved or renamed.
 
 - **Matching** uses the folder name. `Title (Year)`, `Title [Year]` and release-style names
   (`The.Matrix.1999.1080p.BluRay-GRP`) are understood, and id tags win when present: `{tmdb-603}`, `[tmdbid-603]`,
-  `{imdb-tt0133093}`, `{tvdb-81189}`, `[tvdbid-81189]`.
+  `{imdb-tt0133093}`, `{tvdb-81189}`, `[tvdbid-81189]`. For series, `{tmdb-…}` is a TMDB TV id and TVDB tags are
+  looked up through TMDB.
 - **Confidence:**
 
   | Level | Meaning |
@@ -166,7 +169,7 @@ src/
   Krakarr.Indexers/      Torznab/Newznab client + aggregated search          (Prowlarr)
   Krakarr.Downloads/     MonoTorrent engine wrapper, grab-from-indexer        (qBittorrent)
   Krakarr.Movies/        TMDB, decision engine, search/grab, import, RSS sync (Radarr)
-  Krakarr.Series/        TVDB, episode decisions, search/grab, import, RSS    (Sonarr)
+  Krakarr.Series/        TMDB TV, episode decisions, search/grab, import, RSS    (Sonarr)
   Krakarr.Subtitles/     OpenSubtitles provider, scoring, search task, files  (Bazarr)
 web/                     Angular 22 + Tailwind 4 frontend
 tests/                   xUnit v3 unit + HTTP integration tests

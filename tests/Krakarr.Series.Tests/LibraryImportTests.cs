@@ -14,24 +14,24 @@ namespace Krakarr.Series.Tests;
 
 public class SeriesMatcherTests
 {
-    private static SeriesLookup L(int id, string title, int year) => new() { TvdbId = id, Title = title, Year = year };
+    private static SeriesLookup L(int id, string title, int year) => new() { TmdbId = id, Title = title, Year = year };
 
     [Fact]
     public void Matches_title_with_country_suffix_and_year()
     {
         var m = SeriesMatcher.Pick(FolderNameParser.Parse("The Office (US)"), [L(1, "The Office", 2001), L(73244, "The Office (US)", 2005)]);
-        Assert.Equal(73244, m.Series!.TvdbId);
+        Assert.Equal(73244, m.Series!.TmdbId);
         Assert.Equal(MatchConfidence.High, m.Confidence); // unique title match
         var withYear = SeriesMatcher.Pick(FolderNameParser.Parse("Doctor Who (2005)"), [L(76107, "Doctor Who", 1963), L(78804, "Doctor Who (2005)", 2005)]);
-        Assert.Equal(78804, withYear.Series!.TvdbId);
+        Assert.Equal(78804, withYear.Series!.TmdbId);
         Assert.Equal(MatchConfidence.High, withYear.Confidence);
     }
 
     [Fact]
-    public void Tvdb_id_in_folder_wins()
+    public void Tmdb_id_in_folder_wins()
     {
-        var m = SeriesMatcher.Pick(FolderNameParser.Parse("Anything {tvdb-81189}"), [L(1, "Anything", 2000)]);
-        Assert.Equal(81189, m.Series!.TvdbId);
+        var m = SeriesMatcher.Pick(FolderNameParser.Parse("Anything {tmdb-1396}"), [L(1, "Anything", 2000)]);
+        Assert.Equal(1396, m.Series!.TmdbId);
         Assert.Equal(MatchConfidence.Exact, m.Confidence);
     }
 
@@ -70,22 +70,25 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
     private readonly DirectoryInfo _root = Directory.CreateTempSubdirectory("krakarr-tvimport");
     private ServiceProvider _services = null!;
 
-    private sealed class FakeTvdb : ITvdbClient
+    private sealed class FakeTmdb : ITmdbTvClient
     {
+        public Task<SeriesLookup?> FindByTvdbAsync(int tvdbId, CancellationToken ct = default) =>
+            Task.FromResult(tvdbId == 424242 ? new SeriesLookup { TmdbId = 9001, Title = "Test Show", Year = 2021 } : null);
+
         public Task<IReadOnlyList<SeriesLookup>> SearchAsync(string query, CancellationToken ct = default) =>
             Task.FromResult<IReadOnlyList<SeriesLookup>>(query.Contains("test show", StringComparison.OrdinalIgnoreCase)
-                ? [new SeriesLookup { TvdbId = 9001, Title = "Test Show", Year = 2021 }] : []);
+                ? [new SeriesLookup { TmdbId = 9001, Title = "Test Show", Year = 2021 }] : []);
 
-        public Task<SeriesInfo> GetSeriesAsync(int tvdbId, CancellationToken ct = default) => Task.FromResult(new SeriesInfo
+        public Task<SeriesInfo> GetSeriesAsync(int tmdbId, CancellationToken ct = default) => Task.FromResult(new SeriesInfo
         {
-            TvdbId = 9001, Title = "Test Show", Year = 2021,
+            TmdbId = 9001, TvdbId = 424242, Title = "Test Show", Year = 2021,
             Episodes =
             [
-                new EpisodeInfo { TvdbId = 1, SeasonNumber = 0, EpisodeNumber = 1, AirDate = new DateOnly(2021, 6, 1) },
-                new EpisodeInfo { TvdbId = 2, SeasonNumber = 1, EpisodeNumber = 1, AirDate = new DateOnly(2021, 1, 1) },
-                new EpisodeInfo { TvdbId = 3, SeasonNumber = 1, EpisodeNumber = 2, AirDate = new DateOnly(2021, 1, 8) },
-                new EpisodeInfo { TvdbId = 4, SeasonNumber = 1, EpisodeNumber = 3, AirDate = new DateOnly(2021, 1, 15) },
-                new EpisodeInfo { TvdbId = 5, SeasonNumber = 1, EpisodeNumber = 4, AirDate = new DateOnly(2021, 1, 22) },
+                new EpisodeInfo { TmdbId = 1, SeasonNumber = 0, EpisodeNumber = 1, AirDate = new DateOnly(2021, 6, 1) },
+                new EpisodeInfo { TmdbId = 2, SeasonNumber = 1, EpisodeNumber = 1, AirDate = new DateOnly(2021, 1, 1) },
+                new EpisodeInfo { TmdbId = 3, SeasonNumber = 1, EpisodeNumber = 2, AirDate = new DateOnly(2021, 1, 8) },
+                new EpisodeInfo { TmdbId = 4, SeasonNumber = 1, EpisodeNumber = 3, AirDate = new DateOnly(2021, 1, 15) },
+                new EpisodeInfo { TmdbId = 5, SeasonNumber = 1, EpisodeNumber = 4, AirDate = new DateOnly(2021, 1, 22) },
             ],
         });
     }
@@ -103,7 +106,7 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
         services.AddLogging();
         services.AddDbContext<KrakarrDbContext>(o => o.UseSqlite(_connection));
         services.AddKrakarrData();
-        services.AddSingleton<ITvdbClient, FakeTvdb>();
+        services.AddSingleton<ITmdbTvClient, FakeTmdb>();
         services.AddSingleton<IIndexerSearchService, Unused>();
         services.AddSingleton<IDownloadService, Unused>();
         services.AddSingleton<IEventHub, NullEventHub>();
@@ -152,7 +155,7 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
 
         var scan = await import.ScanAsync(root, ct);
         var row = Assert.Single(scan);
-        Assert.Equal(9001, row.Match!.TvdbId);
+        Assert.Equal(9001, row.Match!.TmdbId);
         Assert.Equal(MatchConfidence.High, row.Confidence);
         Assert.Equal(6, row.VideoFileCount);
         Assert.Equal(5, row.EpisodeFileCount); // Bloopers has no episode number
@@ -178,5 +181,42 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
         Assert.True(File.Exists(Path.Combine(series.Path, episodes[1].EpisodeFile!.RelativePath))); // untouched
 
         Assert.Empty(await import.ScanAsync(root, ct)); // already imported
+    }
+
+    [Fact]
+    public async Task Tvdb_tag_in_folder_is_resolved_through_tmdb()
+    {
+        using var scope = _services.CreateScope();
+        var import = scope.ServiceProvider.GetRequiredService<SeriesLibraryImport>();
+        var m = await import.MatchAsync(FolderNameParser.Parse("Something Else {tvdb-424242}"), TestContext.Current.CancellationToken);
+        Assert.Equal(9001, m.Series!.TmdbId);
+        Assert.Equal(MatchConfidence.Exact, m.Confidence);
+    }
+
+    [Fact]
+    public async Task Refresh_resolves_series_added_with_tvdb_metadata()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var scope = _services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        var service = scope.ServiceProvider.GetRequiredService<SeriesService>();
+
+        // As left by the migration: placeholder TMDB id, TVDB id kept, episode ids cleared.
+        var legacy = new Core.Domain.Series { TmdbId = -1, TvdbId = 424242, Title = "Test Show", Path = "/tv/Test Show", QualityProfileId = 1 };
+        legacy.Seasons.Add(new Season { SeasonNumber = 1 });
+        legacy.Episodes.Add(new Episode { SeasonNumber = 1, EpisodeNumber = 1, Monitored = true });
+        db.Series.Add(legacy);
+        await db.SaveChangesAsync(ct);
+        var keptEpisodeId = legacy.Episodes[0].Id;
+
+        await service.RefreshAsync((await service.LoadAsync(legacy.Id, ct))!, ct);
+
+        var series = await db.Series.AsNoTracking().Include(x => x.Episodes).SingleAsync(ct);
+        Assert.Equal(9001, series.TmdbId);
+        Assert.Equal(424242, series.TvdbId);
+        Assert.Equal(5, series.Episodes.Count);
+        var s01e01 = series.Episodes.Single(e => e.SeasonNumber == 1 && e.EpisodeNumber == 1);
+        Assert.Equal(keptEpisodeId, s01e01.Id); // matched by season/number, not recreated
+        Assert.Equal(2, s01e01.TmdbId);
     }
 }

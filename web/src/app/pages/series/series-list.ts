@@ -35,7 +35,7 @@ type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
     } @else if (series().length === 0) {
       <div class="card flex flex-col items-center gap-3 px-6 py-16 text-center">
         <p class="text-lg font-medium text-white">No series yet</p>
-        <p class="max-w-md text-sm text-slate-400">Add a TV root folder and a TheTVDB API key in Settings, then add your first show.</p>
+        <p class="max-w-md text-sm text-slate-400">Add a TV root folder and a TMDB API key in Settings, then add your first show.</p>
         <div class="mt-2 flex gap-2">
           <a routerLink="/settings" class="btn-secondary">Settings</a>
           <a routerLink="/series/add" class="btn-primary">Add series</a>

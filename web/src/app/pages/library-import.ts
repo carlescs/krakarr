@@ -260,7 +260,7 @@ export class LibraryImportPage implements OnInit {
   }
 
   private fromMovie(m: MovieLookup): Match { return { id: m.tmdbId, title: m.title, year: m.year, posterUrl: m.posterUrl, overview: m.overview }; }
-  private fromSeries(s: SeriesLookup): Match { return { id: s.tvdbId, title: s.title, year: s.year, posterUrl: s.posterUrl, overview: s.overview }; }
+  private fromSeries(s: SeriesLookup): Match { return { id: s.tmdbId, title: s.title, year: s.year, posterUrl: s.posterUrl, overview: s.overview }; }
 
   selectAll(on: boolean) {
     for (const r of this.rows()) r.selected = on && !!r.match && !r.alreadyInLibrary;
@@ -310,7 +310,7 @@ export class LibraryImportPage implements OnInit {
         })));
       } else {
         await this.api.importSeries(selected.map(r => ({
-          path: r.path, tvdbId: r.match!.id, qualityProfileId: this.profileId, monitor: this.monitor, searchForMissing: this.search,
+          path: r.path, tmdbId: r.match!.id, qualityProfileId: this.profileId, monitor: this.monitor, searchForMissing: this.search,
         })));
       }
       this.toasts.success(`Importing ${selected.length} folder(s) — progress is shown in Activity`);

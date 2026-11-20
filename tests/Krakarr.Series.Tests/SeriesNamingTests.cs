@@ -8,7 +8,7 @@ public class SeriesNamingTests
     [Fact]
     public void Builds_folders_and_file_names()
     {
-        var s = new Core.Domain.Series { Title = "Breaking Bad", Year = 2008, Path = "/tv", TvdbId = 81189 };
+        var s = new Core.Domain.Series { Title = "Breaking Bad", Year = 2008, Path = "/tv", TmdbId = 1396, TvdbId = 81189 };
         Assert.Equal("Breaking Bad (2008)", SeriesNaming.BuildSeriesFolder(s, "{Series Title} ({Series Year})"));
         Assert.Equal("Season 03", SeriesNaming.BuildSeasonFolder(3, "Season {Season}"));
         Assert.Equal("Specials", SeriesNaming.BuildSeasonFolder(0, "Season {Season}"));
@@ -54,11 +54,4 @@ public class SeriesNamingTests
         Assert.False(s.Episodes.Single(e => e.SeasonNumber == 0).Monitored); // specials never auto-monitored
         Assert.False(s.Seasons.Single(x => x.SeasonNumber == 0).Monitored);
     }
-
-    [Theory]
-    [InlineData("en-US", "eng")]
-    [InlineData("es-ES", "spa")]
-    [InlineData("ca", "cat")]
-    [InlineData("xx", "eng")]
-    public void Maps_languages_to_tvdb_codes(string culture, string expected) => Assert.Equal(expected, TvdbClient.ToTvdbLanguage(culture));
 }
