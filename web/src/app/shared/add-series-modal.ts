@@ -2,16 +2,17 @@ import { Component, OnInit, inject, input, output, signal } from '@angular/core'
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../core/api';
-import { MonitorMode, QualityProfile, RootFolder, Series, SeriesLookup } from '../core/models';
+import { MediaRequest, MonitorMode, QualityProfile, RootFolder, Series, SeriesLookup } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Modal } from './modal';
 
-/** Root folder / monitoring / profile options for adding a show to the library. */
+/** Root folder / monitoring / profile options for adding a show to the library, directly or by approving a request. */
 @Component({
   selector: 'kr-add-series-modal',
   imports: [FormsModule, RouterLink, Modal],
   template: `
-    <kr-modal [title]="'Add ' + show().title" (closed)="closed.emit()">
+    <kr-modal [title]="(request() ? 'Approve ' : 'Add ') + show().title" (closed)="closed.emit()">
+      @if (request(); as r) { <p class="mb-4 text-sm text-slate-400">Requested by {{ r.requestedBy ?? 'a deleted user' }}. Approving adds it to the library.</p> }
       @if (rootFolders().length === 0) {
         <p class="text-sm text-amber-300">No TV root folders configured. <a routerLink="/settings" class="underline">Add one in Settings</a> (type “Series”) first.</p>
       } @else {
@@ -40,7 +41,7 @@ import { Modal } from './modal';
       }
       <ng-container footer>
         <button class="btn-ghost" (click)="closed.emit()">Cancel</button>
-        <button class="btn-primary" [disabled]="adding() || rootFolders().length === 0" (click)="add()">{{ adding() ? 'Adding…' : 'Add series' }}</button>
+        <button class="btn-primary" [disabled]="adding() || rootFolders().length === 0" (click)="add()">{{ adding() ? 'Adding…' : request() ? 'Approve and add' : 'Add series' }}</button>
       </ng-container>
     </kr-modal>
   `,
@@ -49,8 +50,11 @@ export class AddSeriesModal implements OnInit {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
 
-  readonly show = input.required<SeriesLookup>();
+  readonly show = input.required<Pick<SeriesLookup, 'tmdbId' | 'tvdbId' | 'title'>>();
+  /** When set, approves this request with the chosen options instead of adding the show directly. */
+  readonly request = input<MediaRequest | null>(null);
   readonly added = output<Series>();
+  readonly approved = output<MediaRequest>();
   readonly closed = output<void>();
 
   protected readonly monitorModes: { id: MonitorMode; label: string }[] = [
@@ -81,6 +85,16 @@ export class AddSeriesModal implements OnInit {
   async add() {
     this.adding.set(true);
     try {
+      const request = this.request();
+      if (request) {
+        const approved = await this.api.approveRequest(request.id, {
+          qualityProfileId: this.profileId, rootFolderPath: this.rootFolder, monitor: this.monitor, seasonFolder: this.seasonFolder,
+          searchNow: this.searchNow,
+        });
+        this.toasts.success(`Approved ${approved.title}`);
+        this.approved.emit(approved);
+        return;
+      }
       const show = this.show();
       const created = await this.api.addSeries({
         tmdbId: show.tmdbId, tvdbId: show.tvdbId, qualityProfileId: this.profileId, rootFolderPath: this.rootFolder, monitor: this.monitor,

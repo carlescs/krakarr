@@ -14,6 +14,8 @@ export class Events {
   readonly commandUpdated = new Subject<CommandInfo>();
   readonly historyAdded = new Subject<HistoryItem>();
   readonly taskUpdated = new Subject<ScheduledTaskInfo>();
+  /** Requests were created, approved, declined or removed. */
+  readonly requestsUpdated = new Subject<void>();
 
   private connection?: HubConnection;
 
@@ -33,6 +35,7 @@ export class Events {
     this.connection.on('commandUpdated', (c: CommandInfo) => this.commandUpdated.next(c));
     this.connection.on('historyAdded', (h: HistoryItem) => this.historyAdded.next(h));
     this.connection.on('taskUpdated', (t: ScheduledTaskInfo) => this.taskUpdated.next(t));
+    this.connection.on('requestsUpdated', () => this.requestsUpdated.next());
     this.connection.onreconnecting(() => this.connected.set(false));
     this.connection.onreconnected(() => this.connected.set(true));
     this.connection.onclose(() => this.connected.set(false));

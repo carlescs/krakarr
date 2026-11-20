@@ -362,3 +362,37 @@ public class HistoryEntry
     /// <summary>Subtitle language for <see cref="HistoryEventType.SubtitleDownloaded"/> entries.</summary>
     public string? Language { get; set; }
 }
+
+public enum RequestStatus
+{
+    Pending = 0,
+    Approved = 1,
+    Declined = 2,
+}
+
+/// <summary>
+/// A user's request to add a movie or series to the library (Seerr-style). Plain users create them; admins and
+/// managers approve (which adds the title) or decline them. Title, year and poster are a snapshot for the list.
+/// </summary>
+public class MediaRequest
+{
+    public int Id { get; set; }
+    public MediaType MediaType { get; set; }
+    /// <summary>TMDB id of the movie or show; requests come from TMDB discovery and detail pages.</summary>
+    public int TmdbId { get; set; }
+    /// <summary>TheTVDB id of a show, when TMDB knows it.</summary>
+    public int? TvdbId { get; set; }
+    public required string Title { get; set; }
+    public int Year { get; set; }
+    public string? PosterUrl { get; set; }
+    public RequestStatus Status { get; set; } = RequestStatus.Pending;
+    public int RequestedById { get; set; }
+    public User? RequestedBy { get; set; }
+    public DateTimeOffset RequestedAt { get; set; } = DateTimeOffset.UtcNow;
+    /// <summary>Who approved or declined it; null while pending, or when it was approved by adding the title directly.</summary>
+    public int? ProcessedById { get; set; }
+    public User? ProcessedBy { get; set; }
+    public DateTimeOffset? ProcessedAt { get; set; }
+    /// <summary>Optional reason given when declining.</summary>
+    public string? DeclineReason { get; set; }
+}

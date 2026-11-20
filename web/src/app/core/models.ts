@@ -247,3 +247,18 @@ export interface TorrentDetails {
   contentPath?: string; tags: string[]; webSeeds: string[]; files: TorrentFileDetails[]; peers: TorrentPeerDetails[];
   trackers: TorrentTrackerDetails[]; pieces?: string;
 }
+
+export type RequestStatus = 'Pending' | 'Approved' | 'Declined';
+/** How much of a requested title is in the library: Missing = added but nothing downloaded yet. */
+export type RequestAvailability = 'Missing' | 'Partial' | 'Available';
+export interface MediaRequest {
+  id: number; mediaType: MediaType; tmdbId: number; tvdbId?: number | null; title: string; year: number; posterUrl?: string | null;
+  status: RequestStatus; requestedById: number; requestedBy?: string | null; requestedAt: string; processedBy?: string | null;
+  processedAt?: string | null; declineReason?: string | null; libraryId?: number | null; availability?: RequestAvailability | null;
+}
+export interface MediaRequestPage { results: MediaRequest[]; page: number; totalPages: number; total: number; }
+/** Library options a manager picks when approving a request (movie and series fields are used as relevant). */
+export interface ApproveRequestOptions {
+  qualityProfileId: number; rootFolderPath: string; searchNow: boolean;
+  monitored?: boolean; minimumAvailability?: MinimumAvailability; monitor?: MonitorMode; seasonFolder?: boolean;
+}

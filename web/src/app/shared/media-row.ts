@@ -40,7 +40,7 @@ import { MediaCard, discoverKey } from './media-card';
     </section>
 
     @if (selected(); as d) {
-      <kr-discover-add [item]="d" (closed)="selected.set(null)" (added)="markAdded($event)" />
+      <kr-discover-add [item]="d" (closed)="selected.set(null)" (added)="markAdded($event)" (requested)="selected.set(null)" />
     }
   `,
 })

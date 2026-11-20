@@ -21,4 +21,6 @@ public static class EventNames
     public const string CommandUpdated = "commandUpdated";
     public const string HistoryAdded = "historyAdded";
     public const string TaskUpdated = "taskUpdated";
+    /// <summary>Requests changed (created, approved, declined, deleted). No payload.</summary>
+    public const string RequestsUpdated = "requestsUpdated";
 }

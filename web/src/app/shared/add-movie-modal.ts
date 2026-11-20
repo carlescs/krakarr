@@ -3,16 +3,17 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../core/api';
 import { AVAILABILITY_OPTIONS } from '../core/calendar';
-import { MinimumAvailability, Movie, MovieLookup, QualityProfile, RootFolder } from '../core/models';
+import { MediaRequest, MinimumAvailability, Movie, MovieLookup, QualityProfile, RootFolder } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Modal } from './modal';
 
-/** Root folder / profile / monitoring options for adding a TMDB movie to the library. */
+/** Root folder / profile / monitoring options for adding a TMDB movie to the library, directly or by approving a request. */
 @Component({
   selector: 'kr-add-movie-modal',
   imports: [FormsModule, RouterLink, Modal],
   template: `
-    <kr-modal [title]="'Add ' + movie().title" (closed)="closed.emit()">
+    <kr-modal [title]="(request() ? 'Approve ' : 'Add ') + movie().title" (closed)="closed.emit()">
+      @if (request(); as r) { <p class="mb-4 text-sm text-slate-400">Requested by {{ r.requestedBy ?? 'a deleted user' }}. Approving adds it to the library.</p> }
       @if (rootFolders().length === 0) {
         <p class="text-sm text-amber-300">No root folders configured. <a routerLink="/settings" class="underline">Add one in Settings</a> first.</p>
       } @else {
@@ -42,7 +43,7 @@ import { Modal } from './modal';
       }
       <ng-container footer>
         <button class="btn-ghost" (click)="closed.emit()">Cancel</button>
-        <button class="btn-primary" [disabled]="adding() || rootFolders().length === 0" (click)="add()">{{ adding() ? 'Adding…' : 'Add movie' }}</button>
+        <button class="btn-primary" [disabled]="adding() || rootFolders().length === 0" (click)="add()">{{ adding() ? 'Adding…' : request() ? 'Approve and add' : 'Add movie' }}</button>
       </ng-container>
     </kr-modal>
   `,
@@ -51,8 +52,11 @@ export class AddMovieModal implements OnInit {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
 
-  readonly movie = input.required<MovieLookup>();
+  readonly movie = input.required<Pick<MovieLookup, 'tmdbId' | 'title'>>();
+  /** When set, approves this request with the chosen options instead of adding the movie directly. */
+  readonly request = input<MediaRequest | null>(null);
   readonly added = output<Movie>();
+  readonly approved = output<MediaRequest>();
   readonly closed = output<void>();
 
   protected readonly adding = signal(false);
@@ -76,6 +80,16 @@ export class AddMovieModal implements OnInit {
   async add() {
     this.adding.set(true);
     try {
+      const request = this.request();
+      if (request) {
+        const approved = await this.api.approveRequest(request.id, {
+          qualityProfileId: this.profileId, rootFolderPath: this.rootFolder, monitored: this.monitored, searchNow: this.searchNow,
+          minimumAvailability: this.minimumAvailability,
+        });
+        this.toasts.success(`Approved ${approved.title}`);
+        this.approved.emit(approved);
+        return;
+      }
       const created = await this.api.addMovie({
         tmdbId: this.movie().tmdbId, qualityProfileId: this.profileId, rootFolderPath: this.rootFolder,
         monitored: this.monitored, searchForMovie: this.searchNow, minimumAvailability: this.minimumAvailability,

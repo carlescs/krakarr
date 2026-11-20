@@ -27,7 +27,7 @@ public sealed class SignalREventHub(IHubContext<EventsHub> hub) : IEventHub
 {
     /// <summary>Library changes every signed-in user may see; everything else (downloads, commands, history) is staff only.</summary>
     private static readonly HashSet<string> PublicEvents =
-        [EventNames.MovieUpdated, EventNames.SeriesUpdated, EventNames.SubtitlesUpdated];
+        [EventNames.MovieUpdated, EventNames.SeriesUpdated, EventNames.SubtitlesUpdated, EventNames.RequestsUpdated];
 
     public Task PublishAsync(string eventName, object? payload, CancellationToken cancellationToken = default) =>
         (PublicEvents.Contains(eventName) ? hub.Clients.All : hub.Clients.Group(EventsHub.StaffGroup))

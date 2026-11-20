@@ -23,6 +23,7 @@ export const routes: Routes = [
       { path: 'series/tmdb/:tmdbId', loadComponent: () => import('./pages/title-preview').then(m => m.TitlePreviewPage), data: { kind: 'series' }, title: 'Series · Krakarr' },
       { path: 'series/:id', loadComponent: () => import('./pages/series/series-detail').then(m => m.SeriesDetailPage), title: 'Series · Krakarr' },
       { path: 'people/:id', loadComponent: () => import('./pages/person').then(m => m.PersonPage), title: 'Person · Krakarr' },
+      { path: 'requests', loadComponent: () => import('./pages/requests').then(m => m.RequestsPage), title: 'Requests · Krakarr' },
       { path: 'calendar', loadComponent: () => import('./pages/calendar').then(m => m.CalendarPage), title: 'Calendar · Krakarr' },
       { path: 'subtitles', canActivate: [roleGuard('Manager')], loadComponent: () => import('./pages/subtitles').then(m => m.SubtitlesPage), title: 'Subtitles · Krakarr' },
       { path: 'indexers', canActivate: [roleGuard('Admin')], loadComponent: () => import('./pages/indexers').then(m => m.IndexersPage), title: 'Indexers · Krakarr' },
