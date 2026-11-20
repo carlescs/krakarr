@@ -13,7 +13,7 @@ import { GRID_CHUNK, POSTER_GRID, PosterGridSkeleton } from '../../shared/poster
 import { MoreMenu } from '../../shared/more-menu';
 import { Progress } from '../../shared/progress';
 
-type Filter = 'all' | 'missing' | 'downloaded' | 'unmonitored';
+type Filter = 'all' | 'missing' | 'downloading' | 'downloaded' | 'unmonitored';
 type Grouping = 'none' | 'collection';
 
 const GROUPING_KEY = 'krakarr.movies.groupBy';
@@ -32,6 +32,7 @@ function storedGrouping(): Grouping {
       <select class="input min-w-0 max-sm:flex-1 sm:w-40" [ngModel]="filter()" (ngModelChange)="filter.set($event)">
         <option value="all">All</option>
         <option value="missing">Missing</option>
+        <option value="downloading">Downloading</option>
         <option value="downloaded">Downloaded</option>
         <option value="unmonitored">Unmonitored</option>
       </select>
@@ -142,6 +143,7 @@ export class MovieListPage {
       if (q && !m.title.toLowerCase().includes(q) && !(m.collectionId != null && names.get(m.collectionId)?.includes(q))) return false;
       switch (filter) {
         case 'missing': return m.monitored && !m.hasFile;
+        case 'downloading': return this.progressOf(m) != null;
         case 'downloaded': return m.hasFile;
         case 'unmonitored': return !m.monitored;
         default: return true;
