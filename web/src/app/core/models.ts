@@ -7,7 +7,9 @@ export type HistoryEventType = 'Grabbed' | 'DownloadFailed' | 'Imported' | 'File
 export type CommandStatus = 'Queued' | 'Running' | 'Completed' | 'Failed';
 export type SearchType = 'Generic' | 'Movie' | 'Tv';
 
-export interface AuthStatus { setupRequired: boolean; authenticated: boolean; username?: string; }
+export type UserRole = 'Admin' | 'Manager' | 'User';
+export interface AuthStatus { setupRequired: boolean; authenticated: boolean; username?: string; role?: UserRole | null; }
+export interface UserAccount { id: number; username: string; role: UserRole; createdAt: string; }
 
 export interface Quality { id: number; name: string; source: string; resolution: number; weight: number; }
 

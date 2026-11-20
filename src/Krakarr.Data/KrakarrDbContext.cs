@@ -47,6 +47,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
         {
             e.HasIndex(x => x.Username).IsUnique();
             e.Property(x => x.Username).HasMaxLength(100);
+            e.Property(x => x.SecurityStamp).HasMaxLength(64);
         });
 
         b.Entity<SettingEntry>(e =>

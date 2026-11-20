@@ -4,6 +4,7 @@ import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
+import { Auth } from '../../core/auth';
 import { Events } from '../../core/events';
 import { AgoPipe, BytesPipe, DurationPipe, SpeedPipe } from '../../core/format';
 import { AVAILABILITY_OPTIONS, RELEASE_LABELS } from '../../core/calendar';
@@ -49,14 +50,16 @@ import { SubtitleManager } from '../../shared/subtitle-manager';
               <span class="badge bg-surface-700 text-slate-300">{{ profileName() }}</span>
             </div>
             <p class="mt-4 max-w-3xl text-sm leading-relaxed text-slate-300">{{ m.overview }}</p>
-            <p class="mt-3 break-all font-mono text-xs text-slate-500">{{ m.path }}</p>
-            <div class="mt-5 flex flex-wrap gap-2">
-              <button class="btn-primary" (click)="autoSearch()">Automatic search</button>
-              <button class="btn-secondary" (click)="interactiveSearch()">Interactive search</button>
-              <button class="btn-secondary" (click)="toggleMonitored()">{{ m.monitored ? 'Unmonitor' : 'Monitor' }}</button>
-              <button class="btn-ghost" (click)="editing.set(true)">Edit</button>
-              <button class="btn-ghost text-rose-300" (click)="confirmDelete.set(true)">Delete</button>
-            </div>
+            @if (auth.isStaff()) {
+              <p class="mt-3 break-all font-mono text-xs text-slate-500">{{ m.path }}</p>
+              <div class="mt-5 flex flex-wrap gap-2">
+                <button class="btn-primary" (click)="autoSearch()">Automatic search</button>
+                <button class="btn-secondary" (click)="interactiveSearch()">Interactive search</button>
+                <button class="btn-secondary" (click)="toggleMonitored()">{{ m.monitored ? 'Unmonitor' : 'Monitor' }}</button>
+                <button class="btn-ghost" (click)="editing.set(true)">Edit</button>
+                <button class="btn-ghost text-rose-300" (click)="confirmDelete.set(true)">Delete</button>
+              </div>
+            }
           </div>
         </div>
       </div>
@@ -124,7 +127,7 @@ import { SubtitleManager } from '../../shared/subtitle-manager';
               @for (s of subtitles(); track s.id) {
                 <span class="badge bg-surface-700 text-slate-200" [title]="s.provider + (s.score != null ? ' · score ' + s.score : '')">{{ s.languageName }}{{ s.hearingImpaired ? ' (HI)' : '' }}</span>
               } @empty { <span class="text-slate-500">none</span> }
-              <button class="btn-ghost btn-sm" (click)="subtitlesOpen.set(true)">Manage</button>
+              @if (auth.isStaff()) { <button class="btn-ghost btn-sm" (click)="subtitlesOpen.set(true)">Manage</button> }
             </span>
           </div>
         </section>
@@ -135,27 +138,29 @@ import { SubtitleManager } from '../../shared/subtitle-manager';
       }
 
       <!-- History -->
-      <section class="card p-4 sm:p-5">
-        <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">History</h2>
-        @if (history().length === 0) {
-          <p class="text-sm text-slate-500">Nothing yet.</p>
-        } @else {
-          <ul class="divide-y divide-surface-800 text-sm">
-            @for (h of history(); track h.id) {
-              <li class="flex flex-wrap items-center gap-3 py-2">
-                <span class="badge w-20 justify-center sm:w-24"
-                      [class]="h.eventType === 'Imported' ? 'bg-emerald-500/15 text-emerald-300' : h.eventType === 'Grabbed' ? 'bg-accent-500/15 text-accent-300' : h.eventType === 'SubtitleDownloaded' ? 'bg-violet-500/15 text-violet-300' : 'bg-rose-500/15 text-rose-300'">
-                  {{ h.eventType === 'DownloadFailed' ? 'Failed' : h.eventType === 'SubtitleDownloaded' ? 'Subtitle' : h.eventType }}
-                </span>
-                <span class="min-w-0 flex-1 truncate max-sm:order-1 max-sm:basis-full" [title]="h.sourceTitle">{{ h.sourceTitle }}</span>
-                <span class="text-xs text-slate-500">{{ h.quality }}</span>
-                <span class="text-right text-xs text-slate-500 max-sm:ml-auto sm:w-24" [title]="h.date">{{ h.date | ago }}</span>
-                @if (h.message) { <span class="w-full text-xs text-slate-500 max-sm:order-2 sm:pl-27">{{ h.message }}</span> }
-              </li>
-            }
-          </ul>
-        }
-      </section>
+      @if (auth.isStaff()) {
+        <section class="card p-4 sm:p-5">
+          <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">History</h2>
+          @if (history().length === 0) {
+            <p class="text-sm text-slate-500">Nothing yet.</p>
+          } @else {
+            <ul class="divide-y divide-surface-800 text-sm">
+              @for (h of history(); track h.id) {
+                <li class="flex flex-wrap items-center gap-3 py-2">
+                  <span class="badge w-20 justify-center sm:w-24"
+                        [class]="h.eventType === 'Imported' ? 'bg-emerald-500/15 text-emerald-300' : h.eventType === 'Grabbed' ? 'bg-accent-500/15 text-accent-300' : h.eventType === 'SubtitleDownloaded' ? 'bg-violet-500/15 text-violet-300' : 'bg-rose-500/15 text-rose-300'">
+                    {{ h.eventType === 'DownloadFailed' ? 'Failed' : h.eventType === 'SubtitleDownloaded' ? 'Subtitle' : h.eventType }}
+                  </span>
+                  <span class="min-w-0 flex-1 truncate max-sm:order-1 max-sm:basis-full" [title]="h.sourceTitle">{{ h.sourceTitle }}</span>
+                  <span class="text-xs text-slate-500">{{ h.quality }}</span>
+                  <span class="text-right text-xs text-slate-500 max-sm:ml-auto sm:w-24" [title]="h.date">{{ h.date | ago }}</span>
+                  @if (h.message) { <span class="w-full text-xs text-slate-500 max-sm:order-2 sm:pl-27">{{ h.message }}</span> }
+                </li>
+              }
+            </ul>
+          }
+        </section>
+      }
 
       <!-- Recommendations / similar (TMDB) -->
       <kr-related-titles kind="movie" [id]="m.id" />
@@ -250,6 +255,7 @@ import { SubtitleManager } from '../../shared/subtitle-manager';
 export class MovieDetailPage implements OnInit {
   readonly id = input.required({ transform: numberAttribute });
 
+  protected readonly auth = inject(Auth);
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
   private readonly events = inject(Events);
@@ -307,6 +313,7 @@ export class MovieDetailPage implements OnInit {
   }
 
   private async loadHistory() {
+    if (!this.auth.isStaff()) return;
     this.history.set((await this.api.history(this.id(), 1, 50)).items);
   }
 

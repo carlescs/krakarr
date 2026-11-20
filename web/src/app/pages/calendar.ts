@@ -5,6 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { debounceTime, merge } from 'rxjs';
 import { Api, errorMessage } from '../core/api';
+import { Auth } from '../core/auth';
 import {
   CalendarFilters, CalendarItem, CalendarStatusFilter, CalendarView, DEFAULT_FILTERS, FeedOptions, ItemState, RELEASE_LABELS, addDays, buildItems, daysBetween,
   feedUrl, groupByDay, itemState, localeFirstDayOfWeek, parseIsoDate, shiftAnchor, toIsoDate, viewRange,
@@ -70,10 +71,13 @@ function readStored(): Stored {
           <span class="flex size-4 items-center justify-center rounded-full bg-accent-500 text-[10px] font-bold text-slate-950">{{ activeFilterCount() }}</span>
         }
       </button>
-      <button class="btn-ghost btn-sm" (click)="openFeed()" title="Subscribe from another calendar app" aria-label="iCal feed">
-        <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12.75 19.5v-.75a7.5 7.5 0 0 0-7.5-7.5H4.5m0-6.75h.75c7.87 0 14.25 6.38 14.25 14.25v.75M6 18.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" /></svg>
-        <span class="max-sm:hidden">iCal</span>
-      </button>
+      <!-- The feed URL embeds the API key, which only admins may see. -->
+      @if (auth.isAdmin()) {
+        <button class="btn-ghost btn-sm" (click)="openFeed()" title="Subscribe from another calendar app" aria-label="iCal feed">
+          <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12.75 19.5v-.75a7.5 7.5 0 0 0-7.5-7.5H4.5m0-6.75h.75c7.87 0 14.25 6.38 14.25 14.25v.75M6 18.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" /></svg>
+          <span class="max-sm:hidden">iCal</span>
+        </button>
+      }
     </div>
 
     <!-- Filters on phones: what is narrowed down, with a quick reset -->
@@ -368,6 +372,7 @@ function readStored(): Stored {
   `,
 })
 export class CalendarPage {
+  protected readonly auth = inject(Auth);
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
   private readonly events = inject(Events);

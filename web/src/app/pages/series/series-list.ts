@@ -4,6 +4,7 @@ import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
+import { Auth } from '../../core/auth';
 import { Events } from '../../core/events';
 import { Series } from '../../core/models';
 import { Toasts } from '../../core/toast';
@@ -26,10 +27,12 @@ type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
         <option value="ended">Ended</option>
         <option value="unmonitored">Unmonitored</option>
       </select>
-      <div class="flex gap-2 max-sm:basis-full">
-        <a routerLink="/series/import" class="btn-secondary max-sm:flex-1">Import library</a>
-        <a routerLink="/series/add" class="btn-primary max-sm:flex-1">+ Add series</a>
-      </div>
+      @if (auth.isStaff()) {
+        <div class="flex gap-2 max-sm:basis-full">
+          <a routerLink="/series/import" class="btn-secondary max-sm:flex-1">Import library</a>
+          <a routerLink="/series/add" class="btn-primary max-sm:flex-1">+ Add series</a>
+        </div>
+      }
     </div>
 
     @if (loading()) {
@@ -37,11 +40,15 @@ type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
     } @else if (series().length === 0) {
       <div class="card flex flex-col items-center gap-3 px-6 py-16 text-center">
         <p class="text-lg font-medium text-white">No series yet</p>
-        <p class="max-w-md text-sm text-slate-400">Add a TV root folder and a TMDB API key in Settings, then add your first show.</p>
-        <div class="mt-2 flex gap-2">
-          <a routerLink="/settings" class="btn-secondary">Settings</a>
-          <a routerLink="/series/add" class="btn-primary">Add series</a>
-        </div>
+        @if (auth.isStaff()) {
+          <p class="max-w-md text-sm text-slate-400">Add a TV root folder and a TMDB API key in Settings, then add your first show.</p>
+          <div class="mt-2 flex gap-2">
+            <a routerLink="/settings" class="btn-secondary">Settings</a>
+            <a routerLink="/series/add" class="btn-primary">Add series</a>
+          </div>
+        } @else {
+          <p class="max-w-md text-sm text-slate-400">Nothing here yet. Browse <a routerLink="/discover" class="underline">Discover</a> for ideas.</p>
+        }
       </div>
     } @else {
       <div class="grid grid-cols-3 gap-x-3 gap-y-4 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
@@ -67,6 +74,7 @@ type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
   `,
 })
 export class SeriesListPage implements OnInit {
+  protected readonly auth = inject(Auth);
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
   private readonly events = inject(Events);

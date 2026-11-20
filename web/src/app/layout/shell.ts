@@ -6,7 +6,7 @@ import { Auth } from '../core/auth';
 import { Events } from '../core/events';
 import { SpeedPipe } from '../core/format';
 
-interface NavItem { path: string; label: string; icon: string; section?: string; }
+interface NavItem { path: string; label: string; icon: string; section?: string; access?: 'staff' | 'admin'; }
 
 // Heroicons-style outline paths (24x24).
 const ICONS: Record<string, string> = {
@@ -37,7 +37,7 @@ const ICONS: Record<string, string> = {
           <span class="text-lg font-bold tracking-tight text-white">Krakarr</span>
         </a>
         <nav class="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4">
-          @for (item of nav; track item.path) {
+          @for (item of nav(); track item.path) {
             @if (item.section) {
               <div class="px-3 pt-4 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">{{ item.section }}</div>
             }
@@ -59,7 +59,7 @@ const ICONS: Record<string, string> = {
               <span class="size-2 rounded-full" [class]="events.connected() ? 'bg-emerald-400' : 'bg-amber-400'"></span>
               {{ events.connected() ? 'Live' : 'Connecting…' }}
             </span>
-            <span>↓ {{ totalDown() | speed }} · ↑ {{ totalUp() | speed }}</span>
+            @if (auth.isStaff()) { <span>↓ {{ totalDown() | speed }} · ↑ {{ totalUp() | speed }}</span> }
           </div>
         </div>
       </aside>
@@ -79,7 +79,7 @@ const ICONS: Record<string, string> = {
               <span class="truncate font-semibold text-white">{{ current()?.label ?? 'Krakarr' }}</span>
             </a>
             <div class="flex-1"></div>
-            <span class="hidden text-sm text-slate-400 sm:inline">{{ auth.status()?.username }}</span>
+            <a routerLink="/settings" class="hidden text-sm text-slate-400 hover:text-white sm:inline" title="Your account">{{ auth.status()?.username }}</a>
             <button class="btn-ghost btn-sm" (click)="logout()" [title]="'Sign out ' + (auth.status()?.username ?? '')">Sign out</button>
           </div>
         </header>
@@ -91,7 +91,7 @@ const ICONS: Record<string, string> = {
       <!-- Mobile tab bar -->
       <nav class="fixed inset-x-0 bottom-0 z-30 border-t border-surface-800 bg-surface-900/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden" aria-label="Primary">
         <div class="mx-auto grid h-16 max-w-lg grid-cols-5">
-          @for (item of tabs; track item.path) {
+          @for (item of tabs(); track item.path) {
             <a [routerLink]="item.path" routerLinkActive="!text-accent-300" (click)="menuOpen.set(false)"
                class="relative flex flex-col items-center justify-center gap-1 text-[11px] font-medium text-slate-400 active:bg-surface-800">
               <svg class="size-6" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor">
@@ -120,27 +120,37 @@ export class Shell implements OnInit, OnDestroy {
   protected readonly icons = ICONS;
   protected readonly menuOpen = signal(false);
 
-  protected readonly nav: NavItem[] = [
+  private readonly allNav: NavItem[] = [
     { path: '/discover', label: 'Discover', icon: 'sparkles', section: 'Library' },
     { path: '/movies', label: 'Movies', icon: 'film' },
     { path: '/series', label: 'Series', icon: 'tv' },
     { path: '/calendar', label: 'Calendar', icon: 'calendar' },
-    { path: '/subtitles', label: 'Subtitles', icon: 'cc' },
-    { path: '/search', label: 'Search', icon: 'search', section: 'Sources' },
-    { path: '/indexers', label: 'Indexers', icon: 'server' },
-    { path: '/downloads', label: 'Downloads', icon: 'download' },
-    { path: '/activity', label: 'Activity', icon: 'clock', section: 'System' },
+    { path: '/subtitles', label: 'Subtitles', icon: 'cc', access: 'staff' },
+    { path: '/search', label: 'Search', icon: 'search', section: 'Sources', access: 'staff' },
+    { path: '/indexers', label: 'Indexers', icon: 'server', access: 'admin' },
+    { path: '/downloads', label: 'Downloads', icon: 'download', access: 'staff' },
+    { path: '/activity', label: 'Activity', icon: 'clock', section: 'System', access: 'staff' },
     { path: '/settings', label: 'Settings', icon: 'cog' },
   ];
 
+  /** Navigation for the signed-in role; non-admins only reach their own account under /settings. */
+  protected readonly nav = computed<NavItem[]>(() => {
+    const items = this.allNav.filter(n => !n.access || (n.access === 'admin' ? this.auth.isAdmin() : this.auth.isStaff()));
+    if (this.auth.isAdmin()) return items;
+    return items.map(n => n.path === '/settings' ? { ...n, label: 'Account', section: this.auth.isStaff() ? n.section : 'You' } : n);
+  });
+
   /** Primary destinations shown in the mobile tab bar; everything else lives behind "More". */
-  protected readonly tabs = ['/movies', '/series', '/downloads', '/activity'].map(p => this.nav.find(n => n.path === p)!);
+  protected readonly tabs = computed(() => {
+    const paths = this.auth.isStaff() ? ['/movies', '/series', '/downloads', '/activity'] : ['/discover', '/movies', '/series', '/calendar'];
+    return paths.map(p => this.nav().find(n => n.path === p)!);
+  });
 
   private readonly url = toSignal(
     this.router.events.pipe(filter(e => e instanceof NavigationEnd), map(e => (e as NavigationEnd).urlAfterRedirects)),
     { initialValue: this.router.url });
-  protected readonly current = computed(() => this.nav.find(n => this.url().startsWith(n.path)));
-  protected readonly moreActive = computed(() => !this.tabs.some(t => this.url().startsWith(t.path)));
+  protected readonly current = computed(() => this.nav().find(n => this.url().startsWith(n.path)));
+  protected readonly moreActive = computed(() => !this.tabs().some(t => this.url().startsWith(t.path)));
 
   protected readonly activeDownloads = computed(() =>
     this.events.downloads().filter(d => d.state === 'Downloading' || d.state === 'FetchingMetadata' || d.state === 'Queued').length);

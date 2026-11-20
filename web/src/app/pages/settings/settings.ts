@@ -8,6 +8,9 @@ import {
 } from '../../core/models';
 import { Toasts } from '../../core/toast';
 import { Modal } from '../../shared/modal';
+import { Auth } from '../../core/auth';
+import { AccountSettings } from './account';
+import { UsersSettings } from './users';
 
 interface TokenDoc { token: string; description: string; example: string; }
 
@@ -57,15 +60,15 @@ export function buildName(format: string, values: Record<string, string>): strin
   return result.trim().replace(/\.+$/, '').replace(/\s{2,}/g, ' ').trim();
 }
 
-type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'general';
+type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'general' | 'users' | 'account';
 
 @Component({
   selector: 'kr-settings',
-  imports: [FormsModule, Modal, BytesPipe],
+  imports: [FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings],
   template: `
-    <h1 class="page-title mb-4 sm:mb-6">Settings</h1>
-    <div class="-mx-4 mb-6 flex gap-1 overflow-x-auto border-b border-surface-700 px-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
-      @for (t of tabs; track t.id) {
+    <h1 class="page-title mb-4 sm:mb-6">{{ auth.isAdmin() ? 'Settings' : 'Account' }}</h1>
+    <div class="-mx-4 mb-6 flex gap-1 overflow-x-auto border-b border-surface-700 px-4 [scrollbar-width:none] sm:mx-0 sm:px-0" [class.hidden]="tabs().length < 2">
+      @for (t of tabs(); track t.id) {
         <button class="-mb-px whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition"
                 [class]="tab() === t.id ? 'border-accent-400 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'"
                 (click)="tab.set(t.id)">{{ t.label }}</button>
@@ -390,6 +393,9 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
       }
     }
 
+    @if (tab() === 'account') { <kr-account-settings /> }
+    @if (tab() === 'users') { <kr-users-settings /> }
+
     <!-- General -->
     @if (tab() === 'general') {
       <div class="space-y-6">
@@ -405,11 +411,6 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
               </div>
               <p class="hint">Send as <code>X-Api-Key</code> header for automation.</p>
             </div>
-            <div class="grid gap-4 sm:grid-cols-2">
-              <div><label class="label">Username</label><input class="input" [(ngModel)]="newUsername" autocomplete="username" /></div>
-              <div><label class="label">New password</label><input class="input" type="password" [(ngModel)]="newPassword" autocomplete="new-password" /></div>
-            </div>
-            <div class="flex justify-end"><button class="btn-secondary" (click)="changeCredentials()" [disabled]="!newPassword">Update credentials</button></div>
           </section>
         }
         @if (status(); as s) {
@@ -490,15 +491,20 @@ export class SettingsPage implements OnInit {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
 
-  protected readonly tabs: { id: Tab; label: string }[] = [
+  protected readonly auth = inject(Auth);
+  private readonly adminTabs: { id: Tab; label: string }[] = [
     { id: 'media', label: 'Media management' },
     { id: 'profiles', label: 'Quality profiles' },
     { id: 'downloads', label: 'Download client' },
     { id: 'subtitles', label: 'Subtitles' },
     { id: 'metadata', label: 'Metadata' },
+    { id: 'users', label: 'Users' },
     { id: 'general', label: 'General' },
+    { id: 'account', label: 'Account' },
   ];
-  protected readonly tab = signal<Tab>('media');
+  /** Everyone manages their own account here; the rest of the settings are for admins. */
+  protected readonly tabs = computed(() => this.auth.isAdmin() ? this.adminTabs : this.adminTabs.filter(t => t.id === 'account'));
+  protected readonly tab = signal<Tab>(this.auth.isAdmin() ? 'media' : 'account');
 
   protected readonly rootFolders = signal<RootFolder[]>([]);
   protected readonly profiles = signal<QualityProfile[]>([]);
@@ -530,10 +536,9 @@ export class SettingsPage implements OnInit {
   protected example(format: string, values: Record<string, string>) { return buildName(format ?? '', values); }
   protected browsePath = '/';
   protected rootMediaType: 'Movie' | 'Series' = 'Movie';
-  protected newUsername = '';
-  protected newPassword = '';
 
   async ngOnInit() {
+    if (!this.auth.isAdmin()) return;
     const [roots, profiles, qualities, media, downloads, automation, metadata, general, status] = await Promise.all([
       this.api.rootFolders(), this.api.qualityProfiles(), this.api.qualities(), this.api.settings('media'),
       this.api.settings('downloads'), this.api.settings('automation'), this.api.settings('metadata'),
@@ -665,15 +670,5 @@ export class SettingsPage implements OnInit {
 
   copy(text: string) {
     navigator.clipboard?.writeText(text).then(() => this.toasts.success('Copied'));
-  }
-
-  async changeCredentials() {
-    try {
-      await this.api.changeCredentials(this.newUsername, this.newPassword);
-      this.newPassword = '';
-      this.toasts.success('Credentials updated');
-    } catch (e) {
-      this.toasts.error(errorMessage(e));
-    }
   }
 }

@@ -113,7 +113,7 @@ TheTVDB is the series metadata source.
 - **Filters:** series, movies, each movie release type, unmonitored items and download status (any / not downloaded /
   downloaded). The view and filters are remembered per browser.
 - **iCal feed:** *iCal* gives a URL (`/api/v1/calendar/feed.ics?apikey=…`) for Google Calendar, Apple Calendar or Outlook,
-  with its own filters and day range. It carries the API key, so treat it like a password.
+  with its own filters and day range. It carries the API key, so treat it like a password. Only admins see it.
 
 **Minimum availability:** each movie has a *minimum availability* (*announced*, *in cinemas* or *released*; new movies
 default to *released*). Automatic searches, search on add and RSS grabs wait until the movie reaches it, judged by the
@@ -198,6 +198,21 @@ Each client keeps its own list of torrents, so switching back and forth never mi
 | `Krakarr__Auth__FailuresBeforeLockout` | `5` | Failed logins for one username before it is locked temporarily (30 s, doubling up to 15 min) |
 
 Any setting can also be placed in `/config/config.json` (environment variables win).
+
+### Users and roles
+
+The account created during setup is an **admin** (on upgrade, existing accounts become admins too). Admins add people
+in *Settings → Users* and give each a role:
+
+| Role | Can |
+| --- | --- |
+| **Admin** | Everything: settings, indexers, download client, API key and users |
+| **Manager** | Add, search, grab and delete movies and series; manage downloads, subtitles and library imports |
+| **User** | Browse Discover, the library and the calendar, read-only |
+
+Everyone changes their own username and password under *Account* (the current password is required). Changing a role
+takes effect immediately; resetting or changing a password, or deleting an account, signs that user out everywhere.
+There is always at least one admin, and admins can't delete themselves. The API key acts as an admin.
 
 ### Security notes
 
@@ -307,4 +322,4 @@ API documentation (OpenAPI) is served at `/api/openapi/v1.json`.
 - **Subtitles (Bazarr):** more providers (Podnapisi, Addic7ed, …), embedded subtitle detection, per-series language profiles, sync/encoding fixes
 - **Indexers (Prowlarr):** native tracker definitions (Cardigann-style), per-indexer stats, Torznab proxy for other apps
 - **Downloads:** per-torrent limits, file selection, Usenet (NZB) support
-- Lists (Trakt/IMDb), notifications, multi-user, optional renaming of imported libraries
+- Lists (Trakt/IMDb), notifications, requests (Seerr-style), optional renaming of imported libraries

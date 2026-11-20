@@ -1,5 +1,6 @@
-import { Component, computed, input, output } from '@angular/core';
+import { Component, computed, inject, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
+import { Auth } from '../core/auth';
 import { DiscoverItem } from '../core/models';
 import { Poster } from './poster';
 
@@ -38,7 +39,7 @@ export function libraryRoute(d: DiscoverItem): (string | number)[] | null {
         <p class="mt-1 line-clamp-4 text-xs text-slate-300">{{ d.item.overview }}</p>
         @if (route(); as r) {
           <a [routerLink]="r" class="btn-secondary btn-sm mt-2 justify-center">Open</a>
-        } @else {
+        } @else if (canAdd()) {
           <button class="btn-primary btn-sm mt-2 justify-center" (click)="add.emit(d)">+ Add</button>
         }
       </div>
@@ -51,7 +52,7 @@ export function libraryRoute(d: DiscoverItem): (string | number)[] | null {
     <div class="mt-1.5 hidden pointer-coarse:block">
       @if (route(); as r) {
         <a [routerLink]="r" class="btn-secondary btn-sm w-full">Open</a>
-      } @else {
+      } @else if (canAdd()) {
         <button class="btn-primary btn-sm w-full" (click)="add.emit(d)">+ Add</button>
       }
     </div>
@@ -59,6 +60,8 @@ export function libraryRoute(d: DiscoverItem): (string | number)[] | null {
   host: { class: 'block' },
 })
 export class MediaCard {
+  /** Adding to the library is for admins and managers; plain users will request titles instead. */
+  protected readonly canAdd = inject(Auth).isStaff;
   readonly item = input.required<DiscoverItem>();
   readonly add = output<DiscoverItem>();
   protected readonly route = computed(() => libraryRoute(this.item()));

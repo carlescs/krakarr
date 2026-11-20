@@ -5,6 +5,7 @@ import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
   IndexerError, IndexerTestResult, Language, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
+  UserAccount, UserRole,
 } from './models';
 
 const API = 'api/v1';
@@ -50,7 +51,15 @@ export class Api {
   login(username: string, password: string) { return this.post<void>('auth/login', { username, password }); }
   setup(username: string, password: string, setupToken: string) { return this.post<void>('auth/setup', { username, password, setupToken }); }
   logout() { return this.post<void>('auth/logout'); }
-  changeCredentials(username: string, password: string) { return this.post<void>('auth/password', { username, password }); }
+  changeCredentials(username: string, currentPassword: string, newPassword?: string) {
+    return this.post<void>('auth/password', { username, currentPassword, newPassword: newPassword || null });
+  }
+
+  // Users (admin)
+  users() { return this.get<UserAccount[]>('users'); }
+  createUser(user: { username: string; password: string; role: UserRole }) { return this.post<UserAccount>('users', user); }
+  updateUser(id: number, user: { username: string; role: UserRole; password?: string | null }) { return this.put<UserAccount>(`users/${id}`, user); }
+  deleteUser(id: number) { return this.delete<void>(`users/${id}`); }
 
   // System
   systemStatus() { return this.get<SystemStatus>('system/status'); }
