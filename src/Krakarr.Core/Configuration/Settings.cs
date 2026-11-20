@@ -43,6 +43,8 @@ public sealed record MetadataSettings : ISettingsSection
     public string? TvdbApiKey { get; init; }
     public string? TvdbPin { get; init; }
     public string Language { get; init; } = "en-US";
+    /// <summary>Country (ISO 3166-1 alpha-2) whose movie release dates the calendar prefers; empty = earliest worldwide.</summary>
+    public string? ReleaseRegion { get; init; }
 }
 
 public enum DownloadClientKind

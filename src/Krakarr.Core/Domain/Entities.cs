@@ -88,6 +88,16 @@ public class Movie
     public string? FanartUrl { get; set; }
     public int Runtime { get; set; }
     public MovieStatus Status { get; set; } = MovieStatus.Released;
+    /// <summary>Release dates per country (theatrical, digital, physical), from TMDB.</summary>
+    public List<MovieReleaseDate> ReleaseDates { get; set; } = [];
+    /// <summary>Earliest cinema release in any country.</summary>
+    public DateOnly? InCinemas { get; set; }
+    /// <summary>Earliest digital release in any country.</summary>
+    public DateOnly? DigitalRelease { get; set; }
+    /// <summary>Earliest physical release in any country.</summary>
+    public DateOnly? PhysicalRelease { get; set; }
+    /// <summary>Automatic searches wait until the movie reaches this status. Movies added before this existed use Announced.</summary>
+    public MinimumAvailability MinimumAvailability { get; set; } = MinimumAvailability.Released;
     public bool Monitored { get; set; } = true;
     public int QualityProfileId { get; set; }
     public QualityProfile? QualityProfile { get; set; }

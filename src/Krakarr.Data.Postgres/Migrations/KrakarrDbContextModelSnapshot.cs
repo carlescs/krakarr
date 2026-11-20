@@ -17,7 +17,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261120050525_ClearSeriesIdPlaceholders";
+    public override string LastMigrationId => "20261120061436_MovieReleaseDates";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -175,6 +175,8 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("integer");
 
                 b.HasKey("Id");
+
+                b.HasIndex("AirDate");
 
                 b.HasIndex("EpisodeFileId");
 
@@ -343,14 +345,23 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<DateTimeOffset>("Added")
                     .HasColumnType("timestamp with time zone");
 
+                b.Property<DateOnly?>("DigitalRelease")
+                    .HasColumnType("date");
+
                 b.Property<string>("FanartUrl")
                     .HasColumnType("text");
 
                 b.Property<string>("ImdbId")
                     .HasColumnType("text");
 
+                b.Property<DateOnly?>("InCinemas")
+                    .HasColumnType("date");
+
                 b.Property<DateTimeOffset?>("LastSearched")
                     .HasColumnType("timestamp with time zone");
+
+                b.Property<int>("MinimumAvailability")
+                    .HasColumnType("integer");
 
                 b.Property<bool>("Monitored")
                     .HasColumnType("boolean");
@@ -368,11 +379,20 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .IsRequired()
                     .HasColumnType("text");
 
+                b.Property<DateOnly?>("PhysicalRelease")
+                    .HasColumnType("date");
+
                 b.Property<string>("PosterUrl")
                     .HasColumnType("text");
 
                 b.Property<int>("QualityProfileId")
                     .HasColumnType("integer");
+
+                b.Property<string>("ReleaseDates")
+                    .IsRequired()
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("text")
+                    .HasDefaultValue("[]");
 
                 b.Property<int>("Runtime")
                     .HasColumnType("integer");
@@ -396,10 +416,16 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.HasKey("Id");
 
+                b.HasIndex("DigitalRelease");
+
                 b.HasIndex("ImdbId");
+
+                b.HasIndex("InCinemas");
 
                 b.HasIndex("MovieFileId")
                     .IsUnique();
+
+                b.HasIndex("PhysicalRelease");
 
                 b.HasIndex("QualityProfileId");
 

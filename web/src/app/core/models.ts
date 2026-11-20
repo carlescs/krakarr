@@ -1,6 +1,8 @@
 export type MediaType = 'Movie' | 'Series';
 export type DownloadState = 'Queued' | 'FetchingMetadata' | 'Downloading' | 'Paused' | 'Seeding' | 'Completed' | 'Error';
 export type MovieStatus = 'Announced' | 'InCinemas' | 'Released';
+export type MinimumAvailability = 'Announced' | 'InCinemas' | 'Released';
+export type ReleaseDateType = 'Theatrical' | 'Digital' | 'Physical';
 export type HistoryEventType = 'Grabbed' | 'DownloadFailed' | 'Imported' | 'FileDeleted' | 'SubtitleDownloaded';
 export type CommandStatus = 'Queued' | 'Running' | 'Completed' | 'Failed';
 export type SearchType = 'Generic' | 'Movie' | 'Tv';
@@ -41,10 +43,26 @@ export interface ReleaseDecision { release: ReleaseInfo; quality: string; qualit
 
 export interface MovieFile { id: number; relativePath: string; size: number; quality: string; releaseGroup?: string; dateAdded: string; }
 
+export interface ReleaseDateRef { date: string; country: string; }
+/** A release type's date in the configured region and the earliest worldwide. */
+export interface MovieRelease { type: ReleaseDateType; region?: ReleaseDateRef | null; earliest?: ReleaseDateRef | null; }
+
 export interface Movie {
   id: number; tmdbId: number; imdbId?: string; title: string; originalTitle?: string; year: number; overview?: string;
   posterUrl?: string; fanartUrl?: string; runtime: number; status: MovieStatus; monitored: boolean; qualityProfileId: number;
   path: string; added: string; hasFile: boolean; movieFile?: MovieFile; downloadProgress?: number;
+  inCinemas?: string | null; digitalRelease?: string | null; physicalRelease?: string | null;
+  releases: MovieRelease[]; releaseRegion?: string | null; minimumAvailability: MinimumAvailability; isAvailable: boolean;
+}
+
+export type CalendarEntryKind = 'Movie' | 'Episode';
+export interface CalendarEntry {
+  kind: CalendarEntryKind; date: string;
+  releaseType?: ReleaseDateType | null; country?: string | null; isRegionDate: boolean; earliestDate?: string | null; earliestCountry?: string | null;
+  movieId?: number | null; seriesId?: number | null; episodeId?: number | null;
+  title: string; year: number; episodeTitle?: string | null; seasonNumber?: number | null; episodeNumber?: number | null;
+  network?: string | null; posterUrl?: string | null; overview?: string | null; runtime: number;
+  monitored: boolean; hasFile: boolean; downloading: boolean;
 }
 
 export interface MovieLookup {
@@ -101,7 +119,7 @@ export interface MediaManagementSettings {
   seriesFolderFormat: string; seasonFolderFormat: string; episodeFileFormat: string;
 }
 export type SeriesMetadataSource = 'Tmdb' | 'Tvdb';
-export interface MetadataSettings { tmdbApiKey?: string; seriesSource: SeriesMetadataSource; tvdbApiKey?: string; tvdbPin?: string; language: string; }
+export interface MetadataSettings { tmdbApiKey?: string; seriesSource: SeriesMetadataSource; tvdbApiKey?: string; tvdbPin?: string; language: string; releaseRegion?: string | null; }
 export type DownloadClientKind = 'Embedded' | 'QBittorrent';
 export interface QBittorrentSettings {
   url: string; username?: string; password?: string; tag: string; category?: string; savePath?: string;

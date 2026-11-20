@@ -264,7 +264,14 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
             </div>
             <div class="max-w-xs"><label class="label">TheTVDB subscriber PIN (optional)</label><input class="input" [(ngModel)]="m.tvdbPin" /></div>
           }
-          <div class="max-w-xs"><label class="label">Language</label><input class="input" [(ngModel)]="m.language" placeholder="en-US" /></div>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div><label class="label">Language</label><input class="input" [(ngModel)]="m.language" placeholder="en-US" /></div>
+            <div>
+              <label class="label">Release region</label>
+              <input class="input uppercase" maxlength="2" [(ngModel)]="m.releaseRegion" [placeholder]="'e.g. ' + (regionFromLanguage(m.language) || 'US')" />
+              <p class="hint">Two-letter country code (ES, US, GB…). The calendar shows this country's cinema, digital and physical dates, and falls back to the earliest date worldwide. Leave empty to always use the earliest.</p>
+            </div>
+          </div>
           <div class="flex justify-end"><button class="btn-primary" (click)="save('metadata', m)">Save</button></div>
         </section>
       }
@@ -431,6 +438,8 @@ export class SettingsPage implements OnInit {
     this.languages.set(langs);
   }
 
+  /** "es-ES" → "ES", used as the release region placeholder. */
+  protected regionFromLanguage(language: string) { return /^[a-z]{2,3}-([A-Za-z]{2})$/.exec(language?.trim() ?? '')?.[1].toUpperCase() ?? ''; }
   protected languageName(code: string) { return this.languages().find(l => l.code === code)?.name ?? code; }
   protected addLanguage(list: string[], code: string) { return code && !list.includes(code) ? [...list, code] : list; }
   protected removeLanguage(list: string[], code: string) { return list.filter(c => c !== code); }

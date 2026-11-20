@@ -78,6 +78,7 @@ builder.Services.AddKrakarrDownloads();
 builder.Services.AddKrakarrMovies();
 builder.Services.AddKrakarrSeries(builder.Configuration);
 builder.Services.AddKrakarrSubtitles();
+builder.Services.AddScoped<CalendarService>();
 
 // ---- Web: JSON, SignalR, auth --------------------------------------------------------------
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
@@ -152,6 +153,7 @@ app.MapDownloadEndpoints();
 app.MapMovieEndpoints();
 app.MapSeriesEndpoints();
 app.MapSubtitleEndpoints();
+app.MapCalendarEndpoints();
 app.MapHub<EventsHub>("/hubs/events");
 app.MapKrakarrSpa(urlBase);
 

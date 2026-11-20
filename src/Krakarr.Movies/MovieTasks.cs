@@ -47,7 +47,8 @@ public sealed class MovieRssSyncTask(
 
         foreach (var movie in wanted)
         {
-            if (movie.QualityProfile is null || await movies.HasActiveDownloadAsync(movie.Id, cancellationToken))
+            if (movie.QualityProfile is null || !MovieReleases.IsAvailable(movie, MovieService.Today)
+                || await movies.HasActiveDownloadAsync(movie.Id, cancellationToken))
             {
                 continue;
             }

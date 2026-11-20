@@ -17,7 +17,11 @@ public static class SettingsEndpoints
         var settings = app.MapGroup("/api/v1/settings").WithTags("Settings");
         MapSection<GeneralSettings>(settings, "general", (current, incoming) => incoming with { ApiKey = current.ApiKey });
         MapSection<MediaManagementSettings>(settings, "media");
-        MapSection<MetadataSettings>(settings, "metadata");
+        MapSection<MetadataSettings>(settings, "metadata",
+            merge: (_, incoming) => incoming with { ReleaseRegion = MovieReleases.NormalizeRegion(incoming.ReleaseRegion) },
+            validate: s => s.ReleaseRegion is { } r && (r.Length != 2 || !r.All(char.IsAsciiLetterUpper))
+                ? "Release region must be a two-letter country code (ISO 3166-1), e.g. US or ES"
+                : null);
         MapSection<DownloadClientSettings>(settings, "downloads",
             merge: (current, incoming) => incoming.QBittorrent.Password == QBittorrentSettings.PasswordMask
                 ? incoming with { QBittorrent = incoming.QBittorrent with { Password = current.QBittorrent.Password } }

@@ -1,5 +1,8 @@
 using Krakarr.Core.Domain;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Krakarr.Data;
@@ -7,6 +10,11 @@ namespace Krakarr.Data;
 public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbContext(options)
 {
     public const string SqliteProviderName = "Microsoft.EntityFrameworkCore.Sqlite";
+
+    private static readonly JsonSerializerOptions JsonColumn = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() },
+    };
 
     public DbSet<User> Users => Set<User>();
     public DbSet<SettingEntry> Settings => Set<SettingEntry>();
@@ -57,6 +65,19 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
             e.HasIndex(x => x.ImdbId);
             e.HasOne(x => x.QualityProfile).WithMany().HasForeignKey(x => x.QualityProfileId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.MovieFile).WithOne().HasForeignKey<Movie>(x => x.MovieFileId).OnDelete(DeleteBehavior.SetNull);
+            // Stored as a JSON text column: read as a whole, never queried into.
+            e.Property(x => x.ReleaseDates)
+                .HasConversion(
+                    v => JsonSerializer.Serialize(v, JsonColumn),
+                    v => JsonSerializer.Deserialize<List<MovieReleaseDate>>(v, JsonColumn) ?? new List<MovieReleaseDate>(),
+                    new ValueComparer<List<MovieReleaseDate>>(
+                        (a, b) => (a ?? new List<MovieReleaseDate>()).SequenceEqual(b ?? new List<MovieReleaseDate>()),
+                        v => v.Aggregate(0, (h, d) => HashCode.Combine(h, d.GetHashCode())),
+                        v => v.ToList()))
+                .HasDefaultValue(new List<MovieReleaseDate>());
+            e.HasIndex(x => x.InCinemas);
+            e.HasIndex(x => x.DigitalRelease);
+            e.HasIndex(x => x.PhysicalRelease);
         });
 
         b.Entity<MovieFile>(e => e.HasIndex(x => x.MovieId));
@@ -75,6 +96,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
         b.Entity<Episode>(e =>
         {
             e.HasIndex(x => new { x.SeriesId, x.SeasonNumber, x.EpisodeNumber });
+            e.HasIndex(x => x.AirDate);
             e.HasIndex(x => x.TmdbId);
             e.HasIndex(x => x.TvdbId);
             e.HasOne(x => x.EpisodeFile).WithMany().HasForeignKey(x => x.EpisodeFileId).OnDelete(DeleteBehavior.SetNull);

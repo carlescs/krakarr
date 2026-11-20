@@ -98,6 +98,27 @@ TheTVDB is the series metadata source.
 - Titles already in the library carry a ✓ and open their page. Any other title has an *Add* button that asks for a root
   folder and quality profile, as *Add movie* / *Add series* do.
 
+### Calendar
+
+*Calendar* shows upcoming and recent releases of everything in the library, in a **month**, **week** or **agenda** view
+(phones start on the agenda).
+
+- **Movies** appear on their **cinema**, **digital** and **physical** release dates, from TMDB. Set a *Release region*
+  (two-letter country code) in *Settings → Metadata* to see that country's dates; a release type the country has no date
+  for falls back to the earliest date worldwide, and both are shown on the movie page. With no region every date is the
+  earliest worldwide. Dates are fetched when a movie is added and on the daily metadata refresh.
+- **Episodes** appear on their air date; several episodes of a show on the same day are grouped (`S01E01–E08`).
+- **Filters:** series, movies, each movie release type, unmonitored items and download status (any / not downloaded /
+  downloaded). The view and filters are remembered per browser.
+- **iCal feed:** *iCal* gives a URL (`/api/v1/calendar/feed.ics?apikey=…`) for Google Calendar, Apple Calendar or Outlook,
+  with its own filters and day range. It carries the API key, so treat it like a password.
+
+**Minimum availability:** each movie has a *minimum availability* (*announced*, *in cinemas* or *released*; new movies
+default to *released*). Automatic searches, search on add and RSS grabs wait until the movie reaches it, judged by the
+earliest worldwide dates: *in cinemas* from the cinema date, *released* from the digital or physical date (or 90 days
+after the cinema date when neither is known). Interactive search always works. Movies added before this feature use
+*announced*, so their behaviour does not change; change it with *Edit* on the movie page.
+
 ### Library import
 
 *Movies → Import library* and *Series → Import library* adopt folders that already exist in a root folder, **in place**.
@@ -262,7 +283,7 @@ API documentation (OpenAPI) is served at `/api/openapi/v1.json`.
 
 ## Roadmap
 
-- **Series (Sonarr):** daily and anime (absolute) numbering, calendar / wanted views
+- **Series (Sonarr):** daily and anime (absolute) numbering, wanted view
 - **Subtitles (Bazarr):** more providers (Podnapisi, Addic7ed, …), embedded subtitle detection, per-series language profiles, sync/encoding fixes
 - **Indexers (Prowlarr):** native tracker definitions (Cardigann-style), per-indexer stats, Torznab proxy for other apps
 - **Downloads:** per-torrent limits, file selection, Usenet (NZB) support
