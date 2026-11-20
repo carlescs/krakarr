@@ -1,1 +1,28 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#0f172a"/><path d="M18 14v36M18 33l18-19M24 27l14 23" stroke="#22d3ee" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none"/><circle cx="46" cy="44" r="6" fill="#a78bfa"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>Krakarr</title>
+  <defs>
+    <linearGradient id="kr-bg" x1="0" y1="0" x2="0" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1e293b"/>
+      <stop offset="1" stop-color="#0b1120"/>
+    </linearGradient>
+    <linearGradient id="kr-body" x1="96" y1="64" x2="416" y2="460" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#a78bfa"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#kr-bg)"/>
+  <g fill="none" stroke="url(#kr-body)" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke-width="32" d="M182 262C124 266 74 286 66 336c-6 40 40 58 64 32 14-16 4-40-16-38"/>
+    <path stroke-width="32" d="M330 262c58 4 108 24 116 74 6 40-40 58-64 32-14-16-4-40 16-38"/>
+    <path stroke-width="30" d="M218 296c0 54-8 102-42 130-24 20-62 8-56-20 4-18 28-22 36-6"/>
+    <path stroke-width="30" d="M294 296c0 54 8 102 42 130 24 20 62 8 56-20-4-18-28-22-36-6"/>
+    <path stroke-width="28" d="M256 300c0 40-16 64-10 98 4 24 18 36 10 56"/>
+  </g>
+  <path fill="url(#kr-body)" d="M256 64c82 0 136 66 136 146 0 46-22 80-56 96H176c-34-16-56-50-56-96 0-80 54-146 136-146z"/>
+  <!-- fierce eyes: dark sockets with slanted brows cut from the mantle -->
+  <circle cx="206" cy="226" r="30" fill="#0b1120"/>
+  <circle cx="306" cy="226" r="30" fill="#0b1120"/>
+  <path fill="url(#kr-body)" d="M168 180l78 30-4 8-78-12zM344 180l-78 30 4 8 78-12z"/>
+  <circle cx="214" cy="232" r="10" fill="#fbbf24"/>
+  <circle cx="298" cy="232" r="10" fill="#fbbf24"/>
+</svg>

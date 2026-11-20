@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/branding/icon.svg" alt="Krakarr" width="128" /></p>
+
 # Krakarr
 
 **One app, one container** for your whole media automation stack. Krakarr replaces:
