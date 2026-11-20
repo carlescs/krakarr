@@ -10,6 +10,7 @@ import { MovieGroup, groupByCollection } from '../../core/movie-groups';
 import { NearViewport } from '../../shared/near-viewport';
 import { Poster } from '../../shared/poster';
 import { GRID_CHUNK, POSTER_GRID, PosterGridSkeleton } from '../../shared/poster-grid';
+import { MoreMenu } from '../../shared/more-menu';
 import { Progress } from '../../shared/progress';
 
 type Filter = 'all' | 'missing' | 'downloaded' | 'unmonitored';
@@ -23,7 +24,7 @@ function storedGrouping(): Grouping {
 
 @Component({
   selector: 'kr-movie-list',
-  imports: [RouterLink, FormsModule, NgTemplateOutlet, Poster, Progress, NearViewport, PosterGridSkeleton],
+  imports: [RouterLink, FormsModule, NgTemplateOutlet, Poster, Progress, NearViewport, PosterGridSkeleton, MoreMenu],
   template: `
     <div class="mb-6 flex flex-wrap items-center gap-3">
       <h1 class="page-title mr-auto max-sm:basis-full">Movies <span class="ml-1 text-base font-normal text-slate-500">@if (!loading()) { {{ movies().length }} }</span></h1>
@@ -40,8 +41,10 @@ function storedGrouping(): Grouping {
       </select>
       @if (auth.isStaff()) {
         <div class="flex gap-2 max-sm:basis-full">
-          <a routerLink="/movies/import" class="btn-secondary max-sm:flex-1">Import library</a>
           <a routerLink="/movies/add" class="btn-primary max-sm:flex-1">+ Add movie</a>
+          <kr-more-menu>
+            <a routerLink="/movies/import" class="menu-item" role="menuitem">Import existing library…</a>
+          </kr-more-menu>
         </div>
       }
     </div>
@@ -55,6 +58,7 @@ function storedGrouping(): Grouping {
           <p class="max-w-md text-sm text-slate-400">Add a root folder and a TMDB API key in Settings, connect an indexer, then add your first movie.</p>
           <div class="mt-2 flex gap-2">
             <a routerLink="/settings" class="btn-secondary">Settings</a>
+            <a routerLink="/movies/import" class="btn-secondary">Import existing</a>
             <a routerLink="/movies/add" class="btn-primary">Add movie</a>
           </div>
         } @else {

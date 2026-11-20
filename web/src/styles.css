@@ -40,6 +40,7 @@
 @utility hint { @apply mt-1 text-xs text-slate-500; }
 @utility card { @apply rounded-xl border border-surface-700/70 bg-surface-900 shadow-sm; }
 @utility badge { @apply inline-flex items-center gap-1 whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-medium; }
+@utility menu-item { @apply flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-200 transition hover:bg-surface-800 hover:text-white pointer-coarse:min-h-10; }
 @utility page-title { @apply text-2xl font-semibold tracking-tight text-white; }
 
 @layer components {
