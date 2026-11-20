@@ -6,7 +6,7 @@ import { RouterLink } from '@angular/router';
 import { debounceTime, merge } from 'rxjs';
 import { Api, errorMessage } from '../core/api';
 import {
-  CalendarFilters, CalendarItem, CalendarView, DEFAULT_FILTERS, FeedOptions, ItemState, RELEASE_LABELS, addDays, buildItems, daysBetween,
+  CalendarFilters, CalendarItem, CalendarStatusFilter, CalendarView, DEFAULT_FILTERS, FeedOptions, ItemState, RELEASE_LABELS, addDays, buildItems, daysBetween,
   feedUrl, groupByDay, itemState, localeFirstDayOfWeek, parseIsoDate, shiftAnchor, toIsoDate, viewRange,
 } from '../core/calendar';
 import { Events } from '../core/events';
@@ -46,7 +46,7 @@ function readStored(): Stored {
   imports: [FormsModule, RouterLink, NgTemplateOutlet, Modal, Poster],
   template: `
     <!-- Toolbar -->
-    <div class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+    <div class="mb-4 flex flex-wrap items-center gap-x-2 gap-y-2 sm:gap-x-3">
       <h1 class="page-title max-sm:hidden">Calendar</h1>
       <div class="flex items-center gap-1">
         <button class="btn-ghost px-2.5" (click)="move(-1)" [attr.aria-label]="'Previous ' + periodName()">‹</button>
@@ -58,41 +58,131 @@ function readStored(): Stored {
       <div class="flex-1"></div>
       <div class="inline-flex rounded-lg border border-surface-700 bg-surface-900 p-0.5" role="tablist" aria-label="View">
         @for (v of views; track v.id) {
-          <button class="rounded-md px-3 py-1.5 text-xs font-medium transition pointer-coarse:min-h-9"
+          <button class="rounded-md px-3 py-1.5 text-xs font-medium transition pointer-coarse:min-h-9 max-[359px]:px-2"
                   [class]="view() === v.id ? 'bg-surface-700 text-white' : 'text-slate-400 hover:text-slate-200'"
                   role="tab" [attr.aria-selected]="view() === v.id" (click)="setView(v.id)">{{ v.label }}</button>
         }
       </div>
-      <button class="btn-ghost btn-sm" (click)="openFeed()" title="Subscribe from another calendar app">
+      <button class="btn-secondary btn-sm relative gap-1.5 max-sm:ml-auto sm:hidden" (click)="filtersOpen.set(true)" [attr.aria-label]="'Filters, ' + activeFilterCount() + ' active'">
+        <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5h18M6 12h12M10 19h4" /></svg>
+        <span class="max-[359px]:hidden">Filters</span>
+        @if (activeFilterCount() > 0) {
+          <span class="flex size-4 items-center justify-center rounded-full bg-accent-500 text-[10px] font-bold text-slate-950">{{ activeFilterCount() }}</span>
+        }
+      </button>
+      <button class="btn-ghost btn-sm" (click)="openFeed()" title="Subscribe from another calendar app" aria-label="iCal feed">
         <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12.75 19.5v-.75a7.5 7.5 0 0 0-7.5-7.5H4.5m0-6.75h.75c7.87 0 14.25 6.38 14.25 14.25v.75M6 18.75a.75.75 0 1 1-1.5 0 .75.75 0 0 1 1.5 0Z" /></svg>
-        iCal
+        <span class="max-sm:hidden">iCal</span>
       </button>
     </div>
 
-    <!-- Filters -->
-    <div class="-mx-4 mb-4 flex items-center gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
-      <button [class]="chip(filters().series)" (click)="toggle('series')" [attr.aria-pressed]="filters().series">
-        <span class="size-2 rounded-full" [class]="styles.episodes.dot"></span> Series
-      </button>
-      <button [class]="chip(filters().movies)" (click)="toggle('movies')" [attr.aria-pressed]="filters().movies">Movies</button>
-      @if (filters().movies) {
-        @for (t of releaseTypes; track t.key) {
-          <button [class]="chip(filters()[t.key])" (click)="toggle(t.key)" [attr.aria-pressed]="filters()[t.key]">
-            <span class="size-2 rounded-full" [class]="styles[t.style].dot"></span> {{ styles[t.style].label }}
+    <!-- Filters on phones: what is narrowed down, with a quick reset -->
+    @if (activeFilterCount() > 0) {
+      <div class="-mt-1 mb-4 flex items-center gap-2 text-xs sm:hidden">
+        <button class="flex min-w-0 flex-1 items-center gap-1.5 text-left" (click)="filtersOpen.set(true)">
+          @for (s of activeKinds(); track s) { <span class="size-2 shrink-0 rounded-full" [class]="styles[s].dot"></span> }
+          <span class="truncate text-slate-400">{{ filterSummary() }}</span>
+        </button>
+        @if (hiddenCount() > 0) { <span class="shrink-0 text-slate-500">{{ hiddenCount() }} hidden</span> }
+        <button class="shrink-0 px-1 py-1.5 font-medium text-accent-300" (click)="resetFilters()">Reset</button>
+      </div>
+    }
+
+    <!-- Filters: inline on larger screens -->
+    <div class="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 max-sm:hidden">
+      <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Show">
+        <button [class]="chip(filters().series)" (click)="toggle('series')" [attr.aria-pressed]="filters().series">
+          <span class="size-2 rounded-full" [class]="styles.episodes.dot"></span> Series
+          <span class="tabular-nums text-slate-500">{{ counts().episodes }}</span>
+        </button>
+        <div class="inline-flex items-center rounded-full border transition"
+             [class]="filters().movies ? 'border-surface-600 bg-surface-800/60' : 'border-surface-700'">
+          <button class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition"
+                  [class]="filters().movies ? 'bg-surface-700 text-white' : 'text-slate-500 hover:text-slate-300'"
+                  (click)="toggle('movies')" [attr.aria-pressed]="filters().movies">
+            Movies <span class="tabular-nums text-slate-500">{{ counts().movies }}</span>
           </button>
+          @for (t of releaseTypes; track t.key) {
+            <button class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition disabled:cursor-not-allowed disabled:opacity-40"
+                    [class]="filters().movies && filters()[t.key] ? 'text-slate-100' : 'text-slate-500 hover:text-slate-300'"
+                    [disabled]="!filters().movies" (click)="toggle(t.key)" [attr.aria-pressed]="filters().movies && filters()[t.key]">
+              <span class="size-2 rounded-full transition" [class]="filters()[t.key] ? styles[t.style].dot : 'bg-surface-600'"></span>
+              {{ styles[t.style].label }}
+            </button>
+          }
+        </div>
+      </div>
+      <div class="inline-flex rounded-lg border border-surface-700 bg-surface-900 p-0.5" role="radiogroup" aria-label="Status">
+        @for (s of statuses; track s.id) {
+          <button class="rounded-md px-2.5 py-1 text-xs font-medium transition"
+                  [class]="filters().status === s.id ? 'bg-surface-700 text-white' : 'text-slate-400 hover:text-slate-200'"
+                  role="radio" [attr.aria-checked]="filters().status === s.id" (click)="setFilter('status', s.id)">{{ s.label }}</button>
         }
-      }
-      <span class="mx-1 h-5 w-px shrink-0 bg-surface-700"></span>
-      <button [class]="chip(filters().unmonitored)" (click)="toggle('unmonitored')" [attr.aria-pressed]="filters().unmonitored">Unmonitored</button>
-      <select class="input w-auto shrink-0 py-1 text-xs sm:text-xs" [ngModel]="filters().status" (ngModelChange)="setFilter('status', $event)" aria-label="Status">
-        <option value="all">Any status</option>
-        <option value="missing">Not downloaded</option>
-        <option value="downloaded">Downloaded</option>
-      </select>
-      @if (hiddenCount() > 0) {
-        <span class="shrink-0 text-xs text-slate-500">{{ hiddenCount() }} hidden by filters</span>
+      </div>
+      <button [class]="chip(filters().unmonitored)" (click)="toggle('unmonitored')" [attr.aria-pressed]="filters().unmonitored">
+        <span class="flex size-3.5 items-center justify-center rounded-sm border text-[9px] leading-none"
+              [class]="filters().unmonitored ? 'border-accent-400 bg-accent-500 text-slate-950' : 'border-surface-600'">{{ filters().unmonitored ? '✓' : '' }}</span>
+        Unmonitored
+      </button>
+      @if (hiddenCount() > 0 || activeFilterCount() > 0) {
+        <div class="ml-auto flex items-center gap-2 text-xs text-slate-500">
+          @if (hiddenCount() > 0) { <span>{{ hiddenCount() }} hidden by filters</span> }
+          @if (activeFilterCount() > 0) { <button class="text-accent-300 hover:text-accent-200" (click)="resetFilters()">Reset</button> }
+        </div>
       }
     </div>
+
+    @if (filtersOpen()) {
+      <kr-modal title="Filters" (closed)="filtersOpen.set(false)">
+        <div class="space-y-5">
+          <section>
+            <h3 class="label">Show</h3>
+            <div class="divide-y divide-surface-800 overflow-hidden rounded-lg border border-surface-700">
+              <ng-container *ngTemplateOutlet="switchRow; context: { key: 'series', label: 'Series', dot: styles.episodes.dot, count: counts().episodes }" />
+              <ng-container *ngTemplateOutlet="switchRow; context: { key: 'movies', label: 'Movies', count: counts().movies }" />
+              @for (t of releaseTypes; track t.key) {
+                <ng-container *ngTemplateOutlet="switchRow; context: { key: t.key, label: styles[t.style].label, dot: styles[t.style].dot, count: counts()[t.style], nested: true }" />
+              }
+            </div>
+          </section>
+          <section>
+            <h3 class="label">Status</h3>
+            <div class="grid grid-cols-3 rounded-lg border border-surface-700 bg-surface-950 p-1" role="radiogroup" aria-label="Status">
+              @for (s of statuses; track s.id) {
+                <button class="min-h-10 rounded-md px-1 text-sm font-medium transition max-[359px]:text-xs"
+                        [class]="filters().status === s.id ? 'bg-surface-700 text-white' : 'text-slate-400'"
+                        role="radio" [attr.aria-checked]="filters().status === s.id" (click)="setFilter('status', s.id)">{{ s.label }}</button>
+              }
+            </div>
+          </section>
+          <section class="overflow-hidden rounded-lg border border-surface-700">
+            <ng-container *ngTemplateOutlet="switchRow; context: { key: 'unmonitored', label: 'Include unmonitored', hint: 'Movies and episodes that are not searched for automatically' }" />
+          </section>
+        </div>
+        <ng-container footer>
+          <span class="mr-auto self-center text-xs text-slate-500">{{ items().length }} shown{{ hiddenCount() > 0 ? ' · ' + hiddenCount() + ' hidden' : '' }}</span>
+          <button class="btn-ghost" (click)="resetFilters()" [disabled]="activeFilterCount() === 0">Reset</button>
+          <button class="btn-primary" (click)="filtersOpen.set(false)">Done</button>
+        </ng-container>
+      </kr-modal>
+    }
+
+    <ng-template #switchRow let-key="key" let-label="label" let-dot="dot" let-count="count" let-nested="nested" let-hint="hint">
+      @let on = isOn(key);
+      @let disabled = nested && !filters().movies;
+      <button class="flex min-h-12 w-full items-center gap-3 px-3 py-2 text-left text-sm transition active:bg-surface-800 disabled:opacity-40"
+              [class.pl-8]="nested" [disabled]="disabled" role="switch" [attr.aria-checked]="on" (click)="toggle(key)">
+        @if (dot) { <span class="size-2.5 shrink-0 rounded-full" [class]="dot"></span> }
+        <span class="min-w-0 flex-1">
+          <span class="block" [class]="on && !disabled ? 'text-slate-100' : 'text-slate-400'">{{ label }}</span>
+          @if (hint) { <span class="block text-xs text-slate-500">{{ hint }}</span> }
+        </span>
+        @if (count !== undefined) { <span class="text-xs tabular-nums text-slate-500">{{ count }}</span> }
+        <span class="relative h-6 w-10 shrink-0 rounded-full transition" [class]="on ? 'bg-accent-500' : 'bg-surface-700'">
+          <span class="absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-transform" [class.translate-x-4]="on"></span>
+        </span>
+      </button>
+    </ng-template>
 
     @if (error()) {
       <p class="mb-4 rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-300">{{ error() }}</p>
@@ -289,6 +379,9 @@ export class CalendarPage {
   protected readonly views: { id: CalendarView; label: string }[] = [
     { id: 'month', label: 'Month' }, { id: 'week', label: 'Week' }, { id: 'agenda', label: 'Agenda' },
   ];
+  protected readonly statuses: { id: CalendarStatusFilter; label: string }[] = [
+    { id: 'all', label: 'Any' }, { id: 'missing', label: 'Missing' }, { id: 'downloaded', label: 'Downloaded' },
+  ];
   protected readonly releaseTypes = [
     { key: 'theatrical', style: 'Theatrical' }, { key: 'digital', style: 'Digital' }, { key: 'physical', style: 'Physical' },
   ] as const;
@@ -305,6 +398,7 @@ export class CalendarPage {
   protected readonly loading = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly selectedDay = signal<string | null>(null);
+  protected readonly filtersOpen = signal(false);
   protected readonly feedOpen = signal(false);
   protected readonly apiKey = signal<string | null>(null);
   protected feed: FeedOptions = {
@@ -319,6 +413,40 @@ export class CalendarPage {
   protected readonly hiddenCount = computed(() => {
     const all = buildItems(this.entries(), { ...DEFAULT_FILTERS, unmonitored: true }).length;
     return Math.max(0, all - this.items().length);
+  });
+  /** Items per kind in the range, ignoring the kind toggles but honouring status and unmonitored. */
+  protected readonly counts = computed(() => {
+    const f = this.filters();
+    const all = buildItems(this.entries(), { ...DEFAULT_FILTERS, unmonitored: f.unmonitored, status: f.status });
+    const counts: Record<StyleKey | 'movies', number> = { episodes: 0, movies: 0, Theatrical: 0, Digital: 0, Physical: 0 };
+    for (const item of all) {
+      counts[this.styleKey(item)]++;
+      if (item.kind === 'movie') counts.movies++;
+    }
+    return counts;
+  });
+  protected readonly activeFilterCount = computed(() => {
+    const f = this.filters();
+    return (Object.keys(DEFAULT_FILTERS) as (keyof CalendarFilters)[])
+      .filter(k => f[k] !== DEFAULT_FILTERS[k] && !(f.movies === false && (k === 'theatrical' || k === 'digital' || k === 'physical')))
+      .length;
+  });
+  /** Colours of the kinds currently shown, for the phone summary. */
+  protected readonly activeKinds = computed(() => {
+    const f = this.filters();
+    const kinds: StyleKey[] = f.series ? ['episodes'] : [];
+    if (f.movies) for (const t of this.releaseTypes) if (f[t.key]) kinds.push(t.style);
+    return kinds;
+  });
+  protected readonly filterSummary = computed(() => {
+    const f = this.filters();
+    const types = this.releaseTypes.filter(t => f[t.key]);
+    const movies = !f.movies || types.length === 0 ? null
+      : types.length === this.releaseTypes.length ? 'Movies' : `Movies (${types.map(t => STYLES[t.style].label.toLowerCase()).join(', ')})`;
+    const parts = [f.series ? 'Series' : null, movies].filter(Boolean);
+    const what = parts.length ? parts.join(', ') : 'Nothing selected';
+    const status = f.status === 'missing' ? ' · missing' : f.status === 'downloaded' ? ' · downloaded' : '';
+    return what + status + (f.unmonitored ? ' · incl. unmonitored' : '');
   });
   protected readonly weekdays = computed(() => {
     const start = startOfDisplayedWeek(this.firstDay);
@@ -400,6 +528,10 @@ export class CalendarPage {
   protected toggle(key: 'movies' | 'series' | 'theatrical' | 'digital' | 'physical' | 'unmonitored') {
     this.filters.update(f => ({ ...f, [key]: !f[key] }));
   }
+
+  protected isOn(key: keyof CalendarFilters) { return this.filters()[key] === true; }
+
+  protected resetFilters() { this.filters.set({ ...DEFAULT_FILTERS }); }
 
   protected setFilter<K extends keyof CalendarFilters>(key: K, value: CalendarFilters[K]) {
     this.filters.update(f => ({ ...f, [key]: value }));
