@@ -21,11 +21,15 @@ public sealed record MovieLookup
     public string? Status { get; init; }
     /// <summary>Theatrical, digital and physical release dates per country (only from <see cref="ITmdbClient.GetMovieAsync"/>).</summary>
     public IReadOnlyList<MovieReleaseDate> ReleaseDates { get; init; } = [];
+    /// <summary>TMDB collection the movie belongs to (only from <see cref="ITmdbClient.GetMovieAsync"/>).</summary>
+    public CollectionLookup? Collection { get; init; }
     /// <summary>TMDB average user score (0-10), when known.</summary>
     public double? Rating { get; init; }
     /// <summary>Local movie id when the movie is already in the library.</summary>
     public int? MovieId { get; init; }
 }
+
+public sealed record CollectionLookup(int TmdbId, string Name, string? PosterUrl, string? FanartUrl);
 
 public interface ITmdbClient
 {
@@ -49,7 +53,7 @@ public sealed class TmdbClient(TmdbApi api, ISettingsService settings) : ITmdbCl
     public async Task<MovieLookup> GetMovieAsync(int tmdbId, CancellationToken ct = default)
     {
         var movie = await GetAsync<TmdbMovie>($"3/movie/{tmdbId.ToString(CultureInfo.InvariantCulture)}?append_to_response=release_dates", ct);
-        return Map(movie) with { ReleaseDates = MapReleaseDates(movie.ReleaseDates) };
+        return Map(movie) with { ReleaseDates = MapReleaseDates(movie.ReleaseDates), Collection = MapCollection(movie.Collection) };
     }
 
     public async Task<MovieLookup?> FindByImdbAsync(string imdbId, CancellationToken ct = default)
@@ -76,6 +80,11 @@ public sealed class TmdbClient(TmdbApi api, ISettingsService settings) : ITmdbCl
         Status = m.Status,
         Rating = m.VoteAverage is > 0 ? Math.Round(m.VoteAverage.Value, 1) : null,
     };
+
+    internal static CollectionLookup? MapCollection(TmdbCollection? c) =>
+        c is { Id: > 0, Name: { Length: > 0 } name }
+            ? new CollectionLookup(c.Id, name, TmdbApi.Image(c.PosterPath, "w500"), TmdbApi.Image(c.BackdropPath, "original"))
+            : null;
 
     /// <summary>
     /// Maps TMDB release types to Krakarr's: limited (2) and wide (3) theatrical releases count as cinema, 4 is digital and
@@ -125,6 +134,15 @@ public sealed class TmdbClient(TmdbApi api, ISettingsService settings) : ITmdbCl
         [JsonPropertyName("status")] public string? Status { get; init; }
         [JsonPropertyName("vote_average")] public double? VoteAverage { get; init; }
         [JsonPropertyName("release_dates")] public TmdbReleaseDates? ReleaseDates { get; init; }
+        [JsonPropertyName("belongs_to_collection")] public TmdbCollection? Collection { get; init; }
+    }
+
+    internal sealed record TmdbCollection
+    {
+        [JsonPropertyName("id")] public int Id { get; init; }
+        [JsonPropertyName("name")] public string? Name { get; init; }
+        [JsonPropertyName("poster_path")] public string? PosterPath { get; init; }
+        [JsonPropertyName("backdrop_path")] public string? BackdropPath { get; init; }
     }
 
     internal sealed record TmdbReleaseDates

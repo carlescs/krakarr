@@ -2,7 +2,7 @@ import { Injectable, effect, inject, signal } from '@angular/core';
 import { Api, errorMessage } from './api';
 import { Auth } from './auth';
 import { Events } from './events';
-import { MovieListItem, SeriesListItem } from './models';
+import { MovieCollection, MovieListItem, SeriesListItem } from './models';
 import { Toasts } from './toast';
 
 /**
@@ -84,16 +84,22 @@ export class Library {
   private readonly auth = inject(Auth);
 
   readonly movies = new ListCache<MovieListItem>(() => this.api.movies(), e => this.toasts.error(errorMessage(e)));
+  /** TMDB collections of library movies, for grouping the movie list. Movie events can change them too. */
+  readonly movieCollections = new ListCache<MovieCollection>(() => this.api.movieCollections(), e => this.toasts.error(errorMessage(e)));
   readonly series = new ListCache<SeriesListItem>(() => this.api.seriesList(), e => this.toasts.error(errorMessage(e)));
 
   constructor() {
     const events = inject(Events);
-    events.movieUpdated.subscribe(() => this.movies.invalidate());
+    events.movieUpdated.subscribe(() => {
+      this.movies.invalidate();
+      this.movieCollections.invalidate();
+    });
     events.seriesUpdated.subscribe(() => this.series.invalidate());
     // Another user may log in next: never show them the previous session's library.
     effect(() => {
       if (this.auth.status()?.authenticated === false) {
         this.movies.clear();
+        this.movieCollections.clear();
         this.series.clear();
       }
     });

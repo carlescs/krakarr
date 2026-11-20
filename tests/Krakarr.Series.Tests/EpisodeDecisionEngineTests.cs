@@ -146,6 +146,18 @@ public class EpisodeDecisionEngineTests
         e1.EpisodeFile = new EpisodeFile { RelativePath = "x", QualityId = Qualities.Bluray1080.Id };
         Assert.False(EpisodeDecisionEngine.IsWanted(e1, Hd1080, Today));
     }
+
+    [Theory]
+    [InlineData("The.Office.S01E02E03.1080p.WEB-DL-GRP", new[] { 2, 3 })]
+    [InlineData("The.Office.S01.1080p.BluRay.x264-GRP", new[] { 1, 2, 3, 4 })]
+    [InlineData("Some.Other.Name.S02E02.720p-GRP", new[] { 2 })]
+    [InlineData("The.Office.S01E04E09.1080p.WEB-DL-GRP", new[] { 4 })]
+    [InlineData("The.Office.2005.1080p.BluRay-GRP", new int[0])]
+    public void MapEpisodes_is_lenient_for_manual_downloads(string title, int[] expected)
+    {
+        var mapped = EpisodeDecisionEngine.MapEpisodes(Office().Episodes, Media.Parsing.ReleaseParser.Parse(title), Today);
+        Assert.Equal(expected, mapped.Select(e => e.EpisodeNumber));
+    }
 }
 
 internal static class ProfileExtensions

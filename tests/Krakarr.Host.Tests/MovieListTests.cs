@@ -44,6 +44,7 @@ public sealed class MovieListTests : IClassFixture<KrakarrFactory>
         Assert.Equal(Qualities.FindById(17).Name, owned.GetProperty("quality").GetString());
         Assert.Equal(2001, owned.GetProperty("year").GetInt32());
         Assert.False(owned.TryGetProperty("overview", out _), "the list must stay slim");
+        Assert.Equal(JsonValueKind.Null, owned.GetProperty("collectionId").ValueKind);
 
         var missing = list!.Single(m => m.GetProperty("title").GetString() == "Missing Movie");
         Assert.False(missing.GetProperty("hasFile").GetBoolean());

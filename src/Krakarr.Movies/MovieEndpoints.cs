@@ -49,10 +49,14 @@ public sealed record MovieDto
     public MovieFileDto? MovieFile { get; init; }
     /// <summary>Progress (0-100) of an active download, if any.</summary>
     public double? DownloadProgress { get; init; }
+    /// <summary>Local id of the TMDB collection the movie belongs to (see <c>GET /movies/collections</c>).</summary>
+    public int? CollectionId { get; init; }
 }
 
 /// <summary>Row of the library grid: only what the movie list shows, so the whole library stays a small payload.</summary>
-public sealed record MovieListItemDto(int Id, string Title, int Year, string? PosterUrl, bool Monitored, bool HasFile, string? Quality, double? DownloadProgress);
+public sealed record MovieListItemDto(int Id, string Title, int Year, string? PosterUrl, bool Monitored, bool HasFile, string? Quality, double? DownloadProgress, int? CollectionId);
+
+public sealed record MovieCollectionDto(int Id, int TmdbId, string Name, string? PosterUrl);
 
 public sealed record UpdateMovieRequest(bool Monitored, int QualityProfileId, MinimumAvailability? MinimumAvailability = null);
 
@@ -70,14 +74,22 @@ public static class MovieEndpoints
         {
             // The grid only needs a handful of columns: skip overviews, paths and release dates of the whole library.
             var rows = await db.Movies.AsNoTracking().OrderBy(m => m.SortTitle)
-                .Select(m => new { m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, QualityId = m.MovieFile != null ? m.MovieFile.QualityId : (int?)null })
+                .Select(m => new { m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, m.CollectionId, QualityId = m.MovieFile != null ? m.MovieFile.QualityId : (int?)null })
                 .ToListAsync(ct);
             var progress = ActiveProgress(engine);
             return rows.Select(m => new MovieListItemDto(
                 m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, m.QualityId is not null,
                 m.QualityId is { } q ? Qualities.FindById(q).Name : null,
-                progress.TryGetValue(m.Id, out var p) ? p : null));
+                progress.TryGetValue(m.Id, out var p) ? p : null,
+                m.CollectionId));
         });
+
+        // Collections that have movies in the library, for grouping the movie list.
+        group.MapGet("/collections", async (KrakarrDbContext db, CancellationToken ct) =>
+            await db.MovieCollections.AsNoTracking()
+                .OrderBy(c => c.SortName)
+                .Select(c => new MovieCollectionDto(c.Id, c.TmdbId, c.Name, c.PosterUrl))
+                .ToListAsync(ct));
 
         group.MapGet("/{id:int}", async (int id, KrakarrDbContext db, ITorrentEngine engine, Krakarr.Data.ISettingsService settings, CancellationToken ct) =>
         {
@@ -205,6 +217,7 @@ public static class MovieEndpoints
             await db.Downloads.Where(d => d.MovieId == id).ExecuteUpdateAsync(s => s.SetProperty(d => d.MovieId, (int?)null), ct);
             db.Movies.Remove(movie);
             await db.SaveChangesAsync(ct);
+            await MovieService.PruneCollectionsAsync(db, ct);
             return Results.NoContent();
         });
 
@@ -308,6 +321,7 @@ public static class MovieEndpoints
             ? new MovieFileDto(f.Id, f.RelativePath, f.Size, Qualities.FindById(f.QualityId).Name, f.ReleaseGroup, f.DateAdded)
             : null,
         DownloadProgress = progress.TryGetValue(m.Id, out var p) ? p : null,
+        CollectionId = m.CollectionId,
     };
 
     private static (string Query, int? Year) SplitYear(string term)

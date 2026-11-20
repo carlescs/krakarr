@@ -9,9 +9,11 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Krakarr.Downloads;
 
-public sealed record AddMagnetRequest(string Magnet, string? Category, string? SavePath, bool Paused = false);
+/// <param name="MovieId">Optional library movie to import the download into.</param>
+/// <param name="SeriesId">Optional library series to import the download into.</param>
+public sealed record AddMagnetRequest(string Magnet, string? Category, string? SavePath, bool Paused = false, int? MovieId = null, int? SeriesId = null);
 
-public sealed record GrabReleaseRequest(ReleaseInfo Release, string? Category);
+public sealed record GrabReleaseRequest(ReleaseInfo Release, string? Category, int? MovieId = null, int? SeriesId = null);
 
 public static class DownloadEndpoints
 {
@@ -21,25 +23,20 @@ public static class DownloadEndpoints
 
         group.MapGet("/", (ITorrentEngine engine) => engine.GetStatuses());
 
-        group.MapPost("/magnet", async (AddMagnetRequest req, ITorrentEngine engine, CancellationToken ct) =>
-        {
-            try
-            {
-                var row = await engine.AddMagnetAsync(req.Magnet, new AddTorrentOptions
-                {
-                    Category = req.Category ?? "default",
-                    SavePath = req.SavePath,
-                    Paused = req.Paused,
-                }, ct);
-                return Results.Ok(row);
-            }
-            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
-            {
-                return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest);
-            }
-        });
+        group.MapPost("/magnet", (AddMagnetRequest req, ITorrentEngine engine, ManualDownloadLinks links, CancellationToken ct) =>
+            AddAsync(() => links.AddAsync(
+                new ManualDownloadLink(req.MovieId, req.SeriesId), req.Category,
+                new AddTorrentOptions { SavePath = req.SavePath, Paused = req.Paused },
+                o => engine.AddMagnetAsync(req.Magnet, o, ct), ct)));
 
-        group.MapPost("/torrent", async (IFormFile file, [Microsoft.AspNetCore.Mvc.FromForm] string? category, ITorrentEngine engine, CancellationToken ct) =>
+        group.MapPost("/torrent", async (
+            IFormFile file,
+            [Microsoft.AspNetCore.Mvc.FromForm] string? category,
+            [Microsoft.AspNetCore.Mvc.FromForm] int? movieId,
+            [Microsoft.AspNetCore.Mvc.FromForm] int? seriesId,
+            ITorrentEngine engine,
+            ManualDownloadLinks links,
+            CancellationToken ct) =>
         {
             if (file.Length is 0 or > BoundedContent.MaxTorrentBytes)
             {
@@ -53,29 +50,15 @@ public static class DownloadEndpoints
                 await upload.ReadExactlyAsync(data, ct);
             }
 
-            try
-            {
-                var row = await engine.AddTorrentAsync(data, new AddTorrentOptions { Category = category ?? "default" }, ct);
-                return Results.Ok(row);
-            }
-            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
-            {
-                return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest);
-            }
+            return await AddAsync(() => links.AddAsync(
+                new ManualDownloadLink(movieId, seriesId), category, new AddTorrentOptions(),
+                o => engine.AddTorrentAsync(data, o, ct), ct));
         }).DisableAntiforgery();
 
-        group.MapPost("/release", async (GrabReleaseRequest req, IDownloadService downloads, CancellationToken ct) =>
-        {
-            try
-            {
-                var row = await downloads.GrabAsync(req.Release, new AddTorrentOptions { Category = req.Category ?? "default" }, ct);
-                return Results.Ok(row);
-            }
-            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or HttpRequestException)
-            {
-                return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest);
-            }
-        });
+        group.MapPost("/release", (GrabReleaseRequest req, IDownloadService downloads, ManualDownloadLinks links, CancellationToken ct) =>
+            AddAsync(() => links.AddAsync(
+                new ManualDownloadLink(req.MovieId, req.SeriesId), req.Category, new AddTorrentOptions(),
+                o => downloads.GrabAsync(req.Release, o, ct), ct)));
 
         group.MapPost("/{hash}/pause", (string hash, ITorrentEngine engine) => Control(() => engine.PauseAsync(hash)));
         group.MapPost("/{hash}/resume", (string hash, ITorrentEngine engine) => Control(() => engine.ResumeAsync(hash)));
@@ -121,6 +104,23 @@ public static class DownloadEndpoints
         });
 
         return app;
+    }
+
+    /// <summary>Adds a torrent and maps the expected failures to problem responses.</summary>
+    private static async Task<IResult> AddAsync(Func<Task<Download>> add)
+    {
+        try
+        {
+            return Results.Ok(await add());
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return Results.Problem(ex.Message, statusCode: StatusCodes.Status404NotFound);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or HttpRequestException)
+        {
+            return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest);
+        }
     }
 
     private static async Task<IResult> Control(Func<Task> action)
