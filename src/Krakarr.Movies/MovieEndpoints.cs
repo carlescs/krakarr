@@ -230,6 +230,7 @@ public static class MovieEndpoints
             };
         }).WithTags("History");
 
+        app.MapMovieDiscoveryEndpoints();
         return app;
     }
 

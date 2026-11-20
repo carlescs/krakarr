@@ -11,6 +11,7 @@
 | **qBittorrent** – torrent client | `Krakarr.Downloads` | ✅ Embedded [MonoTorrent](https://github.com/alanmcgovern/monotorrent) engine: magnets, .torrent files, DHT, speed limits, seeding ratio/time limits, fast-resume — *or* drive an existing qBittorrent (tag-scoped) |
 | **Sonarr** – TV series | `Krakarr.Series` | ✅ TMDB or TheTVDB metadata, seasons/episodes, monitoring, season-pack aware search, RSS sync, rename + hardlink import |
 | **Bazarr** – subtitles | `Krakarr.Subtitles` | ✅ OpenSubtitles.com, wanted languages, hash + release scoring, automatic and manual search |
+| **Seerr** – discovery | `Krakarr.Movies` / `Krakarr.Series` | ✅ Trending, popular, upcoming and top-rated lists, personal recommendations, recommended and similar titles, one-click add |
 
 Everything (API, web UI, torrent engine, schedulers) runs in a single .NET process inside a single Docker container.
 There is nothing to wire together: no API keys between apps, no download-client configuration, no path mappings.
@@ -84,6 +85,18 @@ Then open <http://localhost:8787>:
   *Settings → Media management* formats (default `{Series Title} - S{Season}E{Episode} - {Episode Title} [{Quality}]`
   in `Season {Season}` folders) and hardlinked. Samples and extras are skipped.
 - Not yet supported: daily shows (date-based numbering) and anime absolute numbering.
+
+### Discover
+
+*Discover* browses TMDB like Seerr: trending, popular, upcoming and top-rated movies and series, plus in theaters and
+airing today (*See all* opens the full, paged list). It needs the TMDB key from *Settings → Metadata*, even when
+TheTVDB is the series metadata source.
+
+- **Recommended for you** blends TMDB's recommendations for your 12 most recently added movies and shows. A title that
+  several of them point at ranks higher, and titles you already have are left out.
+- **Movie and series pages** show TMDB's *Recommendations* and *Similar* titles.
+- Titles already in the library carry a ✓ and open their page. Any other title has an *Add* button that asks for a root
+  folder and quality profile, as *Add movie* / *Add series* do.
 
 ### Library import
 

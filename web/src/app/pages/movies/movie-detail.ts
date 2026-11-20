@@ -10,13 +10,14 @@ import { HistoryItem, IndexerError, Movie, QualityProfile, ReleaseDecision, Subt
 import { Toasts } from '../../core/toast';
 import { Modal } from '../../shared/modal';
 import { Poster } from '../../shared/poster';
+import { RelatedTitles } from '../../shared/related-titles';
 import { Progress } from '../../shared/progress';
 import { StateBadge } from '../../shared/state-badge';
 import { SubtitleManager } from '../../shared/subtitle-manager';
 
 @Component({
   selector: 'kr-movie-detail',
-  imports: [FormsModule, DatePipe, Poster, Progress, Modal, StateBadge, SubtitleManager, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
+  imports: [RelatedTitles, FormsModule, DatePipe, Poster, Progress, Modal, StateBadge, SubtitleManager, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
   template: `
     @if (movie(); as m) {
       <!-- Hero -->
@@ -124,6 +125,9 @@ import { SubtitleManager } from '../../shared/subtitle-manager';
           </ul>
         }
       </section>
+
+      <!-- Recommendations / similar (TMDB) -->
+      <kr-related-titles kind="movie" [id]="m.id" />
 
       <!-- Interactive search -->
       @if (releasesOpen()) {

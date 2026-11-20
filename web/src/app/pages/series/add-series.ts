@@ -1,15 +1,14 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
-import { MonitorMode, QualityProfile, RootFolder, SeriesLookup } from '../../core/models';
-import { Toasts } from '../../core/toast';
-import { Modal } from '../../shared/modal';
+import { SeriesLookup } from '../../core/models';
+import { AddSeriesModal } from '../../shared/add-series-modal';
 import { Poster } from '../../shared/poster';
 
 @Component({
   selector: 'kr-add-series',
-  imports: [FormsModule, RouterLink, Poster, Modal],
+  imports: [FormsModule, RouterLink, Poster, AddSeriesModal],
   template: `
     <h1 class="page-title mb-6">Add series</h1>
     <form class="mb-6 flex gap-2 sm:mb-8 sm:gap-3" (ngSubmit)="search()">
@@ -47,75 +46,19 @@ import { Poster } from '../../shared/poster';
     </div>
 
     @if (selected(); as show) {
-      <kr-modal [title]="'Add ' + show.title" (closed)="selected.set(null)">
-        @if (rootFolders().length === 0) {
-          <p class="text-sm text-amber-300">No TV root folders configured. <a routerLink="/settings" class="underline">Add one in Settings</a> (type “Series”) first.</p>
-        } @else {
-          <div class="space-y-4">
-            <div>
-              <label class="label">Root folder</label>
-              <select class="input" [(ngModel)]="rootFolder">
-                @for (f of rootFolders(); track f.id) { <option [value]="f.path">{{ f.path }}</option> }
-              </select>
-            </div>
-            <div>
-              <label class="label">Monitor</label>
-              <select class="input" [(ngModel)]="monitor">
-                @for (m of monitorModes; track m.id) { <option [value]="m.id">{{ m.label }}</option> }
-              </select>
-            </div>
-            <div>
-              <label class="label">Quality profile</label>
-              <select class="input" [(ngModel)]="profileId">
-                @for (p of profiles(); track p.id) { <option [ngValue]="p.id">{{ p.name }}</option> }
-              </select>
-            </div>
-            <label class="flex items-center gap-2 text-sm"><input type="checkbox" [(ngModel)]="seasonFolder" class="accent-accent-500" /> Use season folders</label>
-            <label class="flex items-center gap-2 text-sm"><input type="checkbox" [(ngModel)]="searchNow" class="accent-accent-500" /> Start search for missing episodes</label>
-          </div>
-        }
-        <ng-container footer>
-          <button class="btn-ghost" (click)="selected.set(null)">Cancel</button>
-          <button class="btn-primary" [disabled]="adding() || rootFolders().length === 0" (click)="add(show)">{{ adding() ? 'Adding…' : 'Add series' }}</button>
-        </ng-container>
-      </kr-modal>
+      <kr-add-series-modal [show]="show" (closed)="selected.set(null)" (added)="router.navigate(['/series', $event.id])" />
     }
   `,
 })
-export class AddSeriesPage implements OnInit {
+export class AddSeriesPage {
   private readonly api = inject(Api);
-  private readonly toasts = inject(Toasts);
-  private readonly router = inject(Router);
+  protected readonly router = inject(Router);
 
-  protected readonly monitorModes: { id: MonitorMode; label: string }[] = [
-    { id: 'All', label: 'All episodes' },
-    { id: 'Future', label: 'Future episodes' },
-    { id: 'Missing', label: 'Missing episodes' },
-    { id: 'FirstSeason', label: 'First season' },
-    { id: 'LatestSeason', label: 'Latest season' },
-    { id: 'None', label: 'None' },
-  ];
   protected term = '';
   protected readonly searching = signal(false);
-  protected readonly adding = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly results = signal<SeriesLookup[]>([]);
   protected readonly selected = signal<SeriesLookup | null>(null);
-  protected readonly rootFolders = signal<RootFolder[]>([]);
-  protected readonly profiles = signal<QualityProfile[]>([]);
-  protected rootFolder = '';
-  protected profileId = 0;
-  protected monitor: MonitorMode = 'All';
-  protected seasonFolder = true;
-  protected searchNow = true;
-
-  async ngOnInit() {
-    const [folders, profiles] = await Promise.all([this.api.rootFolders(), this.api.qualityProfiles()]);
-    this.rootFolders.set(folders.filter(f => f.mediaType === 'Series'));
-    this.profiles.set(profiles);
-    this.rootFolder = this.rootFolders()[0]?.path ?? '';
-    this.profileId = profiles[0]?.id ?? 0;
-  }
 
   async search() {
     if (!this.term.trim()) return;
@@ -128,22 +71,6 @@ export class AddSeriesPage implements OnInit {
       this.error.set(errorMessage(e));
     } finally {
       this.searching.set(false);
-    }
-  }
-
-  async add(show: SeriesLookup) {
-    this.adding.set(true);
-    try {
-      const created = await this.api.addSeries({
-        tmdbId: show.tmdbId, tvdbId: show.tvdbId, qualityProfileId: this.profileId, rootFolderPath: this.rootFolder, monitor: this.monitor,
-        seasonFolder: this.seasonFolder, searchForMissing: this.searchNow,
-      });
-      this.toasts.success(`Added ${created.title}`);
-      this.router.navigate(['/series', created.id]);
-    } catch (e) {
-      this.toasts.error(errorMessage(e));
-    } finally {
-      this.adding.set(false);
     }
   }
 }

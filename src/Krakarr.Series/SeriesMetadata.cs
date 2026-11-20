@@ -15,6 +15,8 @@ public sealed record SeriesLookup
     public string? PosterUrl { get; init; }
     public string? Network { get; init; }
     public string? Status { get; init; }
+    /// <summary>TMDB average user score (0-10); only set by discovery lists.</summary>
+    public double? Rating { get; init; }
     /// <summary>Local series id when the show is already in the library.</summary>
     public int? SeriesId { get; init; }
 }

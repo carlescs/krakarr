@@ -49,12 +49,18 @@ export interface Movie {
 
 export interface MovieLookup {
   tmdbId: number; imdbId?: string; title: string; originalTitle?: string; year: number; overview?: string;
-  posterUrl?: string; fanartUrl?: string; runtime: number; status?: string; movieId?: number;
+  posterUrl?: string; fanartUrl?: string; runtime: number; status?: string; rating?: number; movieId?: number;
 }
 
 export interface SeriesLookup {
-  tmdbId?: number; tvdbId?: number; title: string; year: number; overview?: string; posterUrl?: string; network?: string; status?: string; seriesId?: number;
+  tmdbId?: number; tvdbId?: number; title: string; year: number; overview?: string; posterUrl?: string; network?: string; status?: string; rating?: number; seriesId?: number;
 }
+
+export type MovieDiscoverList = 'trending' | 'popular' | 'upcoming' | 'top-rated' | 'now-playing';
+export type SeriesDiscoverList = 'trending' | 'popular' | 'upcoming' | 'top-rated' | 'airing-today';
+export interface DiscoverPage<T> { results: T[]; page: number; totalPages: number; }
+/** A movie or show from a discovery list, recommendations or similar titles. */
+export type DiscoverItem = { kind: 'movie'; item: MovieLookup } | { kind: 'series'; item: SeriesLookup };
 export type SeriesStatus = 'Continuing' | 'Ended' | 'Upcoming';
 export type MonitorMode = 'All' | 'Future' | 'Missing' | 'FirstSeason' | 'LatestSeason' | 'None';
 export interface SeasonInfo {

@@ -293,6 +293,7 @@ public static class SeriesEndpoints
             return Results.NoContent();
         }).WithTags("Series");
 
+        app.MapSeriesDiscoveryEndpoints();
         return app;
     }
 
