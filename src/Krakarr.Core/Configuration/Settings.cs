@@ -37,7 +37,7 @@ public enum SeriesMetadataSource
 public sealed record MetadataSettings : ISettingsSection
 {
     public static string SectionKey => "metadata";
-    /// <summary>TMDB v3 API key or v4 read access token. Used for movies, and for series when <see cref="SeriesSource"/> is TMDB.</summary>
+    /// <summary>TMDB v3 API key or v4 read access token. Used for movies, for series when <see cref="SeriesSource"/> is TMDB, and for Discover recommendations.</summary>
     public string? TmdbApiKey { get; init; }
     public SeriesMetadataSource SeriesSource { get; init; } = SeriesMetadataSource.Tmdb;
     public string? TvdbApiKey { get; init; }

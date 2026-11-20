@@ -21,6 +21,7 @@ public static class SeriesModule
         services.AddScoped<ITmdbTvClient, TmdbTvClient>();
         services.AddScoped<ITvdbClient, TvdbClient>();
         services.AddScoped<ISeriesMetadata, SeriesMetadata>();
+        services.AddScoped<ISeriesDiscovery, TmdbSeriesDiscovery>();
         services.AddScoped<SeriesService>();
         services.AddScoped<LibraryImport.SeriesLibraryImport>();
         services.AddScheduledTask<SeriesImportService>();

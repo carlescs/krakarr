@@ -18,6 +18,8 @@ public sealed record MovieLookup
     public string? FanartUrl { get; init; }
     public int Runtime { get; init; }
     public string? Status { get; init; }
+    /// <summary>TMDB average user score (0-10), when known.</summary>
+    public double? Rating { get; init; }
     /// <summary>Local movie id when the movie is already in the library.</summary>
     public int? MovieId { get; init; }
 }
@@ -57,7 +59,7 @@ public sealed class TmdbClient(TmdbApi api, ISettingsService settings) : ITmdbCl
     private async Task<T> GetAsync<T>(string relative, CancellationToken ct) =>
         await api.GetAsync<T>(await settings.GetAsync<MetadataSettings>(ct), relative, ct);
 
-    private static MovieLookup Map(TmdbMovie m) => new()
+    internal static MovieLookup Map(TmdbMovie m) => new()
     {
         TmdbId = m.Id,
         ImdbId = string.IsNullOrEmpty(m.ImdbId) ? null : m.ImdbId,
@@ -69,13 +71,14 @@ public sealed class TmdbClient(TmdbApi api, ISettingsService settings) : ITmdbCl
         FanartUrl = TmdbApi.Image(m.BackdropPath, "original"),
         Runtime = m.Runtime ?? 0,
         Status = m.Status,
+        Rating = m.VoteAverage is > 0 ? Math.Round(m.VoteAverage.Value, 1) : null,
     };
 
     private sealed record TmdbSearchResponse([property: JsonPropertyName("results")] List<TmdbMovie> Results);
 
     private sealed record TmdbFindResponse([property: JsonPropertyName("movie_results")] List<TmdbMovie> MovieResults);
 
-    private sealed record TmdbMovie
+    internal sealed record TmdbMovie
     {
         [JsonPropertyName("id")] public int Id { get; init; }
         [JsonPropertyName("imdb_id")] public string? ImdbId { get; init; }
@@ -87,5 +90,6 @@ public sealed class TmdbClient(TmdbApi api, ISettingsService settings) : ITmdbCl
         [JsonPropertyName("backdrop_path")] public string? BackdropPath { get; init; }
         [JsonPropertyName("runtime")] public int? Runtime { get; init; }
         [JsonPropertyName("status")] public string? Status { get; init; }
+        [JsonPropertyName("vote_average")] public double? VoteAverage { get; init; }
     }
 }

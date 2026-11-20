@@ -10,6 +10,8 @@ export const routes: Routes = [
     canActivate: [authGuard],
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'movies' },
+      { path: 'discover', loadComponent: () => import('./pages/discover').then(m => m.DiscoverPage), title: 'Discover · Krakarr' },
+      { path: 'discover/:media/:list', loadComponent: () => import('./pages/discover-list').then(m => m.DiscoverListPage), title: 'Discover · Krakarr' },
       { path: 'movies', loadComponent: () => import('./pages/movies/movie-list').then(m => m.MovieListPage), title: 'Movies · Krakarr' },
       { path: 'movies/import', loadComponent: () => import('./pages/library-import').then(m => m.LibraryImportPage), data: { kind: 'movies' }, title: 'Import movies · Krakarr' },
       { path: 'movies/add', loadComponent: () => import('./pages/movies/add-movie').then(m => m.AddMoviePage), title: 'Add movie · Krakarr' },
