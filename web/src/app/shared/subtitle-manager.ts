@@ -24,8 +24,8 @@ import { Modal } from './modal';
         <button class="btn-secondary btn-sm" (click)="auto()">Automatic search</button>
       </div>
 
-      <div class="mb-3 flex items-center gap-2">
-        <select class="input w-60" [(ngModel)]="language">
+      <div class="mb-3 flex flex-wrap items-center gap-2">
+        <select class="input min-w-0 flex-1 sm:w-60 sm:flex-none" [(ngModel)]="language">
           <option value="">All wanted languages</option>
           @for (l of languages(); track l.code) { <option [value]="l.code">{{ l.name }}</option> }
         </select>
@@ -38,15 +38,16 @@ import { Modal } from './modal';
         <p class="py-6 text-center text-sm text-slate-400">No subtitles found.</p>
       }
       @if (results().length > 0) {
-        <div class="max-h-[55vh] overflow-auto">
+        <div class="overflow-x-auto sm:max-h-[55vh] sm:overflow-auto">
           <table class="table">
-            <thead><tr><th>Release</th><th>Language</th><th>Score</th><th>Downloads</th><th></th></tr></thead>
+            <thead><tr><th>Release</th><th class="max-sm:hidden">Language</th><th>Score</th><th class="max-sm:hidden">Downloads</th><th></th></tr></thead>
             <tbody>
               @for (r of results(); track r.candidate.provider + r.candidate.payload) {
                 <tr [class.opacity-60]="!r.acceptable">
                   <td class="w-full max-w-0">
-                    <div class="truncate" [title]="r.candidate.releaseNames.join(' | ')">{{ r.candidate.releaseNames[0] ?? r.candidate.fileName }}</div>
+                    <div class="break-all sm:truncate sm:break-normal" [title]="r.candidate.releaseNames.join(' | ')">{{ r.candidate.releaseNames[0] ?? r.candidate.fileName }}</div>
                     <div class="flex flex-wrap gap-1 text-xs">
+                      <span class="badge bg-surface-700 text-slate-200 sm:hidden">{{ languageName(r.candidate.language) }}</span>
                       @if (r.candidate.hashMatch) { <span class="badge bg-emerald-500/15 text-emerald-300">hash match</span> }
                       @if (r.candidate.hearingImpaired) { <span class="badge bg-surface-700 text-slate-300">HI</span> }
                       @if (r.candidate.trustedUploader) { <span class="badge bg-surface-700 text-slate-300">trusted</span> }
@@ -54,9 +55,9 @@ import { Modal } from './modal';
                       @if (!r.acceptable) { <span class="text-rose-300">· {{ r.rejections.join(' · ') }}</span> }
                     </div>
                   </td>
-                  <td class="whitespace-nowrap">{{ languageName(r.candidate.language) }}</td>
+                  <td class="whitespace-nowrap max-sm:hidden">{{ languageName(r.candidate.language) }}</td>
                   <td><span class="badge" [class]="r.score >= 80 ? 'bg-emerald-500/15 text-emerald-300' : r.score >= 60 ? 'bg-amber-500/15 text-amber-300' : 'bg-rose-500/15 text-rose-300'">{{ r.score }}</span></td>
-                  <td class="text-slate-400">{{ r.candidate.downloads }}</td>
+                  <td class="text-slate-400 max-sm:hidden">{{ r.candidate.downloads }}</td>
                   <td class="text-right">
                     <button class="btn-sm" [class]="r.acceptable ? 'btn-primary' : 'btn-secondary'" (click)="download(r)" [disabled]="downloading() === r.candidate.payload">
                       {{ downloading() === r.candidate.payload ? '…' : 'Download' }}

@@ -41,18 +41,22 @@ import { SubtitleManager } from '../shared/subtitle-manager';
       } @else {
         <div class="overflow-x-auto">
           <table class="table">
-            <thead><tr><th>Type</th><th>Title</th><th>Missing</th><th></th></tr></thead>
+            <thead><tr><th class="max-sm:hidden">Type</th><th>Title</th><th class="max-sm:hidden">Missing</th><th></th></tr></thead>
             <tbody>
               @for (w of wanted(); track (w.movieFileId ?? 0) + ':' + (w.episodeFileId ?? 0)) {
                 <tr>
-                  <td><span class="badge" [class]="w.mediaType === 'Movie' ? 'bg-accent-500/15 text-accent-300' : 'bg-violet-500/15 text-violet-300'">{{ w.mediaType === 'Movie' ? 'Movie' : 'Episode' }}</span></td>
+                  <td class="max-sm:hidden"><span class="badge" [class]="w.mediaType === 'Movie' ? 'bg-accent-500/15 text-accent-300' : 'bg-violet-500/15 text-violet-300'">{{ w.mediaType === 'Movie' ? 'Movie' : 'Episode' }}</span></td>
                   <td class="w-full max-w-0">
-                    <a class="block truncate hover:text-accent-300" [routerLink]="w.movieId ? ['/movies', w.movieId] : ['/series', w.seriesId]">{{ w.label }}</a>
+                    <a class="block hover:text-accent-300 sm:truncate" [routerLink]="w.movieId ? ['/movies', w.movieId] : ['/series', w.seriesId]" [title]="w.label">{{ w.label }}</a>
+                    <div class="mt-1 flex flex-wrap gap-1 sm:hidden">
+                      <span class="badge" [class]="w.mediaType === 'Movie' ? 'bg-accent-500/15 text-accent-300' : 'bg-violet-500/15 text-violet-300'">{{ w.mediaType === 'Movie' ? 'Movie' : 'Episode' }}</span>
+                      @for (l of w.missingLanguages; track l) { <span class="badge bg-rose-500/15 text-rose-300">{{ l }}</span> }
+                    </div>
                   </td>
-                  <td class="whitespace-nowrap">
+                  <td class="whitespace-nowrap max-sm:hidden">
                     @for (l of w.missingLanguages; track l) { <span class="badge mr-1 bg-rose-500/15 text-rose-300">{{ l }}</span> }
                   </td>
-                  <td class="whitespace-nowrap text-right">
+                  <td class="text-right sm:whitespace-nowrap">
                     <button class="btn-ghost btn-sm" (click)="search(w)" [disabled]="!ready()">Search</button>
                     <button class="btn-ghost btn-sm" (click)="manage.set(w)">Manual</button>
                   </td>

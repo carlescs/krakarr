@@ -1,6 +1,6 @@
 import { Component, DestroyRef, OnInit, computed, effect, inject, input, numberAttribute, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { DatePipe } from '@angular/common';
+import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
@@ -22,17 +22,17 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
 
 @Component({
   selector: 'kr-series-detail',
-  imports: [FormsModule, DatePipe, Poster, Progress, Modal, BytesPipe, AgoPipe, SubtitleManager],
+  imports: [FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, BytesPipe, AgoPipe, SubtitleManager],
   template: `
     @if (series(); as s) {
       <!-- Hero -->
       <div class="relative -mx-4 -mt-6 mb-6 overflow-hidden lg:-mx-8">
         @if (s.fanartUrl) { <img [src]="s.fanartUrl" alt="" class="absolute inset-0 h-full w-full object-cover opacity-20" /> }
         <div class="absolute inset-0 bg-gradient-to-t from-surface-950 via-surface-950/80 to-surface-950/40"></div>
-        <div class="relative flex flex-col gap-6 px-4 py-8 sm:flex-row lg:px-8">
-          <kr-poster class="w-40 shrink-0 shadow-2xl sm:w-48" [url]="s.posterUrl" [title]="s.title" />
+        <div class="relative flex flex-col gap-5 px-4 py-6 sm:flex-row sm:gap-6 sm:py-8 lg:px-8">
+          <kr-poster class="w-32 shrink-0 shadow-2xl sm:w-48" [url]="s.posterUrl" [title]="s.title" />
           <div class="min-w-0 flex-1">
-            <h1 class="text-3xl font-bold tracking-tight text-white">{{ s.title }} @if (s.year) { <span class="font-normal text-slate-400">({{ s.year }})</span> }</h1>
+            <h1 class="text-2xl font-bold tracking-tight text-white sm:text-3xl">{{ s.title }} @if (s.year) { <span class="font-normal text-slate-400">({{ s.year }})</span> }</h1>
             <div class="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-400">
               @if (s.network) { <span>{{ s.network }}</span><span>·</span> }
               @if (s.runtime) { <span>{{ s.runtime }} min</span><span>·</span> }
@@ -51,7 +51,7 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
               @if (s.sizeOnDisk) { <span class="badge bg-surface-700 text-slate-300">{{ s.sizeOnDisk | bytes }}</span> }
             </div>
             <p class="mt-4 line-clamp-4 max-w-3xl text-sm leading-relaxed text-slate-300">{{ s.overview }}</p>
-            <p class="mt-3 font-mono text-xs text-slate-500">{{ s.path }}</p>
+            <p class="mt-3 break-all font-mono text-xs text-slate-500">{{ s.path }}</p>
             <div class="mt-5 flex flex-wrap gap-2">
               <button class="btn-primary" (click)="searchMissing()">Search missing</button>
               <button class="btn-secondary" (click)="refresh()">Refresh</button>
@@ -67,14 +67,14 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
       <div class="space-y-3">
         @for (season of seasonsDesc(); track season.seasonNumber) {
           <section class="card overflow-hidden">
-            <div class="flex flex-wrap items-center gap-3 px-4 py-3">
-              <button class="text-slate-400 hover:text-white" (click)="toggleMonitorSeason(season)" [title]="season.monitored ? 'Unmonitor season' : 'Monitor season'">
+            <div class="flex items-center gap-2 py-2 pr-2 pl-3 sm:gap-3 sm:px-4 sm:py-3">
+              <button class="-m-1.5 p-1.5 text-slate-400 hover:text-white" (click)="toggleMonitorSeason(season)" [title]="season.monitored ? 'Unmonitor season' : 'Monitor season'">
                 <svg class="size-5" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor" [attr.fill]="season.monitored ? 'currentColor' : 'none'"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons.bookmark" /></svg>
               </button>
-              <button class="flex flex-1 items-center gap-3 text-left" (click)="toggleExpanded(season.seasonNumber)">
+              <button class="flex min-w-0 flex-1 items-center gap-2 self-stretch text-left sm:gap-3" (click)="toggleExpanded(season.seasonNumber)">
                 <h2 class="whitespace-nowrap font-semibold text-white">{{ season.seasonNumber === 0 ? 'Specials' : 'Season ' + season.seasonNumber }}</h2>
                 <span class="badge" [class]="seasonBadge(season)">{{ season.episodeFileCount }}/{{ season.episodeCount }}</span>
-                @if (season.sizeOnDisk) { <span class="text-xs text-slate-500">{{ season.sizeOnDisk | bytes }}</span> }
+                @if (season.sizeOnDisk) { <span class="whitespace-nowrap text-xs text-slate-500 max-sm:hidden">{{ season.sizeOnDisk | bytes }}</span> }
                 <span class="ml-auto text-slate-500">{{ expanded().has(season.seasonNumber) ? '▾' : '▸' }}</span>
               </button>
               <button class="btn-ghost btn-sm" title="Search season" (click)="searchSeason(season.seasonNumber)">
@@ -87,12 +87,12 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
             @if (expanded().has(season.seasonNumber)) {
               <div class="overflow-x-auto border-t border-surface-700">
                 <table class="table">
-                  <thead><tr><th class="w-10"></th><th class="w-12">#</th><th>Title</th><th class="w-32">Air date</th><th class="w-44">Status</th><th class="w-24"></th></tr></thead>
+                  <thead><tr><th class="w-8 sm:w-10"></th><th class="w-8 sm:w-12">#</th><th>Title</th><th class="w-32 max-md:hidden">Air date</th><th class="w-44 max-sm:hidden">Status</th><th class="w-24"></th></tr></thead>
                   <tbody>
                     @for (e of episodesFor(season.seasonNumber); track e.id) {
                       <tr [class.opacity-60]="!e.monitored">
                         <td>
-                          <button class="text-slate-400 hover:text-white" (click)="toggleMonitorEpisode(e)" [title]="e.monitored ? 'Unmonitor' : 'Monitor'">
+                          <button class="-m-1.5 p-1.5 text-slate-400 hover:text-white" (click)="toggleMonitorEpisode(e)" [title]="e.monitored ? 'Unmonitor' : 'Monitor'">
                             <svg class="size-4" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor" [attr.fill]="e.monitored ? 'currentColor' : 'none'"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons.bookmark" /></svg>
                           </button>
                         </td>
@@ -104,24 +104,16 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
                               @for (s of subtitlesByFile().get(f.id) ?? []; track s.id) {
                                 <span class="badge bg-surface-700 px-1.5 text-[10px] uppercase text-slate-300" [title]="s.languageName + (s.hearingImpaired ? ' (HI)' : '')">{{ s.language }}</span>
                               }
-                              <span class="truncate font-mono text-xs text-slate-500" [title]="f.relativePath">{{ f.relativePath }}</span>
+                              <span class="truncate font-mono text-xs text-slate-500 max-sm:hidden" [title]="f.relativePath">{{ f.relativePath }}</span>
                             </div>
                           }
+                          <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500 sm:hidden">
+                            <span class="min-w-24"><ng-container *ngTemplateOutlet="episodeStatus; context: { $implicit: e }" /></span>
+                            <span class="whitespace-nowrap">{{ e.airDate ? (e.airDate | date: 'mediumDate') : 'TBA' }}</span>
+                          </div>
                         </td>
-                        <td class="whitespace-nowrap text-slate-400">{{ e.airDate ? (e.airDate | date: 'mediumDate') : 'TBA' }}</td>
-                        <td>
-                          @if (e.downloadProgress != null) {
-                            <div class="flex items-center gap-2"><kr-progress class="flex-1" [value]="e.downloadProgress" /><span class="text-xs text-accent-300">{{ e.downloadProgress.toFixed(0) }}%</span></div>
-                          } @else if (e.episodeFile; as f) {
-                            <span class="badge bg-emerald-500/15 text-emerald-300" [title]="(f.size | bytes)">{{ f.quality }}</span>
-                          } @else if (!e.hasAired) {
-                            <span class="badge bg-slate-500/15 text-slate-400">Unaired</span>
-                          } @else if (e.monitored) {
-                            <span class="badge bg-rose-500/15 text-rose-300">Missing</span>
-                          } @else {
-                            <span class="badge bg-slate-500/15 text-slate-400">Unmonitored</span>
-                          }
-                        </td>
+                        <td class="whitespace-nowrap text-slate-400 max-md:hidden">{{ e.airDate ? (e.airDate | date: 'mediumDate') : 'TBA' }}</td>
+                        <td class="max-sm:hidden"><ng-container *ngTemplateOutlet="episodeStatus; context: { $implicit: e }" /></td>
                         <td class="whitespace-nowrap text-right">
                           @if (e.episodeFile) {
                             <button class="btn-ghost btn-sm" title="Subtitles" (click)="subtitleEpisode.set(e)">
@@ -146,7 +138,7 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
       </div>
 
       <!-- History -->
-      <section class="card mt-6 p-5">
+      <section class="card mt-6 p-4 sm:p-5">
         <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">History</h2>
         @if (history().length === 0) {
           <p class="text-sm text-slate-500">Nothing yet.</p>
@@ -154,14 +146,14 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
           <ul class="divide-y divide-surface-800 text-sm">
             @for (h of history(); track h.id) {
               <li class="flex flex-wrap items-center gap-3 py-2">
-                <span class="badge w-24 justify-center"
+                <span class="badge w-20 justify-center sm:w-24"
                       [class]="h.eventType === 'Imported' ? 'bg-emerald-500/15 text-emerald-300' : h.eventType === 'Grabbed' ? 'bg-accent-500/15 text-accent-300' : h.eventType === 'SubtitleDownloaded' ? 'bg-violet-500/15 text-violet-300' : 'bg-rose-500/15 text-rose-300'">
                   {{ h.eventType === 'DownloadFailed' ? 'Failed' : h.eventType === 'FileDeleted' ? 'Deleted' : h.eventType === 'SubtitleDownloaded' ? 'Subtitle' : h.eventType }}
                 </span>
-                <span class="min-w-0 flex-1 truncate">{{ h.sourceTitle }}</span>
+                <span class="min-w-0 flex-1 truncate max-sm:order-1 max-sm:basis-full" [title]="h.sourceTitle">{{ h.sourceTitle }}</span>
                 <span class="text-xs text-slate-500">{{ h.quality }}</span>
-                <span class="w-24 text-right text-xs text-slate-500" [title]="h.date">{{ h.date | ago }}</span>
-                @if (h.message) { <span class="w-full pl-27 text-xs text-slate-500">{{ h.message }}</span> }
+                <span class="text-right text-xs text-slate-500 max-sm:ml-auto sm:w-24" [title]="h.date">{{ h.date | ago }}</span>
+                @if (h.message) { <span class="w-full text-xs text-slate-500 max-sm:order-2 sm:pl-27">{{ h.message }}</span> }
               </li>
             }
           </ul>
@@ -180,23 +172,31 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
             @if (releases().length === 0) {
               <p class="py-10 text-center text-slate-400">No results.</p>
             } @else {
-              <div class="max-h-[65vh] overflow-auto">
+              <div class="overflow-x-auto sm:max-h-[65vh] sm:overflow-auto">
                 <table class="table">
-                  <thead><tr><th>Release</th><th>Episodes</th><th>Indexer</th><th>Size</th><th>Peers</th><th>Quality</th><th></th></tr></thead>
+                  <thead><tr><th>Release</th><th class="max-sm:hidden">Episodes</th><th class="max-sm:hidden">Indexer</th><th class="max-sm:hidden">Size</th><th class="max-sm:hidden">Peers</th><th class="max-sm:hidden">Quality</th><th></th></tr></thead>
                   <tbody>
                     @for (r of releases(); track r.release.guid) {
                       <tr [class.opacity-60]="!r.approved">
                         <td class="w-full max-w-0">
-                          <div class="truncate" [title]="r.release.title">{{ r.release.title }}</div>
-                          @if (!r.approved) { <div class="truncate text-xs text-rose-300" [title]="r.rejections.join(' · ')">{{ r.rejections.join(' · ') }}</div> }
+                          <div class="break-all sm:truncate sm:break-normal" [title]="r.release.title">{{ r.release.title }}</div>
+                          <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400 sm:hidden">
+                            <span class="badge bg-surface-700 text-slate-200">{{ r.quality }}</span>
+                            @if (r.seasonPack) { <span class="badge bg-violet-500/15 text-violet-300">Pack</span> }
+                            <span>{{ r.episodes ?? '—' }}</span>
+                            <span>{{ r.release.size | bytes }}</span>
+                            <span><span class="text-emerald-400">{{ r.release.seeders ?? '?' }}</span> / {{ r.release.peers ?? '?' }}</span>
+                            <span>{{ r.release.indexerName }}</span>
+                          </div>
+                          @if (!r.approved) { <div class="text-xs text-rose-300 sm:truncate" [title]="r.rejections.join(' · ')">{{ r.rejections.join(' · ') }}</div> }
                         </td>
-                        <td class="whitespace-nowrap text-xs">
+                        <td class="whitespace-nowrap text-xs max-sm:hidden">
                           {{ r.episodes ?? '—' }} @if (r.seasonPack) { <span class="badge ml-1 bg-violet-500/15 text-violet-300">Pack</span> }
                         </td>
-                        <td class="text-slate-400">{{ r.release.indexerName }}</td>
-                        <td class="whitespace-nowrap">{{ r.release.size | bytes }}</td>
-                        <td class="whitespace-nowrap"><span class="text-emerald-400">{{ r.release.seeders ?? '?' }}</span> / {{ r.release.peers ?? '?' }}</td>
-                        <td><span class="badge bg-surface-700 text-slate-200">{{ r.quality }}</span></td>
+                        <td class="text-slate-400 max-sm:hidden">{{ r.release.indexerName }}</td>
+                        <td class="whitespace-nowrap max-sm:hidden">{{ r.release.size | bytes }}</td>
+                        <td class="whitespace-nowrap max-sm:hidden"><span class="text-emerald-400">{{ r.release.seeders ?? '?' }}</span> / {{ r.release.peers ?? '?' }}</td>
+                        <td class="max-sm:hidden"><span class="badge bg-surface-700 text-slate-200">{{ r.quality }}</span></td>
                         <td class="text-right">
                           <button class="btn-sm" [class]="r.approved ? 'btn-primary' : 'btn-secondary'" (click)="grab(r)" [disabled]="!r.episodes || grabbing() === r.release.guid">
                             {{ grabbing() === r.release.guid ? '…' : 'Grab' }}
@@ -250,6 +250,20 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
     } @else {
       <p class="text-slate-500">Loading…</p>
     }
+    <!-- Episode status, shown in its own column on wider screens and under the title on phones. -->
+    <ng-template #episodeStatus let-e>
+      @if (e.downloadProgress != null) {
+        <div class="flex items-center gap-2"><kr-progress class="flex-1" [value]="e.downloadProgress" /><span class="text-xs text-accent-300">{{ e.downloadProgress.toFixed(0) }}%</span></div>
+      } @else if (e.episodeFile; as f) {
+        <span class="badge bg-emerald-500/15 text-emerald-300" [title]="(f.size | bytes)">{{ f.quality }}</span>
+      } @else if (!e.hasAired) {
+        <span class="badge bg-slate-500/15 text-slate-400">Unaired</span>
+      } @else if (e.monitored) {
+        <span class="badge bg-rose-500/15 text-rose-300">Missing</span>
+      } @else {
+        <span class="badge bg-slate-500/15 text-slate-400">Unmonitored</span>
+      }
+    </ng-template>
   `,
 })
 export class SeriesDetailPage implements OnInit {

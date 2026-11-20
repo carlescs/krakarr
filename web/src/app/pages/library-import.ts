@@ -48,7 +48,7 @@ const CONFIDENCE_STYLE: Record<MatchConfidence, string> = {
         Add a root folder of type “{{ isMovies() ? 'Movies' : 'Series' }}” in <a routerLink="/settings" class="underline">Settings → Media management</a> first.
       </div>
     } @else {
-      <section class="card mb-6 grid gap-4 p-5 md:grid-cols-[1fr_auto]">
+      <section class="card mb-6 grid gap-4 p-4 sm:p-5 md:grid-cols-[1fr_auto]">
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <label class="label">Root folder</label>
@@ -101,7 +101,7 @@ const CONFIDENCE_STYLE: Record<MatchConfidence, string> = {
         } @else {
           <div class="card overflow-x-auto">
             <table class="table">
-              <thead><tr><th class="w-8"></th><th>Folder</th><th>Files</th><th>Match</th><th class="w-28"></th></tr></thead>
+              <thead><tr><th class="w-8"></th><th class="max-sm:hidden">Folder</th><th class="max-md:hidden">Files</th><th>Match</th><th class="w-12 sm:w-28"></th></tr></thead>
               <tbody>
                 @for (r of visible(); track r.path) {
                   <tr [class.opacity-60]="!r.match || r.alreadyInLibrary">
@@ -109,12 +109,13 @@ const CONFIDENCE_STYLE: Record<MatchConfidence, string> = {
                       <input type="checkbox" class="accent-accent-500" [(ngModel)]="r.selected" (ngModelChange)="touch()"
                              [disabled]="!r.match || r.alreadyInLibrary" [attr.aria-label]="'Select ' + r.folderName" />
                     </td>
-                    <td class="max-w-xs">
+                    <td class="max-w-xs max-sm:hidden">
                       <div class="truncate font-medium text-slate-100" [title]="r.path">{{ r.folderName }}</div>
                       <div class="text-xs text-slate-500">{{ r.parsedTitle }}{{ r.parsedYear ? ' (' + r.parsedYear + ')' : '' }}</div>
                     </td>
-                    <td class="whitespace-nowrap text-xs text-slate-400">{{ r.files }}</td>
+                    <td class="whitespace-nowrap text-xs text-slate-400 max-md:hidden">{{ r.files }}</td>
                     <td class="w-full max-w-0">
+                      <div class="mb-1.5 truncate font-mono text-xs text-slate-400 sm:hidden" [title]="r.path">{{ r.folderName }}</div>
                       @if (r.match; as m) {
                         <div class="flex items-center gap-3">
                           @if (m.posterUrl) {
@@ -134,7 +135,7 @@ const CONFIDENCE_STYLE: Record<MatchConfidence, string> = {
                         <span class="text-sm text-slate-500">{{ r.error ?? 'No match' }}</span>
                       }
                     </td>
-                    <td class="whitespace-nowrap text-right"><button class="btn-ghost btn-sm" (click)="openChange(r)">Change match</button></td>
+                    <td class="whitespace-nowrap text-right"><button class="btn-ghost btn-sm" (click)="openChange(r)" title="Change match"><span class="max-sm:hidden">Change match</span><span class="sm:hidden" aria-hidden="true">✎</span></button></td>
                   </tr>
                 }
               </tbody>
@@ -147,10 +148,10 @@ const CONFIDENCE_STYLE: Record<MatchConfidence, string> = {
     @if (changing(); as row) {
       <kr-modal [title]="'Match ' + row.folderName" width="max-w-2xl" (closed)="changing.set(null)">
         <form class="mb-4 flex gap-2" (ngSubmit)="lookup()">
-          <input class="input flex-1" name="term" [(ngModel)]="term" />
+          <input class="input min-w-0 flex-1" name="term" [(ngModel)]="term" />
           <button class="btn-primary" [disabled]="looking()">{{ looking() ? 'Searching…' : 'Search' }}</button>
         </form>
-        <div class="max-h-[55vh] space-y-2 overflow-y-auto">
+        <div class="space-y-2 sm:max-h-[55vh] sm:overflow-y-auto">
           @for (c of lookupResults(); track c.id + '-' + (c.tvdbId ?? 0)) {
             <button class="flex w-full items-center gap-3 rounded-lg p-2 text-left hover:bg-surface-800" (click)="choose(row, c)">
               <kr-poster class="w-10 shrink-0" [url]="c.posterUrl" [title]="c.title" />
