@@ -22,6 +22,7 @@ const ICONS: Record<string, string> = {
   sparkles: 'M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z',
   calendar: 'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5',
   menu: 'M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5',
+  bell: 'M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0',
   inbox: 'M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z',
 };
 
@@ -84,6 +85,12 @@ const ICONS: Record<string, string> = {
               <span class="truncate font-semibold text-white">{{ current()?.label ?? 'Krakarr' }}</span>
             </a>
             <div class="flex-1"></div>
+            <a routerLink="/requests" class="btn-ghost relative px-2" [title]="requestsTitle()" [attr.aria-label]="requestsTitle()">
+              <svg class="size-6" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons['bell']" /></svg>
+              @if (pendingRequests() > 0) {
+                <span class="absolute top-0.5 right-0.5 min-w-4 rounded-full bg-amber-400 px-1 text-center text-[10px] leading-4 font-semibold text-slate-950">{{ pendingRequests() > 99 ? '99+' : pendingRequests() }}</span>
+              }
+            </a>
             <a routerLink="/settings" class="hidden text-sm text-slate-400 hover:text-white sm:inline" title="Your account">{{ auth.status()?.username }}</a>
             <button class="btn-ghost btn-sm" (click)="logout()" [title]="'Sign out ' + (auth.status()?.username ?? '')">Sign out</button>
           </div>
@@ -125,8 +132,13 @@ export class Shell implements OnInit, OnDestroy {
   private readonly api = inject(Api);
   private readonly destroyRef = inject(DestroyRef);
   protected readonly icons = ICONS;
-  /** Requests waiting for approval (staff only). */
+  /** Pending requests the user can see: the approval queue for staff, their own open requests for users. */
   protected readonly pendingRequests = signal(0);
+  protected readonly requestsTitle = computed(() => {
+    const n = this.pendingRequests();
+    if (this.auth.isStaff()) return n === 0 ? 'No requests waiting for approval' : `${n} request${n === 1 ? '' : 's'} waiting for approval`;
+    return n === 0 ? 'Your requests' : `${n} of your requests pending`;
+  });
   protected readonly menuOpen = signal(false);
 
   private readonly allNav: NavItem[] = [
@@ -174,7 +186,6 @@ export class Shell implements OnInit, OnDestroy {
   }
 
   private async loadPendingRequests() {
-    if (!this.auth.isStaff()) return;
     try {
       this.pendingRequests.set((await this.api.requestCount()).pending);
     } catch {

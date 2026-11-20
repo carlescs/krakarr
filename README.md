@@ -234,9 +234,11 @@ Users can't add titles themselves, so wherever an admin or manager sees *+ Add* 
 credits) they see *Request* instead. Requests are listed under **Requests**:
 
 - **Users** see their own requests and can withdraw them while pending.
-- **Admins and managers** see everyone's, with a badge counting pending ones. *Approve* opens the usual add dialog (root
+- **Admins and managers** see everyone's. *Approve* opens the usual add dialog (root
   folder, quality profile, monitoring, search) and adds the title; *Decline* takes an optional reason that the requester
   sees. Adding a requested title directly (or importing it) approves its request too.
+- The bell in the top bar opens the Requests page and counts pending requests: those waiting for approval for admins
+  and managers, your own open ones for users.
 - A title has at most one pending request. Once approved, each request shows whether the title is downloading,
   partially available (series) or available.
 
