@@ -1,7 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import { HubConnection, HubConnectionBuilder, HubConnectionState, LogLevel } from '@microsoft/signalr';
 import { Subject } from 'rxjs';
-import { CommandInfo, HistoryItem, TorrentStatus } from './models';
+import { CommandInfo, HistoryItem, ScheduledTaskInfo, TorrentStatus } from './models';
 
 /** Real-time server events over SignalR. */
 @Injectable({ providedIn: 'root' })
@@ -13,6 +13,7 @@ export class Events {
   readonly subtitlesUpdated = new Subject<{ movieId?: number; seriesId?: number }>();
   readonly commandUpdated = new Subject<CommandInfo>();
   readonly historyAdded = new Subject<HistoryItem>();
+  readonly taskUpdated = new Subject<ScheduledTaskInfo>();
 
   private connection?: HubConnection;
 
@@ -31,6 +32,7 @@ export class Events {
     this.connection.on('subtitlesUpdated', (s: { movieId?: number; seriesId?: number }) => this.subtitlesUpdated.next(s));
     this.connection.on('commandUpdated', (c: CommandInfo) => this.commandUpdated.next(c));
     this.connection.on('historyAdded', (h: HistoryItem) => this.historyAdded.next(h));
+    this.connection.on('taskUpdated', (t: ScheduledTaskInfo) => this.taskUpdated.next(t));
     this.connection.onreconnecting(() => this.connected.set(false));
     this.connection.onreconnected(() => this.connected.set(true));
     this.connection.onclose(() => this.connected.set(false));

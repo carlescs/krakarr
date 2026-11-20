@@ -40,6 +40,7 @@ public sealed class RoleAccessTests
     [InlineData("GET", "/api/v1/filesystem", UserRole.Admin)]
     [InlineData("GET", "/api/v1/downloads/client", UserRole.Admin)]
     [InlineData("GET", "/api/v1/system/status", UserRole.Admin)]
+    [InlineData("POST", "/api/v1/system/tasks/rss-sync/run", UserRole.Admin)]
     [InlineData("POST", "/api/v1/qualityprofiles", UserRole.Admin)]
     [InlineData("DELETE", "/api/v1/rootfolders/1", UserRole.Admin)]
     public void Required_role(string method, string path, UserRole expected) =>
