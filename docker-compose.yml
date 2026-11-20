@@ -10,6 +10,9 @@ services:
       TZ: "Etc/UTC"
       # Optional: serve under a sub path behind a reverse proxy, e.g. /krakarr
       # KRAKARR__URLBASE: "/krakarr"
+      # Behind a reverse proxy in another container: trust its network so client IPs and HTTPS are detected
+      # KRAKARR__TRUSTEDPROXIES: "172.16.0.0/12"
+      # KRAKARR__SECURECOOKIES: "true"
       # Optional: use PostgreSQL instead of the default SQLite database in /config
       # Database__Provider: "postgres"
       # Database__ConnectionString: "Host=postgres;Database=krakarr;Username=krakarr;Password=krakarr"
