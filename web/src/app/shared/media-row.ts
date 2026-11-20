@@ -31,7 +31,7 @@ import { MediaCard, discoverKey } from './media-card';
       } @else if (shown().length === 0) {
         <p class="text-sm text-slate-500">{{ empty() }}</p>
       } @else {
-        <div #scroller class="-mx-1 flex snap-x gap-3 overflow-x-auto sm:gap-4 px-1 pb-2 [scrollbar-width:thin]">
+        <div #scroller class="-mx-1 -mt-1 flex snap-x gap-3 overflow-x-auto sm:gap-4 px-1 pt-1 pb-2 [scrollbar-width:thin]">
           @for (d of shown(); track key(d)) {
             <kr-media-card class="w-32 shrink-0 snap-start sm:w-40" [item]="d" (add)="selected.set($event)" />
           }
