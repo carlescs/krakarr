@@ -62,6 +62,7 @@ public sealed class MovieService(
             Path = string.Empty,
         };
         MovieReleases.Apply(movie, lookup.ReleaseDates, MapStatus(lookup.Status), Today);
+        await ApplyCollectionAsync(movie, lookup.Collection, ct);
         var roots = await db.RootFolders.AsNoTracking().Where(r => r.MediaType == MediaType.Movie).Select(r => r.Path).ToListAsync(ct);
         movie.Path = LibraryPaths.ResolveItemFolder(roots, request.RootFolderPath, request.ExistingPath,
             () => MovieNaming.BuildFolderName(movie, media.MovieFolderFormat));
@@ -90,8 +91,38 @@ public sealed class MovieService(
         movie.FanartUrl = lookup.FanartUrl ?? movie.FanartUrl;
         movie.Runtime = lookup.Runtime;
         MovieReleases.Apply(movie, lookup.ReleaseDates, MapStatus(lookup.Status), Today);
+        await ApplyCollectionAsync(movie, lookup.Collection, ct);
         await db.SaveChangesAsync(ct);
     }
+
+    /// <summary>Links the movie to its TMDB collection, creating or updating the collection row. Does not save.</summary>
+    private async Task ApplyCollectionAsync(Movie movie, CollectionLookup? lookup, CancellationToken ct)
+    {
+        if (lookup is null)
+        {
+            movie.CollectionId = null;
+            movie.Collection = null;
+            return;
+        }
+
+        var collection = db.MovieCollections.Local.FirstOrDefault(c => c.TmdbId == lookup.TmdbId)
+            ?? await db.MovieCollections.FirstOrDefaultAsync(c => c.TmdbId == lookup.TmdbId, ct);
+        if (collection is null)
+        {
+            collection = new MovieCollection { TmdbId = lookup.TmdbId, Name = lookup.Name };
+            db.MovieCollections.Add(collection);
+        }
+
+        collection.Name = lookup.Name;
+        collection.SortName = ReleaseSortTitle(lookup.Name);
+        collection.PosterUrl = lookup.PosterUrl ?? collection.PosterUrl;
+        collection.FanartUrl = lookup.FanartUrl ?? collection.FanartUrl;
+        movie.Collection = collection;
+    }
+
+    /// <summary>Deletes collections that no movie in the library belongs to any more.</summary>
+    public static Task<int> PruneCollectionsAsync(KrakarrDbContext db, CancellationToken ct = default) =>
+        db.MovieCollections.Where(c => !db.Movies.Any(m => m.CollectionId == c.Id)).ExecuteDeleteAsync(ct);
 
     /// <summary>Searches all indexers for a movie and evaluates every release.</summary>
     public async Task<(IReadOnlyList<ReleaseDecision> Decisions, IReadOnlyList<IndexerError> Errors)> SearchAsync(Movie movie, CancellationToken ct = default)

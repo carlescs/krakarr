@@ -23,6 +23,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
     public DbSet<Indexer> Indexers => Set<Indexer>();
     public DbSet<Movie> Movies => Set<Movie>();
     public DbSet<MovieFile> MovieFiles => Set<MovieFile>();
+    public DbSet<MovieCollection> MovieCollections => Set<MovieCollection>();
     public DbSet<Series> Series => Set<Series>();
     public DbSet<Season> Seasons => Set<Season>();
     public DbSet<Episode> Episodes => Set<Episode>();
@@ -78,7 +79,11 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
             e.HasIndex(x => x.InCinemas);
             e.HasIndex(x => x.DigitalRelease);
             e.HasIndex(x => x.PhysicalRelease);
+            e.HasOne(x => x.Collection).WithMany().HasForeignKey(x => x.CollectionId).OnDelete(DeleteBehavior.SetNull);
+            e.HasIndex(x => x.CollectionId);
         });
+
+        b.Entity<MovieCollection>(e => e.HasIndex(x => x.TmdbId).IsUnique());
 
         b.Entity<MovieFile>(e => e.HasIndex(x => x.MovieId));
 
