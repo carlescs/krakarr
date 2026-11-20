@@ -140,6 +140,9 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
         var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
         await db.Database.EnsureCreatedAsync();
         db.QualityProfiles.Add(new QualityProfile { Name = "HD", AllowedQualityIds = [16], CutoffQualityId = 16 });
+        // Series folders must be direct children of a configured root folder.
+        db.RootFolders.Add(new RootFolder { Path = _root.FullName, MediaType = MediaType.Series });
+        db.RootFolders.Add(new RootFolder { Path = "/tv", MediaType = MediaType.Series });
         await db.SaveChangesAsync();
 
         var show = Path.Combine(_root.FullName, "Test Show (2021)");
@@ -172,7 +175,7 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
         var ct = TestContext.Current.CancellationToken;
         using var scope = _services.CreateScope();
         var import = scope.ServiceProvider.GetRequiredService<SeriesLibraryImport>();
-        var root = new RootFolder { Path = _root.FullName, MediaType = MediaType.Series };
+        var root = await scope.ServiceProvider.GetRequiredService<KrakarrDbContext>().RootFolders.FirstAsync(r => r.Path == _root.FullName, ct);
 
         var scan = await import.ScanAsync(root, ct);
         var row = Assert.Single(scan);

@@ -21,8 +21,8 @@ export class Auth {
     await this.refresh();
   }
 
-  async setup(username: string, password: string) {
-    await this.api.setup(username, password);
+  async setup(username: string, password: string, setupToken: string) {
+    await this.api.setup(username, password, setupToken);
     await this.refresh();
   }
 

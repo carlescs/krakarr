@@ -4,6 +4,7 @@ using Krakarr.Core.Events;
 using Krakarr.Data;
 using Krakarr.Downloads;
 using Krakarr.Indexers;
+using Krakarr.Media.Files;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -53,9 +54,9 @@ public sealed class MovieService(
             QualityProfileId = request.QualityProfileId,
             Path = string.Empty,
         };
-        movie.Path = request.ExistingPath is { Length: > 0 } existing
-            ? Path.TrimEndingDirectorySeparator(existing)
-            : Path.Combine(request.RootFolderPath, MovieNaming.BuildFolderName(movie, media.MovieFolderFormat));
+        var roots = await db.RootFolders.AsNoTracking().Where(r => r.MediaType == MediaType.Movie).Select(r => r.Path).ToListAsync(ct);
+        movie.Path = LibraryPaths.ResolveItemFolder(roots, request.RootFolderPath, request.ExistingPath,
+            () => MovieNaming.BuildFolderName(movie, media.MovieFolderFormat));
         if (await db.Movies.AnyAsync(m => m.Path == movie.Path, ct))
         {
             throw new InvalidOperationException($"Another movie already uses {movie.Path}");

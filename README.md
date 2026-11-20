@@ -42,7 +42,9 @@ Or edit `docker-compose.yml` (volumes) and run `docker compose up -d`. Image tag
 
 Then open <http://localhost:8787>:
 
-1. Create the admin account (first run only).
+1. Create the admin account (first run only). You need the one-time **setup token** that Krakarr prints in its log at
+   startup (`docker logs krakarr`) and saves as `/config/setup-token`; it is deleted once the account exists. This stops
+   anyone else who can reach the instance from claiming it first.
 2. **Settings → Media management:** add a root folder, e.g. `/data/media/movies`.
 3. **Settings → Metadata:** paste a [TMDB API key](https://www.themoviedb.org/settings/api) (v3 key or v4 read token).
 4. **Indexers:** add one or more Torznab/Newznab feeds and press *Test*.
@@ -167,8 +169,21 @@ Each client keeps its own list of torrents, so switching back and forth never mi
 | `KRAKARR__PORT` | `8787` | HTTP port (outside Docker; in Docker use `ASPNETCORE_HTTP_PORTS`) |
 | `Database__Provider` | `sqlite` | `sqlite` or `postgres` |
 | `Database__ConnectionString` | `/config/krakarr.db` | e.g. `Host=postgres;Database=krakarr;Username=krakarr;Password=…` |
+| `AllowedHosts` | `*` | Host names Krakarr answers to, separated by `;` (e.g. `krakarr.example.com;192.168.1.10`). Set it to block DNS rebinding attacks |
+| `Krakarr__SetupToken` | *(generated)* | Preset the first-run setup token instead of using a random one (useful for automated deployments) |
+| `Krakarr__Auth__AttemptsPerMinutePerIp` | `10` | Requests per minute and client IP to the login, setup and password endpoints |
+| `Krakarr__Auth__FailuresBeforeLockout` | `5` | Failed logins for one username before it is locked temporarily (30 s, doubling up to 15 min) |
 
 Any setting can also be placed in `/config/config.json` (environment variables win).
+
+### Security notes
+
+- **Root folders are the boundary.** Movie and series folders must be directly inside a configured root folder, and
+  *Delete with files* only ever removes folders inside a root folder.
+- **Brute-force protection.** Credential endpoints are rate limited per IP, repeated failures lock the username
+  temporarily, and failed logins are logged as warnings (with the client IP) for tools like fail2ban.
+- **Expose it carefully.** Krakarr serves plain HTTP. Put a TLS reverse proxy in front before exposing it to the
+  internet, and set `AllowedHosts`.
 
 ## Architecture
 

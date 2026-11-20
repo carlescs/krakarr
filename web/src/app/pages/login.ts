@@ -18,6 +18,13 @@ import { Auth } from '../core/auth';
           }
         </div>
         <div class="space-y-4">
+          @if (setup()) {
+            <div>
+              <label class="label" for="setupToken">Setup token</label>
+              <input id="setupToken" class="input font-mono" name="setupToken" autocomplete="off" spellcheck="false" [(ngModel)]="setupToken" required />
+              <p class="hint">Printed in the Krakarr log at startup and saved as <code>setup-token</code> in the config folder.</p>
+            </div>
+          }
           <div>
             <label class="label" for="username">Username</label>
             <input id="username" class="input" name="username" autocomplete="username" [(ngModel)]="username" required />
@@ -47,6 +54,7 @@ export class LoginPage implements OnInit {
   protected readonly error = signal<string | null>(null);
   protected username = '';
   protected password = '';
+  protected setupToken = '';
 
   async ngOnInit() {
     const status = this.auth.status() ?? (await this.auth.refresh());
@@ -57,7 +65,7 @@ export class LoginPage implements OnInit {
     this.busy.set(true);
     this.error.set(null);
     try {
-      if (this.setup()) await this.auth.setup(this.username, this.password);
+      if (this.setup()) await this.auth.setup(this.username, this.password, this.setupToken.trim());
       else await this.auth.login(this.username, this.password);
       this.router.navigateByUrl(this.setup() ? '/settings' : '/movies');
     } catch (e) {
