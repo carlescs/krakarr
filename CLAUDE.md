@@ -5,9 +5,9 @@ Single-container replacement for Radarr, Sonarr, Bazarr, Prowlarr and qBittorren
 
 ## Git workflow
 
-- Commit and push **directly to `main`**. Do not create feature branches or pull requests unless explicitly asked.
-- Commit messages **must** follow Conventional Commits (`feat:`, `fix:`, `perf:`, `refactor:`, `docs:`, `test:`, `build:`, `ci:`, `chore:`; `!` or a `BREAKING CHANGE:` footer for breaking changes). CI rejects other messages.
-- The commit type drives the release: `feat` → minor, `fix`/`perf` → patch. Pushing to `main` publishes the `edge` image and releases automatically when warranted. Never create `v*` tags by hand; use the Release workflow ("Run workflow") for manual versions.
+- **Never push directly to `main`.** Work on a branch, open a pull request, and merge it (squash) only once every CI check is green. Don't merge with failing or pending checks.
+- Commit messages **and the PR title** must follow Conventional Commits (`feat:`, `fix:`, `perf:`, `refactor:`, `docs:`, `test:`, `build:`, `ci:`, `chore:`; `!` or a `BREAKING CHANGE:` footer for breaking changes). CI rejects other messages, and the squash commit on `main` takes the PR title.
+- The commit type drives the release: `feat` → minor, `fix`/`perf` → patch. Merging into `main` publishes the `edge` image and releases automatically when warranted. Never create `v*` tags by hand; use the Release workflow ("Run workflow") for manual versions.
 
 ## Layout
 
