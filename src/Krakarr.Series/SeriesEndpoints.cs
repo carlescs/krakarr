@@ -41,6 +41,11 @@ public sealed record SeriesDto
     public IReadOnlyList<SeasonDto> Seasons { get; init; } = [];
 }
 
+/// <summary>Row of the library grid. Counts follow <see cref="SeriesDto"/> (regular seasons only).</summary>
+public sealed record SeriesListItemDto(
+    int Id, string Title, int Year, string? PosterUrl, SeriesStatus Status, bool Monitored,
+    int EpisodeCount, int EpisodeFileCount, DateOnly? NextAiring, int DownloadingCount);
+
 public sealed record EpisodeFileDto(int Id, string RelativePath, long Size, string Quality, string? ReleaseGroup, DateTimeOffset DateAdded);
 
 public sealed record EpisodeDto(
@@ -61,16 +66,30 @@ public static class SeriesEndpoints
 
         group.MapGet("/", async (KrakarrDbContext db, ITorrentEngine engine, TimeProvider time, CancellationToken ct) =>
         {
-            // The list only needs per-season counts and sizes, so project the few episode columns that feed them instead
-            // of materialising every episode (with overviews) and file of the whole library.
-            var list = await db.Series.AsNoTracking().Include(s => s.Seasons).AsSplitQuery().OrderBy(s => s.SortTitle).ToListAsync(ct);
-            var stats = (await db.Episodes.AsNoTracking()
-                .Select(e => new { e.SeriesId, Stat = new EpisodeStat(e.SeasonNumber, e.AirDate, e.Monitored, e.EpisodeFileId, e.EpisodeFile != null ? e.EpisodeFile.Size : 0) })
-                .ToListAsync(ct))
-                .ToLookup(x => x.SeriesId, x => x.Stat);
-            var downloading = DownloadingBySeries(engine);
+            // Aggregate the episode counts in SQL (one row per show) rather than reading every episode of the library.
             var today = Today(time);
-            return list.Select(s => ToDto(s, stats[s.Id], today, downloading));
+            var counts = await db.Episodes.AsNoTracking()
+                .Where(e => e.SeasonNumber > 0)
+                .GroupBy(e => e.SeriesId)
+                .Select(g => new
+                {
+                    SeriesId = g.Key,
+                    EpisodeCount = g.Count(e => e.EpisodeFileId != null || (e.Monitored && e.AirDate != null && e.AirDate <= today)),
+                    EpisodeFileCount = g.Count(e => e.EpisodeFileId != null),
+                    NextAiring = g.Where(e => e.AirDate > today).Min(e => e.AirDate),
+                })
+                .ToDictionaryAsync(x => x.SeriesId, ct);
+            var list = await db.Series.AsNoTracking().OrderBy(s => s.SortTitle)
+                .Select(s => new { s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored })
+                .ToListAsync(ct);
+            var downloading = DownloadingBySeries(engine);
+            return list.Select(s =>
+            {
+                var c = counts.GetValueOrDefault(s.Id);
+                return new SeriesListItemDto(
+                    s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored,
+                    c?.EpisodeCount ?? 0, c?.EpisodeFileCount ?? 0, c?.NextAiring, downloading.GetValueOrDefault(s.Id));
+            });
         });
 
         // Library import: scan a root folder for existing show folders, then import selected ones in place.

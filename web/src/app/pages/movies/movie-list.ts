@@ -1,22 +1,22 @@
-import { Component, DestroyRef, OnInit, computed, effect, inject, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, DestroyRef, computed, inject, linkedSignal, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { Api, errorMessage } from '../../core/api';
 import { Events } from '../../core/events';
-import { Movie } from '../../core/models';
-import { Toasts } from '../../core/toast';
+import { Library } from '../../core/library';
+import { MovieListItem } from '../../core/models';
+import { NearViewport } from '../../shared/near-viewport';
 import { Poster } from '../../shared/poster';
+import { GRID_CHUNK, POSTER_GRID, PosterGridSkeleton } from '../../shared/poster-grid';
 import { Progress } from '../../shared/progress';
 
 type Filter = 'all' | 'missing' | 'downloaded' | 'unmonitored';
 
 @Component({
   selector: 'kr-movie-list',
-  imports: [RouterLink, FormsModule, Poster, Progress],
+  imports: [RouterLink, FormsModule, Poster, Progress, NearViewport, PosterGridSkeleton],
   template: `
     <div class="mb-6 flex flex-wrap items-center gap-3">
-      <h1 class="page-title mr-auto max-sm:basis-full">Movies <span class="ml-1 text-base font-normal text-slate-500">{{ movies().length }}</span></h1>
+      <h1 class="page-title mr-auto max-sm:basis-full">Movies <span class="ml-1 text-base font-normal text-slate-500">@if (!loading()) { {{ movies().length }} }</span></h1>
       <input class="input min-w-0 flex-1 sm:w-56 sm:flex-none" placeholder="Filter…" type="search" [ngModel]="query()" (ngModelChange)="query.set($event)" />
       <select class="input w-36 sm:w-40" [ngModel]="filter()" (ngModelChange)="filter.set($event)">
         <option value="all">All</option>
@@ -31,7 +31,7 @@ type Filter = 'all' | 'missing' | 'downloaded' | 'unmonitored';
     </div>
 
     @if (loading()) {
-      <p class="text-slate-500">Loading…</p>
+      <kr-poster-grid-skeleton />
     } @else if (movies().length === 0) {
       <div class="card flex flex-col items-center gap-3 px-6 py-16 text-center">
         <p class="text-lg font-medium text-white">Your movie library is empty</p>
@@ -41,42 +41,48 @@ type Filter = 'all' | 'missing' | 'downloaded' | 'unmonitored';
           <a routerLink="/movies/add" class="btn-primary">Add movie</a>
         </div>
       </div>
+    } @else if (filtered().length === 0) {
+      <p class="py-12 text-center text-slate-500">No movies match the filter.</p>
     } @else {
-      <div class="grid grid-cols-3 gap-x-3 gap-y-4 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
-        @for (m of filtered(); track m.id) {
+      <div [class]="grid">
+        @for (m of visible(); track m.id) {
+          @let progress = progressOf(m);
           <a [routerLink]="['/movies', m.id]" class="group">
             <div class="relative overflow-hidden rounded-lg ring-1 ring-surface-700 transition group-hover:ring-accent-500">
               <kr-poster [url]="m.posterUrl" [title]="m.title" />
               <div class="absolute inset-x-0 bottom-0 h-1"
-                   [class]="m.hasFile ? 'bg-emerald-500' : !m.monitored ? 'bg-slate-500' : m.downloadProgress != null ? 'bg-accent-500' : 'bg-rose-500'"></div>
-              @if (m.downloadProgress != null) {
-                <div class="absolute inset-x-2 bottom-3"><kr-progress [value]="m.downloadProgress" /></div>
+                   [class]="m.hasFile ? 'bg-emerald-500' : !m.monitored ? 'bg-slate-500' : progress != null ? 'bg-accent-500' : 'bg-rose-500'"></div>
+              @if (progress != null) {
+                <div class="absolute inset-x-2 bottom-3"><kr-progress [value]="progress" /></div>
               }
             </div>
             <div class="mt-1.5 truncate text-xs font-medium sm:mt-2 sm:text-sm text-slate-100 group-hover:text-white">{{ m.title }}</div>
-            <div class="truncate text-[11px] text-slate-500 sm:text-xs">{{ m.year || '—' }}{{ m.movieFile ? ' · ' + m.movieFile.quality : '' }}</div>
+            <div class="truncate text-[11px] text-slate-500 sm:text-xs">{{ m.year || '—' }}{{ m.quality ? ' · ' + m.quality : '' }}</div>
           </a>
         }
       </div>
+      @if (visible().length < filtered().length) {
+        <div class="h-px" (krNearViewport)="showMore()"></div>
+      }
     }
   `,
 })
-export class MovieListPage implements OnInit {
-  private readonly api = inject(Api);
-  private readonly toasts = inject(Toasts);
+export class MovieListPage {
   private readonly events = inject(Events);
-  private readonly destroyRef = inject(DestroyRef);
+  private readonly cache = inject(Library).movies;
 
-  protected readonly movies = signal<Movie[]>([]);
-  protected readonly loading = signal(true);
+  protected readonly grid = POSTER_GRID;
+  protected readonly loading = computed(() => this.cache.items() === null);
+  protected readonly movies = computed(() => this.cache.items() ?? []);
   protected readonly query = signal('');
   protected readonly filter = signal<Filter>('all');
 
   protected readonly filtered = computed(() => {
     const q = this.query().toLowerCase().trim();
+    const filter = this.filter();
     return this.movies().filter(m => {
       if (q && !m.title.toLowerCase().includes(q)) return false;
-      switch (this.filter()) {
+      switch (filter) {
         case 'missing': return m.monitored && !m.hasFile;
         case 'downloaded': return m.hasFile;
         case 'unmonitored': return !m.monitored;
@@ -85,31 +91,26 @@ export class MovieListPage implements OnInit {
     });
   });
 
+  /** Cards rendered so far: more are added as the end of the grid scrolls into view, and a new filter starts over. */
+  private readonly limit = linkedSignal({ source: () => [this.query(), this.filter()], computation: () => GRID_CHUNK });
+  protected readonly visible = computed(() => this.filtered().slice(0, this.limit()));
+
+  /** Live download progress per movie, while connected; otherwise the list's own snapshot is used. */
+  private readonly liveProgress = computed(() => {
+    if (!this.events.connected()) return null;
+    const byMovie = new Map<number, number>();
+    for (const d of this.events.downloads()) if (d.movieId && !d.imported) byMovie.set(d.movieId, Math.max(byMovie.get(d.movieId) ?? 0, d.progress));
+    return byMovie;
+  });
+
   constructor() {
-    // Keep download progress live without refetching the whole library.
-    effect(() => {
-      const downloads = this.events.downloads();
-      const byMovie = new Map<number, number>();
-      for (const d of downloads) if (d.movieId && !d.imported) byMovie.set(d.movieId, Math.max(byMovie.get(d.movieId) ?? 0, d.progress));
-      this.movies.update(list => list.map(m => {
-        const p = byMovie.get(m.id);
-        return p === m.downloadProgress || (p === undefined && m.downloadProgress == null) ? m : { ...m, downloadProgress: p };
-      }));
-    });
+    inject(DestroyRef).onDestroy(this.cache.attach());
   }
 
-  ngOnInit() {
-    this.load();
-    this.events.movieUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.load());
+  protected progressOf(m: MovieListItem): number | null {
+    const live = this.liveProgress();
+    return live ? (live.get(m.id) ?? null) : (m.downloadProgress ?? null);
   }
 
-  private async load() {
-    try {
-      this.movies.set(await this.api.movies());
-    } catch (e) {
-      this.toasts.error(errorMessage(e));
-    } finally {
-      this.loading.set(false);
-    }
-  }
+  protected showMore() { this.limit.update(n => n + GRID_CHUNK); }
 }

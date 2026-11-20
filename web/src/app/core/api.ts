@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
-  IndexerError, IndexerTestResult, Language, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieLookup, Quality, QualityProfile,
+  IndexerError, IndexerTestResult, Language, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieListItem, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
 } from './models';
 
@@ -97,7 +97,7 @@ export class Api {
   removeDownload(hash: string, deleteData: boolean) { return this.delete<void>(`downloads/${hash}`, { deleteData }); }
 
   // Movies
-  movies() { return this.get<Movie[]>('movies'); }
+  movies() { return this.get<MovieListItem[]>('movies'); }
   movie(id: number) { return this.get<Movie>(`movies/${id}`); }
   lookupMovies(term: string) { return this.get<MovieLookup[]>('movies/lookup', { term }); }
   addMovie(req: { tmdbId: number; qualityProfileId: number; rootFolderPath: string; monitored: boolean; searchForMovie: boolean; minimumAvailability: MinimumAvailability }) {
@@ -119,7 +119,7 @@ export class Api {
   }
 
   // Series
-  seriesList() { return this.get<Series[]>('series'); }
+  seriesList() { return this.get<SeriesListItem[]>('series'); }
   series(id: number) { return this.get<Series>(`series/${id}`); }
   episodes(seriesId: number) { return this.get<Episode[]>(`series/${seriesId}/episodes`); }
   lookupSeries(term: string) { return this.get<SeriesLookup[]>('series/lookup', { term }); }
