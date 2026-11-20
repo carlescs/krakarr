@@ -8,13 +8,14 @@ import { SeriesListItem } from '../../core/models';
 import { NearViewport } from '../../shared/near-viewport';
 import { Poster } from '../../shared/poster';
 import { GRID_CHUNK, POSTER_GRID, PosterGridSkeleton } from '../../shared/poster-grid';
+import { MoreMenu } from '../../shared/more-menu';
 import { Progress } from '../../shared/progress';
 
 type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
 
 @Component({
   selector: 'kr-series-list',
-  imports: [RouterLink, FormsModule, DatePipe, Poster, Progress, NearViewport, PosterGridSkeleton],
+  imports: [RouterLink, FormsModule, DatePipe, Poster, Progress, NearViewport, PosterGridSkeleton, MoreMenu],
   template: `
     <div class="mb-6 flex flex-wrap items-center gap-3">
       <h1 class="page-title mr-auto max-sm:basis-full">Series <span class="ml-1 text-base font-normal text-slate-500">@if (!loading()) { {{ series().length }} }</span></h1>
@@ -28,8 +29,10 @@ type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
       </select>
       @if (auth.isStaff()) {
         <div class="flex gap-2 max-sm:basis-full">
-          <a routerLink="/series/import" class="btn-secondary max-sm:flex-1">Import library</a>
           <a routerLink="/series/add" class="btn-primary max-sm:flex-1">+ Add series</a>
+          <kr-more-menu>
+            <a routerLink="/series/import" class="menu-item" role="menuitem">Import existing library…</a>
+          </kr-more-menu>
         </div>
       }
     </div>
@@ -43,6 +46,7 @@ type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
           <p class="max-w-md text-sm text-slate-400">Add a TV root folder and a TMDB API key in Settings, then add your first show.</p>
           <div class="mt-2 flex gap-2">
             <a routerLink="/settings" class="btn-secondary">Settings</a>
+            <a routerLink="/series/import" class="btn-secondary">Import existing</a>
             <a routerLink="/series/add" class="btn-primary">Add series</a>
           </div>
         } @else {
