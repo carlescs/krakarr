@@ -2,6 +2,7 @@ import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../core/api';
 import { Indexer, IndexerCategory, IndexerTestResult } from '../core/models';
+import { Languages } from '../core/languages';
 import { Toasts } from '../core/toast';
 import { CategoryPicker } from '../shared/category-picker';
 import { Modal } from '../shared/modal';
@@ -11,7 +12,7 @@ const TV_RANGE: [number, number] = [5000, 5999];
 
 const blankIndexer = (): Indexer => ({
   id: 0, name: '', protocol: 'Torznab', baseUrl: '', apiPath: '/api', apiKey: '', movieCategories: [2000], tvCategories: [5000],
-  enabled: true, enableRss: true, priority: 25, minimumSeeders: 1,
+  enabled: true, enableRss: true, priority: 25, minimumSeeders: 1, defaultLanguage: null,
 });
 
 @Component({
@@ -98,6 +99,16 @@ const blankIndexer = (): Indexer => ({
           </div>
           <div><label class="label">Priority</label><input class="input" type="number" min="1" max="50" [(ngModel)]="f.priority" /><p class="hint">Lower wins ties between equal releases.</p></div>
           <div><label class="label">Minimum seeders</label><input class="input" type="number" min="0" [(ngModel)]="f.minimumSeeders" /></div>
+          <div>
+            <label class="label">Default language</label>
+            <select class="input" [(ngModel)]="f.defaultLanguage">
+              <option [ngValue]="null">English (scene default)</option>
+              @for (l of languages.all(); track l.code) {
+                @if (l.code !== 'en') { <option [ngValue]="l.code">{{ l.name }}</option> }
+              }
+            </select>
+            <p class="hint">Audio language assumed for releases whose names carry no language tag, e.g. a Spanish tracker that doesn't add “SPANISH”.</p>
+          </div>
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="f.enabled" /> Enabled</label>
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="f.enableRss" /> Use for RSS sync</label>
         </div>
@@ -122,6 +133,7 @@ const blankIndexer = (): Indexer => ({
 export class IndexersPage implements OnInit {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
+  protected readonly languages = inject(Languages);
   protected readonly indexers = signal<Indexer[]>([]);
   protected readonly form = signal<Indexer | null>(null);
   protected readonly test = signal<IndexerTestResult | null>(null);
@@ -133,7 +145,10 @@ export class IndexersPage implements OnInit {
   protected readonly movieRange = MOVIE_RANGE;
   protected readonly tvRange = TV_RANGE;
 
-  ngOnInit() { this.load(); }
+  ngOnInit() {
+    this.load();
+    this.languages.load().catch(() => {});
+  }
 
   private async load() { this.indexers.set(await this.api.indexers()); }
 
@@ -143,7 +158,7 @@ export class IndexersPage implements OnInit {
     this.test.set(null);
     this.categories.set([]);
     this.capsError.set(null);
-    const form = i ? structuredClone(i) : blankIndexer();
+    const form = i ? { ...structuredClone(i), defaultLanguage: i.defaultLanguage ?? null } : blankIndexer();
     this.form.set(form);
     if (i) this.loadCategories(form);
   }

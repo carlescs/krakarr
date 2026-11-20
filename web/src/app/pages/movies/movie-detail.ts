@@ -10,6 +10,8 @@ import { AgoPipe, BytesPipe, DurationPipe, SpeedPipe } from '../../core/format';
 import { AVAILABILITY_OPTIONS, RELEASE_LABELS } from '../../core/calendar';
 import { HistoryItem, IndexerError, MinimumAvailability, Movie, QualityProfile, ReleaseDateType, ReleaseDecision, SubtitleFile } from '../../core/models';
 import { Toasts } from '../../core/toast';
+import { Languages } from '../../core/languages';
+import { LanguageOverride } from '../../shared/language-picker';
 import { Modal } from '../../shared/modal';
 import { Poster } from '../../shared/poster';
 import { RelatedTitles } from '../../shared/related-titles';
@@ -19,7 +21,7 @@ import { SubtitleManager } from '../../shared/subtitle-manager';
 
 @Component({
   selector: 'kr-movie-detail',
-  imports: [RelatedTitles, FormsModule, DatePipe, Poster, Progress, Modal, StateBadge, SubtitleManager, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
+  imports: [RelatedTitles, LanguageOverride, FormsModule, DatePipe, Poster, Progress, Modal, StateBadge, SubtitleManager, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
   template: `
     @if (movie(); as m) {
       <!-- Hero -->
@@ -48,6 +50,9 @@ import { SubtitleManager } from '../../shared/subtitle-manager';
                 {{ m.monitored ? 'Monitored' : 'Unmonitored' }}
               </span>
               <span class="badge bg-surface-700 text-slate-300">{{ profileName() }}</span>
+              <span class="badge bg-surface-700 text-slate-300" [title]="m.languages ? 'Languages set for this movie' : 'Default languages'">
+                {{ languages.describe(m.languages ?? languages.preferred()) }}
+              </span>
             </div>
             <p class="mt-4 max-w-3xl text-sm leading-relaxed text-slate-300">{{ m.overview }}</p>
             @if (auth.isStaff()) {
@@ -179,7 +184,7 @@ import { SubtitleManager } from '../../shared/subtitle-manager';
             } @else {
               <div class="overflow-x-auto sm:max-h-[65vh] sm:overflow-auto">
                 <table class="table">
-                  <thead><tr><th>Release</th><th class="max-sm:hidden">Indexer</th><th class="max-sm:hidden">Size</th><th class="max-sm:hidden">Peers</th><th class="max-sm:hidden">Quality</th><th></th></tr></thead>
+                  <thead><tr><th>Release</th><th class="max-sm:hidden">Indexer</th><th class="max-sm:hidden">Size</th><th class="max-sm:hidden">Peers</th><th class="max-sm:hidden">Quality</th><th class="max-sm:hidden">Language</th><th></th></tr></thead>
                   <tbody>
                     @for (r of releases(); track r.release.guid) {
                       <tr [class.opacity-60]="!r.approved">
@@ -187,6 +192,7 @@ import { SubtitleManager } from '../../shared/subtitle-manager';
                           <div class="break-all sm:truncate sm:break-normal" [title]="r.release.title">{{ r.release.title }}</div>
                           <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400 sm:hidden">
                             <span class="badge bg-surface-700 text-slate-200">{{ r.quality }}</span>
+                            <span class="badge bg-surface-700 text-slate-300">{{ languages.describe(r.languages) }}</span>
                             <span>{{ r.release.size | bytes }}</span>
                             <span><span class="text-emerald-400">{{ r.release.seeders ?? '?' }}</span> / {{ r.release.peers ?? '?' }}</span>
                             <span>{{ r.release.indexerName }}</span>
@@ -197,6 +203,7 @@ import { SubtitleManager } from '../../shared/subtitle-manager';
                         <td class="whitespace-nowrap max-sm:hidden">{{ r.release.size | bytes }}</td>
                         <td class="whitespace-nowrap max-sm:hidden"><span class="text-emerald-400">{{ r.release.seeders ?? '?' }}</span> / {{ r.release.peers ?? '?' }}</td>
                         <td class="max-sm:hidden"><span class="badge bg-surface-700 text-slate-200">{{ r.quality }}</span></td>
+                        <td class="whitespace-nowrap text-slate-300 max-sm:hidden">{{ languages.describe(r.languages) }}</td>
                         <td class="text-right">
                           <button class="btn-sm" [class]="r.approved ? 'btn-primary' : 'btn-secondary'" (click)="grab(r)" [disabled]="grabbing() === r.release.guid">
                             {{ grabbing() === r.release.guid ? '…' : 'Grab' }}
@@ -229,6 +236,7 @@ import { SubtitleManager } from '../../shared/subtitle-manager';
                 @for (p of profiles(); track p.id) { <option [ngValue]="p.id">{{ p.name }}</option> }
               </select>
             </div>
+            <div><kr-language-override [(value)]="editLanguages" /></div>
           </div>
           <ng-container footer>
             <button class="btn-ghost" (click)="editing.set(false)">Cancel</button>
@@ -277,6 +285,8 @@ export class MovieDetailPage implements OnInit {
   protected editMonitored = true;
   protected editProfileId = 0;
   protected editAvailability: MinimumAvailability = 'Released';
+  protected editLanguages: string[] | null = null;
+  protected readonly languages = inject(Languages);
   protected readonly availabilityOptions = AVAILABILITY_OPTIONS;
   protected readonly releaseLabels = RELEASE_LABELS;
   protected readonly releaseBar: Record<ReleaseDateType, string> = {
@@ -289,6 +299,7 @@ export class MovieDetailPage implements OnInit {
 
   ngOnInit() {
     this.load();
+    this.languages.load().catch(() => {});
     this.api.qualityProfiles().then(p => this.profiles.set(p));
     this.events.movieUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => { if (e.id === this.id()) this.load(); });
     this.events.historyAdded.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(h => { if (h.movieId === this.id()) this.loadHistory(); });
@@ -306,6 +317,7 @@ export class MovieDetailPage implements OnInit {
       this.editMonitored = m.monitored;
       this.editProfileId = m.qualityProfileId;
       this.editAvailability = m.minimumAvailability;
+      this.editLanguages = m.languages ? [...m.languages] : null;
       await Promise.all([this.loadHistory(), this.loadSubtitles()]);
     } catch (e) {
       this.toasts.error(errorMessage(e));
@@ -351,14 +363,14 @@ export class MovieDetailPage implements OnInit {
 
   async toggleMonitored() {
     const m = this.movie()!;
-    await this.api.updateMovie(m.id, !m.monitored, m.qualityProfileId, m.minimumAvailability);
+    await this.api.updateMovie(m.id, !m.monitored, m.qualityProfileId, m.minimumAvailability, m.languages ?? null);
     this.movie.set({ ...m, monitored: !m.monitored });
     this.editMonitored = !m.monitored;
   }
 
   async saveEdit() {
     try {
-      await this.api.updateMovie(this.id(), this.editMonitored, this.editProfileId, this.editAvailability);
+      await this.api.updateMovie(this.id(), this.editMonitored, this.editProfileId, this.editAvailability, this.editLanguages);
       this.editing.set(false);
       await this.load();
     } catch (e) {

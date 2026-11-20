@@ -10,6 +10,8 @@ import {
 } from '../../core/models';
 import { Toasts } from '../../core/toast';
 import { Modal } from '../../shared/modal';
+import { LanguagePicker } from '../../shared/language-picker';
+import { Languages } from '../../core/languages';
 import { Auth } from '../../core/auth';
 import { AccountSettings } from './account';
 import { UsersSettings } from './users';
@@ -66,7 +68,7 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'task
 
 @Component({
   selector: 'kr-settings',
-  imports: [FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings],
+  imports: [LanguagePicker, FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings],
   template: `
     <h1 class="page-title mb-4 sm:mb-6">{{ auth.isAdmin() ? 'Settings' : 'Account' }}</h1>
     <div class="-mx-4 mb-6 flex gap-1 overflow-x-auto border-b border-surface-700 px-4 [scrollbar-width:none] sm:mx-0 sm:px-0" [class.hidden]="tabs().length < 2">
@@ -177,6 +179,16 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'task
 
     <!-- Quality profiles -->
     @if (tab() === 'profiles') {
+      <section class="card mb-6 space-y-3 p-4 sm:p-5">
+        <h2 class="font-semibold text-white">Release languages</h2>
+        <kr-language-picker [languages]="languageCatalog.all()" [(value)]="wantedLanguages" />
+        <p class="hint">
+          Audio languages to download, most preferred first. Releases in none of them are rejected, and a preferred language wins over
+          better quality. Leave empty to accept any language. Movies and series use this unless you set their own languages when editing them.
+          Releases without a language tag count as English, or as the indexer's default language.
+        </p>
+        <div class="flex justify-end"><button class="btn-primary btn-sm" (click)="saveLanguages()">Save</button></div>
+      </section>
       <div class="mb-4 flex justify-end"><button class="btn-secondary btn-sm" (click)="editProfile(null)">+ Add profile</button></div>
       <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         @for (p of profiles(); track p.id) {
@@ -568,6 +580,8 @@ export class SettingsPage implements OnInit {
   protected readonly clientTest = signal<DownloadClientTestResult | null>(null);
   protected readonly subtitles = signal<SubtitleSettings | null>(null);
   protected readonly languages = signal<Language[]>([]);
+  protected readonly languageCatalog = inject(Languages);
+  protected wantedLanguages: string[] = [];
   protected readonly subtitleTest = signal<{ success: boolean; message: string } | null>(null);
   protected readonly testingSubtitles = signal(false);
   protected readonly testingClient = signal(false);
@@ -607,6 +621,8 @@ export class SettingsPage implements OnInit {
     this.metadata.set(metadata);
     this.general.set(general);
     this.status.set(status);
+    this.api.settings('languages').then(l => this.wantedLanguages = l.preferred, () => {});
+    this.languageCatalog.load().catch(() => {});
     const [subs, langs] = await Promise.all([this.api.settings('subtitles'), this.api.subtitleLanguages()]);
     this.subtitles.set(subs);
     this.languages.set(langs);
@@ -676,6 +692,16 @@ export class SettingsPage implements OnInit {
   async save<K extends 'media' | 'downloads' | 'automation' | 'metadata' | 'subtitles'>(section: K, value: Parameters<Api['saveSettings']>[1] & object) {
     try {
       await this.api.saveSettings(section, value as never);
+      this.toasts.success('Settings saved');
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+    }
+  }
+
+  async saveLanguages() {
+    try {
+      this.wantedLanguages = (await this.api.saveSettings('languages', { preferred: this.wantedLanguages })).preferred;
+      await this.languageCatalog.load(true);
       this.toasts.success('Settings saved');
     } catch (e) {
       this.toasts.error(errorMessage(e));

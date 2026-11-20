@@ -106,6 +106,21 @@ public sealed class ApiTests : IClassFixture<KrakarrFactory>
     }
 
     [Fact]
+    public async Task Wanted_languages_are_normalized_and_published_with_the_catalogue()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = await LoggedInClientAsync();
+        var put = await client.PutAsJsonAsync("/api/v1/settings/languages", new { preferred = new[] { "ES", "klingon", "en", "es" } }, ct);
+        put.EnsureSuccessStatusCode();
+
+        var languages = await client.GetFromJsonAsync<JsonElement>("/api/v1/languages", ct);
+        Assert.Equal(["es", "en"], languages.GetProperty("preferred").EnumerateArray().Select(e => e.GetString()));
+        Assert.Contains(languages.GetProperty("all").EnumerateArray(), l => l.GetProperty("code").GetString() == "fr");
+
+        (await client.PutAsJsonAsync("/api/v1/settings/languages", new { preferred = Array.Empty<string>() }, ct)).EnsureSuccessStatusCode();
+    }
+
+    [Fact]
     public async Task Spa_fallback_does_not_swallow_unknown_api_routes()
     {
         var client = await LoggedInClientAsync();

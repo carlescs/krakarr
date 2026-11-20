@@ -67,6 +67,17 @@ Then open <http://localhost:8787>:
 > so a movie takes disk space only once. Hardlinks only work within a single filesystem *and* a single mount,
 > so put downloads and media under one host directory and mount it once.
 
+### Release languages
+
+- **Wanted languages** (*Settings → Quality profiles → Release languages*) is an ordered list of audio languages. Releases
+  in none of them are rejected, and among acceptable releases an earlier language wins over a better quality. Empty
+  (the default) accepts any language.
+- **Per title:** each movie and series uses that list unless you set its own languages in its *Edit* dialog.
+- **Detection:** language tags in the release name (`FRENCH`, `TRUEFRENCH`, `VFF`, `SPANISH`, `CASTELLANO`, `LATINO`,
+  `GERMAN`, `iTA`, `PT-BR`, …) and the indexer's `language` attribute. Subtitle tags (`ENG SUBS`, `VOSTFR`) are ignored.
+  `MULTi`/`DUAL` releases also count as English. Untagged releases are assumed to be in the indexer's **default
+  language** (set per indexer), or English when it has none.
+
 ### TV series
 
 - **Metadata** comes from the *Series metadata source* in *Settings → Metadata*: **TMDB** (default, same key as movies) or
@@ -249,7 +260,7 @@ tests/                   xUnit v3 unit + HTTP integration tests
 ```
 
 **Movie pipeline:** *add (TMDB)* → *search all indexers (Torznab, by IMDb id when supported)* → *decision engine*
-(title/year/id match, quality profile, size limits, seeders, upgrade/cutoff) → *grab* (.torrent or magnet into the
+(title/year/id match, wanted languages, quality profile, size limits, seeders, upgrade/cutoff) → *grab* (.torrent or magnet into the
 embedded engine) → *download completes* → *import* (pick main video, rename by template, hardlink into the library)
 → *seed until the ratio/time limit*, then remove the torrent from the client (or stop it).
 

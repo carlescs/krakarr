@@ -20,4 +20,8 @@ public sealed record ReleaseInfo
     public int IndexerId { get; init; }
     public string IndexerName { get; init; } = string.Empty;
     public int IndexerPriority { get; init; } = 25;
+    /// <summary>Audio languages the indexer reported for the release (language attribute), as <see cref="MediaLanguages"/> codes.</summary>
+    public IReadOnlyList<string> Languages { get; init; } = [];
+    /// <summary>The indexer's <see cref="Indexer.DefaultLanguage"/>: assumed when the release name carries no language tag.</summary>
+    public string? IndexerLanguage { get; init; }
 }

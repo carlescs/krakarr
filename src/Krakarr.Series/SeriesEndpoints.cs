@@ -30,6 +30,8 @@ public sealed record SeriesDto
     public bool Monitored { get; init; }
     public bool SeasonFolder { get; init; }
     public int QualityProfileId { get; init; }
+    /// <summary>The series' own wanted audio languages; null = the global default (<c>GET /languages</c>).</summary>
+    public IReadOnlyList<string>? Languages { get; init; }
     public required string Path { get; init; }
     public DateTimeOffset Added { get; init; }
     /// <summary>Aired, monitored episodes plus any episode that has a file (Sonarr's definition).</summary>
@@ -52,10 +54,11 @@ public sealed record EpisodeDto(
     int Id, int SeasonNumber, int EpisodeNumber, int? AbsoluteNumber, string? Title, string? Overview, DateOnly? AirDate,
     bool Monitored, bool HasAired, EpisodeFileDto? EpisodeFile, double? DownloadProgress);
 
-public sealed record UpdateSeriesRequest(bool Monitored, int QualityProfileId, bool SeasonFolder);
+/// <param name="Languages">Wanted audio languages, most preferred first; null = use the global default.</param>
+public sealed record UpdateSeriesRequest(bool Monitored, int QualityProfileId, bool SeasonFolder, IReadOnlyList<string>? Languages = null);
 public sealed record MonitorRequest(bool Monitored);
 public sealed record SeriesSearchRequest(int? SeasonNumber, IReadOnlyList<int>? EpisodeIds);
-public sealed record EpisodeReleaseDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections, string? Episodes, bool SeasonPack);
+public sealed record EpisodeReleaseDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections, string? Episodes, bool SeasonPack, IReadOnlyList<string> Languages);
 public sealed record GrabEpisodeReleaseRequest(ReleaseInfo Release);
 
 public static class SeriesEndpoints
@@ -190,6 +193,7 @@ public static class SeriesEndpoints
             series.Monitored = req.Monitored;
             series.QualityProfileId = req.QualityProfileId;
             series.SeasonFolder = req.SeasonFolder;
+            series.Languages = req.Languages is null ? null : MediaLanguages.Clean(req.Languages);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         });
@@ -291,7 +295,7 @@ public static class SeriesEndpoints
             return Results.Ok(new
             {
                 Releases = decisions.Select(d => new EpisodeReleaseDto(d.Release, d.Quality.Name, d.Quality.Weight, d.Approved, d.Rejections,
-                    d.Episodes.Count > 0 ? SeriesService.Codes(d.Episodes) : null, d.IsSeasonPack)),
+                    d.Episodes.Count > 0 ? SeriesService.Codes(d.Episodes) : null, d.IsSeasonPack, d.Languages)),
                 Errors = errors,
             });
         });
@@ -394,6 +398,7 @@ public static class SeriesEndpoints
             Monitored = s.Monitored,
             SeasonFolder = s.SeasonFolder,
             QualityProfileId = s.QualityProfileId,
+            Languages = s.Languages,
             Path = s.Path,
             Added = s.Added,
             EpisodeCount = regular.Count(e => Counts(e, today)),

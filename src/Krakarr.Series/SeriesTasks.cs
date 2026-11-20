@@ -44,6 +44,7 @@ public sealed class SeriesRssSyncTask(
             .ToDictionary(g => g.Key, g => g.Select(x => x.Release).ToList());
 
         var today = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
+        var languageSettings = await settings.GetAsync<LanguageSettings>(cancellationToken);
         var busy = await seriesService.ActiveEpisodeIdsAsync(cancellationToken);
         foreach (var info in monitored)
         {
@@ -59,7 +60,8 @@ public sealed class SeriesRssSyncTask(
             var series = await seriesService.LoadAsync(info.Id, cancellationToken);
             if (series?.QualityProfile is null) continue;
 
-            var decisions = EpisodeDecisionEngine.Evaluate(series, series.QualityProfile, series.Episodes, candidates, null, requireMonitored: true, today);
+            var decisions = EpisodeDecisionEngine.Evaluate(series, series.QualityProfile, series.Episodes, candidates, null, requireMonitored: true, today,
+                languageSettings.For(series.Languages));
             foreach (var decision in EpisodeDecisionEngine.SelectGrabs(decisions, busy))
             {
                 try

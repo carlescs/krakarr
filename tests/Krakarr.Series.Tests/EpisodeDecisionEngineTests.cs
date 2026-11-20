@@ -158,6 +158,22 @@ public class EpisodeDecisionEngineTests
         var mapped = EpisodeDecisionEngine.MapEpisodes(Office().Episodes, Media.Parsing.ReleaseParser.Parse(title), Today);
         Assert.Equal(expected, mapped.Select(e => e.EpisodeNumber));
     }
+
+    [Fact]
+    public void Filters_and_ranks_by_wanted_language()
+    {
+        var s = Office();
+        var releases = new[] { Release("The.Office.S01E02.1080p.WEB-DL-GRP", sizeMb: 1500), Release("The.Office.S01E02.GERMAN.1080p.WEB-DL-GRP", sizeMb: 1500) };
+
+        var germanOnly = EpisodeDecisionEngine.Evaluate(s, Hd1080, s.Episodes, releases, null, true, Today, ["de"]);
+        Assert.True(germanOnly[0].Approved);
+        Assert.Equal(["de"], germanOnly[0].Languages);
+        Assert.Contains(germanOnly[1].Rejections, r => r.StartsWith("Language not wanted"));
+
+        var both = EpisodeDecisionEngine.Evaluate(s, Hd1080, s.Episodes, releases, null, true, Today, ["en", "de"]);
+        Assert.All(both, d => Assert.True(d.Approved));
+        Assert.Equal(["en"], both[0].Languages);
+    }
 }
 
 internal static class ProfileExtensions
