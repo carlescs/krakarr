@@ -30,6 +30,8 @@ public sealed record SeriesDto
     public bool Monitored { get; init; }
     public bool SeasonFolder { get; init; }
     public int QualityProfileId { get; init; }
+    /// <summary>The series' own wanted audio languages; null = the global default (<c>GET /languages</c>).</summary>
+    public IReadOnlyList<string>? Languages { get; init; }
     public required string Path { get; init; }
     public DateTimeOffset Added { get; init; }
     /// <summary>Aired, monitored episodes plus any episode that has a file (Sonarr's definition).</summary>
@@ -41,16 +43,22 @@ public sealed record SeriesDto
     public IReadOnlyList<SeasonDto> Seasons { get; init; } = [];
 }
 
+/// <summary>Row of the library grid. Counts follow <see cref="SeriesDto"/> (regular seasons only).</summary>
+public sealed record SeriesListItemDto(
+    int Id, string Title, int Year, string? PosterUrl, SeriesStatus Status, bool Monitored,
+    int EpisodeCount, int EpisodeFileCount, DateOnly? NextAiring, int DownloadingCount);
+
 public sealed record EpisodeFileDto(int Id, string RelativePath, long Size, string Quality, string? ReleaseGroup, DateTimeOffset DateAdded);
 
 public sealed record EpisodeDto(
     int Id, int SeasonNumber, int EpisodeNumber, int? AbsoluteNumber, string? Title, string? Overview, DateOnly? AirDate,
     bool Monitored, bool HasAired, EpisodeFileDto? EpisodeFile, double? DownloadProgress);
 
-public sealed record UpdateSeriesRequest(bool Monitored, int QualityProfileId, bool SeasonFolder);
+/// <param name="Languages">Wanted audio languages, most preferred first; null = use the global default.</param>
+public sealed record UpdateSeriesRequest(bool Monitored, int QualityProfileId, bool SeasonFolder, IReadOnlyList<string>? Languages = null);
 public sealed record MonitorRequest(bool Monitored);
 public sealed record SeriesSearchRequest(int? SeasonNumber, IReadOnlyList<int>? EpisodeIds);
-public sealed record EpisodeReleaseDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections, string? Episodes, bool SeasonPack);
+public sealed record EpisodeReleaseDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections, string? Episodes, bool SeasonPack, IReadOnlyList<string> Languages);
 public sealed record GrabEpisodeReleaseRequest(ReleaseInfo Release);
 
 public static class SeriesEndpoints
@@ -61,16 +69,30 @@ public static class SeriesEndpoints
 
         group.MapGet("/", async (KrakarrDbContext db, ITorrentEngine engine, TimeProvider time, CancellationToken ct) =>
         {
-            // The list only needs per-season counts and sizes, so project the few episode columns that feed them instead
-            // of materialising every episode (with overviews) and file of the whole library.
-            var list = await db.Series.AsNoTracking().Include(s => s.Seasons).AsSplitQuery().OrderBy(s => s.SortTitle).ToListAsync(ct);
-            var stats = (await db.Episodes.AsNoTracking()
-                .Select(e => new { e.SeriesId, Stat = new EpisodeStat(e.SeasonNumber, e.AirDate, e.Monitored, e.EpisodeFileId, e.EpisodeFile != null ? e.EpisodeFile.Size : 0) })
-                .ToListAsync(ct))
-                .ToLookup(x => x.SeriesId, x => x.Stat);
-            var downloading = DownloadingBySeries(engine);
+            // Aggregate the episode counts in SQL (one row per show) rather than reading every episode of the library.
             var today = Today(time);
-            return list.Select(s => ToDto(s, stats[s.Id], today, downloading));
+            var counts = await db.Episodes.AsNoTracking()
+                .Where(e => e.SeasonNumber > 0)
+                .GroupBy(e => e.SeriesId)
+                .Select(g => new
+                {
+                    SeriesId = g.Key,
+                    EpisodeCount = g.Count(e => e.EpisodeFileId != null || (e.Monitored && e.AirDate != null && e.AirDate <= today)),
+                    EpisodeFileCount = g.Count(e => e.EpisodeFileId != null),
+                    NextAiring = g.Where(e => e.AirDate > today).Min(e => e.AirDate),
+                })
+                .ToDictionaryAsync(x => x.SeriesId, ct);
+            var list = await db.Series.AsNoTracking().OrderBy(s => s.SortTitle)
+                .Select(s => new { s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored })
+                .ToListAsync(ct);
+            var downloading = DownloadingBySeries(engine);
+            return list.Select(s =>
+            {
+                var c = counts.GetValueOrDefault(s.Id);
+                return new SeriesListItemDto(
+                    s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored,
+                    c?.EpisodeCount ?? 0, c?.EpisodeFileCount ?? 0, c?.NextAiring, downloading.GetValueOrDefault(s.Id));
+            });
         });
 
         // Library import: scan a root folder for existing show folders, then import selected ones in place.
@@ -171,6 +193,7 @@ public static class SeriesEndpoints
             series.Monitored = req.Monitored;
             series.QualityProfileId = req.QualityProfileId;
             series.SeasonFolder = req.SeasonFolder;
+            series.Languages = req.Languages is null ? null : MediaLanguages.Clean(req.Languages);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         });
@@ -272,7 +295,7 @@ public static class SeriesEndpoints
             return Results.Ok(new
             {
                 Releases = decisions.Select(d => new EpisodeReleaseDto(d.Release, d.Quality.Name, d.Quality.Weight, d.Approved, d.Rejections,
-                    d.Episodes.Count > 0 ? SeriesService.Codes(d.Episodes) : null, d.IsSeasonPack)),
+                    d.Episodes.Count > 0 ? SeriesService.Codes(d.Episodes) : null, d.IsSeasonPack, d.Languages)),
                 Errors = errors,
             });
         });
@@ -375,6 +398,7 @@ public static class SeriesEndpoints
             Monitored = s.Monitored,
             SeasonFolder = s.SeasonFolder,
             QualityProfileId = s.QualityProfileId,
+            Languages = s.Languages,
             Path = s.Path,
             Added = s.Added,
             EpisodeCount = regular.Count(e => Counts(e, today)),

@@ -19,21 +19,15 @@ public sealed class SeriesRssSyncTask(
     TimeProvider time,
     ILogger<SeriesRssSyncTask> logger) : IScheduledTask
 {
-    private static DateTimeOffset _lastRun = DateTimeOffset.MinValue;
-
     public string Name => "RSS sync (series)";
-    public TimeSpan Interval => TimeSpan.FromMinutes(1);
+    public TimeSpan Interval => TimeSpan.FromMinutes(new AutomationSettings().RssSyncIntervalMinutes);
     public TimeSpan InitialDelay => TimeSpan.FromMinutes(2);
+
+    public async ValueTask<TimeSpan?> GetIntervalAsync(CancellationToken cancellationToken) =>
+        (await settings.GetAsync<AutomationSettings>(cancellationToken)).RssSyncInterval;
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var automation = await settings.GetAsync<AutomationSettings>(cancellationToken);
-        if (automation.RssSyncIntervalMinutes <= 0 || time.GetUtcNow() - _lastRun < TimeSpan.FromMinutes(automation.RssSyncIntervalMinutes))
-        {
-            return;
-        }
-
-        _lastRun = time.GetUtcNow();
         // Only the fields needed to match releases; a series (with all its episodes) is loaded only when it has candidates.
         var monitored = await db.Series.AsNoTracking().Where(s => s.Monitored)
             .Select(s => new { s.Id, s.Title, s.TvdbId, s.TmdbId }).ToListAsync(cancellationToken);
@@ -50,6 +44,7 @@ public sealed class SeriesRssSyncTask(
             .ToDictionary(g => g.Key, g => g.Select(x => x.Release).ToList());
 
         var today = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
+        var languageSettings = await settings.GetAsync<LanguageSettings>(cancellationToken);
         var busy = await seriesService.ActiveEpisodeIdsAsync(cancellationToken);
         foreach (var info in monitored)
         {
@@ -65,7 +60,8 @@ public sealed class SeriesRssSyncTask(
             var series = await seriesService.LoadAsync(info.Id, cancellationToken);
             if (series?.QualityProfile is null) continue;
 
-            var decisions = EpisodeDecisionEngine.Evaluate(series, series.QualityProfile, series.Episodes, candidates, null, requireMonitored: true, today);
+            var decisions = EpisodeDecisionEngine.Evaluate(series, series.QualityProfile, series.Episodes, candidates, null, requireMonitored: true, today,
+                languageSettings.For(series.Languages));
             foreach (var decision in EpisodeDecisionEngine.SelectGrabs(decisions, busy))
             {
                 try

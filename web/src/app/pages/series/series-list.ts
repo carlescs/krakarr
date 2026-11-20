@@ -1,23 +1,23 @@
-import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, DestroyRef, computed, inject, linkedSignal, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { Api, errorMessage } from '../../core/api';
-import { Events } from '../../core/events';
-import { Series } from '../../core/models';
-import { Toasts } from '../../core/toast';
+import { Auth } from '../../core/auth';
+import { Library } from '../../core/library';
+import { SeriesListItem } from '../../core/models';
+import { NearViewport } from '../../shared/near-viewport';
 import { Poster } from '../../shared/poster';
+import { GRID_CHUNK, POSTER_GRID, PosterGridSkeleton } from '../../shared/poster-grid';
 import { Progress } from '../../shared/progress';
 
 type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
 
 @Component({
   selector: 'kr-series-list',
-  imports: [RouterLink, FormsModule, DatePipe, Poster, Progress],
+  imports: [RouterLink, FormsModule, DatePipe, Poster, Progress, NearViewport, PosterGridSkeleton],
   template: `
     <div class="mb-6 flex flex-wrap items-center gap-3">
-      <h1 class="page-title mr-auto max-sm:basis-full">Series <span class="ml-1 text-base font-normal text-slate-500">{{ series().length }}</span></h1>
+      <h1 class="page-title mr-auto max-sm:basis-full">Series <span class="ml-1 text-base font-normal text-slate-500">@if (!loading()) { {{ series().length }} }</span></h1>
       <input class="input min-w-0 flex-1 sm:w-56 sm:flex-none" placeholder="Filter…" type="search" [ngModel]="query()" (ngModelChange)="query.set($event)" />
       <select class="input w-36 sm:w-40" [ngModel]="filter()" (ngModelChange)="filter.set($event)">
         <option value="all">All</option>
@@ -26,26 +26,34 @@ type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
         <option value="ended">Ended</option>
         <option value="unmonitored">Unmonitored</option>
       </select>
-      <div class="flex gap-2 max-sm:basis-full">
-        <a routerLink="/series/import" class="btn-secondary max-sm:flex-1">Import library</a>
-        <a routerLink="/series/add" class="btn-primary max-sm:flex-1">+ Add series</a>
-      </div>
+      @if (auth.isStaff()) {
+        <div class="flex gap-2 max-sm:basis-full">
+          <a routerLink="/series/import" class="btn-secondary max-sm:flex-1">Import library</a>
+          <a routerLink="/series/add" class="btn-primary max-sm:flex-1">+ Add series</a>
+        </div>
+      }
     </div>
 
     @if (loading()) {
-      <p class="text-slate-500">Loading…</p>
+      <kr-poster-grid-skeleton />
     } @else if (series().length === 0) {
       <div class="card flex flex-col items-center gap-3 px-6 py-16 text-center">
         <p class="text-lg font-medium text-white">No series yet</p>
-        <p class="max-w-md text-sm text-slate-400">Add a TV root folder and a TMDB API key in Settings, then add your first show.</p>
-        <div class="mt-2 flex gap-2">
-          <a routerLink="/settings" class="btn-secondary">Settings</a>
-          <a routerLink="/series/add" class="btn-primary">Add series</a>
-        </div>
+        @if (auth.isStaff()) {
+          <p class="max-w-md text-sm text-slate-400">Add a TV root folder and a TMDB API key in Settings, then add your first show.</p>
+          <div class="mt-2 flex gap-2">
+            <a routerLink="/settings" class="btn-secondary">Settings</a>
+            <a routerLink="/series/add" class="btn-primary">Add series</a>
+          </div>
+        } @else {
+          <p class="max-w-md text-sm text-slate-400">Nothing here yet. Browse <a routerLink="/discover" class="underline">Discover</a> for ideas.</p>
+        }
       </div>
+    } @else if (filtered().length === 0) {
+      <p class="py-12 text-center text-slate-500">No series match the filter.</p>
     } @else {
-      <div class="grid grid-cols-3 gap-x-3 gap-y-4 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
-        @for (s of filtered(); track s.id) {
+      <div [class]="grid">
+        @for (s of visible(); track s.id) {
           <a [routerLink]="['/series', s.id]" class="group">
             <div class="relative overflow-hidden rounded-lg ring-1 ring-surface-700 transition group-hover:ring-accent-500">
               <kr-poster [url]="s.posterUrl" [title]="s.title" />
@@ -63,25 +71,28 @@ type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
           </a>
         }
       </div>
+      @if (visible().length < filtered().length) {
+        <div class="h-px" (krNearViewport)="showMore()"></div>
+      }
     }
   `,
 })
-export class SeriesListPage implements OnInit {
-  private readonly api = inject(Api);
-  private readonly toasts = inject(Toasts);
-  private readonly events = inject(Events);
-  private readonly destroyRef = inject(DestroyRef);
+export class SeriesListPage {
+  protected readonly auth = inject(Auth);
+  private readonly cache = inject(Library).series;
 
-  protected readonly series = signal<Series[]>([]);
-  protected readonly loading = signal(true);
+  protected readonly grid = POSTER_GRID;
+  protected readonly loading = computed(() => this.cache.items() === null);
+  protected readonly series = computed(() => this.cache.items() ?? []);
   protected readonly query = signal('');
   protected readonly filter = signal<Filter>('all');
 
   protected readonly filtered = computed(() => {
     const q = this.query().toLowerCase().trim();
+    const filter = this.filter();
     return this.series().filter(s => {
       if (q && !s.title.toLowerCase().includes(q)) return false;
-      switch (this.filter()) {
+      switch (filter) {
         case 'missing': return s.monitored && s.episodeFileCount < s.episodeCount;
         case 'continuing': return s.status !== 'Ended';
         case 'ended': return s.status === 'Ended';
@@ -91,16 +102,15 @@ export class SeriesListPage implements OnInit {
     });
   });
 
-  protected percent(s: Series) { return s.episodeCount === 0 ? 0 : (s.episodeFileCount / s.episodeCount) * 100; }
+  /** Cards rendered so far: more are added as the end of the grid scrolls into view, and a new filter starts over. */
+  private readonly limit = linkedSignal({ source: () => [this.query(), this.filter()], computation: () => GRID_CHUNK });
+  protected readonly visible = computed(() => this.filtered().slice(0, this.limit()));
 
-  ngOnInit() {
-    this.load();
-    this.events.seriesUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.load());
+  constructor() {
+    inject(DestroyRef).onDestroy(this.cache.attach());
   }
 
-  private async load() {
-    try { this.series.set(await this.api.seriesList()); }
-    catch (e) { this.toasts.error(errorMessage(e)); }
-    finally { this.loading.set(false); }
-  }
+  protected percent(s: SeriesListItem) { return s.episodeCount === 0 ? 0 : (s.episodeFileCount / s.episodeCount) * 100; }
+
+  protected showMore() { this.limit.update(n => n + GRID_CHUNK); }
 }

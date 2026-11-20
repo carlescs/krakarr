@@ -43,6 +43,8 @@ public sealed record MovieDto
     public bool IsAvailable { get; init; }
     public bool Monitored { get; init; }
     public int QualityProfileId { get; init; }
+    /// <summary>The movie's own wanted audio languages; null = the global default (<c>GET /languages</c>).</summary>
+    public IReadOnlyList<string>? Languages { get; init; }
     public required string Path { get; init; }
     public DateTimeOffset Added { get; init; }
     public bool HasFile { get; init; }
@@ -53,11 +55,15 @@ public sealed record MovieDto
     public int? CollectionId { get; init; }
 }
 
+/// <summary>Row of the library grid: only what the movie list shows, so the whole library stays a small payload.</summary>
+public sealed record MovieListItemDto(int Id, string Title, int Year, string? PosterUrl, bool Monitored, bool HasFile, string? Quality, double? DownloadProgress, int? CollectionId);
+
 public sealed record MovieCollectionDto(int Id, int TmdbId, string Name, string? PosterUrl);
 
-public sealed record UpdateMovieRequest(bool Monitored, int QualityProfileId, MinimumAvailability? MinimumAvailability = null);
+/// <param name="Languages">Wanted audio languages, most preferred first; null = use the global default.</param>
+public sealed record UpdateMovieRequest(bool Monitored, int QualityProfileId, MinimumAvailability? MinimumAvailability = null, IReadOnlyList<string>? Languages = null);
 
-public sealed record ReleaseDecisionDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections);
+public sealed record ReleaseDecisionDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections, IReadOnlyList<string> Languages);
 
 public sealed record GrabMovieReleaseRequest(ReleaseInfo Release);
 
@@ -67,12 +73,18 @@ public static class MovieEndpoints
     {
         var group = app.MapGroup("/api/v1/movies").WithTags("Movies");
 
-        group.MapGet("/", async (KrakarrDbContext db, ITorrentEngine engine, Krakarr.Data.ISettingsService settings, CancellationToken ct) =>
+        group.MapGet("/", async (KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
         {
-            var movies = await db.Movies.AsNoTracking().Include(m => m.MovieFile).OrderBy(m => m.SortTitle).ToListAsync(ct);
+            // The grid only needs a handful of columns: skip overviews, paths and release dates of the whole library.
+            var rows = await db.Movies.AsNoTracking().OrderBy(m => m.SortTitle)
+                .Select(m => new { m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, m.CollectionId, QualityId = m.MovieFile != null ? m.MovieFile.QualityId : (int?)null })
+                .ToListAsync(ct);
             var progress = ActiveProgress(engine);
-            var region = await ReleaseRegionAsync(settings, ct);
-            return movies.Select(m => ToDto(m, progress, region));
+            return rows.Select(m => new MovieListItemDto(
+                m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, m.QualityId is not null,
+                m.QualityId is { } q ? Qualities.FindById(q).Name : null,
+                progress.TryGetValue(m.Id, out var p) ? p : null,
+                m.CollectionId));
         });
 
         // Collections that have movies in the library, for grouping the movie list.
@@ -178,6 +190,7 @@ public static class MovieEndpoints
             movie.Monitored = req.Monitored;
             movie.QualityProfileId = req.QualityProfileId;
             if (req.MinimumAvailability is { } availability) movie.MinimumAvailability = availability;
+            movie.Languages = req.Languages is null ? null : MediaLanguages.Clean(req.Languages);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         });
@@ -227,7 +240,7 @@ public static class MovieEndpoints
             var (decisions, errors) = await movies.SearchAsync(movie, ct);
             return Results.Ok(new
             {
-                Releases = decisions.Select(d => new ReleaseDecisionDto(d.Release, d.Quality.Name, d.Quality.Weight, d.Approved, d.Rejections)),
+                Releases = decisions.Select(d => new ReleaseDecisionDto(d.Release, d.Quality.Name, d.Quality.Weight, d.Approved, d.Rejections, d.Languages)),
                 Errors = errors,
             });
         });
@@ -305,6 +318,7 @@ public static class MovieEndpoints
         IsAvailable = MovieReleases.IsAvailable(m, MovieService.Today),
         Monitored = m.Monitored,
         QualityProfileId = m.QualityProfileId,
+        Languages = m.Languages,
         Path = m.Path,
         Added = m.Added,
         HasFile = m.MovieFile is not null,

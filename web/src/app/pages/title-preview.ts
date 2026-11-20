@@ -3,6 +3,7 @@ import { DatePipe } from '@angular/common';
 import { Title } from '@angular/platform-browser';
 import { Router } from '@angular/router';
 import { Api, errorMessage } from '../core/api';
+import { Auth } from '../core/auth';
 import { CastMember, CrewMember, DiscoverItem, MovieDetails, SeasonSummary, SeriesDetails } from '../core/models';
 import { CreditsView } from '../shared/credits';
 import { DiscoverAdd } from '../shared/discover-add';
@@ -67,7 +68,7 @@ interface Preview {
             </div>
             @if (p.overview) { <p class="mt-4 max-w-3xl text-sm leading-relaxed text-slate-300">{{ p.overview }}</p> }
             <div class="mt-5 flex flex-wrap gap-2">
-              <button class="btn-primary" (click)="adding.set(true)">+ Add to library</button>
+              @if (canAdd()) { <button class="btn-primary" (click)="adding.set(true)">+ Add to library</button> }
               <button class="btn-ghost" (click)="back()">Back</button>
             </div>
           </div>
@@ -115,6 +116,8 @@ export class TitlePreviewPage {
   /** Route parameter. */
   readonly tmdbId = input.required({ transform: numberAttribute });
 
+  /** Adding to the library is for admins and managers. */
+  protected readonly canAdd = inject(Auth).isStaff;
   protected readonly preview = signal<Preview | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly adding = signal(false);

@@ -3,8 +3,9 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
-  IndexerError, IndexerTestResult, Language, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieLookup, Quality, QualityProfile,
-  ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
+  IndexerError, IndexerTestResult, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListItem, MovieLookup, Quality, QualityProfile,
+  ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
+  UserAccount, UserRole,
 } from './models';
 
 const API = 'api/v1';
@@ -30,7 +31,7 @@ export function errorMessage(err: unknown): string {
 
 type SettingsMap = {
   general: GeneralSettings; media: MediaManagementSettings; metadata: MetadataSettings;
-  downloads: DownloadClientSettings; automation: AutomationSettings; subtitles: SubtitleSettings;
+  downloads: DownloadClientSettings; automation: AutomationSettings; subtitles: SubtitleSettings; languages: LanguageSettings;
 };
 
 @Injectable({ providedIn: 'root' })
@@ -53,11 +54,21 @@ export class Api {
   login(username: string, password: string) { return this.post<void>('auth/login', { username, password }); }
   setup(username: string, password: string, setupToken: string) { return this.post<void>('auth/setup', { username, password, setupToken }); }
   logout() { return this.post<void>('auth/logout'); }
-  changeCredentials(username: string, password: string) { return this.post<void>('auth/password', { username, password }); }
+  changeCredentials(username: string, currentPassword: string, newPassword?: string) {
+    return this.post<void>('auth/password', { username, currentPassword, newPassword: newPassword || null });
+  }
+
+  // Users (admin)
+  users() { return this.get<UserAccount[]>('users'); }
+  createUser(user: { username: string; password: string; role: UserRole }) { return this.post<UserAccount>('users', user); }
+  updateUser(id: number, user: { username: string; role: UserRole; password?: string | null }) { return this.put<UserAccount>(`users/${id}`, user); }
+  deleteUser(id: number) { return this.delete<void>(`users/${id}`); }
 
   // System
   systemStatus() { return this.get<SystemStatus>('system/status'); }
   commands() { return this.get<CommandInfo[]>('system/commands'); }
+  tasks() { return this.get<ScheduledTaskInfo[]>('system/tasks'); }
+  runTask(id: string) { return this.post<void>(`system/tasks/${encodeURIComponent(id)}/run`); }
 
   // Settings
   settings<K extends keyof SettingsMap>(section: K) { return this.get<SettingsMap[K]>(`settings/${section}`); }
@@ -102,7 +113,7 @@ export class Api {
   removeDownload(hash: string, deleteData: boolean) { return this.delete<void>(`downloads/${hash}`, { deleteData }); }
 
   // Movies
-  movies() { return this.get<Movie[]>('movies'); }
+  movies() { return this.get<MovieListItem[]>('movies'); }
   movieCollections() { return this.get<MovieCollection[]>('movies/collections'); }
   movie(id: number) { return this.get<Movie>(`movies/${id}`); }
   lookupMovies(term: string) { return this.get<MovieLookup[]>('movies/lookup', { term }); }
@@ -118,8 +129,9 @@ export class Api {
   tmdbMovie(tmdbId: number) { return this.get<MovieDetails>(`movies/tmdb/${tmdbId}`); }
   tmdbMovieRecommendations(tmdbId: number) { return this.get<MovieLookup[]>(`movies/tmdb/${tmdbId}/recommendations`); }
   tmdbSimilarMovies(tmdbId: number) { return this.get<MovieLookup[]>(`movies/tmdb/${tmdbId}/similar`); }
-  updateMovie(id: number, monitored: boolean, qualityProfileId: number, minimumAvailability?: MinimumAvailability) {
-    return this.put<void>(`movies/${id}`, { monitored, qualityProfileId, minimumAvailability: minimumAvailability ?? null });
+  /** Replaces the editable fields; `languages` null = use the global default. */
+  updateMovie(id: number, monitored: boolean, qualityProfileId: number, minimumAvailability: MinimumAvailability | undefined, languages: string[] | null) {
+    return this.put<void>(`movies/${id}`, { monitored, qualityProfileId, minimumAvailability: minimumAvailability ?? null, languages });
   }
   deleteMovie(id: number, deleteFiles: boolean) { return this.delete<void>(`movies/${id}`, { deleteFiles }); }
   searchMovie(id: number) { return this.post<CommandInfo>(`movies/${id}/search`); }
@@ -130,7 +142,7 @@ export class Api {
   }
 
   // Series
-  seriesList() { return this.get<Series[]>('series'); }
+  seriesList() { return this.get<SeriesListItem[]>('series'); }
   series(id: number) { return this.get<Series>(`series/${id}`); }
   episodes(seriesId: number) { return this.get<Episode[]>(`series/${seriesId}/episodes`); }
   lookupSeries(term: string) { return this.get<SeriesLookup[]>('series/lookup', { term }); }
@@ -149,8 +161,9 @@ export class Api {
 
   // People
   person(tmdbId: number) { return this.get<PersonDetails>(`people/${tmdbId}`); }
-  updateSeries(id: number, monitored: boolean, qualityProfileId: number, seasonFolder: boolean) {
-    return this.put<void>(`series/${id}`, { monitored, qualityProfileId, seasonFolder });
+  /** Replaces the editable fields; `languages` null = use the global default. */
+  updateSeries(id: number, monitored: boolean, qualityProfileId: number, seasonFolder: boolean, languages: string[] | null) {
+    return this.put<void>(`series/${id}`, { monitored, qualityProfileId, seasonFolder, languages });
   }
   deleteSeries(id: number, deleteFiles: boolean) { return this.delete<void>(`series/${id}`, { deleteFiles }); }
   monitorSeason(seriesId: number, season: number, monitored: boolean) { return this.put<void>(`series/${seriesId}/seasons/${season}`, { monitored }); }
@@ -172,6 +185,8 @@ export class Api {
   calendar(start: string, end: string) { return this.get<CalendarEntry[]>('calendar', { start, end }); }
 
   // Subtitles
+  /** Audio languages releases can be filtered by, plus the global wanted ones. */
+  languages() { return this.get<LanguageCatalog>('languages'); }
   subtitleLanguages() { return this.get<Language[]>('subtitles/languages'); }
   testSubtitleProviders(settings: SubtitleSettings) {
     return this.post<{ name: string; success: boolean; message: string }[]>('subtitles/providers/test', settings);

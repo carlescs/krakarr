@@ -1,14 +1,19 @@
 import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
-import { Injectable, inject, signal } from '@angular/core';
+import { Injectable, computed, inject, signal } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
 import { catchError, throwError } from 'rxjs';
 import { Api } from './api';
-import { AuthStatus } from './models';
+import { AuthStatus, UserRole } from './models';
 
 @Injectable({ providedIn: 'root' })
 export class Auth {
   private readonly api = inject(Api);
   readonly status = signal<AuthStatus | null>(null);
+  readonly role = computed<UserRole>(() => this.status()?.role ?? 'User');
+  /** Admins: settings, indexers, users and everything else. */
+  readonly isAdmin = computed(() => this.role() === 'Admin');
+  /** Admins and managers: manage the library and downloads. Plain users only browse. */
+  readonly isStaff = computed(() => this.role() === 'Admin' || this.role() === 'Manager');
 
   async refresh(): Promise<AuthStatus> {
     const s = await this.api.authStatus();
@@ -51,6 +56,19 @@ export const guestGuard: CanActivateFn = async () => {
   const status = auth.status() ?? (await auth.refresh().catch(() => null));
   return status?.authenticated ? router.createUrlTree(['/movies']) : true;
 };
+
+const RANK: Record<UserRole, number> = { Admin: 0, Manager: 1, User: 2 };
+
+/** Route guard for pages that need at least <paramref name="min"/>; others land on Discover. */
+export function roleGuard(min: UserRole): CanActivateFn {
+  return async () => {
+    const auth = inject(Auth);
+    const router = inject(Router);
+    const status = auth.status() ?? (await auth.refresh().catch(() => null));
+    if (!status?.authenticated) return router.createUrlTree(['/login']);
+    return RANK[status.role ?? 'User'] <= RANK[min] ? true : router.createUrlTree(['/discover']);
+  };
+}
 
 /** Sends the user to the login page whenever an API call returns 401. */
 export const authInterceptor: HttpInterceptorFn = (req, next) => {

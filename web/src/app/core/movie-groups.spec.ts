@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { Movie, MovieCollection } from './models';
+import { MovieCollection, MovieListItem } from './models';
 import { groupByCollection } from './movie-groups';
 
 const movie = (id: number, title: string, year: number, collectionId: number | null = null, hasFile = false) =>
-  ({ id, title, year, collectionId, hasFile }) as Movie;
+  ({ id, title, year, collectionId, hasFile }) as MovieListItem;
 
 describe('groupByCollection', () => {
   const collections: MovieCollection[] = [

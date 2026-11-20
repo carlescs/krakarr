@@ -67,6 +67,17 @@ Then open <http://localhost:8787>:
 > so a movie takes disk space only once. Hardlinks only work within a single filesystem *and* a single mount,
 > so put downloads and media under one host directory and mount it once.
 
+### Release languages
+
+- **Wanted languages** (*Settings → Quality profiles → Release languages*) is an ordered list of audio languages. Releases
+  in none of them are rejected, and among acceptable releases an earlier language wins over a better quality. Empty
+  (the default) accepts any language.
+- **Per title:** each movie and series uses that list unless you set its own languages in its *Edit* dialog.
+- **Detection:** language tags in the release name (`FRENCH`, `TRUEFRENCH`, `VFF`, `SPANISH`, `CASTELLANO`, `LATINO`,
+  `GERMAN`, `iTA`, `PT-BR`, …) and the indexer's `language` attribute. Subtitle tags (`ENG SUBS`, `VOSTFR`) are ignored.
+  `MULTi`/`DUAL` releases also count as English. Untagged releases are assumed to be in the indexer's **default
+  language** (set per indexer), or English when it has none.
+
 ### TV series
 
 - **Metadata** comes from the *Series metadata source* in *Settings → Metadata*: **TMDB** (default, same key as movies) or
@@ -116,7 +127,7 @@ TheTVDB is the series metadata source.
 - **Filters:** series, movies, each movie release type, unmonitored items and download status (any / not downloaded /
   downloaded). The view and filters are remembered per browser.
 - **iCal feed:** *iCal* gives a URL (`/api/v1/calendar/feed.ics?apikey=…`) for Google Calendar, Apple Calendar or Outlook,
-  with its own filters and day range. It carries the API key, so treat it like a password.
+  with its own filters and day range. It carries the API key, so treat it like a password. Only admins see it.
 
 **Minimum availability:** each movie has a *minimum availability* (*announced*, *in cinemas* or *released*; new movies
 default to *released*). Automatic searches, search on add and RSS grabs wait until the movie reaches it, judged by the
@@ -202,6 +213,21 @@ Each client keeps its own list of torrents, so switching back and forth never mi
 
 Any setting can also be placed in `/config/config.json` (environment variables win).
 
+### Users and roles
+
+The account created during setup is an **admin** (on upgrade, existing accounts become admins too). Admins add people
+in *Settings → Users* and give each a role:
+
+| Role | Can |
+| --- | --- |
+| **Admin** | Everything: settings, indexers, download client, API key and users |
+| **Manager** | Add, search, grab and delete movies and series; manage downloads, subtitles and library imports |
+| **User** | Browse Discover, the library and the calendar, read-only |
+
+Everyone changes their own username and password under *Account* (the current password is required). Changing a role
+takes effect immediately; resetting or changing a password, or deleting an account, signs that user out everywhere.
+There is always at least one admin, and admins can't delete themselves. The API key acts as an admin.
+
 ### Security notes
 
 - **Root folders are the boundary.** Movie and series folders must be directly inside a configured root folder, and
@@ -237,7 +263,7 @@ tests/                   xUnit v3 unit + HTTP integration tests
 ```
 
 **Movie pipeline:** *add (TMDB)* → *search all indexers (Torznab, by IMDb id when supported)* → *decision engine*
-(title/year/id match, quality profile, size limits, seeders, upgrade/cutoff) → *grab* (.torrent or magnet into the
+(title/year/id match, wanted languages, quality profile, size limits, seeders, upgrade/cutoff) → *grab* (.torrent or magnet into the
 embedded engine) → *download completes* → *import* (pick main video, rename by template, hardlink into the library)
 → *seed until the ratio/time limit*, then remove the torrent from the client (or stop it).
 
@@ -310,4 +336,4 @@ API documentation (OpenAPI) is served at `/api/openapi/v1.json`.
 - **Subtitles (Bazarr):** more providers (Podnapisi, Addic7ed, …), embedded subtitle detection, per-series language profiles, sync/encoding fixes
 - **Indexers (Prowlarr):** native tracker definitions (Cardigann-style), per-indexer stats, Torznab proxy for other apps
 - **Downloads:** per-torrent limits, file selection, Usenet (NZB) support
-- Lists (Trakt/IMDb), notifications, multi-user, optional renaming of imported libraries
+- Lists (Trakt/IMDb), notifications, requests (Seerr-style), optional renaming of imported libraries

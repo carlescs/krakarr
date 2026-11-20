@@ -17,23 +17,15 @@ public sealed class MovieRssSyncTask(
     ISettingsService settings,
     ILogger<MovieRssSyncTask> logger) : IScheduledTask
 {
-    private static DateTimeOffset _lastRun = DateTimeOffset.MinValue;
-
     public string Name => "RSS sync (movies)";
-    public TimeSpan Interval => TimeSpan.FromMinutes(1);
+    public TimeSpan Interval => TimeSpan.FromMinutes(new AutomationSettings().RssSyncIntervalMinutes);
     public TimeSpan InitialDelay => TimeSpan.FromMinutes(2);
+
+    public async ValueTask<TimeSpan?> GetIntervalAsync(CancellationToken cancellationToken) =>
+        (await settings.GetAsync<AutomationSettings>(cancellationToken)).RssSyncInterval;
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var automation = await settings.GetAsync<AutomationSettings>(cancellationToken);
-        if (automation.RssSyncIntervalMinutes <= 0
-            || DateTimeOffset.UtcNow - _lastRun < TimeSpan.FromMinutes(automation.RssSyncIntervalMinutes))
-        {
-            return;
-        }
-
-        _lastRun = DateTimeOffset.UtcNow;
-
         var wanted = await db.Movies.Include(m => m.QualityProfile).Include(m => m.MovieFile)
             .Where(m => m.Monitored)
             .ToListAsync(cancellationToken);
@@ -44,6 +36,7 @@ public sealed class MovieRssSyncTask(
 
         var feed = await indexerSearch.SearchAsync(new SearchCriteria { Type = SearchType.Movie, Rss = true }, ct: cancellationToken);
         logger.LogInformation("RSS sync: {Count} release(s) from indexers", feed.Releases.Count);
+        var languageSettings = await settings.GetAsync<LanguageSettings>(cancellationToken);
 
         foreach (var movie in wanted)
         {
@@ -54,7 +47,7 @@ public sealed class MovieRssSyncTask(
             }
 
             var existing = movie.MovieFile is null ? null : Qualities.FindById(movie.MovieFile.QualityId);
-            var best = MovieDecisionEngine.Evaluate(movie, movie.QualityProfile, existing, feed.Releases).FirstOrDefault(d => d.Approved);
+            var best = MovieDecisionEngine.Evaluate(movie, movie.QualityProfile, existing, feed.Releases, languageSettings.For(movie.Languages)).FirstOrDefault(d => d.Approved);
             if (best is not null)
             {
                 await movies.GrabAsync(movie, best.Release, cancellationToken);

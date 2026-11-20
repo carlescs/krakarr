@@ -32,6 +32,14 @@ public static class SystemEndpoints
 
         group.MapGet("/commands", (ICommandQueue commands) => commands.Recent);
 
+        group.MapGet("/tasks", (IScheduledTaskManager tasks) => tasks.GetTasks());
+        group.MapPost("/tasks/{id}/run", (string id, IScheduledTaskManager tasks) => tasks.Trigger(id) switch
+        {
+            TaskTriggerResult.Started => Results.Accepted(),
+            TaskTriggerResult.AlreadyRunning => Results.Conflict(new { Message = "The task is already running" }),
+            _ => Results.NotFound(),
+        });
+
         return app;
     }
 }

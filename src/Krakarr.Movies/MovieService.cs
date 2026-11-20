@@ -18,7 +18,8 @@ public sealed record AddMovieRequest(
     bool Monitored = true,
     bool SearchForMovie = true,
     string? ExistingPath = null,
-    MinimumAvailability MinimumAvailability = MinimumAvailability.Released);
+    MinimumAvailability MinimumAvailability = MinimumAvailability.Released,
+    IReadOnlyList<string>? Languages = null);
 
 public sealed class MovieService(
     KrakarrDbContext db,
@@ -59,6 +60,7 @@ public sealed class MovieService(
             Monitored = request.Monitored,
             MinimumAvailability = request.MinimumAvailability,
             QualityProfileId = request.QualityProfileId,
+            Languages = request.Languages is null ? null : MediaLanguages.Clean(request.Languages),
             Path = string.Empty,
         };
         MovieReleases.Apply(movie, lookup.ReleaseDates, MapStatus(lookup.Status), Today);
@@ -141,7 +143,8 @@ public sealed class MovieService(
         movie.LastSearched = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
 
-        return (MovieDecisionEngine.Evaluate(movie, profile, existing, result.Releases), result.Errors);
+        var languages = (await settings.GetAsync<LanguageSettings>(ct)).For(movie.Languages);
+        return (MovieDecisionEngine.Evaluate(movie, profile, existing, result.Releases, languages), result.Errors);
     }
 
     /// <summary>Searches and grabs the best approved release. Returns a human readable outcome.</summary>

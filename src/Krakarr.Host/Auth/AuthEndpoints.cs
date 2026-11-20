@@ -1,4 +1,3 @@
-using System.Security.Claims;
 using Krakarr.Core.Domain;
 using Krakarr.Data;
 using Microsoft.AspNetCore.Authentication;
@@ -8,6 +7,9 @@ using Microsoft.EntityFrameworkCore;
 namespace Krakarr.Host.Auth;
 
 public sealed record CredentialsRequest(string Username, string Password);
+
+/// <summary>Changes the signed-in user's own username and, when <paramref name="NewPassword"/> is set, password.</summary>
+public sealed record ChangeCredentialsRequest(string Username, string CurrentPassword, string? NewPassword);
 
 /// <param name="SetupToken">One-time token from the startup log or the config folder's <c>setup-token</c> file.</param>
 public sealed record SetupRequest(string Username, string Password, string? SetupToken);
@@ -29,6 +31,7 @@ public static class AuthEndpoints
             SetupRequired = !await db.Users.AnyAsync(ct),
             Authenticated = http.User.Identity?.IsAuthenticated == true,
             Username = http.User.Identity?.Name,
+            Role = http.User.Identity?.IsAuthenticated == true ? http.User.GetRole() : (UserRole?)null,
         });
 
         group.MapPost("/setup", async (SetupRequest req, HttpContext http, KrakarrDbContext db, IPasswordHasher<User> hasher,
@@ -53,7 +56,7 @@ public static class AuthEndpoints
 
                 if (Validate(new CredentialsRequest(req.Username, req.Password)) is { } problem) return problem;
 
-                var user = new User { Username = req.Username.Trim(), PasswordHash = string.Empty };
+                var user = new User { Username = req.Username.Trim(), PasswordHash = string.Empty, Role = UserRole.Admin };
                 user.PasswordHash = hasher.HashPassword(user, req.Password);
                 db.Users.Add(user);
                 await db.SaveChangesAsync(ct);
@@ -118,14 +121,31 @@ public static class AuthEndpoints
             return Results.NoContent();
         });
 
-        app.MapPost("/api/v1/auth/password", async (CredentialsRequest req, HttpContext http, KrakarrDbContext db, IPasswordHasher<User> hasher, CancellationToken ct) =>
+        app.MapPost("/api/v1/auth/password", async (ChangeCredentialsRequest req, HttpContext http, KrakarrDbContext db,
+            IPasswordHasher<User> hasher, UserSessions sessions, CancellationToken ct) =>
         {
-            if (Validate(req) is { } problem) return problem;
-            var user = await db.Users.FirstOrDefaultAsync(u => u.Username == http.User.Identity!.Name, ct);
+            var id = http.User.GetUserId();
+            var user = id is null ? null : await db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
             if (user is null) return Results.NotFound();
-            user.Username = req.Username.Trim();
-            user.PasswordHash = hasher.HashPassword(user, req.Password);
+
+            if (hasher.VerifyHashedPassword(user, user.PasswordHash, req.CurrentPassword ?? string.Empty) == PasswordVerificationResult.Failed)
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["currentPassword"] = ["Current password is incorrect"] });
+            }
+
+            if ((ValidateUsername(req.Username) ?? ValidatePassword(req.NewPassword, optional: true)) is { } problem) return problem;
+            var username = req.Username.Trim();
+            if (await UsernameTakenAsync(db, username, user.Id, ct)) return UsernameTaken();
+
+            user.Username = username;
+            if (!string.IsNullOrEmpty(req.NewPassword))
+            {
+                user.PasswordHash = hasher.HashPassword(user, req.NewPassword);
+                user.SecurityStamp = User.NewSecurityStamp(); // signs out every other session
+            }
+
             await db.SaveChangesAsync(ct);
+            sessions.Invalidate(user.Id);
             await SignInAsync(http, user);
             return Results.NoContent();
         }).WithTags("Auth").RequireRateLimiting(RateLimitPolicy);
@@ -133,19 +153,31 @@ public static class AuthEndpoints
         return app;
     }
 
-    private static IResult? Validate(CredentialsRequest req)
+    public const int MinPasswordLength = 8;
+
+    private static IResult? Validate(CredentialsRequest req) => ValidateUsername(req.Username) ?? ValidatePassword(req.Password);
+
+    internal static IResult? ValidateUsername(string? username) =>
+        string.IsNullOrWhiteSpace(username) ? Results.ValidationProblem(new Dictionary<string, string[]> { ["username"] = ["Username is required"] })
+        : username.Trim().Length > 100 ? Results.ValidationProblem(new Dictionary<string, string[]> { ["username"] = ["Username must be at most 100 characters"] })
+        : null;
+
+    internal static IResult? ValidatePassword(string? password, bool optional = false) =>
+        (optional && string.IsNullOrEmpty(password)) || password?.Length >= MinPasswordLength
+            ? null
+            : Results.ValidationProblem(new Dictionary<string, string[]> { ["password"] = [$"Password must be at least {MinPasswordLength} characters"] });
+
+    /// <summary>Usernames are unique ignoring case, so "Admin" and "admin" can't both exist.</summary>
+    internal static Task<bool> UsernameTakenAsync(KrakarrDbContext db, string username, int? exceptId, CancellationToken ct)
     {
-        var errors = new Dictionary<string, string[]>();
-        if (string.IsNullOrWhiteSpace(req.Username)) errors["username"] = ["Username is required"];
-        if (string.IsNullOrEmpty(req.Password) || req.Password.Length < 8) errors["password"] = ["Password must be at least 8 characters"];
-        return errors.Count > 0 ? Results.ValidationProblem(errors) : null;
+        var lower = username.ToLowerInvariant();
+        return db.Users.AnyAsync(u => u.Username.ToLower() == lower && u.Id != exceptId, ct);
     }
 
-    private static Task SignInAsync(HttpContext http, User user)
-    {
-        var identity = new ClaimsIdentity(
-            [new Claim(ClaimTypes.Name, user.Username), new Claim(ClaimTypes.NameIdentifier, user.Id.ToString(System.Globalization.CultureInfo.InvariantCulture))],
-            AuthConstants.CookieScheme);
-        return http.SignInAsync(AuthConstants.CookieScheme, new ClaimsPrincipal(identity), new AuthenticationProperties { IsPersistent = true });
-    }
+    internal static IResult UsernameTaken() =>
+        Results.ValidationProblem(new Dictionary<string, string[]> { ["username"] = ["That username is already taken"] });
+
+    private static Task SignInAsync(HttpContext http, User user) =>
+        http.SignInAsync(AuthConstants.CookieScheme, UserClaims.Create(user.Id, user.Username, user.Role, user.SecurityStamp),
+            new AuthenticationProperties { IsPersistent = true });
 }

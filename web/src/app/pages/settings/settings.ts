@@ -1,13 +1,20 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../../core/api';
 import { BytesPipe } from '../../core/format';
+import { Events } from '../../core/events';
 import {
   AutomationSettings, DirectoryListing, Language, SubtitleSettings, DownloadClientKind, DownloadClientSettings, DownloadClientTestResult, GeneralSettings, MediaManagementSettings, MetadataSettings, Quality,
-  QualityProfile, RootFolder, SystemStatus,
+  QualityProfile, RootFolder, ScheduledTaskInfo, SystemStatus,
 } from '../../core/models';
 import { Toasts } from '../../core/toast';
 import { Modal } from '../../shared/modal';
+import { LanguagePicker } from '../../shared/language-picker';
+import { Languages } from '../../core/languages';
+import { Auth } from '../../core/auth';
+import { AccountSettings } from './account';
+import { UsersSettings } from './users';
 
 interface TokenDoc { token: string; description: string; example: string; }
 
@@ -57,15 +64,15 @@ export function buildName(format: string, values: Record<string, string>): strin
   return result.trim().replace(/\.+$/, '').replace(/\s{2,}/g, ' ').trim();
 }
 
-type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'general';
+type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'tasks' | 'users' | 'general' | 'account';
 
 @Component({
   selector: 'kr-settings',
-  imports: [FormsModule, Modal, BytesPipe],
+  imports: [LanguagePicker, FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings],
   template: `
-    <h1 class="page-title mb-4 sm:mb-6">Settings</h1>
-    <div class="-mx-4 mb-6 flex gap-1 overflow-x-auto border-b border-surface-700 px-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
-      @for (t of tabs; track t.id) {
+    <h1 class="page-title mb-4 sm:mb-6">{{ auth.isAdmin() ? 'Settings' : 'Account' }}</h1>
+    <div class="-mx-4 mb-6 flex gap-1 overflow-x-auto border-b border-surface-700 px-4 [scrollbar-width:none] sm:mx-0 sm:px-0" [class.hidden]="tabs().length < 2">
+      @for (t of tabs(); track t.id) {
         <button class="-mb-px whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition"
                 [class]="tab() === t.id ? 'border-accent-400 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'"
                 (click)="tab.set(t.id)">{{ t.label }}</button>
@@ -172,6 +179,16 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
 
     <!-- Quality profiles -->
     @if (tab() === 'profiles') {
+      <section class="card mb-6 space-y-3 p-4 sm:p-5">
+        <h2 class="font-semibold text-white">Release languages</h2>
+        <kr-language-picker [languages]="languageCatalog.all()" [(value)]="wantedLanguages" />
+        <p class="hint">
+          Audio languages to download, most preferred first. Releases in none of them are rejected, and a preferred language wins over
+          better quality. Leave empty to accept any language. Movies and series use this unless you set their own languages when editing them.
+          Releases without a language tag count as English, or as the indexer's default language.
+        </p>
+        <div class="flex justify-end"><button class="btn-primary btn-sm" (click)="saveLanguages()">Save</button></div>
+      </section>
       <div class="mb-4 flex justify-end"><button class="btn-secondary btn-sm" (click)="editProfile(null)">+ Add profile</button></div>
       <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         @for (p of profiles(); track p.id) {
@@ -390,6 +407,48 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
       }
     }
 
+    @if (tab() === 'account') { <kr-account-settings /> }
+    @if (tab() === 'users') { <kr-users-settings /> }
+
+    <!-- Tasks -->
+    @if (tab() === 'tasks') {
+      <section class="card p-4 sm:p-5">
+        <h2 class="font-semibold text-white">Scheduled tasks</h2>
+        <p class="hint mb-3">Tasks run on their own schedule. <span class="font-medium text-slate-300">Run now</span> starts one immediately and counts its next run from now.</p>
+        <div class="overflow-x-auto">
+          <table class="table">
+            <thead><tr><th>Task</th><th class="max-sm:hidden">Interval</th><th>Last run</th><th class="max-md:hidden">Duration</th><th class="max-sm:hidden">Next run</th><th></th></tr></thead>
+            <tbody>
+              @for (t of tasks(); track t.id) {
+                <tr>
+                  <td class="text-slate-200">{{ t.name }}</td>
+                  <td class="whitespace-nowrap text-slate-400 max-sm:hidden">{{ t.intervalSeconds ? 'Every ' + duration(t.intervalSeconds) : 'Disabled' }}</td>
+                  <td class="whitespace-nowrap">
+                    @if (t.isRunning) {
+                      <span class="text-accent-300">Running…</span>
+                    } @else if (t.lastRun) {
+                      <span [class]="t.lastSucceeded === false ? 'text-red-400' : 'text-slate-300'" [title]="t.lastError ?? ''">
+                        {{ ago(t.lastRun) }}{{ t.lastSucceeded === false ? ' (failed)' : '' }}
+                      </span>
+                    } @else {
+                      <span class="text-slate-500">Never</span>
+                    }
+                  </td>
+                  <td class="whitespace-nowrap text-slate-400 max-md:hidden">{{ t.lastDurationSeconds == null ? '—' : duration(t.lastDurationSeconds, true) }}</td>
+                  <td class="whitespace-nowrap text-slate-400 max-sm:hidden">{{ t.isRunning ? '—' : t.nextRun ? when(t.nextRun) : '—' }}</td>
+                  <td class="text-right">
+                    <button class="btn-secondary whitespace-nowrap px-3 py-1 text-xs" [disabled]="t.isRunning || starting().has(t.id)" (click)="runTask(t)">Run now</button>
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="6" class="text-slate-500">No scheduled tasks.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
+    }
+
     <!-- General -->
     @if (tab() === 'general') {
       <div class="space-y-6">
@@ -405,11 +464,6 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
               </div>
               <p class="hint">Send as <code>X-Api-Key</code> header for automation.</p>
             </div>
-            <div class="grid gap-4 sm:grid-cols-2">
-              <div><label class="label">Username</label><input class="input" [(ngModel)]="newUsername" autocomplete="username" /></div>
-              <div><label class="label">New password</label><input class="input" type="password" [(ngModel)]="newPassword" autocomplete="new-password" /></div>
-            </div>
-            <div class="flex justify-end"><button class="btn-secondary" (click)="changeCredentials()" [disabled]="!newPassword">Update credentials</button></div>
           </section>
         }
         @if (status(); as s) {
@@ -489,16 +543,24 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
 export class SettingsPage implements OnInit {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
+  private readonly events = inject(Events);
+  private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly tabs: { id: Tab; label: string }[] = [
+  protected readonly auth = inject(Auth);
+  private readonly adminTabs: { id: Tab; label: string }[] = [
     { id: 'media', label: 'Media management' },
     { id: 'profiles', label: 'Quality profiles' },
     { id: 'downloads', label: 'Download client' },
     { id: 'subtitles', label: 'Subtitles' },
     { id: 'metadata', label: 'Metadata' },
+    { id: 'tasks', label: 'Tasks' },
+    { id: 'users', label: 'Users' },
     { id: 'general', label: 'General' },
+    { id: 'account', label: 'Account' },
   ];
-  protected readonly tab = signal<Tab>('media');
+  /** Everyone manages their own account here; the rest of the settings are for admins. */
+  protected readonly tabs = computed(() => this.auth.isAdmin() ? this.adminTabs : this.adminTabs.filter(t => t.id === 'account'));
+  protected readonly tab = signal<Tab>(this.auth.isAdmin() ? 'media' : 'account');
 
   protected readonly rootFolders = signal<RootFolder[]>([]);
   protected readonly profiles = signal<QualityProfile[]>([]);
@@ -518,6 +580,8 @@ export class SettingsPage implements OnInit {
   protected readonly clientTest = signal<DownloadClientTestResult | null>(null);
   protected readonly subtitles = signal<SubtitleSettings | null>(null);
   protected readonly languages = signal<Language[]>([]);
+  protected readonly languageCatalog = inject(Languages);
+  protected wantedLanguages: string[] = [];
   protected readonly subtitleTest = signal<{ success: boolean; message: string } | null>(null);
   protected readonly testingSubtitles = signal(false);
   protected readonly testingClient = signal(false);
@@ -530,10 +594,19 @@ export class SettingsPage implements OnInit {
   protected example(format: string, values: Record<string, string>) { return buildName(format ?? '', values); }
   protected browsePath = '/';
   protected rootMediaType: 'Movie' | 'Series' = 'Movie';
-  protected newUsername = '';
-  protected newPassword = '';
+  protected readonly tasks = signal<ScheduledTaskInfo[]>([]);
+  /** Tasks whose "Run now" request is in flight, so the button can't be clicked twice. */
+  protected readonly starting = signal(new Set<string>());
+  /** Ticks so relative times ("in 4m") stay current. */
+  private readonly now = signal(Date.now());
 
   async ngOnInit() {
+    if (!this.auth.isAdmin()) return;
+    this.events.taskUpdated.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(t => this.tasks.update(list => list.map(x => (x.id === t.id ? t : x))));
+    const tick = setInterval(() => this.now.set(Date.now()), 15_000);
+    this.destroyRef.onDestroy(() => clearInterval(tick));
+    this.api.tasks().then(t => this.tasks.set(t), () => {});
     const [roots, profiles, qualities, media, downloads, automation, metadata, general, status] = await Promise.all([
       this.api.rootFolders(), this.api.qualityProfiles(), this.api.qualities(), this.api.settings('media'),
       this.api.settings('downloads'), this.api.settings('automation'), this.api.settings('metadata'),
@@ -548,9 +621,49 @@ export class SettingsPage implements OnInit {
     this.metadata.set(metadata);
     this.general.set(general);
     this.status.set(status);
+    this.api.settings('languages').then(l => this.wantedLanguages = l.preferred, () => {});
+    this.languageCatalog.load().catch(() => {});
     const [subs, langs] = await Promise.all([this.api.settings('subtitles'), this.api.subtitleLanguages()]);
     this.subtitles.set(subs);
     this.languages.set(langs);
+  }
+
+  /** Compact duration without zero parts: "30m", "1d", "1h 30m", "4.2s". */
+  protected duration(seconds: number, precise = false) {
+    if (precise && seconds < 10) return seconds < 0.1 ? '< 0.1s' : `${seconds.toFixed(1)}s`;
+    const s = Math.round(seconds);
+    const parts = [[Math.floor(s / 86400), 'd'], [Math.floor((s % 86400) / 3600), 'h'], [Math.floor((s % 3600) / 60), 'm'], [s % 60, 's']] as const;
+    const first = parts.findIndex(([n]) => n > 0);
+    if (first < 0) return '0s';
+    return parts.slice(first, first + 2).filter(([n]) => n > 0).map(([n, u]) => `${n}${u}`).join(' ');
+  }
+
+  /** "3m ago" / "in 4m", re-rendered while the page is open. */
+  protected when(iso: string) {
+    this.now(); // re-evaluate on each tick
+    const seconds = (new Date(iso).getTime() - Date.now()) / 1000;
+    if (Math.abs(seconds) < 30) return seconds > 0 ? 'soon' : 'just now';
+    return seconds > 0 ? `in ${this.duration(seconds)}` : `${this.duration(-seconds)} ago`;
+  }
+
+  /** Like {@link when} for past times; clock skew between browser and server never makes them "soon". */
+  protected ago(iso: string) {
+    this.now();
+    const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+    return seconds < 30 ? 'just now' : `${this.duration(seconds)} ago`;
+  }
+
+  async runTask(task: ScheduledTaskInfo) {
+    this.starting.update(s => new Set(s).add(task.id));
+    try {
+      await this.api.runTask(task.id);
+      this.toasts.success(`${task.name} started`);
+      this.tasks.set(await this.api.tasks());
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+    } finally {
+      this.starting.update(s => { const next = new Set(s); next.delete(task.id); return next; });
+    }
   }
 
   /** "es-ES" → "ES", used as the release region placeholder. */
@@ -579,6 +692,16 @@ export class SettingsPage implements OnInit {
   async save<K extends 'media' | 'downloads' | 'automation' | 'metadata' | 'subtitles'>(section: K, value: Parameters<Api['saveSettings']>[1] & object) {
     try {
       await this.api.saveSettings(section, value as never);
+      this.toasts.success('Settings saved');
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+    }
+  }
+
+  async saveLanguages() {
+    try {
+      this.wantedLanguages = (await this.api.saveSettings('languages', { preferred: this.wantedLanguages })).preferred;
+      await this.languageCatalog.load(true);
       this.toasts.success('Settings saved');
     } catch (e) {
       this.toasts.error(errorMessage(e));
@@ -665,15 +788,5 @@ export class SettingsPage implements OnInit {
 
   copy(text: string) {
     navigator.clipboard?.writeText(text).then(() => this.toasts.success('Copied'));
-  }
-
-  async changeCredentials() {
-    try {
-      await this.api.changeCredentials(this.newUsername, this.newPassword);
-      this.newPassword = '';
-      this.toasts.success('Credentials updated');
-    } catch (e) {
-      this.toasts.error(errorMessage(e));
-    }
   }
 }

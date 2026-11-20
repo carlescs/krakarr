@@ -6,12 +6,35 @@ public enum MediaType
     Series = 2,
 }
 
+/// <summary>Fixed user roles, from most to least privileged.</summary>
+public enum UserRole
+{
+    /// <summary>Everything, including settings, indexers, download client and user management.</summary>
+    Admin = 1,
+
+    /// <summary>Manages the library and downloads (add, search, grab, delete), but not settings or users.</summary>
+    Manager = 2,
+
+    /// <summary>Browses Discover and the library read-only.</summary>
+    User = 3,
+}
+
 public class User
 {
     public int Id { get; set; }
     public required string Username { get; set; }
     public required string PasswordHash { get; set; }
+    public UserRole Role { get; set; } = UserRole.User;
+
+    /// <summary>
+    /// Changes whenever the credentials change (password reset); sign-in cookies carrying an older stamp are rejected,
+    /// which signs the user out everywhere.
+    /// </summary>
+    public string SecurityStamp { get; set; } = NewSecurityStamp();
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public static string NewSecurityStamp() => Guid.NewGuid().ToString("N");
 }
 
 /// <summary>Key/value settings store; values are JSON documents per section.</summary>
@@ -64,6 +87,11 @@ public class Indexer
     public bool EnableRss { get; set; } = true;
     public int Priority { get; set; } = 25;
     public int MinimumSeeders { get; set; } = 1;
+    /// <summary>
+    /// Audio language assumed for releases from this indexer whose names carry no language tag
+    /// (<see cref="MediaLanguages"/> code). Null = English, the scene convention.
+    /// </summary>
+    public string? DefaultLanguage { get; set; }
     public DateTimeOffset Added { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -100,6 +128,8 @@ public class Movie
     public MinimumAvailability MinimumAvailability { get; set; } = MinimumAvailability.Released;
     public bool Monitored { get; set; } = true;
     public int QualityProfileId { get; set; }
+    /// <summary>Wanted audio languages for this item, most preferred first; null = the global default (<c>LanguageSettings</c>).</summary>
+    public List<string>? Languages { get; set; }
     public QualityProfile? QualityProfile { get; set; }
     /// <summary>Absolute path of the movie's folder.</summary>
     public required string Path { get; set; }
@@ -178,6 +208,8 @@ public class Series
     /// <summary>Put episodes in "Season NN" sub-folders.</summary>
     public bool SeasonFolder { get; set; } = true;
     public int QualityProfileId { get; set; }
+    /// <summary>Wanted audio languages for this item, most preferred first; null = the global default (<c>LanguageSettings</c>).</summary>
+    public List<string>? Languages { get; set; }
     public QualityProfile? QualityProfile { get; set; }
     /// <summary>Absolute path of the series folder.</summary>
     public required string Path { get; set; }
