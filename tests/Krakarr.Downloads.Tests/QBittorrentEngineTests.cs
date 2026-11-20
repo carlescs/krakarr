@@ -146,6 +146,85 @@ public sealed class QBittorrentEngineTests : IAsyncLifetime
         Assert.Equal(QBittorrentEngine.RemovedMessage, movieRow.ImportMessage);
     }
 
+    private async Task AddRowAsync(string hash, int? movieId, bool imported)
+    {
+        await WithDb(async db =>
+        {
+            db.Downloads.Add(new Download
+            {
+                Client = DownloadClients.QBittorrent, InfoHash = hash, Name = hash[..4], SavePath = "/x", MovieId = movieId, Imported = imported,
+                Added = DateTimeOffset.UtcNow.AddDays(-1),
+            });
+            return await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        });
+    }
+
+    [Fact]
+    public async Task Removes_imported_torrents_with_their_data_once_the_seed_ratio_is_reached()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        const string pending = "2222222222222222222222222222222222222222";
+        const string below = "3333333333333333333333333333333333333333";
+        await AddRowAsync(Hash, movieId: 1, imported: true);
+        await AddRowAsync(pending, movieId: 2, imported: false);
+        await AddRowAsync(below, movieId: 3, imported: true);
+        _fake.Torrents.Add(new(Hash, "Done", "krakarr", Progress: 1, State: "uploading", Ratio: 1.5));
+        _fake.Torrents.Add(new(pending, "Not imported", "krakarr", Progress: 1, State: "uploading", Ratio: 3));
+        _fake.Torrents.Add(new(below, "Below ratio", "krakarr", Progress: 1, State: "uploading", Ratio: 0.4));
+
+        await _engine.SyncAsync(_settings with { SeedRatioLimit = 1.5 }, ct);
+
+        var delete = Assert.Single(_fake.Requests, r => r.Path == "/api/v2/torrents/delete");
+        Assert.Contains("hashes=" + Hash, delete.Body);
+        Assert.Contains("deleteFiles=true", delete.Body);
+        var left = await WithDb(db => db.Downloads.Select(d => d.InfoHash).ToListAsync(ct));
+        Assert.Equal([pending, below], left.Order());
+        Assert.Equal(2, _engine.GetStatuses().Count);
+
+        await _engine.SyncAsync(_settings with { SeedRatioLimit = 1.5 }, ct); // stays removed, no double delete
+        Assert.Single(_fake.Requests, r => r.Path == "/api/v2/torrents/delete");
+    }
+
+    [Fact]
+    public async Task Removes_manual_torrents_but_keeps_their_files()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        _fake.Torrents.Add(new(Hash, "Manual", "krakarr", Progress: 1, State: "uploading", Ratio: 2));
+
+        await _engine.SyncAsync(_settings, ct);
+
+        var delete = Assert.Single(_fake.Requests, r => r.Path == "/api/v2/torrents/delete");
+        Assert.Contains("deleteFiles=false", delete.Body);
+        Assert.Equal(0, await WithDb(db => db.Downloads.CountAsync(ct)));
+    }
+
+    [Fact]
+    public async Task Stop_action_pauses_instead_of_removing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await AddRowAsync(Hash, movieId: 1, imported: true);
+        _fake.Torrents.Add(new(Hash, "Done", "krakarr", Progress: 1, State: "uploading", Ratio: 2));
+
+        await _engine.SyncAsync(_settings with { SeedLimitAction = SeedLimitAction.Stop }, ct);
+
+        Assert.DoesNotContain(_fake.Requests, r => r.Path == "/api/v2/torrents/delete");
+        Assert.Contains(_fake.Requests, r => r.Path is "/api/v2/torrents/pause" or "/api/v2/torrents/stop");
+        Assert.Equal(DownloadState.Paused, (await WithDb(db => db.Downloads.SingleAsync(ct))).State);
+    }
+
+    [Fact]
+    public async Task No_limits_leave_seeding_to_qbittorrent()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await AddRowAsync(Hash, movieId: 1, imported: true);
+        _fake.Torrents.Add(new(Hash, "Done", "krakarr", Progress: 1, State: "uploading", Ratio: 50));
+
+        await _engine.SyncAsync(_settings with { SeedRatioLimit = 0, SeedTimeLimitMinutes = 0 }, ct);
+
+        Assert.DoesNotContain(_fake.Requests, r => r.Path is "/api/v2/torrents/delete" or "/api/v2/torrents/pause" or "/api/v2/torrents/stop");
+        Assert.Single(_engine.GetStatuses());
+    }
+
     [Fact]
     public async Task Ignores_rows_owned_by_the_builtin_engine()
     {

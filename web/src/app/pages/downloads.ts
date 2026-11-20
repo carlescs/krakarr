@@ -11,6 +11,13 @@ import { Progress } from '../shared/progress';
 import { StateBadge } from '../shared/state-badge';
 import { TorrentDetailsDialog } from '../shared/torrent-details';
 
+const SHOW_SEEDING_KEY = 'krakarr.downloads.showSeeding';
+
+/** Seeding torrents are hidden unless the user chose to show them. */
+function readShowSeeding(): boolean {
+  try { return localStorage.getItem(SHOW_SEEDING_KEY) === 'true'; } catch { return false; }
+}
+
 @Component({
   selector: 'kr-downloads',
   imports: [FormsModule, RouterLink, Modal, Progress, StateBadge, TorrentDetailsDialog, BytesPipe, SpeedPipe, DurationPipe],
@@ -21,6 +28,12 @@ import { TorrentDetailsDialog } from '../shared/torrent-details';
         <span class="badge bg-surface-700 text-slate-300">{{ c.kind === 'QBittorrent' ? 'qBittorrent · tag ' + c.tag : 'Built-in client' }}</span>
       }
       <span class="mr-auto"></span>
+      @if (seedingCount() > 0) {
+        <label class="flex items-center gap-2 text-sm text-slate-300">
+          <input type="checkbox" class="accent-accent-500" [checked]="showSeeding()" (change)="toggleSeeding($any($event.target).checked)" />
+          Show seeding ({{ seedingCount() }})
+        </label>
+      }
       <span class="text-sm text-slate-400 max-sm:hidden">↓ {{ totalDown() | speed }} · ↑ {{ totalUp() | speed }}</span>
       <button class="btn-primary" (click)="addOpen.set(true)">+ Add torrent</button>
     </div>
@@ -31,11 +44,14 @@ import { TorrentDetailsDialog } from '../shared/torrent-details';
       </div>
     }
 
-    @if (list().length === 0) {
-      <div class="card px-6 py-12 text-center text-sm text-slate-400">No torrents. Grab a release or add a magnet link.</div>
+    @if (visible().length === 0) {
+      <div class="card px-6 py-12 text-center text-sm text-slate-400">
+        @if (list().length === 0) { No torrents. Grab a release or add a magnet link. }
+        @else { Nothing downloading. {{ seedingCount() }} seeding torrent(s) hidden — <button class="underline hover:text-slate-200" (click)="toggleSeeding(true)">show them</button>. }
+      </div>
     } @else {
       <div class="space-y-2">
-        @for (d of list(); track d.infoHash) {
+        @for (d of visible(); track d.infoHash) {
           <div class="card p-3 sm:p-4">
             <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5 sm:gap-x-3">
               <kr-state-badge [state]="d.state" />
@@ -121,6 +137,9 @@ export class DownloadsPage implements OnInit, OnDestroy {
   private readonly events = inject(Events);
 
   protected readonly list = computed(() => this.events.downloads());
+  protected readonly showSeeding = signal(readShowSeeding());
+  protected readonly seedingCount = computed(() => this.list().filter(d => d.state === 'Seeding').length);
+  protected readonly visible = computed(() => this.showSeeding() ? this.list() : this.list().filter(d => d.state !== 'Seeding'));
   protected readonly totalDown = computed(() => this.list().reduce((s, d) => s + d.downloadRate, 0));
   protected readonly totalUp = computed(() => this.list().reduce((s, d) => s + d.uploadRate, 0));
   protected readonly addOpen = signal(false);
@@ -159,6 +178,11 @@ export class DownloadsPage implements OnInit, OnDestroy {
     } finally {
       this.busy.set(false);
     }
+  }
+
+  protected toggleSeeding(show: boolean) {
+    this.showSeeding.set(show);
+    try { localStorage.setItem(SHOW_SEEDING_KEY, String(show)); } catch { /* storage unavailable */ }
   }
 
   async pause(d: TorrentStatus) { await this.api.pauseDownload(d.infoHash).catch(e => this.toasts.error(errorMessage(e))); }

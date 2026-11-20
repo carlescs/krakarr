@@ -466,6 +466,7 @@ public sealed class EmbeddedTorrentEngine(
         var rows = await db.Downloads.Where(d => d.Client == DownloadClients.Embedded)
             .ToDictionaryAsync(d => d.InfoHash, StringComparer.OrdinalIgnoreCase, ct);
         var completedNow = new List<Download>();
+        var toRemove = new List<(string InfoHash, string Name, bool DeleteData)>();
 
         foreach (var status in statuses)
         {
@@ -487,13 +488,19 @@ public sealed class EmbeddedTorrentEngine(
 
             row.State = status.State;
 
-            // Seeding policy: stop once ratio/time limits are reached and the media (if any) is imported.
-            if (manager is not null && status.State == DownloadState.Seeding && row.CompletedAt is not null
-                && (row.MovieId is null && row.SeriesId is null || row.Imported)
-                && SeedingLimitReached(status, row))
+            // Seeding policy: once the ratio/time limit is reached and the media (if any) is imported,
+            // remove the torrent or stop it, depending on the settings.
+            var seedingDone = manager is not null && !row.Paused
+                && status.State is DownloadState.Seeding or DownloadState.Completed
+                && SeedingPolicy.IsDone(_settings, row, status.Ratio, DateTimeOffset.UtcNow);
+            if (seedingDone && _settings.SeedLimitAction == SeedLimitAction.Remove)
+            {
+                toRemove.Add((row.InfoHash, row.Name, SeedingPolicy.DeleteDataOnRemove(row)));
+            }
+            else if (seedingDone && status.State == DownloadState.Seeding)
             {
                 logger.LogInformation("Seeding limit reached for {Name}, stopping", row.Name);
-                await manager.StopAsync();
+                await manager!.StopAsync();
                 row.State = DownloadState.Completed;
             }
 
@@ -511,18 +518,12 @@ public sealed class EmbeddedTorrentEngine(
         }
 
         await db.SaveChangesAsync(ct);
-    }
 
-    private bool SeedingLimitReached(TorrentStatus status, Download row)
-    {
-        if (_settings.SeedRatioLimit > 0 && status.Ratio >= _settings.SeedRatioLimit)
+        foreach (var (infoHash, name, deleteData) in toRemove)
         {
-            return true;
+            logger.LogInformation("Seeding limit reached for {Name}, removing it{Data}", name, deleteData ? " and its data" : string.Empty);
+            await RemoveAsync(infoHash, deleteData);
         }
-
-        return _settings.SeedTimeLimitMinutes > 0
-            && row.CompletedAt is { } completed
-            && DateTimeOffset.UtcNow - completed >= TimeSpan.FromMinutes(_settings.SeedTimeLimitMinutes);
     }
 
     private async Task UpdateRowAsync(string infoHash, Action<Download> update)

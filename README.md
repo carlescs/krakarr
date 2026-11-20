@@ -175,7 +175,7 @@ Nothing is moved or renamed.
 - **Remote path mapping:** if qBittorrent runs in another container and sees downloads as e.g. `/downloads`
   while Krakarr sees `/data/downloads`, set *Remote path* = `/downloads` and *Local path* = `/data/downloads`.
   For hardlinks, both containers should mount the same host directory.
-- **Seeding** is controlled by qBittorrent's own share limits. The built-in seed ratio/time options don't apply.
+- **Seeding** follows Krakarr's seeding settings (ratio/time limit, then remove or stop). With both limits at 0, qBittorrent's own share limits apply.
 - Use **Test** to check the URL, credentials and tag before saving. The password is never sent back to the browser.
 
 Each client keeps its own list of torrents, so switching back and forth never mixes them up.
@@ -231,7 +231,7 @@ tests/                   xUnit v3 unit + HTTP integration tests
 **Movie pipeline:** *add (TMDB)* → *search all indexers (Torznab, by IMDb id when supported)* → *decision engine*
 (title/year/id match, quality profile, size limits, seeders, upgrade/cutoff) → *grab* (.torrent or magnet into the
 embedded engine) → *download completes* → *import* (pick main video, rename by template, hardlink into the library)
-→ *seed until the ratio/time limit*.
+→ *seed until the ratio/time limit*, then remove the torrent from the client (or stop it).
 
 ## Development
 
