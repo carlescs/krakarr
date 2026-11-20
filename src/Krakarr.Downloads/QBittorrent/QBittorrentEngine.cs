@@ -180,6 +180,7 @@ public sealed class QBittorrentEngine(
                 }
             }
 
+            await ApplySeedingPolicyAsync(api, settings, matched, db, now, ct);
             await db.SaveChangesAsync(ct);
 
             var statuses = new ConcurrentDictionary<string, TorrentStatus>(StringComparer.OrdinalIgnoreCase);
@@ -194,6 +195,38 @@ public sealed class QBittorrentEngine(
         finally
         {
             _syncLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Removes or stops finished torrents once Krakarr's seeding limit is reached. With both limits at 0 nothing
+    /// happens here and qBittorrent's own share limits apply.
+    /// </summary>
+    private async Task ApplySeedingPolicyAsync(QBittorrentApi api, DownloadClientSettings settings,
+        List<(Download Row, QbtTorrent Torrent)> matched, KrakarrDbContext db, DateTimeOffset now, CancellationToken ct)
+    {
+        foreach (var (row, torrent) in matched.ToList())
+        {
+            if (torrent.Progress < 1 || !SeedingPolicy.IsDone(settings, row, torrent.Ratio, now))
+            {
+                continue;
+            }
+
+            if (settings.SeedLimitAction == SeedLimitAction.Remove)
+            {
+                var deleteData = SeedingPolicy.DeleteDataOnRemove(row);
+                logger.LogInformation("Seeding limit reached for {Name}, removing it from qBittorrent{Data}", row.Name, deleteData ? " with its data" : string.Empty);
+                await api.DeleteAsync(torrent.Hash, deleteData, ct);
+                matched.Remove((row, torrent));
+                db.Downloads.Remove(row);
+            }
+            else if (row.State == DownloadState.Seeding)
+            {
+                logger.LogInformation("Seeding limit reached for {Name}, stopping it in qBittorrent", row.Name);
+                await api.PauseAsync(torrent.Hash, ct);
+                row.State = DownloadState.Paused;
+                row.Paused = true;
+            }
         }
     }
 
@@ -504,7 +537,7 @@ public sealed class QBittorrentEngine(
             : null;
     }
 
-    /// <summary>Seeding is governed by qBittorrent's own share limits.</summary>
+    /// <summary>Nothing to do: the sync reads the Imported flag from the database before applying the seeding policy.</summary>
     public void MarkImported(string infoHash)
     {
     }

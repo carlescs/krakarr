@@ -8,7 +8,7 @@ namespace Krakarr.Downloads.Tests;
 public sealed class FakeQBittorrent : HttpMessageHandler
 {
     public sealed record FakeTorrent(string Hash, string Name, string Tags, double Progress = 0, string State = "downloading", string SavePath = "/downloads/",
-        string? V1 = null, string? V2 = null);
+        string? V1 = null, string? V2 = null, double Ratio = 0);
 
     public List<FakeTorrent> Torrents { get; } = [];
     public List<(string Method, string Path, string Query, string Body, string? Cookie)> Requests { get; } = [];
@@ -73,7 +73,7 @@ public sealed class FakeQBittorrent : HttpMessageHandler
                     {
                         hash = t.Hash, infohash_v1 = t.V1 ?? t.Hash, infohash_v2 = t.V2 ?? "", name = t.Name, state = t.State, progress = t.Progress, size = 1000L, total_size = 1000L,
                         downloaded = (long)(t.Progress * 1000), uploaded = 0L, dlspeed = 10L, upspeed = 0L, num_seeds = 1, num_leechs = 0,
-                        ratio = 0.0, eta = 8640000L, category = "movies", tags = t.Tags, save_path = t.SavePath,
+                        ratio = t.Ratio, eta = 8640000L, category = "movies", tags = t.Tags, save_path = t.SavePath,
                         added_on = 1_700_000_000L, completion_on = t.Progress >= 1 ? 1_700_000_100L : -1L,
                     });
                 return Json(list);

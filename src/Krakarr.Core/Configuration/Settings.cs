@@ -75,11 +75,27 @@ public sealed record QBittorrentSettings
     public string? LocalPathPrefix { get; init; }
 }
 
+public enum SeedLimitAction
+{
+    /// <summary>Remove the torrent from the client. Imported media downloads also have their data deleted (the library keeps its copy).</summary>
+    Remove = 0,
+    /// <summary>Stop (pause) the torrent and keep it in the client.</summary>
+    Stop = 1,
+}
+
 public sealed record DownloadClientSettings : ISettingsSection
 {
     public static string SectionKey => "downloads";
     public DownloadClientKind Client { get; init; } = DownloadClientKind.Embedded;
     public QBittorrentSettings QBittorrent { get; init; } = new();
+
+    // ---- Seeding policy (applies to every client) ----
+    /// <summary>Seeding is done once this ratio is reached (0 = never on ratio).</summary>
+    public double SeedRatioLimit { get; init; } = 1.0;
+    /// <summary>Seeding is done after this many minutes since completion (0 = never on time).</summary>
+    public int SeedTimeLimitMinutes { get; init; }
+    /// <summary>What to do with a torrent once its seeding limit is reached (and its media, if any, is imported).</summary>
+    public SeedLimitAction SeedLimitAction { get; init; } = SeedLimitAction.Remove;
 
     // ---- Built-in engine options (ignored when using qBittorrent) ----
     public string? DownloadDirectory { get; init; }
@@ -89,10 +105,6 @@ public sealed record DownloadClientSettings : ISettingsSection
     /// <summary>KiB/s, 0 = unlimited.</summary>
     public int MaxUploadRateKiB { get; init; }
     public int MaxConnections { get; init; } = 200;
-    /// <summary>Stop seeding once this ratio is reached (0 = never stop on ratio).</summary>
-    public double SeedRatioLimit { get; init; } = 1.0;
-    /// <summary>Stop seeding after this many minutes (0 = never stop on time).</summary>
-    public int SeedTimeLimitMinutes { get; init; }
     public bool EnableDht { get; init; } = true;
     public bool EnablePortForwarding { get; init; }
 }
