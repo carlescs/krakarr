@@ -4,10 +4,12 @@ import { Api, errorMessage } from '../core/api';
 import { AgoPipe, BytesPipe } from '../core/format';
 import { IndexerError, SearchResult, SearchType } from '../core/models';
 import { Toasts } from '../core/toast';
+import { MediaLink, MediaLinkPicker, linkFields } from '../shared/media-link-picker';
+import { Modal } from '../shared/modal';
 
 @Component({
   selector: 'kr-search',
-  imports: [FormsModule, BytesPipe, AgoPipe],
+  imports: [FormsModule, BytesPipe, AgoPipe, Modal, MediaLinkPicker],
   template: `
     <h1 class="page-title mb-6">Search indexers</h1>
     <form class="mb-6 flex flex-wrap gap-3" (ngSubmit)="search()">
@@ -42,7 +44,7 @@ import { Toasts } from '../core/toast';
                 <td class="whitespace-nowrap max-sm:hidden">{{ r.release.size | bytes }}</td>
                 <td class="whitespace-nowrap max-sm:hidden"><span class="text-emerald-400">{{ r.release.seeders ?? '?' }}</span> / {{ r.release.peers ?? '?' }}</td>
                 <td class="max-sm:hidden"><span class="badge bg-surface-700 text-slate-200">{{ r.quality }}</span></td>
-                <td class="text-right"><button class="btn-secondary btn-sm" (click)="grab(r)" title="Download"><span class="max-sm:hidden">Download</span><span class="sm:hidden" aria-hidden="true">↓</span></button></td>
+                <td class="text-right"><button class="btn-secondary btn-sm" (click)="open(r)" title="Download"><span class="max-sm:hidden">Download</span><span class="sm:hidden" aria-hidden="true">↓</span></button></td>
               </tr>
             }
           </tbody>
@@ -50,6 +52,22 @@ import { Toasts } from '../core/toast';
       </div>
     } @else if (searched() && !busy()) {
       <p class="text-slate-500">No results.</p>
+    }
+
+    @if (grabbing(); as r) {
+      <kr-modal title="Download release" (closed)="grabbing.set(null)">
+        <div class="space-y-4">
+          <div>
+            <p class="break-all text-sm text-slate-100">{{ r.release.title }}</p>
+            <p class="mt-1 text-xs text-slate-400">{{ r.quality }} · {{ r.release.size | bytes }} · {{ r.release.indexerName }}</p>
+          </div>
+          <kr-media-link-picker [hint]="r.release.title" [(link)]="link" />
+        </div>
+        <ng-container footer>
+          <button class="btn-ghost" (click)="grabbing.set(null)">Cancel</button>
+          <button class="btn-primary" (click)="grab(r)" [disabled]="sending()">{{ sending() ? 'Sending…' : 'Download' }}</button>
+        </ng-container>
+      </kr-modal>
     }
   `,
 })
@@ -77,12 +95,27 @@ export class SearchPage {
     }
   }
 
+  protected readonly grabbing = signal<SearchResult | null>(null);
+  protected readonly link = signal<MediaLink | null>(null);
+  protected readonly sending = signal(false);
+
+  protected open(r: SearchResult) {
+    this.link.set(null);
+    this.grabbing.set(r);
+  }
+
   async grab(r: SearchResult) {
+    const link = this.link();
+    this.sending.set(true);
     try {
-      await this.api.grabRelease(r.release, 'manual');
-      this.toasts.success('Sent to downloads');
+      // Linked releases use the movie/series category; plain ones keep "manual".
+      await this.api.grabRelease(r.release, link ? undefined : 'manual', linkFields(link));
+      this.toasts.success(link ? `Sent to downloads for ${link.title}` : 'Sent to downloads');
+      this.grabbing.set(null);
     } catch (e) {
       this.toasts.error(errorMessage(e));
+    } finally {
+      this.sending.set(false);
     }
   }
 }
