@@ -4,7 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
   IndexerError, IndexerTestResult, Language, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListItem, MovieLookup, Quality, QualityProfile,
-  ReleaseDecision, ReleaseInfo, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
+  ReleaseDecision, ReleaseInfo, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
 } from './models';
 
 const API = 'api/v1';
@@ -58,6 +58,8 @@ export class Api {
   // System
   systemStatus() { return this.get<SystemStatus>('system/status'); }
   commands() { return this.get<CommandInfo[]>('system/commands'); }
+  tasks() { return this.get<ScheduledTaskInfo[]>('system/tasks'); }
+  runTask(id: string) { return this.post<void>(`system/tasks/${encodeURIComponent(id)}/run`); }
 
   // Settings
   settings<K extends keyof SettingsMap>(section: K) { return this.get<SettingsMap[K]>(`settings/${section}`); }

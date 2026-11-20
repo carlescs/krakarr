@@ -114,6 +114,10 @@ public sealed record AutomationSettings : ISettingsSection
     public static string SectionKey => "automation";
     public int RssSyncIntervalMinutes { get; init; } = 30;
     public bool SearchOnAdd { get; init; } = true;
+
+    /// <summary>Time between RSS syncs, or <c>null</c> when automatic RSS sync is off.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public TimeSpan? RssSyncInterval => RssSyncIntervalMinutes > 0 ? TimeSpan.FromMinutes(RssSyncIntervalMinutes) : null;
 }
 
 public enum HearingImpairedMode
