@@ -17,6 +17,7 @@ describe('SeriesDetailPage', () => {
       qualityProfiles: vi.fn(async () => []),
       history: vi.fn(async () => ({ items: [] })),
       subtitleFiles: vi.fn(async () => []),
+      languages: vi.fn(async () => ({ all: [], preferred: [] })),
     };
     TestBed.configureTestingModule({
       providers: [

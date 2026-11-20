@@ -23,6 +23,8 @@ export interface RootFolder { id: number; path: string; mediaType: MediaType; ac
 export interface Indexer {
   id: number; name: string; protocol: 'Torznab' | 'Newznab'; baseUrl: string; apiPath: string; apiKey?: string | null;
   movieCategories: number[]; tvCategories: number[]; enabled: boolean; enableRss: boolean; priority: number; minimumSeeders: number;
+  /** Audio language assumed for untagged releases from this indexer; null = English. */
+  defaultLanguage?: string | null;
 }
 
 export interface IndexerCapabilities {
@@ -38,10 +40,11 @@ export interface ReleaseInfo {
   title: string; guid: string; downloadUrl?: string; magnetUrl?: string; infoHash?: string; infoUrl?: string;
   size: number; seeders?: number; peers?: number; publishDate?: string; imdbId?: number; tmdbId?: number; tvdbId?: number;
   categories: number[]; indexerId: number; indexerName: string; indexerPriority: number;
+  languages?: string[]; indexerLanguage?: string | null;
 }
 
 export interface SearchResult { release: ReleaseInfo; quality: string; parsedTitle?: string; parsedYear?: number; }
-export interface ReleaseDecision { release: ReleaseInfo; quality: string; qualityWeight: number; approved: boolean; rejections: string[]; }
+export interface ReleaseDecision { release: ReleaseInfo; quality: string; qualityWeight: number; approved: boolean; rejections: string[]; languages: string[]; }
 
 export interface MovieFile { id: number; relativePath: string; size: number; quality: string; releaseGroup?: string; dateAdded: string; }
 
@@ -56,6 +59,8 @@ export interface Movie {
   inCinemas?: string | null; digitalRelease?: string | null; physicalRelease?: string | null;
   releases: MovieRelease[]; releaseRegion?: string | null; minimumAvailability: MinimumAvailability; isAvailable: boolean;
   collectionId?: number | null;
+  /** Wanted audio languages for this movie; null = the global default. */
+  languages?: string[] | null;
 }
 
 /** Row of the movie grid (GET /movies). */
@@ -100,6 +105,8 @@ export interface Series {
   network?: string; runtime: number; status: SeriesStatus; monitored: boolean; seasonFolder: boolean; qualityProfileId: number; path: string;
   added: string; episodeCount: number; episodeFileCount: number; sizeOnDisk: number; nextAiring?: string; downloadingCount: number;
   seasons: SeasonInfo[];
+  /** Wanted audio languages for this series; null = the global default. */
+  languages?: string[] | null;
 }
 /** Row of the series grid (GET /series). */
 export interface SeriesListItem {
@@ -112,7 +119,7 @@ export interface Episode {
   monitored: boolean; hasAired: boolean; episodeFile?: EpisodeFile; downloadProgress?: number;
 }
 export interface EpisodeRelease {
-  release: ReleaseInfo; quality: string; qualityWeight: number; approved: boolean; rejections: string[]; episodes?: string; seasonPack: boolean;
+  release: ReleaseInfo; quality: string; qualityWeight: number; approved: boolean; rejections: string[]; episodes?: string; seasonPack: boolean; languages: string[];
 }
 
 export interface TorrentStatus {
@@ -172,6 +179,9 @@ export interface SubtitleSettings {
   openSubtitles: { enabled: boolean; apiKey?: string; username?: string; password?: string };
 }
 export interface Language { code: string; name: string; }
+/** Wanted audio languages, most preferred first; empty = any language. */
+export interface LanguageSettings { preferred: string[]; }
+export interface LanguageCatalog { all: Language[]; preferred: string[]; }
 export interface SubtitleFile {
   id: number; movieFileId?: number; episodeFileId?: number; language: string; languageName: string; hearingImpaired: boolean; forced: boolean;
   fileName: string; provider: string; score?: number; release?: string; dateAdded: string;

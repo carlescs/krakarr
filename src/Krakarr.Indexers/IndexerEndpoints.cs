@@ -27,6 +27,7 @@ public static class IndexerEndpoints
         group.MapPost("/", async (Indexer input, KrakarrDbContext db, CancellationToken ct) =>
         {
             if (Validate(input) is { } problem) return problem;
+            input.DefaultLanguage = NormalizeLanguage(input.DefaultLanguage);
             if (await db.Indexers.AnyAsync(i => i.Name == input.Name, ct))
                 return Results.ValidationProblem(new Dictionary<string, string[]> { ["name"] = ["An indexer with this name already exists"] });
 
@@ -54,6 +55,7 @@ public static class IndexerEndpoints
             existing.EnableRss = input.EnableRss;
             existing.Priority = input.Priority;
             existing.MinimumSeeders = input.MinimumSeeders;
+            existing.DefaultLanguage = NormalizeLanguage(input.DefaultLanguage);
             await db.SaveChangesAsync(ct);
             return Results.Ok(existing);
         });
@@ -125,12 +127,16 @@ public static class IndexerEndpoints
         return app;
     }
 
+    private static string? NormalizeLanguage(string? code) => string.IsNullOrWhiteSpace(code) ? null : MediaLanguages.Normalize(code);
+
     private static IResult? Validate(Indexer input)
     {
         var errors = new Dictionary<string, string[]>();
         if (string.IsNullOrWhiteSpace(input.Name)) errors["name"] = ["Name is required"];
         if (!Uri.TryCreate(input.BaseUrl, UriKind.Absolute, out var uri) || (uri.Scheme != "http" && uri.Scheme != "https"))
             errors["baseUrl"] = ["A valid http(s) URL is required"];
+        if (!string.IsNullOrWhiteSpace(input.DefaultLanguage) && !MediaLanguages.IsKnown(input.DefaultLanguage))
+            errors["defaultLanguage"] = ["Unknown language"];
         return errors.Count > 0 ? Results.ValidationProblem(errors) : null;
     }
 }

@@ -45,6 +45,16 @@ public static class SettingsEndpoints
                 : s.MinimumScoreMovies is < 0 or > 100 || s.MinimumScoreEpisodes is < 0 or > 100 ? "Minimum scores must be between 0 and 100"
                 : null);
 
+        MapSection<LanguageSettings>(settings, "languages",
+            merge: (_, incoming) => incoming with { Preferred = MediaLanguages.Clean(incoming.Preferred) });
+
+        // Language catalogue plus the global wanted languages, which movie and series pages show as their default.
+        app.MapGet("/api/v1/languages", async (ISettingsService s, CancellationToken ct) => new
+        {
+            All = MediaLanguages.All.Select(l => new { l.Code, l.Name }),
+            (await s.GetAsync<LanguageSettings>(ct)).Preferred,
+        }).WithTags("Languages");
+
         settings.MapPost("/general/regenerate-api-key", async (ISettingsService s, CancellationToken ct) =>
         {
             var general = await s.GetAsync<GeneralSettings>(ct);

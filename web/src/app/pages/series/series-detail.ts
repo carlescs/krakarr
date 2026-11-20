@@ -9,6 +9,8 @@ import { Events } from '../../core/events';
 import { AgoPipe, BytesPipe } from '../../core/format';
 import { Episode, EpisodeRelease, HistoryItem, IndexerError, OrganizePreview, QualityProfile, SeasonInfo, Series, SubtitleFile } from '../../core/models';
 import { Toasts } from '../../core/toast';
+import { Languages } from '../../core/languages';
+import { LanguageOverride } from '../../shared/language-picker';
 import { Modal } from '../../shared/modal';
 import { Poster } from '../../shared/poster';
 import { RelatedTitles } from '../../shared/related-titles';
@@ -24,7 +26,7 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
 
 @Component({
   selector: 'kr-series-detail',
-  imports: [RelatedTitles, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, BytesPipe, AgoPipe, SubtitleManager],
+  imports: [RelatedTitles, LanguageOverride, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, BytesPipe, AgoPipe, SubtitleManager],
   template: `
     @if (series(); as s) {
       <!-- Hero -->
@@ -50,6 +52,9 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
               </span>
               <span class="badge" [class]="s.monitored ? 'bg-accent-500/15 text-accent-300' : 'bg-slate-500/15 text-slate-400'">{{ s.monitored ? 'Monitored' : 'Unmonitored' }}</span>
               <span class="badge bg-surface-700 text-slate-300">{{ profileName() }}</span>
+              <span class="badge bg-surface-700 text-slate-300" [title]="s.languages ? 'Languages set for this series' : 'Default languages'">
+                {{ languages.describe(s.languages ?? languages.preferred()) }}
+              </span>
               @if (s.sizeOnDisk) { <span class="badge bg-surface-700 text-slate-300">{{ s.sizeOnDisk | bytes }}</span> }
             </div>
             <p class="mt-4 line-clamp-4 max-w-3xl text-sm leading-relaxed text-slate-300">{{ s.overview }}</p>
@@ -192,7 +197,7 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
             } @else {
               <div class="overflow-x-auto sm:max-h-[65vh] sm:overflow-auto">
                 <table class="table">
-                  <thead><tr><th>Release</th><th class="max-sm:hidden">Episodes</th><th class="max-sm:hidden">Indexer</th><th class="max-sm:hidden">Size</th><th class="max-sm:hidden">Peers</th><th class="max-sm:hidden">Quality</th><th></th></tr></thead>
+                  <thead><tr><th>Release</th><th class="max-sm:hidden">Episodes</th><th class="max-sm:hidden">Indexer</th><th class="max-sm:hidden">Size</th><th class="max-sm:hidden">Peers</th><th class="max-sm:hidden">Quality</th><th class="max-sm:hidden">Language</th><th></th></tr></thead>
                   <tbody>
                     @for (r of releases(); track r.release.guid) {
                       <tr [class.opacity-60]="!r.approved">
@@ -201,6 +206,7 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
                           <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400 sm:hidden">
                             <span class="badge bg-surface-700 text-slate-200">{{ r.quality }}</span>
                             @if (r.seasonPack) { <span class="badge bg-violet-500/15 text-violet-300">Pack</span> }
+                            <span class="badge bg-surface-700 text-slate-300">{{ languages.describe(r.languages) }}</span>
                             <span>{{ r.episodes ?? '—' }}</span>
                             <span>{{ r.release.size | bytes }}</span>
                             <span><span class="text-emerald-400">{{ r.release.seeders ?? '?' }}</span> / {{ r.release.peers ?? '?' }}</span>
@@ -215,6 +221,7 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
                         <td class="whitespace-nowrap max-sm:hidden">{{ r.release.size | bytes }}</td>
                         <td class="whitespace-nowrap max-sm:hidden"><span class="text-emerald-400">{{ r.release.seeders ?? '?' }}</span> / {{ r.release.peers ?? '?' }}</td>
                         <td class="max-sm:hidden"><span class="badge bg-surface-700 text-slate-200">{{ r.quality }}</span></td>
+                        <td class="whitespace-nowrap text-slate-300 max-sm:hidden">{{ languages.describe(r.languages) }}</td>
                         <td class="text-right">
                           <button class="btn-sm" [class]="r.approved ? 'btn-primary' : 'btn-secondary'" (click)="grab(r)" [disabled]="!r.episodes || grabbing() === r.release.guid">
                             {{ grabbing() === r.release.guid ? '…' : 'Grab' }}
@@ -247,6 +254,7 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
                 @for (p of profiles(); track p.id) { <option [ngValue]="p.id">{{ p.name }}</option> }
               </select>
             </div>
+            <div><kr-language-override [(value)]="editLanguages" /></div>
           </div>
           <ng-container footer>
             <button class="btn-ghost" (click)="editing.set(false)">Cancel</button>
@@ -363,6 +371,8 @@ export class SeriesDetailPage implements OnInit {
   protected editMonitored = true;
   protected editSeasonFolder = true;
   protected editProfileId = 0;
+  protected editLanguages: string[] | null = null;
+  protected readonly languages = inject(Languages);
   protected deleteFiles = false;
   private expandedInitialised = false;
 
@@ -392,6 +402,7 @@ export class SeriesDetailPage implements OnInit {
 
   ngOnInit() {
     this.api.qualityProfiles().then(p => this.profiles.set(p));
+    this.languages.load().catch(() => {});
     this.events.seriesUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => { if (e.id === this.id()) this.load(); });
     this.events.historyAdded.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(h => { if (h.seriesId === this.id()) this.loadHistory(); });
     this.events.subtitlesUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => { if (e.seriesId === this.id()) this.loadSubtitles(); });
@@ -432,6 +443,7 @@ export class SeriesDetailPage implements OnInit {
       this.editMonitored = s.monitored;
       this.editSeasonFolder = s.seasonFolder;
       this.editProfileId = s.qualityProfileId;
+      this.editLanguages = s.languages ? [...s.languages] : null;
       if (!this.expandedInitialised) {
         // Open the latest regular season by default.
         const latest = Math.max(0, ...s.seasons.map(x => x.seasonNumber));
@@ -485,7 +497,7 @@ export class SeriesDetailPage implements OnInit {
 
   async toggleSeries() {
     const s = this.series()!;
-    await this.api.updateSeries(s.id, !s.monitored, s.qualityProfileId, s.seasonFolder);
+    await this.api.updateSeries(s.id, !s.monitored, s.qualityProfileId, s.seasonFolder, s.languages ?? null);
     await this.load();
   }
 
@@ -581,7 +593,7 @@ export class SeriesDetailPage implements OnInit {
 
   async saveEdit() {
     try {
-      await this.api.updateSeries(this.id(), this.editMonitored, this.editProfileId, this.editSeasonFolder);
+      await this.api.updateSeries(this.id(), this.editMonitored, this.editProfileId, this.editSeasonFolder, this.editLanguages);
       this.editing.set(false);
       await this.load();
     } catch (e) {

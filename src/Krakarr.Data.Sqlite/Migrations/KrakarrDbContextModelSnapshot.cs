@@ -15,7 +15,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261120162758_UserRoles";
+    public override string LastMigrationId => "20261120164744_ReleaseLanguages";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -283,6 +283,9 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .IsRequired()
                     .HasColumnType("TEXT");
 
+                b.Property<string>("DefaultLanguage")
+                    .HasColumnType("TEXT");
+
                 b.Property<bool>("EnableRss")
                     .HasColumnType("INTEGER");
 
@@ -340,6 +343,9 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("TEXT");
 
                 b.Property<DateOnly?>("InCinemas")
+                    .HasColumnType("TEXT");
+
+                b.PrimitiveCollection<string>("Languages")
                     .HasColumnType("TEXT");
 
                 b.Property<long?>("LastSearched")
@@ -582,6 +588,9 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("TEXT");
 
                 b.Property<string>("ImdbId")
+                    .HasColumnType("TEXT");
+
+                b.PrimitiveCollection<string>("Languages")
                     .HasColumnType("TEXT");
 
                 b.Property<long?>("LastRefreshed")

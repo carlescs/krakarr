@@ -61,6 +61,25 @@ public class TorznabTests
     }
 
     [Fact]
+    public void Reads_language_attribute_and_indexer_default_language()
+    {
+        const string xml = """
+            <rss version="2.0" xmlns:torznab="http://torznab.com/schemas/2015/feed">
+              <channel>
+                <item><title>Movie.2020.1080p.WEB-DL-GRP</title><guid>1</guid><link>https://t/1.torrent</link>
+                  <torznab:attr name="language" value="French, German" /></item>
+                <item><title>Other.2020.1080p.WEB-DL-GRP</title><guid>2</guid><link>https://t/2.torrent</link></item>
+              </channel>
+            </rss>
+            """;
+        var indexer = new Indexer { Id = 3, Name = "ES", BaseUrl = "http://x", DefaultLanguage = "es" };
+        var results = TorznabParser.ParseResults(xml, indexer);
+        Assert.Equal(["fr", "de"], results[0].Languages);
+        Assert.Empty(results[1].Languages);
+        Assert.All(results, r => Assert.Equal("es", r.IndexerLanguage));
+    }
+
+    [Fact]
     public void Throws_on_error_document()
     {
         var ex = Assert.Throws<IndexerException>(() =>

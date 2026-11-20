@@ -110,4 +110,33 @@ public class MovieDecisionEngineTests
         Assert.Equal("The Matrix (1999) [Bluray-1080p].mkv",
             MovieNaming.BuildFileName(Matrix, "{Movie Title} ({Release Year}) [{Quality}]", Qualities.Bluray1080, "SPARKS", ".MKV"));
     }
+
+    [Fact]
+    public void Rejects_releases_in_unwanted_languages()
+    {
+        var french = MovieDecisionEngine.Evaluate(Matrix, Hd1080, null, Release("The.Matrix.1999.FRENCH.1080p.BluRay.x264-GRP"), ["en"]);
+        Assert.False(french.Approved);
+        Assert.Contains(french.Rejections, r => r.StartsWith("Language not wanted"));
+
+        // Any language when none are configured.
+        Assert.True(MovieDecisionEngine.Evaluate(Matrix, Hd1080, null, Release("The.Matrix.1999.FRENCH.1080p.BluRay.x264-GRP"), []).Approved);
+    }
+
+    [Fact]
+    public void Indexer_default_language_applies_to_untagged_releases()
+    {
+        var release = Release("The.Matrix.1999.1080p.BluRay.x264-GRP") with { IndexerLanguage = "es" };
+        Assert.True(MovieDecisionEngine.Evaluate(Matrix, Hd1080, null, release, ["es"]).Approved);
+        Assert.False(MovieDecisionEngine.Evaluate(Matrix, Hd1080, null, release, ["en"]).Approved);
+    }
+
+    [Fact]
+    public void Preferred_language_ranks_above_quality()
+    {
+        var decisions = MovieDecisionEngine.Evaluate(Matrix, Hd1080, null,
+            [Release("The.Matrix.1999.1080p.BluRay.x264-GRP"), Release("The.Matrix.1999.SPANISH.1080p.WEB-DL.x264-GRP")],
+            ["es", "en"]);
+        Assert.All(decisions, d => Assert.True(d.Approved));
+        Assert.Equal(["es"], decisions[0].Languages);
+    }
 }

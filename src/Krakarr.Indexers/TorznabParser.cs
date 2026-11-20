@@ -79,6 +79,8 @@ public static class TorznabParser
                 IndexerId = indexer.Id,
                 IndexerName = indexer.Name,
                 IndexerPriority = indexer.Priority,
+                Languages = ParseLanguages(attrs.GetValueOrDefault("language")),
+                IndexerLanguage = indexer.DefaultLanguage,
             });
         }
 
@@ -187,6 +189,10 @@ public static class TorznabParser
 
         return dict;
     }
+
+    /// <summary>Newznab "language" attribute: one or more names or codes ("English", "French, German", "en").</summary>
+    private static IReadOnlyList<string> ParseLanguages(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? [] : MediaLanguages.Clean(value.Split([',', '/', '|', ';'], StringSplitOptions.RemoveEmptyEntries));
 
     private static long? ParseLong(string? s) =>
         long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : null;

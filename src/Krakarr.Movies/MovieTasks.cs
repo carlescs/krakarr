@@ -36,6 +36,7 @@ public sealed class MovieRssSyncTask(
 
         var feed = await indexerSearch.SearchAsync(new SearchCriteria { Type = SearchType.Movie, Rss = true }, ct: cancellationToken);
         logger.LogInformation("RSS sync: {Count} release(s) from indexers", feed.Releases.Count);
+        var languageSettings = await settings.GetAsync<LanguageSettings>(cancellationToken);
 
         foreach (var movie in wanted)
         {
@@ -46,7 +47,7 @@ public sealed class MovieRssSyncTask(
             }
 
             var existing = movie.MovieFile is null ? null : Qualities.FindById(movie.MovieFile.QualityId);
-            var best = MovieDecisionEngine.Evaluate(movie, movie.QualityProfile, existing, feed.Releases).FirstOrDefault(d => d.Approved);
+            var best = MovieDecisionEngine.Evaluate(movie, movie.QualityProfile, existing, feed.Releases, languageSettings.For(movie.Languages)).FirstOrDefault(d => d.Approved);
             if (best is not null)
             {
                 await movies.GrabAsync(movie, best.Release, cancellationToken);

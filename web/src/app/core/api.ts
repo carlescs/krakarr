@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
-  IndexerError, IndexerTestResult, Language, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListItem, MovieLookup, Quality, QualityProfile,
+  IndexerError, IndexerTestResult, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListItem, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
   UserAccount, UserRole,
 } from './models';
@@ -31,7 +31,7 @@ export function errorMessage(err: unknown): string {
 
 type SettingsMap = {
   general: GeneralSettings; media: MediaManagementSettings; metadata: MetadataSettings;
-  downloads: DownloadClientSettings; automation: AutomationSettings; subtitles: SubtitleSettings;
+  downloads: DownloadClientSettings; automation: AutomationSettings; subtitles: SubtitleSettings; languages: LanguageSettings;
 };
 
 @Injectable({ providedIn: 'root' })
@@ -124,8 +124,9 @@ export class Api {
   moviesForYou() { return this.get<MovieLookup[]>('movies/discover/for-you'); }
   movieRecommendations(id: number) { return this.get<MovieLookup[]>(`movies/${id}/recommendations`); }
   similarMovies(id: number) { return this.get<MovieLookup[]>(`movies/${id}/similar`); }
-  updateMovie(id: number, monitored: boolean, qualityProfileId: number, minimumAvailability?: MinimumAvailability) {
-    return this.put<void>(`movies/${id}`, { monitored, qualityProfileId, minimumAvailability: minimumAvailability ?? null });
+  /** Replaces the editable fields; `languages` null = use the global default. */
+  updateMovie(id: number, monitored: boolean, qualityProfileId: number, minimumAvailability: MinimumAvailability | undefined, languages: string[] | null) {
+    return this.put<void>(`movies/${id}`, { monitored, qualityProfileId, minimumAvailability: minimumAvailability ?? null, languages });
   }
   deleteMovie(id: number, deleteFiles: boolean) { return this.delete<void>(`movies/${id}`, { deleteFiles }); }
   searchMovie(id: number) { return this.post<CommandInfo>(`movies/${id}/search`); }
@@ -147,8 +148,9 @@ export class Api {
   seriesForYou() { return this.get<SeriesLookup[]>('series/discover/for-you'); }
   seriesRecommendations(id: number) { return this.get<SeriesLookup[]>(`series/${id}/recommendations`); }
   similarSeries(id: number) { return this.get<SeriesLookup[]>(`series/${id}/similar`); }
-  updateSeries(id: number, monitored: boolean, qualityProfileId: number, seasonFolder: boolean) {
-    return this.put<void>(`series/${id}`, { monitored, qualityProfileId, seasonFolder });
+  /** Replaces the editable fields; `languages` null = use the global default. */
+  updateSeries(id: number, monitored: boolean, qualityProfileId: number, seasonFolder: boolean, languages: string[] | null) {
+    return this.put<void>(`series/${id}`, { monitored, qualityProfileId, seasonFolder, languages });
   }
   deleteSeries(id: number, deleteFiles: boolean) { return this.delete<void>(`series/${id}`, { deleteFiles }); }
   monitorSeason(seriesId: number, season: number, monitored: boolean) { return this.put<void>(`series/${seriesId}/seasons/${season}`, { monitored }); }
@@ -170,6 +172,8 @@ export class Api {
   calendar(start: string, end: string) { return this.get<CalendarEntry[]>('calendar', { start, end }); }
 
   // Subtitles
+  /** Audio languages releases can be filtered by, plus the global wanted ones. */
+  languages() { return this.get<LanguageCatalog>('languages'); }
   subtitleLanguages() { return this.get<Language[]>('subtitles/languages'); }
   testSubtitleProviders(settings: SubtitleSettings) {
     return this.post<{ name: string; success: boolean; message: string }[]>('subtitles/providers/test', settings);

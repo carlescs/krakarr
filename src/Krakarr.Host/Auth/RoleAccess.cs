@@ -45,6 +45,7 @@ public static class RoleAccess
         "/api/v1/calendar",
         "/api/v1/qualities",
         "/api/v1/qualityprofiles",
+        "/api/v1/languages",
         "/api/v1/subtitles/languages",
         "/api/v1/subtitles/files",
     ];
