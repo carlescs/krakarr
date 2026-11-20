@@ -111,6 +111,10 @@ export interface HistoryItem {
   indexer?: string; message?: string; quality?: string; language?: string;
 }
 
+export interface ScheduledTaskInfo {
+  id: string; name: string; intervalSeconds: number | null; lastRun: string | null; lastDurationSeconds: number | null;
+  lastSucceeded: boolean | null; lastError: string | null; nextRun: string | null; isRunning: boolean;
+}
 export interface CommandInfo { id: string; name: string; status: CommandStatus; message?: string; queued: string; started?: string; ended?: string; }
 
 export interface GeneralSettings { apiKey: string; instanceName: string; }

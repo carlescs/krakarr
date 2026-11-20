@@ -1,10 +1,12 @@
-import { Component, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../../core/api';
 import { BytesPipe } from '../../core/format';
+import { Events } from '../../core/events';
 import {
   AutomationSettings, DirectoryListing, Language, SubtitleSettings, DownloadClientKind, DownloadClientSettings, DownloadClientTestResult, GeneralSettings, MediaManagementSettings, MetadataSettings, Quality,
-  QualityProfile, RootFolder, SystemStatus,
+  QualityProfile, RootFolder, ScheduledTaskInfo, SystemStatus,
 } from '../../core/models';
 import { Toasts } from '../../core/toast';
 import { Modal } from '../../shared/modal';
@@ -57,7 +59,7 @@ export function buildName(format: string, values: Record<string, string>): strin
   return result.trim().replace(/\.+$/, '').replace(/\s{2,}/g, ' ').trim();
 }
 
-type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'general';
+type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'tasks' | 'general';
 
 @Component({
   selector: 'kr-settings',
@@ -390,6 +392,45 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
       }
     }
 
+    <!-- Tasks -->
+    @if (tab() === 'tasks') {
+      <section class="card p-4 sm:p-5">
+        <h2 class="font-semibold text-white">Scheduled tasks</h2>
+        <p class="hint mb-3">Tasks run on their own schedule. <span class="font-medium text-slate-300">Run now</span> starts one immediately and counts its next run from now.</p>
+        <div class="overflow-x-auto">
+          <table class="table">
+            <thead><tr><th>Task</th><th class="max-sm:hidden">Interval</th><th>Last run</th><th class="max-md:hidden">Duration</th><th class="max-sm:hidden">Next run</th><th></th></tr></thead>
+            <tbody>
+              @for (t of tasks(); track t.id) {
+                <tr>
+                  <td class="text-slate-200">{{ t.name }}</td>
+                  <td class="whitespace-nowrap text-slate-400 max-sm:hidden">{{ t.intervalSeconds ? 'Every ' + duration(t.intervalSeconds) : 'Disabled' }}</td>
+                  <td class="whitespace-nowrap">
+                    @if (t.isRunning) {
+                      <span class="text-accent-300">Running…</span>
+                    } @else if (t.lastRun) {
+                      <span [class]="t.lastSucceeded === false ? 'text-red-400' : 'text-slate-300'" [title]="t.lastError ?? ''">
+                        {{ ago(t.lastRun) }}{{ t.lastSucceeded === false ? ' (failed)' : '' }}
+                      </span>
+                    } @else {
+                      <span class="text-slate-500">Never</span>
+                    }
+                  </td>
+                  <td class="whitespace-nowrap text-slate-400 max-md:hidden">{{ t.lastDurationSeconds == null ? '—' : duration(t.lastDurationSeconds, true) }}</td>
+                  <td class="whitespace-nowrap text-slate-400 max-sm:hidden">{{ t.isRunning ? '—' : t.nextRun ? when(t.nextRun) : '—' }}</td>
+                  <td class="text-right">
+                    <button class="btn-secondary whitespace-nowrap px-3 py-1 text-xs" [disabled]="t.isRunning || starting().has(t.id)" (click)="runTask(t)">Run now</button>
+                  </td>
+                </tr>
+              } @empty {
+                <tr><td colspan="6" class="text-slate-500">No scheduled tasks.</td></tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </section>
+    }
+
     <!-- General -->
     @if (tab() === 'general') {
       <div class="space-y-6">
@@ -489,6 +530,8 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
 export class SettingsPage implements OnInit {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
+  private readonly events = inject(Events);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected readonly tabs: { id: Tab; label: string }[] = [
     { id: 'media', label: 'Media management' },
@@ -496,6 +539,7 @@ export class SettingsPage implements OnInit {
     { id: 'downloads', label: 'Download client' },
     { id: 'subtitles', label: 'Subtitles' },
     { id: 'metadata', label: 'Metadata' },
+    { id: 'tasks', label: 'Tasks' },
     { id: 'general', label: 'General' },
   ];
   protected readonly tab = signal<Tab>('media');
@@ -530,10 +574,20 @@ export class SettingsPage implements OnInit {
   protected example(format: string, values: Record<string, string>) { return buildName(format ?? '', values); }
   protected browsePath = '/';
   protected rootMediaType: 'Movie' | 'Series' = 'Movie';
+  protected readonly tasks = signal<ScheduledTaskInfo[]>([]);
+  /** Tasks whose "Run now" request is in flight, so the button can't be clicked twice. */
+  protected readonly starting = signal(new Set<string>());
+  /** Ticks so relative times ("in 4m") stay current. */
+  private readonly now = signal(Date.now());
   protected newUsername = '';
   protected newPassword = '';
 
   async ngOnInit() {
+    this.events.taskUpdated.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(t => this.tasks.update(list => list.map(x => (x.id === t.id ? t : x))));
+    const tick = setInterval(() => this.now.set(Date.now()), 15_000);
+    this.destroyRef.onDestroy(() => clearInterval(tick));
+    this.api.tasks().then(t => this.tasks.set(t), () => {});
     const [roots, profiles, qualities, media, downloads, automation, metadata, general, status] = await Promise.all([
       this.api.rootFolders(), this.api.qualityProfiles(), this.api.qualities(), this.api.settings('media'),
       this.api.settings('downloads'), this.api.settings('automation'), this.api.settings('metadata'),
@@ -551,6 +605,44 @@ export class SettingsPage implements OnInit {
     const [subs, langs] = await Promise.all([this.api.settings('subtitles'), this.api.subtitleLanguages()]);
     this.subtitles.set(subs);
     this.languages.set(langs);
+  }
+
+  /** Compact duration without zero parts: "30m", "1d", "1h 30m", "4.2s". */
+  protected duration(seconds: number, precise = false) {
+    if (precise && seconds < 10) return seconds < 0.1 ? '< 0.1s' : `${seconds.toFixed(1)}s`;
+    const s = Math.round(seconds);
+    const parts = [[Math.floor(s / 86400), 'd'], [Math.floor((s % 86400) / 3600), 'h'], [Math.floor((s % 3600) / 60), 'm'], [s % 60, 's']] as const;
+    const first = parts.findIndex(([n]) => n > 0);
+    if (first < 0) return '0s';
+    return parts.slice(first, first + 2).filter(([n]) => n > 0).map(([n, u]) => `${n}${u}`).join(' ');
+  }
+
+  /** "3m ago" / "in 4m", re-rendered while the page is open. */
+  protected when(iso: string) {
+    this.now(); // re-evaluate on each tick
+    const seconds = (new Date(iso).getTime() - Date.now()) / 1000;
+    if (Math.abs(seconds) < 30) return seconds > 0 ? 'soon' : 'just now';
+    return seconds > 0 ? `in ${this.duration(seconds)}` : `${this.duration(-seconds)} ago`;
+  }
+
+  /** Like {@link when} for past times; clock skew between browser and server never makes them "soon". */
+  protected ago(iso: string) {
+    this.now();
+    const seconds = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+    return seconds < 30 ? 'just now' : `${this.duration(seconds)} ago`;
+  }
+
+  async runTask(task: ScheduledTaskInfo) {
+    this.starting.update(s => new Set(s).add(task.id));
+    try {
+      await this.api.runTask(task.id);
+      this.toasts.success(`${task.name} started`);
+      this.tasks.set(await this.api.tasks());
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+    } finally {
+      this.starting.update(s => { const next = new Set(s); next.delete(task.id); return next; });
+    }
   }
 
   /** "es-ES" → "ES", used as the release region placeholder. */

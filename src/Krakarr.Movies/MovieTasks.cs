@@ -17,23 +17,15 @@ public sealed class MovieRssSyncTask(
     ISettingsService settings,
     ILogger<MovieRssSyncTask> logger) : IScheduledTask
 {
-    private static DateTimeOffset _lastRun = DateTimeOffset.MinValue;
-
     public string Name => "RSS sync (movies)";
-    public TimeSpan Interval => TimeSpan.FromMinutes(1);
+    public TimeSpan Interval => TimeSpan.FromMinutes(new AutomationSettings().RssSyncIntervalMinutes);
     public TimeSpan InitialDelay => TimeSpan.FromMinutes(2);
+
+    public async ValueTask<TimeSpan?> GetIntervalAsync(CancellationToken cancellationToken) =>
+        (await settings.GetAsync<AutomationSettings>(cancellationToken)).RssSyncInterval;
 
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var automation = await settings.GetAsync<AutomationSettings>(cancellationToken);
-        if (automation.RssSyncIntervalMinutes <= 0
-            || DateTimeOffset.UtcNow - _lastRun < TimeSpan.FromMinutes(automation.RssSyncIntervalMinutes))
-        {
-            return;
-        }
-
-        _lastRun = DateTimeOffset.UtcNow;
-
         var wanted = await db.Movies.Include(m => m.QualityProfile).Include(m => m.MovieFile)
             .Where(m => m.Monitored)
             .ToListAsync(cancellationToken);

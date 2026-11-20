@@ -20,4 +20,5 @@ public static class EventNames
     public const string SubtitlesUpdated = "subtitlesUpdated";
     public const string CommandUpdated = "commandUpdated";
     public const string HistoryAdded = "historyAdded";
+    public const string TaskUpdated = "taskUpdated";
 }
