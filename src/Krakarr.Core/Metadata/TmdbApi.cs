@@ -1,7 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
+using System.Text.Json;
 using Krakarr.Core.Configuration;
+using Krakarr.Core.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -18,6 +19,9 @@ public sealed class TmdbApi(IHttpClientFactory httpClientFactory, IConfiguration
 {
     public const string HttpClientName = "tmdb";
     private const string ImageBase = "https://image.tmdb.org/t/p/";
+
+    /// <summary>Upper bound for one TMDB response; aggregate credits of long-running shows are the largest at a few MB.</summary>
+    public const long MaxResponseBytes = 16 * 1024 * 1024;
 
     /// <summary>Absolute image URL for a TMDB image path ("/abc.jpg"), or null.</summary>
     public static string? Image(string? path, string size) => string.IsNullOrEmpty(path) ? null : ImageBase + size + path;
@@ -48,7 +52,7 @@ public sealed class TmdbApi(IHttpClientFactory httpClientFactory, IConfiguration
         HttpResponseMessage response;
         try
         {
-            response = await http.SendAsync(request, ct);
+            response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         }
         catch (HttpRequestException ex)
         {
@@ -67,7 +71,19 @@ public sealed class TmdbApi(IHttpClientFactory httpClientFactory, IConfiguration
                 throw new MetadataException($"TMDB request failed with HTTP {(int)response.StatusCode}");
             }
 
-            return await response.Content.ReadFromJsonAsync<T>(ct) ?? throw new MetadataException("Empty TMDB response");
+            try
+            {
+                await using var body = await response.Content.ReadAsBoundedStreamAsync(MaxResponseBytes, ct);
+                return await JsonSerializer.DeserializeAsync<T>(body, JsonSerializerOptions.Web, ct) ?? throw new MetadataException("Empty TMDB response");
+            }
+            catch (HttpRequestException ex)
+            {
+                throw new MetadataException($"Cannot read the TMDB response: {ex.Message}");
+            }
+            catch (JsonException)
+            {
+                throw new MetadataException("TMDB returned an invalid response");
+            }
         }
     }
 }
@@ -83,6 +99,7 @@ public static class TmdbServiceCollectionExtensions
             c.DefaultRequestHeaders.UserAgent.ParseAdd("Krakarr/0.1");
         });
         services.TryAddSingleton<TmdbApi>();
+        services.TryAddSingleton<IPersonMetadata, TmdbPeople>();
         return services;
     }
 }

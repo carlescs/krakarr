@@ -83,6 +83,28 @@ export type SeriesDiscoverList = 'trending' | 'popular' | 'upcoming' | 'top-rate
 export interface DiscoverPage<T> { results: T[]; page: number; totalPages: number; }
 /** A movie or show from a discovery list, recommendations or similar titles. */
 export type DiscoverItem = { kind: 'movie'; item: MovieLookup } | { kind: 'series'; item: SeriesLookup };
+
+export interface CastMember { tmdbId: number; name: string; character?: string; profileUrl?: string; episodes?: number; }
+export interface CrewMember { tmdbId: number; name: string; jobs: string; profileUrl?: string; }
+export interface Credits { cast: CastMember[]; crew: CrewMember[]; }
+/** Any TMDB movie, in the library or not. */
+export interface MovieDetails extends Credits {
+  movie: MovieLookup; tagline?: string; releaseDate?: string; genres: string[];
+}
+export interface SeasonSummary { seasonNumber: number; name?: string; episodeCount: number; airDate?: string; posterUrl?: string; }
+/** Any TMDB show, in the library or not. */
+export interface SeriesDetails extends Credits {
+  show: SeriesLookup; fanartUrl?: string; imdbId?: string; tagline?: string; firstAired?: string; lastAired?: string;
+  runtime: number; episodeCount: number; genres: string[]; seasons: SeasonSummary[];
+}
+export interface PersonCredit {
+  kind: 'movie' | 'series'; tmdbId: number; title: string; year: number; date?: string; overview?: string; posterUrl?: string; rating?: number;
+  department: string; role?: string; movieId?: number; seriesId?: number;
+}
+export interface PersonDetails {
+  tmdbId: number; name: string; biography?: string; birthday?: string; deathday?: string; placeOfBirth?: string; profileUrl?: string;
+  knownForDepartment?: string; imdbId?: string; credits: PersonCredit[];
+}
 export type SeriesStatus = 'Continuing' | 'Ended' | 'Upcoming';
 export type MonitorMode = 'All' | 'Future' | 'Missing' | 'FirstSeason' | 'LatestSeason' | 'None';
 export interface SeasonInfo {

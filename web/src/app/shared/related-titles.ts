@@ -7,7 +7,7 @@ import { MediaRow } from './media-row';
 interface RelatedState { items: DiscoverItem[]; loading: boolean; error: string | null; }
 const LOADING: RelatedState = { items: [], loading: true, error: null };
 
-/** "Recommendations" and "Similar" rows for a library movie or show, from TMDB. */
+/** "Recommendations" and "Similar" rows for a movie or show, from TMDB. */
 @Component({
   selector: 'kr-related-titles',
   imports: [MediaRow],
@@ -25,28 +25,30 @@ export class RelatedTitles {
   private readonly api = inject(Api);
 
   readonly kind = input.required<'movie' | 'series'>();
-  /** Local library id. */
+  /** Local library id, or the TMDB id when source is 'tmdb'. */
   readonly id = input.required<number>();
+  readonly source = input<'library' | 'tmdb'>('library');
 
   protected readonly recommendations = signal<RelatedState>(LOADING);
   protected readonly similar = signal<RelatedState>(LOADING);
 
   constructor() {
     effect(() => {
-      const kind = this.kind(), id = this.id();
-      untracked(() => this.load(kind, id));
+      const kind = this.kind(), id = this.id(), source = this.source();
+      untracked(() => this.load(kind, id, source));
     });
   }
 
-  private load(kind: 'movie' | 'series', id: number) {
+  private load(kind: 'movie' | 'series', id: number, source: 'library' | 'tmdb') {
     this.recommendations.set(LOADING);
     this.similar.set(LOADING);
+    const tmdb = source === 'tmdb';
     this.fetch(this.recommendations, kind === 'movie'
-      ? this.api.movieRecommendations(id).then(movieItems)
-      : this.api.seriesRecommendations(id).then(seriesItems));
+      ? (tmdb ? this.api.tmdbMovieRecommendations(id) : this.api.movieRecommendations(id)).then(movieItems)
+      : (tmdb ? this.api.tmdbSeriesRecommendations(id) : this.api.seriesRecommendations(id)).then(seriesItems));
     this.fetch(this.similar, kind === 'movie'
-      ? this.api.similarMovies(id).then(movieItems)
-      : this.api.similarSeries(id).then(seriesItems));
+      ? (tmdb ? this.api.tmdbSimilarMovies(id) : this.api.similarMovies(id)).then(movieItems)
+      : (tmdb ? this.api.tmdbSimilarSeries(id) : this.api.similarSeries(id)).then(seriesItems));
   }
 
   private async fetch(target: WritableSignal<RelatedState>, request: Promise<DiscoverItem[]>) {

@@ -196,6 +196,7 @@ app.MapMovieEndpoints();
 app.MapSeriesEndpoints();
 app.MapSubtitleEndpoints();
 app.MapCalendarEndpoints();
+app.MapPeopleEndpoints();
 app.MapHub<EventsHub>("/hubs/events");
 app.MapKrakarrSpa(urlBase);
 

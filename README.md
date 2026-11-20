@@ -11,7 +11,7 @@
 | **qBittorrent** – torrent client | `Krakarr.Downloads` | ✅ Embedded [MonoTorrent](https://github.com/alanmcgovern/monotorrent) engine: magnets, .torrent files, DHT, speed limits, seeding ratio/time limits, fast-resume — *or* drive an existing qBittorrent (tag-scoped) |
 | **Sonarr** – TV series | `Krakarr.Series` | ✅ TMDB or TheTVDB metadata, seasons/episodes, monitoring, season-pack aware search, RSS sync, rename + hardlink import |
 | **Bazarr** – subtitles | `Krakarr.Subtitles` | ✅ OpenSubtitles.com, wanted languages, hash + release scoring, automatic and manual search |
-| **Seerr** – discovery | `Krakarr.Movies` / `Krakarr.Series` | ✅ Trending, popular, upcoming and top-rated lists, personal recommendations, recommended and similar titles, one-click add |
+| **Seerr** – discovery | `Krakarr.Movies` / `Krakarr.Series` | ✅ Trending, popular, upcoming and top-rated lists, personal recommendations, recommended and similar titles, detail pages for any title, cast and person pages, one-click add |
 
 Everything (API, web UI, torrent engine, schedulers) runs in a single .NET process inside a single Docker container.
 There is nothing to wire together: no API keys between apps, no download-client configuration, no path mappings.
@@ -96,9 +96,12 @@ TheTVDB is the series metadata source.
 
 - **Recommended for you** blends TMDB's recommendations for your 12 most recently added movies and shows. A title that
   several of them point at ranks higher, and titles you already have are left out.
-- **Movie and series pages** show TMDB's *Recommendations* and *Similar* titles.
-- Titles already in the library carry a ✓ and open their page. Any other title has an *Add* button that asks for a root
-  folder and quality profile, as *Add movie* / *Add series* do.
+- **Movie and series pages** show the cast and key crew plus TMDB's *Recommendations* and *Similar* titles.
+- Titles already in the library carry a ✓ and open their page. Any other title opens a TMDB detail page (overview,
+  genres, seasons, cast and crew, related titles) and has an *Add* button that asks for a root folder and quality
+  profile, as *Add movie* / *Add series* do.
+- **People**: clicking a cast or crew member opens their page with a short biography and every movie and show they
+  worked on, grouped by department (acting, directing, writing…). Talk-show and news appearances are left out.
 
 ### Calendar
 
