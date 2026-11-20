@@ -107,6 +107,20 @@ public class Movie
     public DateTimeOffset? LastSearched { get; set; }
     public int? MovieFileId { get; set; }
     public MovieFile? MovieFile { get; set; }
+    /// <summary>TMDB collection (franchise) the movie belongs to, if any.</summary>
+    public int? CollectionId { get; set; }
+    public MovieCollection? Collection { get; set; }
+}
+
+/// <summary>A TMDB movie collection ("The Lord of the Rings Collection"). Only collections with movies in the library are kept.</summary>
+public class MovieCollection
+{
+    public int Id { get; set; }
+    public int TmdbId { get; set; }
+    public required string Name { get; set; }
+    public string SortName { get; set; } = string.Empty;
+    public string? PosterUrl { get; set; }
+    public string? FanartUrl { get; set; }
 }
 
 public class MovieFile

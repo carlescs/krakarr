@@ -49,7 +49,11 @@ public sealed record MovieDto
     public MovieFileDto? MovieFile { get; init; }
     /// <summary>Progress (0-100) of an active download, if any.</summary>
     public double? DownloadProgress { get; init; }
+    /// <summary>Local id of the TMDB collection the movie belongs to (see <c>GET /movies/collections</c>).</summary>
+    public int? CollectionId { get; init; }
 }
+
+public sealed record MovieCollectionDto(int Id, int TmdbId, string Name, string? PosterUrl);
 
 public sealed record UpdateMovieRequest(bool Monitored, int QualityProfileId, MinimumAvailability? MinimumAvailability = null);
 
@@ -70,6 +74,13 @@ public static class MovieEndpoints
             var region = await ReleaseRegionAsync(settings, ct);
             return movies.Select(m => ToDto(m, progress, region));
         });
+
+        // Collections that have movies in the library, for grouping the movie list.
+        group.MapGet("/collections", async (KrakarrDbContext db, CancellationToken ct) =>
+            await db.MovieCollections.AsNoTracking()
+                .OrderBy(c => c.SortName)
+                .Select(c => new MovieCollectionDto(c.Id, c.TmdbId, c.Name, c.PosterUrl))
+                .ToListAsync(ct));
 
         group.MapGet("/{id:int}", async (int id, KrakarrDbContext db, ITorrentEngine engine, Krakarr.Data.ISettingsService settings, CancellationToken ct) =>
         {
@@ -197,6 +208,7 @@ public static class MovieEndpoints
             await db.Downloads.Where(d => d.MovieId == id).ExecuteUpdateAsync(s => s.SetProperty(d => d.MovieId, (int?)null), ct);
             db.Movies.Remove(movie);
             await db.SaveChangesAsync(ct);
+            await MovieService.PruneCollectionsAsync(db, ct);
             return Results.NoContent();
         });
 
@@ -300,6 +312,7 @@ public static class MovieEndpoints
             ? new MovieFileDto(f.Id, f.RelativePath, f.Size, Qualities.FindById(f.QualityId).Name, f.ReleaseGroup, f.DateAdded)
             : null,
         DownloadProgress = progress.TryGetValue(m.Id, out var p) ? p : null,
+        CollectionId = m.CollectionId,
     };
 
     private static (string Query, int? Year) SplitYear(string term)
