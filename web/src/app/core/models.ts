@@ -262,3 +262,9 @@ export interface ApproveRequestOptions {
   qualityProfileId: number; rootFolderPath: string; searchNow: boolean;
   monitored?: boolean; minimumAvailability?: MinimumAvailability; monitor?: MonitorMode; seasonFolder?: boolean;
 }
+
+export type NotificationSeverity = 'Info' | 'Warning' | 'Error';
+/** An item in the top bar's bell, computed by the server from the current state (see INotificationSource). */
+export interface AppNotification {
+  id: string; kind: string; title: string; message?: string | null; link: string; count: number; severity: NotificationSeverity; date?: string | null;
+}

@@ -29,11 +29,12 @@ public static class RoleAccess
         "/api/v1/rootfolders",
     ];
 
-    /// <summary>Open to every signed-in user, any method (sign out, own password, live events).</summary>
+    /// <summary>Open to every signed-in user, any method (sign out, own password, notifications, live events).</summary>
     private static readonly string[] Everyone =
     [
         "/api/v1/auth",
         "/api/v1/health",
+        "/api/v1/notifications", // each source filters by role
         "/hubs",
     ];
 

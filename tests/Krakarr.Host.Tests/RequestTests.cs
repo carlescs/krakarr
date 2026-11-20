@@ -113,7 +113,13 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
         Assert.Contains(id, await ListIdsAsync(alice));
         Assert.DoesNotContain(id, await ListIdsAsync(bob));
         Assert.Contains(id, await ListIdsAsync(manager, "pending"));
-        Assert.Equal(1, (await alice.GetFromJsonAsync<JsonElement>("/api/v1/requests/count", Ct)).GetProperty("pending").GetInt32());
+
+        // The bell: users count their own pending requests, staff the whole approval queue.
+        var aliceBell = (await alice.GetFromJsonAsync<JsonElement[]>("/api/v1/notifications", Ct))!.Single(n => n.GetProperty("id").GetString() == "requests.mine");
+        Assert.Equal(1, aliceBell.GetProperty("count").GetInt32());
+        Assert.Equal("/requests", aliceBell.GetProperty("link").GetString());
+        var staffBell = (await manager.GetFromJsonAsync<JsonElement[]>("/api/v1/notifications", Ct))!.Single(n => n.GetProperty("id").GetString() == "requests.pending");
+        Assert.True(staffBell.GetProperty("count").GetInt32() >= 2);
 
         // Anyone can see that a title has been requested.
         var open = await bob.GetFromJsonAsync<JsonElement>("/api/v1/requests/tmdb/Movie/1001", Ct);

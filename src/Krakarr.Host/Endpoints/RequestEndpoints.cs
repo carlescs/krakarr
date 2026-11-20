@@ -86,10 +86,6 @@ public static class RequestEndpoints
             return Results.Ok(new MediaRequestPage(await WithAvailabilityAsync(db, rows, Today(time), ct), current, totalPages, total));
         });
 
-        // Pending requests the caller can see: the approval queue for staff, their own open requests for users.
-        group.MapGet("/count", async (HttpContext http, KrakarrDbContext db, CancellationToken ct) =>
-            Results.Ok(new { Pending = await Visible(db.MediaRequests, http).CountAsync(r => r.Status == RequestStatus.Pending, ct) }));
-
         // The open request for a title, if any (whoever made it), so detail pages can show "Requested".
         group.MapGet("/tmdb/{mediaType}/{tmdbId:int}", async (MediaType mediaType, int tmdbId, KrakarrDbContext db, TimeProvider time, CancellationToken ct) =>
         {

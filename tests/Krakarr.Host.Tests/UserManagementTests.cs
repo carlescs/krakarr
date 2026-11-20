@@ -37,7 +37,7 @@ public sealed class RoleAccessTests
     [InlineData("GET", "/api/v1/rootfolders", UserRole.Manager)]
     [InlineData("GET", "/api/v1/something-new", UserRole.Manager)] // closed to plain users by default
     [InlineData("GET", "/api/v1/requests", UserRole.User)]
-    [InlineData("GET", "/api/v1/requests/count", UserRole.User)]
+    [InlineData("GET", "/api/v1/notifications", UserRole.User)]
     [InlineData("POST", "/api/v1/requests", UserRole.User)]
     [InlineData("DELETE", "/api/v1/requests/4", UserRole.User)]
     [InlineData("POST", "/api/v1/requests/4/approve", UserRole.Manager)]
