@@ -119,7 +119,7 @@ public sealed class TmdbTvClient(TmdbApi api, ISettingsService settings) : ITmdb
         _ => "Continuing",
     };
 
-    private static SeriesLookup Map(TvResult r)
+    internal static SeriesLookup Map(TvResult r)
     {
         var aired = Date(r.FirstAirDate);
         return new SeriesLookup
@@ -129,6 +129,7 @@ public sealed class TmdbTvClient(TmdbApi api, ISettingsService settings) : ITmdb
             Year = aired?.Year ?? 0,
             Overview = Blank(r.Overview),
             PosterUrl = TmdbApi.Image(r.PosterPath, "w500"),
+            Rating = r.VoteAverage is > 0 ? Math.Round(r.VoteAverage.Value, 1) : null,
         };
     }
 
@@ -141,7 +142,7 @@ public sealed class TmdbTvClient(TmdbApi api, ISettingsService settings) : ITmdb
 
     private sealed record FindResponse([property: JsonPropertyName("tv_results")] List<TvResult> TvResults);
 
-    private sealed record TvResult
+    internal sealed record TvResult
     {
         [JsonPropertyName("id")] public int Id { get; init; }
         [JsonPropertyName("name")] public string? Name { get; init; }
@@ -149,6 +150,7 @@ public sealed class TmdbTvClient(TmdbApi api, ISettingsService settings) : ITmdb
         [JsonPropertyName("first_air_date")] public string? FirstAirDate { get; init; }
         [JsonPropertyName("overview")] public string? Overview { get; init; }
         [JsonPropertyName("poster_path")] public string? PosterPath { get; init; }
+        [JsonPropertyName("vote_average")] public double? VoteAverage { get; init; }
     }
 
     private sealed record TvShow

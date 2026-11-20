@@ -10,6 +10,7 @@ import { Episode, EpisodeRelease, HistoryItem, IndexerError, QualityProfile, Sea
 import { Toasts } from '../../core/toast';
 import { Modal } from '../../shared/modal';
 import { Poster } from '../../shared/poster';
+import { RelatedTitles } from '../../shared/related-titles';
 import { Progress } from '../../shared/progress';
 import { SubtitleManager } from '../../shared/subtitle-manager';
 
@@ -22,7 +23,7 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
 
 @Component({
   selector: 'kr-series-detail',
-  imports: [FormsModule, DatePipe, Poster, Progress, Modal, BytesPipe, AgoPipe, SubtitleManager],
+  imports: [RelatedTitles, FormsModule, DatePipe, Poster, Progress, Modal, BytesPipe, AgoPipe, SubtitleManager],
   template: `
     @if (series(); as s) {
       <!-- Hero -->
@@ -167,6 +168,9 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
           </ul>
         }
       </section>
+
+      <!-- Recommendations / similar (TMDB) -->
+      <kr-related-titles kind="series" [id]="s.id" />
 
       <!-- Interactive search -->
       @if (releaseTarget(); as target) {
