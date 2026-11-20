@@ -9,6 +9,9 @@ import {
 
 const API = 'api/v1';
 
+/** Optional library item a manual download is imported into. */
+export interface DownloadLink { movieId?: number; seriesId?: number; }
+
 /** Extracts a human readable message from an API error (ProblemDetails / ValidationProblem). */
 export function errorMessage(err: unknown): string {
   if (err instanceof HttpErrorResponse) {
@@ -83,14 +86,16 @@ export class Api {
   downloads() { return this.get<TorrentStatus[]>('downloads'); }
   downloadClientStatus() { return this.get<DownloadClientStatus>('downloads/client'); }
   testDownloadClient(settings: DownloadClientSettings) { return this.post<DownloadClientTestResult>('downloads/client/test', settings); }
-  addMagnet(magnet: string, category?: string) { return this.post<unknown>('downloads/magnet', { magnet, category }); }
-  addTorrentFile(file: File, category?: string) {
+  addMagnet(magnet: string, category?: string, link: DownloadLink = {}) { return this.post<unknown>('downloads/magnet', { magnet, category, ...link }); }
+  addTorrentFile(file: File, category?: string, link: DownloadLink = {}) {
     const form = new FormData();
     form.append('file', file);
     if (category) form.append('category', category);
+    if (link.movieId != null) form.append('movieId', String(link.movieId));
+    if (link.seriesId != null) form.append('seriesId', String(link.seriesId));
     return firstValueFrom(this.http.post(`${API}/downloads/torrent`, form));
   }
-  grabRelease(release: ReleaseInfo, category?: string) { return this.post<unknown>('downloads/release', { release, category }); }
+  grabRelease(release: ReleaseInfo, category?: string, link: DownloadLink = {}) { return this.post<unknown>('downloads/release', { release, category, ...link }); }
   pauseDownload(hash: string) { return this.post<void>(`downloads/${hash}/pause`); }
   resumeDownload(hash: string) { return this.post<void>(`downloads/${hash}/resume`); }
   downloadDetails(hash: string) { return this.get<TorrentDetails>(`downloads/${hash}/details`); }

@@ -190,4 +190,18 @@ public sealed class ApiTests : IClassFixture<KrakarrFactory>
             outside.Delete(true);
         }
     }
+
+    [Fact]
+    public async Task Manual_download_link_must_point_to_a_library_item()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = await LoggedInClientAsync();
+        var magnet = "magnet:?xt=urn:btih:0123456789abcdef0123456789abcdef01234567&dn=Some.Movie.2020.1080p";
+
+        var unknown = await client.PostAsJsonAsync("/api/v1/downloads/magnet", new { magnet, movieId = 424242 }, ct);
+        Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+
+        var both = await client.PostAsJsonAsync("/api/v1/downloads/magnet", new { magnet, movieId = 1, seriesId = 1 }, ct);
+        Assert.Equal(HttpStatusCode.BadRequest, both.StatusCode);
+    }
 }

@@ -23,6 +23,7 @@ public static class DownloadsServiceCollectionExtensions
         services.AddSingleton<ITorrentEngine>(sp => sp.GetRequiredService<DownloadClientRouter>());
 
         services.AddScoped<IDownloadService, DownloadService>();
+        services.AddScoped<ManualDownloadLinks>();
         services.AddHttpClient(DownloadService.HttpClientName, c =>
             {
                 c.Timeout = TimeSpan.FromSeconds(60);

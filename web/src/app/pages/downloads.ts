@@ -6,6 +6,7 @@ import { Events } from '../core/events';
 import { BytesPipe, DurationPipe, SpeedPipe } from '../core/format';
 import { DownloadClientStatus, TorrentStatus } from '../core/models';
 import { Toasts } from '../core/toast';
+import { MediaLink, MediaLinkPicker, linkFields } from '../shared/media-link-picker';
 import { Modal } from '../shared/modal';
 import { Progress } from '../shared/progress';
 import { StateBadge } from '../shared/state-badge';
@@ -20,7 +21,7 @@ function readShowSeeding(): boolean {
 
 @Component({
   selector: 'kr-downloads',
-  imports: [FormsModule, RouterLink, Modal, Progress, StateBadge, TorrentDetailsDialog, BytesPipe, SpeedPipe, DurationPipe],
+  imports: [FormsModule, RouterLink, Modal, MediaLinkPicker, Progress, StateBadge, TorrentDetailsDialog, BytesPipe, SpeedPipe, DurationPipe],
   template: `
     <div class="mb-6 flex flex-wrap items-center gap-3">
       <h1 class="page-title">Downloads</h1>
@@ -102,14 +103,15 @@ function readShowSeeding(): boolean {
         <div class="space-y-4">
           <div>
             <label class="label">Magnet link</label>
-            <textarea class="input font-mono" rows="3" [(ngModel)]="magnet" placeholder="magnet:?xt=urn:btih:…"></textarea>
+            <textarea class="input font-mono" rows="3" [ngModel]="magnet()" (ngModelChange)="magnet.set($event)" placeholder="magnet:?xt=urn:btih:…"></textarea>
           </div>
           <div class="text-center text-xs uppercase tracking-wide text-slate-500">or</div>
           <div>
             <label class="label">Torrent file</label>
             <input type="file" accept=".torrent,application/x-bittorrent" class="block w-full text-sm text-slate-400 file:mr-3 file:rounded-lg file:border-0 file:bg-surface-700 file:px-3 file:py-2 file:text-slate-100"
-                   (change)="file = $any($event.target).files?.[0] ?? null" />
+                   (change)="file.set($any($event.target).files?.[0] ?? null)" />
           </div>
+          <kr-media-link-picker [hint]="addHint()" [link]="link()" (linkChange)="setLink($event)" />
           <div><label class="label">Category</label><input class="input" [(ngModel)]="category" /></div>
         </div>
         <ng-container footer>
@@ -156,9 +158,16 @@ export class DownloadsPage implements OnInit, OnDestroy {
   protected readonly busy = signal(false);
   protected readonly removing = signal<TorrentStatus | null>(null);
   protected readonly details = signal<TorrentStatus | null>(null);
-  protected magnet = '';
+  protected readonly magnet = signal('');
   protected category = 'manual';
-  protected file: File | null = null;
+  protected readonly file = signal<File | null>(null);
+  protected readonly link = signal<MediaLink | null>(null);
+  /** Torrent name to suggest a library item from: the magnet's dn= or the file name. */
+  protected readonly addHint = computed(() => {
+    const file = this.file();
+    if (file) return file.name.replace(/\.torrent$/i, '');
+    try { return new URLSearchParams(this.magnet().trim().replace(/^magnet:\?/i, '')).get('dn') ?? ''; } catch { return ''; }
+  });
   protected deleteData = false;
 
   async ngOnInit() {
@@ -174,18 +183,29 @@ export class DownloadsPage implements OnInit, OnDestroy {
   async add() {
     this.busy.set(true);
     try {
-      if (this.file) await this.api.addTorrentFile(this.file, this.category);
-      else if (this.magnet.trim()) await this.api.addMagnet(this.magnet.trim(), this.category);
+      const file = this.file();
+      const magnet = this.magnet().trim();
+      const link = linkFields(this.link());
+      if (file) await this.api.addTorrentFile(file, this.category, link);
+      else if (magnet) await this.api.addMagnet(magnet, this.category, link);
       else return;
       this.toasts.success('Torrent added');
       this.addOpen.set(false);
-      this.magnet = '';
-      this.file = null;
+      this.magnet.set('');
+      this.file.set(null);
+      this.setLink(null);
     } catch (e) {
       this.toasts.error(errorMessage(e));
     } finally {
       this.busy.set(false);
     }
+  }
+
+  /** Linked downloads go to the movies/tv category unless the user typed their own. */
+  protected setLink(link: MediaLink | null) {
+    const defaults = ['manual', 'movies', 'tv', ''];
+    if (defaults.includes(this.category.trim())) this.category = link ? (link.kind === 'movie' ? 'movies' : 'tv') : 'manual';
+    this.link.set(link);
   }
 
   protected segment(active: boolean) {
