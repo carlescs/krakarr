@@ -1,5 +1,6 @@
 using System.Net;
 using Krakarr.Core.Domain;
+using Krakarr.Core.Http;
 using Microsoft.Extensions.Logging;
 
 namespace Krakarr.Downloads;
@@ -68,7 +69,7 @@ public sealed class DownloadService(ITorrentEngine engine, IHttpClientFactory ht
             }
 
             response.EnsureSuccessStatusCode();
-            var bytes = await response.Content.ReadAsByteArrayAsync(ct);
+            var bytes = await response.Content.ReadAsByteArrayAsync(BoundedContent.MaxTorrentBytes, ct);
             if (bytes.Length > 0 && bytes[0] == (byte)'d')
             {
                 return (bytes, null);

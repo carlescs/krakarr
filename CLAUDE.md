@@ -41,3 +41,14 @@ cd web && npx ng build && npx ng test --watch=false            # frontend build 
 - Each module exposes `AddKrakarr<Module>()` for DI and `Map<Module>Endpoints()` for minimal API routes under `/api/v1`.
 - Other code talks to downloads only through `ITorrentEngine`, which `DownloadClientRouter` points at the selected client.
 - Frontend: standalone components with inline templates, signals for async state, Tailwind utility classes (`btn-*`, `input`, `card` and others defined in `web/src/styles.css`).
+
+## Memory usage
+
+Krakarr runs 24/7 on small home servers (NAS, Raspberry Pi), often next to other containers. **Always take memory into account** when writing or reviewing code, and assume libraries with thousands of movies and series and tens of thousands of episodes.
+
+- Queries: use `AsNoTracking()` for reads and `Select` only the columns you need. Never `Include` episodes (or other unbounded children) for list endpoints; aggregate in SQL or project slim rows (see the series list in `SeriesEndpoints`). Use `AsSplitQuery()` when including several collections.
+- Loops over the library (scheduled tasks, bulk commands): load ids or slim rows, then load one item at a time and call `db.ChangeTracker.Clear()` between items. A scoped `DbContext` otherwise keeps every entity it has seen until the task ends.
+- HTTP: never buffer an unbounded response. Use `BoundedContent` (`Krakarr.Core/Http`): `ReadAsByteArrayAsync(maxBytes)` or `ReadAsBoundedStreamAsync(maxBytes)`, plus `HttpCompletionOption.ResponseHeadersRead`, and parse JSON/XML from the stream rather than from a string. Check the status code before reading the body.
+- Files: stream them (`FileStream`, `CopyToAsync`) rather than `ReadAllBytes`/`ReadAllText` on media-sized files. Don't copy buffers twice (`MemoryStream` + `ToArray`) when the length is known.
+- Caches and in-memory collections (static dictionaries, `ConcurrentDictionary`, queues) must be bounded or pruned. Timers that run every second (torrent engine, SignalR updates) must not allocate in proportion to the library.
+- Runtime: the host uses workstation, non-concurrent GC (`Krakarr.Host.csproj`, plus `DOTNET_gcServer=0` in the Dockerfile). Don't switch to Server GC.

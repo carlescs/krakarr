@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Xml.Linq;
 using Krakarr.Core.Domain;
+using Krakarr.Core.Http;
 using Microsoft.Extensions.Logging;
 
 namespace Krakarr.Indexers;
@@ -46,8 +48,7 @@ public sealed class TorznabClient(IHttpClientFactory httpClientFactory, ILogger<
             return cached.Caps;
         }
 
-        var xml = await GetStringAsync(BuildUrl(indexer, [("t", "caps")]), ct);
-        var caps = TorznabParser.ParseCapabilities(xml);
+        var caps = TorznabParser.ParseCapabilities(await GetXmlAsync(BuildUrl(indexer, [("t", "caps")]), ct));
         CapsCache[key] = (caps, DateTimeOffset.UtcNow);
         return caps;
     }
@@ -66,8 +67,7 @@ public sealed class TorznabClient(IHttpClientFactory httpClientFactory, ILogger<
         }
 
         var parameters = BuildSearchParameters(indexer, criteria, caps);
-        var xml = await GetStringAsync(BuildUrl(indexer, parameters), ct);
-        return TorznabParser.ParseResults(xml, indexer);
+        return TorznabParser.ParseResults(await GetXmlAsync(BuildUrl(indexer, parameters), ct), indexer);
     }
 
     internal static List<(string Key, string Value)> BuildSearchParameters(Indexer indexer, SearchCriteria criteria, IndexerCapabilities caps)
@@ -163,17 +163,24 @@ public sealed class TorznabClient(IHttpClientFactory httpClientFactory, ILogger<
         return new Uri($"{baseUrl}{path}?{query}");
     }
 
-    private async Task<string> GetStringAsync(Uri url, CancellationToken ct)
+    private async Task<XDocument> GetXmlAsync(Uri url, CancellationToken ct)
     {
         var http = httpClientFactory.CreateClient(HttpClientName);
-        using var response = await http.GetAsync(url, ct);
-        var body = await response.Content.ReadAsStringAsync(ct);
+        using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!response.IsSuccessStatusCode)
         {
             throw new IndexerException($"Indexer responded with HTTP {(int)response.StatusCode}");
         }
 
-        return body;
+        try
+        {
+            await using var body = await response.Content.ReadAsBoundedStreamAsync(BoundedContent.MaxIndexerResponseBytes, ct);
+            return await TorznabParser.LoadAsync(body, ct);
+        }
+        catch (ResponseTooLargeException ex)
+        {
+            throw new IndexerException(ex.Message, ex);
+        }
     }
 
     private static string CacheKey(Indexer indexer) => $"{indexer.Id}|{indexer.BaseUrl}|{indexer.ApiPath}";

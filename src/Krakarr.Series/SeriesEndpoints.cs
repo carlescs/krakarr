@@ -61,12 +61,16 @@ public static class SeriesEndpoints
 
         group.MapGet("/", async (KrakarrDbContext db, ITorrentEngine engine, TimeProvider time, CancellationToken ct) =>
         {
-            var list = await db.Series.AsNoTracking()
-                .Include(s => s.Seasons).Include(s => s.Episodes).ThenInclude(e => e.EpisodeFile)
-                .AsSplitQuery().OrderBy(s => s.SortTitle).ToListAsync(ct);
+            // The list only needs per-season counts and sizes, so project the few episode columns that feed them instead
+            // of materialising every episode (with overviews) and file of the whole library.
+            var list = await db.Series.AsNoTracking().Include(s => s.Seasons).AsSplitQuery().OrderBy(s => s.SortTitle).ToListAsync(ct);
+            var stats = (await db.Episodes.AsNoTracking()
+                .Select(e => new { e.SeriesId, Stat = new EpisodeStat(e.SeasonNumber, e.AirDate, e.Monitored, e.EpisodeFileId, e.EpisodeFile != null ? e.EpisodeFile.Size : 0) })
+                .ToListAsync(ct))
+                .ToLookup(x => x.SeriesId, x => x.Stat);
             var downloading = DownloadingBySeries(engine);
             var today = Today(time);
-            return list.Select(s => ToDto(s, today, downloading));
+            return list.Select(s => ToDto(s, stats[s.Id], today, downloading));
         });
 
         // Library import: scan a root folder for existing show folders, then import selected ones in place.
@@ -325,10 +329,21 @@ public static class SeriesEndpoints
         return result;
     }
 
-    internal static SeriesDto ToDto(Core.Domain.Series s, DateOnly today, IReadOnlyDictionary<int, int> downloading)
+    /// <summary>The episode columns <see cref="ToDto(Core.Domain.Series, IEnumerable{EpisodeStat}, DateOnly, IReadOnlyDictionary{int, int})"/> needs.</summary>
+    internal readonly record struct EpisodeStat(int SeasonNumber, DateOnly? AirDate, bool Monitored, int? EpisodeFileId, long FileSize)
     {
-        static bool Counts(Episode e, DateOnly today) => e.EpisodeFileId is not null || (e.Monitored && e.HasAired(today));
-        var regular = s.Episodes.Where(e => e.SeasonNumber > 0).ToList();
+        public bool HasAired(DateOnly today) => AirDate is { } d && d <= today;
+    }
+
+    internal static SeriesDto ToDto(Core.Domain.Series s, DateOnly today, IReadOnlyDictionary<int, int> downloading) =>
+        ToDto(s, s.Episodes.Select(e => new EpisodeStat(e.SeasonNumber, e.AirDate, e.Monitored, e.EpisodeFileId, e.EpisodeFile?.Size ?? 0)), today, downloading);
+
+    internal static SeriesDto ToDto(Core.Domain.Series s, IEnumerable<EpisodeStat> episodes, DateOnly today, IReadOnlyDictionary<int, int> downloading)
+    {
+        static bool Counts(EpisodeStat e, DateOnly today) => e.EpisodeFileId is not null || (e.Monitored && e.HasAired(today));
+        static long Size(IEnumerable<EpisodeStat> eps) => eps.Where(e => e.EpisodeFileId is not null).DistinctBy(e => e.EpisodeFileId).Sum(e => e.FileSize);
+        var all = episodes as IReadOnlyCollection<EpisodeStat> ?? episodes.ToList();
+        var regular = all.Where(e => e.SeasonNumber > 0).ToList();
         return new SeriesDto
         {
             Id = s.Id,
@@ -350,14 +365,13 @@ public static class SeriesEndpoints
             Added = s.Added,
             EpisodeCount = regular.Count(e => Counts(e, today)),
             EpisodeFileCount = regular.Count(e => e.EpisodeFileId is not null),
-            SizeOnDisk = s.Episodes.Select(e => e.EpisodeFile).OfType<EpisodeFile>().DistinctBy(f => f.Id).Sum(f => f.Size),
-            NextAiring = s.Episodes.Where(e => e.AirDate > today && e.SeasonNumber > 0).Select(e => e.AirDate).Min(),
+            SizeOnDisk = Size(all),
+            NextAiring = regular.Where(e => e.AirDate > today).Select(e => e.AirDate).Min(),
             DownloadingCount = downloading.GetValueOrDefault(s.Id),
             Seasons = s.Seasons.OrderBy(x => x.SeasonNumber).Select(season =>
             {
-                var eps = s.Episodes.Where(e => e.SeasonNumber == season.SeasonNumber).ToList();
-                return new SeasonDto(season.SeasonNumber, season.Monitored, eps.Count(e => Counts(e, today)), eps.Count(e => e.EpisodeFileId is not null), eps.Count,
-                    eps.Select(e => e.EpisodeFile).OfType<EpisodeFile>().DistinctBy(f => f.Id).Sum(f => f.Size));
+                var eps = all.Where(e => e.SeasonNumber == season.SeasonNumber).ToList();
+                return new SeasonDto(season.SeasonNumber, season.Monitored, eps.Count(e => Counts(e, today)), eps.Count(e => e.EpisodeFileId is not null), eps.Count, Size(eps));
             }).ToList(),
         };
     }

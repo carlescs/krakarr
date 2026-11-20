@@ -1,5 +1,6 @@
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
+using Krakarr.Core.Http;
 using Krakarr.Data;
 using Krakarr.Downloads.QBittorrent;
 using Microsoft.AspNetCore.Builder;
@@ -40,16 +41,21 @@ public static class DownloadEndpoints
 
         group.MapPost("/torrent", async (IFormFile file, [Microsoft.AspNetCore.Mvc.FromForm] string? category, ITorrentEngine engine, CancellationToken ct) =>
         {
-            if (file.Length is 0 or > 10 * 1024 * 1024)
+            if (file.Length is 0 or > BoundedContent.MaxTorrentBytes)
             {
                 return Results.Problem("Torrent file must be between 1 byte and 10 MB", statusCode: 400);
             }
 
-            using var ms = new MemoryStream();
-            await file.CopyToAsync(ms, ct);
+            // Read straight into an exactly sized array (a MemoryStream + ToArray would hold the file twice).
+            var data = new byte[file.Length];
+            await using (var upload = file.OpenReadStream())
+            {
+                await upload.ReadExactlyAsync(data, ct);
+            }
+
             try
             {
-                var row = await engine.AddTorrentAsync(ms.ToArray(), new AddTorrentOptions { Category = category ?? "default" }, ct);
+                var row = await engine.AddTorrentAsync(data, new AddTorrentOptions { Category = category ?? "default" }, ct);
                 return Results.Ok(row);
             }
             catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)

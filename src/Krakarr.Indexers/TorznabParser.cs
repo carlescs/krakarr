@@ -12,9 +12,10 @@ public static class TorznabParser
     private static readonly XNamespace TorznabNs = "http://torznab.com/schemas/2015/feed";
     private static readonly XNamespace NewznabNs = "http://www.newznab.com/DTD/2010/feeds/attributes/";
 
-    public static IReadOnlyList<ReleaseInfo> ParseResults(string xml, Indexer indexer)
+    public static IReadOnlyList<ReleaseInfo> ParseResults(string xml, Indexer indexer) => ParseResults(Load(xml), indexer);
+
+    public static IReadOnlyList<ReleaseInfo> ParseResults(XDocument doc, Indexer indexer)
     {
-        var doc = Load(xml);
         ThrowIfError(doc);
 
         var channel = doc.Root?.Element("channel");
@@ -84,9 +85,10 @@ public static class TorznabParser
         return results;
     }
 
-    public static IndexerCapabilities ParseCapabilities(string xml)
+    public static IndexerCapabilities ParseCapabilities(string xml) => ParseCapabilities(Load(xml));
+
+    public static IndexerCapabilities ParseCapabilities(XDocument doc)
     {
-        var doc = Load(xml);
         ThrowIfError(doc);
 
         var root = doc.Root ?? throw new IndexerException("Empty capabilities document");
@@ -133,6 +135,19 @@ public static class TorznabParser
             TvSearchParams = tv.Params,
             Categories = categories,
         };
+    }
+
+    /// <summary>Parses straight from the response stream, so the body is never held as one large string.</summary>
+    public static async Task<XDocument> LoadAsync(Stream xml, CancellationToken ct)
+    {
+        try
+        {
+            return await XDocument.LoadAsync(xml, LoadOptions.None, ct);
+        }
+        catch (System.Xml.XmlException ex)
+        {
+            throw new IndexerException("Indexer returned invalid XML", ex);
+        }
     }
 
     private static XDocument Load(string xml)

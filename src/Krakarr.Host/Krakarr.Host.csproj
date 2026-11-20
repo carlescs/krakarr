@@ -1,4 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
+  <!--
+    Memory: Krakarr is a long-running home-server app, so favour a small footprint over raw throughput.
+    The Web SDK defaults to Server GC (one heap per core), which can hold hundreds of MB on many-core hosts.
+    Workstation GC keeps a single heap; non-concurrent avoids the background GC thread and its extra reservations.
+    The Docker image also sets DOTNET_gcServer=0, this covers bare-metal/`dotnet run` installs too.
+  -->
+  <PropertyGroup>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="../Krakarr.Core/Krakarr.Core.csproj" />
     <ProjectReference Include="../Krakarr.Data/Krakarr.Data.csproj" />
