@@ -2,6 +2,7 @@ import { Component, DestroyRef, computed, inject, linkedSignal, signal } from '@
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { Auth } from '../../core/auth';
 import { Library } from '../../core/library';
 import { SeriesListItem } from '../../core/models';
 import { NearViewport } from '../../shared/near-viewport';
@@ -25,10 +26,12 @@ type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
         <option value="ended">Ended</option>
         <option value="unmonitored">Unmonitored</option>
       </select>
-      <div class="flex gap-2 max-sm:basis-full">
-        <a routerLink="/series/import" class="btn-secondary max-sm:flex-1">Import library</a>
-        <a routerLink="/series/add" class="btn-primary max-sm:flex-1">+ Add series</a>
-      </div>
+      @if (auth.isStaff()) {
+        <div class="flex gap-2 max-sm:basis-full">
+          <a routerLink="/series/import" class="btn-secondary max-sm:flex-1">Import library</a>
+          <a routerLink="/series/add" class="btn-primary max-sm:flex-1">+ Add series</a>
+        </div>
+      }
     </div>
 
     @if (loading()) {
@@ -36,11 +39,15 @@ type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
     } @else if (series().length === 0) {
       <div class="card flex flex-col items-center gap-3 px-6 py-16 text-center">
         <p class="text-lg font-medium text-white">No series yet</p>
-        <p class="max-w-md text-sm text-slate-400">Add a TV root folder and a TMDB API key in Settings, then add your first show.</p>
-        <div class="mt-2 flex gap-2">
-          <a routerLink="/settings" class="btn-secondary">Settings</a>
-          <a routerLink="/series/add" class="btn-primary">Add series</a>
-        </div>
+        @if (auth.isStaff()) {
+          <p class="max-w-md text-sm text-slate-400">Add a TV root folder and a TMDB API key in Settings, then add your first show.</p>
+          <div class="mt-2 flex gap-2">
+            <a routerLink="/settings" class="btn-secondary">Settings</a>
+            <a routerLink="/series/add" class="btn-primary">Add series</a>
+          </div>
+        } @else {
+          <p class="max-w-md text-sm text-slate-400">Nothing here yet. Browse <a routerLink="/discover" class="underline">Discover</a> for ideas.</p>
+        }
       </div>
     } @else if (filtered().length === 0) {
       <p class="py-12 text-center text-slate-500">No series match the filter.</p>
@@ -71,6 +78,7 @@ type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
   `,
 })
 export class SeriesListPage {
+  protected readonly auth = inject(Auth);
   private readonly cache = inject(Library).series;
 
   protected readonly grid = POSTER_GRID;

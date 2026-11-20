@@ -1,6 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../core/api';
+import { Auth } from '../core/auth';
 import { DiscoverListInfo, MOVIE_LISTS, SERIES_LISTS, interleave, movieItems, seriesItems } from '../core/discover';
 import { DiscoverItem } from '../core/models';
 import { MediaRow } from '../shared/media-row';
@@ -14,13 +15,15 @@ interface RowState { key: string; title: string; subtitle: string; link: string[
   template: `
     <div class="mb-6 flex flex-wrap items-center gap-3">
       <h1 class="page-title mr-auto">Discover</h1>
-      <a routerLink="/movies/add" class="btn-secondary">Search movies</a>
-      <a routerLink="/series/add" class="btn-secondary">Search series</a>
+      @if (auth.isStaff()) {
+        <a routerLink="/movies/add" class="btn-secondary">Search movies</a>
+        <a routerLink="/series/add" class="btn-secondary">Search series</a>
+      }
     </div>
 
     @if (setupError()) {
       <div class="card mb-6 border-amber-500/30 px-5 py-4 text-sm text-amber-200">
-        {{ setupError() }} — recommendations come from TMDB. <a routerLink="/settings" class="underline">Add a TMDB API key in Settings</a>.
+        {{ setupError() }} — recommendations come from TMDB. @if (auth.isAdmin()) { <a routerLink="/settings" class="underline">Add a TMDB API key in Settings</a>. } @else { Ask an admin to add a TMDB API key. }
       </div>
     }
 
@@ -37,6 +40,7 @@ interface RowState { key: string; title: string; subtitle: string; link: string[
   `,
 })
 export class DiscoverPage implements OnInit {
+  protected readonly auth = inject(Auth);
   private readonly api = inject(Api);
 
   protected readonly setupError = signal<string | null>(null);

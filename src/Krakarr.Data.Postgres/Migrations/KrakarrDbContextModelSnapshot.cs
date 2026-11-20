@@ -17,7 +17,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261120160126_MovieCollections";
+    public override string LastMigrationId => "20261120162801_UserRoles";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -758,6 +758,14 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<string>("PasswordHash")
                     .IsRequired()
                     .HasColumnType("text");
+
+                b.Property<int>("Role")
+                    .HasColumnType("integer");
+
+                b.Property<string>("SecurityStamp")
+                    .IsRequired()
+                    .HasMaxLength(64)
+                    .HasColumnType("character varying(64)");
 
                 b.Property<string>("Username")
                     .IsRequired()

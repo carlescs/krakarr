@@ -4,6 +4,7 @@ import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
+import { Auth } from '../../core/auth';
 import { Events } from '../../core/events';
 import { AgoPipe, BytesPipe } from '../../core/format';
 import { Episode, EpisodeRelease, HistoryItem, IndexerError, OrganizePreview, QualityProfile, SeasonInfo, Series, SubtitleFile } from '../../core/models';
@@ -52,15 +53,17 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
               @if (s.sizeOnDisk) { <span class="badge bg-surface-700 text-slate-300">{{ s.sizeOnDisk | bytes }}</span> }
             </div>
             <p class="mt-4 line-clamp-4 max-w-3xl text-sm leading-relaxed text-slate-300">{{ s.overview }}</p>
-            <p class="mt-3 break-all font-mono text-xs text-slate-500">{{ s.path }}</p>
-            <div class="mt-5 flex flex-wrap gap-2">
-              <button class="btn-primary" (click)="searchMissing()">Search missing</button>
-              <button class="btn-secondary" (click)="refresh()">Refresh</button>
-              <button class="btn-secondary" (click)="openOrganize()" title="Rename files and folders to match the naming settings">Organize</button>
-              <button class="btn-secondary" (click)="toggleSeries()">{{ s.monitored ? 'Unmonitor' : 'Monitor' }}</button>
-              <button class="btn-ghost" (click)="editing.set(true)">Edit</button>
-              <button class="btn-ghost text-rose-300" (click)="confirmDelete.set(true)">Delete</button>
-            </div>
+            @if (auth.isStaff()) {
+              <p class="mt-3 break-all font-mono text-xs text-slate-500">{{ s.path }}</p>
+              <div class="mt-5 flex flex-wrap gap-2">
+                <button class="btn-primary" (click)="searchMissing()">Search missing</button>
+                <button class="btn-secondary" (click)="refresh()">Refresh</button>
+                <button class="btn-secondary" (click)="openOrganize()" title="Rename files and folders to match the naming settings">Organize</button>
+                <button class="btn-secondary" (click)="toggleSeries()">{{ s.monitored ? 'Unmonitor' : 'Monitor' }}</button>
+                <button class="btn-ghost" (click)="editing.set(true)">Edit</button>
+                <button class="btn-ghost text-rose-300" (click)="confirmDelete.set(true)">Delete</button>
+              </div>
+            }
           </div>
         </div>
       </div>
@@ -70,21 +73,25 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
         @for (season of seasonsDesc(); track season.seasonNumber) {
           <section class="card overflow-hidden">
             <div class="flex items-center gap-2 py-2 pr-2 pl-3 sm:gap-3 sm:px-4 sm:py-3">
-              <button class="-m-1.5 p-1.5 text-slate-400 hover:text-white" (click)="toggleMonitorSeason(season)" [title]="season.monitored ? 'Unmonitor season' : 'Monitor season'">
-                <svg class="size-5" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor" [attr.fill]="season.monitored ? 'currentColor' : 'none'"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons.bookmark" /></svg>
-              </button>
+              @if (auth.isStaff()) {
+                <button class="-m-1.5 p-1.5 text-slate-400 hover:text-white" (click)="toggleMonitorSeason(season)" [title]="season.monitored ? 'Unmonitor season' : 'Monitor season'">
+                  <svg class="size-5" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor" [attr.fill]="season.monitored ? 'currentColor' : 'none'"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons.bookmark" /></svg>
+                </button>
+              }
               <button class="flex min-w-0 flex-1 items-center gap-2 self-stretch text-left sm:gap-3" (click)="toggleExpanded(season.seasonNumber)">
                 <h2 class="whitespace-nowrap font-semibold text-white">{{ season.seasonNumber === 0 ? 'Specials' : 'Season ' + season.seasonNumber }}</h2>
                 <span class="badge" [class]="seasonBadge(season)">{{ season.episodeFileCount }}/{{ season.episodeCount }}</span>
                 @if (season.sizeOnDisk) { <span class="whitespace-nowrap text-xs text-slate-500 max-sm:hidden">{{ season.sizeOnDisk | bytes }}</span> }
                 <span class="ml-auto text-slate-500">{{ expanded().has(season.seasonNumber) ? '▾' : '▸' }}</span>
               </button>
-              <button class="btn-ghost btn-sm" title="Search season" (click)="searchSeason(season.seasonNumber)">
-                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" [attr.d]="icons.search" /></svg>
-              </button>
-              <button class="btn-ghost btn-sm" title="Interactive search" (click)="interactive({ label: seasonLabel(season.seasonNumber), season: season.seasonNumber })">
-                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" [attr.d]="icons.list" /></svg>
-              </button>
+              @if (auth.isStaff()) {
+                <button class="btn-ghost btn-sm" title="Search season" (click)="searchSeason(season.seasonNumber)">
+                  <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" [attr.d]="icons.search" /></svg>
+                </button>
+                <button class="btn-ghost btn-sm" title="Interactive search" (click)="interactive({ label: seasonLabel(season.seasonNumber), season: season.seasonNumber })">
+                  <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" [attr.d]="icons.list" /></svg>
+                </button>
+              }
             </div>
             @if (expanded().has(season.seasonNumber)) {
               <div class="overflow-x-auto border-t border-surface-700">
@@ -94,9 +101,11 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
                     @for (e of episodesFor(season.seasonNumber); track e.id) {
                       <tr [class.opacity-60]="!e.monitored">
                         <td>
-                          <button class="-m-1.5 p-1.5 text-slate-400 hover:text-white" (click)="toggleMonitorEpisode(e)" [title]="e.monitored ? 'Unmonitor' : 'Monitor'">
-                            <svg class="size-4" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor" [attr.fill]="e.monitored ? 'currentColor' : 'none'"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons.bookmark" /></svg>
-                          </button>
+                          @if (auth.isStaff()) {
+                            <button class="-m-1.5 p-1.5 text-slate-400 hover:text-white" (click)="toggleMonitorEpisode(e)" [title]="e.monitored ? 'Unmonitor' : 'Monitor'">
+                              <svg class="size-4" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor" [attr.fill]="e.monitored ? 'currentColor' : 'none'"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons.bookmark" /></svg>
+                            </button>
+                          }
                         </td>
                         <td class="text-slate-400">{{ e.episodeNumber }}</td>
                         <td class="w-full max-w-0">
@@ -117,17 +126,19 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
                         <td class="whitespace-nowrap text-slate-400 max-md:hidden">{{ e.airDate ? (e.airDate | date: 'mediumDate') : 'TBA' }}</td>
                         <td class="max-sm:hidden"><ng-container *ngTemplateOutlet="episodeStatus; context: { $implicit: e }" /></td>
                         <td class="whitespace-nowrap text-right">
-                          @if (e.episodeFile) {
-                            <button class="btn-ghost btn-sm" title="Subtitles" (click)="subtitleEpisode.set(e)">
-                              <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons.cc" /></svg>
+                          @if (auth.isStaff()) {
+                            @if (e.episodeFile) {
+                              <button class="btn-ghost btn-sm" title="Subtitles" (click)="subtitleEpisode.set(e)">
+                                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons.cc" /></svg>
+                              </button>
+                            }
+                            <button class="btn-ghost btn-sm" title="Automatic search" (click)="searchEpisode(e)">
+                              <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" [attr.d]="icons.search" /></svg>
+                            </button>
+                            <button class="btn-ghost btn-sm" title="Interactive search" (click)="interactive({ label: code(e), episodeId: e.id })">
+                              <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" [attr.d]="icons.list" /></svg>
                             </button>
                           }
-                          <button class="btn-ghost btn-sm" title="Automatic search" (click)="searchEpisode(e)">
-                            <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" [attr.d]="icons.search" /></svg>
-                          </button>
-                          <button class="btn-ghost btn-sm" title="Interactive search" (click)="interactive({ label: code(e), episodeId: e.id })">
-                            <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" [attr.d]="icons.list" /></svg>
-                          </button>
                         </td>
                       </tr>
                     }
@@ -140,27 +151,29 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
       </div>
 
       <!-- History -->
-      <section class="card mt-6 p-4 sm:p-5">
-        <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">History</h2>
-        @if (history().length === 0) {
-          <p class="text-sm text-slate-500">Nothing yet.</p>
-        } @else {
-          <ul class="divide-y divide-surface-800 text-sm">
-            @for (h of history(); track h.id) {
-              <li class="flex flex-wrap items-center gap-3 py-2">
-                <span class="badge w-20 justify-center sm:w-24"
-                      [class]="h.eventType === 'Imported' ? 'bg-emerald-500/15 text-emerald-300' : h.eventType === 'Grabbed' ? 'bg-accent-500/15 text-accent-300' : h.eventType === 'SubtitleDownloaded' ? 'bg-violet-500/15 text-violet-300' : 'bg-rose-500/15 text-rose-300'">
-                  {{ h.eventType === 'DownloadFailed' ? 'Failed' : h.eventType === 'FileDeleted' ? 'Deleted' : h.eventType === 'SubtitleDownloaded' ? 'Subtitle' : h.eventType }}
-                </span>
-                <span class="min-w-0 flex-1 truncate max-sm:order-1 max-sm:basis-full" [title]="h.sourceTitle">{{ h.sourceTitle }}</span>
-                <span class="text-xs text-slate-500">{{ h.quality }}</span>
-                <span class="text-right text-xs text-slate-500 max-sm:ml-auto sm:w-24" [title]="h.date">{{ h.date | ago }}</span>
-                @if (h.message) { <span class="w-full text-xs text-slate-500 max-sm:order-2 sm:pl-27">{{ h.message }}</span> }
-              </li>
-            }
-          </ul>
-        }
-      </section>
+      @if (auth.isStaff()) {
+        <section class="card mt-6 p-4 sm:p-5">
+          <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">History</h2>
+          @if (history().length === 0) {
+            <p class="text-sm text-slate-500">Nothing yet.</p>
+          } @else {
+            <ul class="divide-y divide-surface-800 text-sm">
+              @for (h of history(); track h.id) {
+                <li class="flex flex-wrap items-center gap-3 py-2">
+                  <span class="badge w-20 justify-center sm:w-24"
+                        [class]="h.eventType === 'Imported' ? 'bg-emerald-500/15 text-emerald-300' : h.eventType === 'Grabbed' ? 'bg-accent-500/15 text-accent-300' : h.eventType === 'SubtitleDownloaded' ? 'bg-violet-500/15 text-violet-300' : 'bg-rose-500/15 text-rose-300'">
+                    {{ h.eventType === 'DownloadFailed' ? 'Failed' : h.eventType === 'FileDeleted' ? 'Deleted' : h.eventType === 'SubtitleDownloaded' ? 'Subtitle' : h.eventType }}
+                  </span>
+                  <span class="min-w-0 flex-1 truncate max-sm:order-1 max-sm:basis-full" [title]="h.sourceTitle">{{ h.sourceTitle }}</span>
+                  <span class="text-xs text-slate-500">{{ h.quality }}</span>
+                  <span class="text-right text-xs text-slate-500 max-sm:ml-auto sm:w-24" [title]="h.date">{{ h.date | ago }}</span>
+                  @if (h.message) { <span class="w-full text-xs text-slate-500 max-sm:order-2 sm:pl-27">{{ h.message }}</span> }
+                </li>
+              }
+            </ul>
+          }
+        </section>
+      }
 
       <!-- Recommendations / similar (TMDB) -->
       <kr-related-titles kind="series" [id]="s.id" />
@@ -316,6 +329,7 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
 export class SeriesDetailPage implements OnInit {
   readonly id = input.required({ transform: numberAttribute });
 
+  protected readonly auth = inject(Auth);
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
   private readonly events = inject(Events);
@@ -402,7 +416,7 @@ export class SeriesDetailPage implements OnInit {
     finally { this.loadingEpisodes = false; }
   }
 
-  private async loadHistory() { this.history.set((await this.api.history(undefined, 1, 50, this.id())).items); }
+  private async loadHistory() { if (this.auth.isStaff()) this.history.set((await this.api.history(undefined, 1, 50, this.id())).items); }
 
   protected episodesFor(season: number) {
     return this.episodes().filter(e => e.seasonNumber === season).sort((a, b) => b.episodeNumber - a.episodeNumber);

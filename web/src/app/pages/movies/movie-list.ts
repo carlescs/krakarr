@@ -3,6 +3,7 @@ import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Events } from '../../core/events';
+import { Auth } from '../../core/auth';
 import { Library } from '../../core/library';
 import { MovieListItem } from '../../core/models';
 import { MovieGroup, groupByCollection } from '../../core/movie-groups';
@@ -37,10 +38,12 @@ function storedGrouping(): Grouping {
         <option value="none">Ungrouped</option>
         <option value="collection">By collection</option>
       </select>
-      <div class="flex gap-2 max-sm:basis-full">
-        <a routerLink="/movies/import" class="btn-secondary max-sm:flex-1">Import library</a>
-        <a routerLink="/movies/add" class="btn-primary max-sm:flex-1">+ Add movie</a>
-      </div>
+      @if (auth.isStaff()) {
+        <div class="flex gap-2 max-sm:basis-full">
+          <a routerLink="/movies/import" class="btn-secondary max-sm:flex-1">Import library</a>
+          <a routerLink="/movies/add" class="btn-primary max-sm:flex-1">+ Add movie</a>
+        </div>
+      }
     </div>
 
     @if (loading()) {
@@ -48,11 +51,15 @@ function storedGrouping(): Grouping {
     } @else if (movies().length === 0) {
       <div class="card flex flex-col items-center gap-3 px-6 py-16 text-center">
         <p class="text-lg font-medium text-white">Your movie library is empty</p>
-        <p class="max-w-md text-sm text-slate-400">Add a root folder and a TMDB API key in Settings, connect an indexer, then add your first movie.</p>
-        <div class="mt-2 flex gap-2">
-          <a routerLink="/settings" class="btn-secondary">Settings</a>
-          <a routerLink="/movies/add" class="btn-primary">Add movie</a>
-        </div>
+        @if (auth.isStaff()) {
+          <p class="max-w-md text-sm text-slate-400">Add a root folder and a TMDB API key in Settings, connect an indexer, then add your first movie.</p>
+          <div class="mt-2 flex gap-2">
+            <a routerLink="/settings" class="btn-secondary">Settings</a>
+            <a routerLink="/movies/add" class="btn-primary">Add movie</a>
+          </div>
+        } @else {
+          <p class="max-w-md text-sm text-slate-400">Nothing here yet. Browse <a routerLink="/discover" class="underline">Discover</a> for ideas.</p>
+        }
       </div>
     } @else if (filtered().length === 0) {
       <p class="py-12 text-center text-slate-500">No movies match the filter.</p>
@@ -108,6 +115,7 @@ function storedGrouping(): Grouping {
   `,
 })
 export class MovieListPage {
+  protected readonly auth = inject(Auth);
   private readonly events = inject(Events);
   private readonly library = inject(Library);
 

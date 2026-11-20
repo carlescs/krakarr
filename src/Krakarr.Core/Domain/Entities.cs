@@ -6,12 +6,35 @@ public enum MediaType
     Series = 2,
 }
 
+/// <summary>Fixed user roles, from most to least privileged.</summary>
+public enum UserRole
+{
+    /// <summary>Everything, including settings, indexers, download client and user management.</summary>
+    Admin = 1,
+
+    /// <summary>Manages the library and downloads (add, search, grab, delete), but not settings or users.</summary>
+    Manager = 2,
+
+    /// <summary>Browses Discover and the library read-only.</summary>
+    User = 3,
+}
+
 public class User
 {
     public int Id { get; set; }
     public required string Username { get; set; }
     public required string PasswordHash { get; set; }
+    public UserRole Role { get; set; } = UserRole.User;
+
+    /// <summary>
+    /// Changes whenever the credentials change (password reset); sign-in cookies carrying an older stamp are rejected,
+    /// which signs the user out everywhere.
+    /// </summary>
+    public string SecurityStamp { get; set; } = NewSecurityStamp();
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public static string NewSecurityStamp() => Guid.NewGuid().ToString("N");
 }
 
 /// <summary>Key/value settings store; values are JSON documents per section.</summary>

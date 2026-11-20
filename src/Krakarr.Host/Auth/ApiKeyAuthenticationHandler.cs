@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Krakarr.Core.Configuration;
+using Krakarr.Core.Domain;
 using Krakarr.Data;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
@@ -13,6 +14,7 @@ public static class AuthConstants
     public const string CookieScheme = "Cookies";
     public const string SmartScheme = "Smart";
     public const string ApiKeyHeader = "X-Api-Key";
+    public const string AdminPolicy = "Admin";
 }
 
 /// <summary>Authenticates requests carrying the instance API key (header X-Api-Key or ?apikey=).</summary>
@@ -38,7 +40,8 @@ public sealed class ApiKeyAuthenticationHandler(
             return AuthenticateResult.Fail("Invalid API key");
         }
 
-        var identity = new ClaimsIdentity([new Claim(ClaimTypes.Name, "api")], AuthConstants.ApiKeyScheme);
+        var identity = new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "api"), new Claim(ClaimTypes.Role, nameof(UserRole.Admin))], AuthConstants.ApiKeyScheme);
         return AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(identity), AuthConstants.ApiKeyScheme));
     }
 

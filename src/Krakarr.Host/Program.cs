@@ -115,11 +115,15 @@ builder.Services
         // APIs answer 401/403 instead of redirecting to a login page.
         o.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
         o.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
+        // Re-checks the account on every request so deletions, password resets and role changes apply immediately.
+        o.Events.OnValidatePrincipal = UserSessions.ValidateAsync;
     })
     .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(AuthConstants.ApiKeyScheme, null);
 
 builder.Services.AddAuthorizationBuilder()
-    .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+    .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build())
+    .AddPolicy(AuthConstants.AdminPolicy, p => p.RequireRole(nameof(UserRole.Admin)));
+builder.Services.AddSingleton<UserSessions>();
 
 // Brute-force protection: per-IP rate limit on credential endpoints + per-username lockout (LoginThrottle).
 builder.Services.Configure<AuthSecurityOptions>(builder.Configuration.GetSection(AuthSecurityOptions.SectionName));
@@ -184,10 +188,12 @@ app.UseStatusCodePages();
 app.UseKrakarrStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRoleAccess();
 app.UseRateLimiter();
 
 app.MapOpenApi("/api/openapi/{documentName}.json");
 app.MapAuthEndpoints();
+app.MapUserEndpoints();
 app.MapSystemEndpoints();
 app.MapSettingsEndpoints();
 app.MapIndexerEndpoints();

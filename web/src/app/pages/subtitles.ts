@@ -2,6 +2,7 @@ import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angula
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../core/api';
+import { Auth } from '../core/auth';
 import { Events } from '../core/events';
 import { Language, SubtitleSettings, WantedSubtitle } from '../core/models';
 import { Toasts } from '../core/toast';
@@ -75,6 +76,7 @@ import { SubtitleManager } from '../shared/subtitle-manager';
   `,
 })
 export class SubtitlesPage implements OnInit {
+  private readonly auth = inject(Auth);
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
   private readonly events = inject(Events);
@@ -85,10 +87,13 @@ export class SubtitlesPage implements OnInit {
   protected readonly languages = signal<Language[]>([]);
   protected readonly loading = signal(true);
   protected readonly manage = signal<WantedSubtitle | null>(null);
-  protected readonly ready = computed(() => !!this.settings()?.enabled && !!this.settings()?.openSubtitles.apiKey);
+  /** Managers can't read settings; for them the server reports a missing provider when they search. */
+  protected readonly ready = computed(() => !this.auth.isAdmin() || (!!this.settings()?.enabled && !!this.settings()?.openSubtitles.apiKey));
 
   async ngOnInit() {
-    const [s, langs] = await Promise.all([this.api.settings('subtitles'), this.api.subtitleLanguages()]);
+    const [s, langs] = await Promise.all([
+      this.auth.isAdmin() ? this.api.settings('subtitles') : Promise.resolve(null), this.api.subtitleLanguages(),
+    ]);
     this.settings.set(s);
     this.languages.set(langs);
     await this.load();
