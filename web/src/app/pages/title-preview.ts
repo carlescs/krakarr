@@ -1,10 +1,10 @@
 import { Component, computed, effect, inject, input, numberAttribute, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Title } from '@angular/platform-browser';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../core/api';
 import { Auth } from '../core/auth';
-import { CastMember, CrewMember, DiscoverItem, MovieDetails, SeasonSummary, SeriesDetails } from '../core/models';
+import { CastMember, CrewMember, DiscoverItem, MediaRequest, MovieDetails, SeasonSummary, SeriesDetails } from '../core/models';
 import { CreditsView } from '../shared/credits';
 import { DiscoverAdd } from '../shared/discover-add';
 import { Poster } from '../shared/poster';
@@ -37,7 +37,7 @@ interface Preview {
  */
 @Component({
   selector: 'kr-title-preview',
-  imports: [DatePipe, Poster, CreditsView, RelatedTitles, DiscoverAdd],
+  imports: [DatePipe, RouterLink, Poster, CreditsView, RelatedTitles, DiscoverAdd],
   template: `
     @if (error()) {
       <div class="card p-6 text-center">
@@ -64,11 +64,20 @@ interface Preview {
             <div class="mt-3 flex flex-wrap gap-2">
               <span class="badge" [class]="kind() === 'movie' ? 'bg-sky-500/15 text-sky-300' : 'bg-violet-500/15 text-violet-300'">{{ kind() === 'movie' ? 'Movie' : 'Series' }}</span>
               <span class="badge bg-slate-500/15 text-slate-400">Not in library</span>
+              @if (openRequest(); as r) {
+                <span class="badge bg-amber-500/15 text-amber-300">Requested{{ r.requestedBy ? ' by ' + r.requestedBy : '' }}</span>
+              }
               @for (g of p.genres; track g) { <span class="badge bg-surface-700 text-slate-300">{{ g }}</span> }
             </div>
             @if (p.overview) { <p class="mt-4 max-w-3xl text-sm leading-relaxed text-slate-300">{{ p.overview }}</p> }
             <div class="mt-5 flex flex-wrap gap-2">
-              @if (canAdd()) { <button class="btn-primary" (click)="adding.set(true)">+ Add to library</button> }
+              @if (canAdd()) {
+                <button class="btn-primary" (click)="adding.set(true)">+ Add to library</button>
+              } @else if (openRequest()) {
+                <a routerLink="/requests" class="btn-secondary">View requests</a>
+              } @else {
+                <button class="btn-primary" (click)="adding.set(true)">Request</button>
+              }
               <button class="btn-ghost" (click)="back()">Back</button>
             </div>
           </div>
@@ -99,7 +108,7 @@ interface Preview {
       <kr-related-titles [kind]="kind()" [id]="tmdbId()" source="tmdb" />
 
       @if (adding()) {
-        <kr-discover-add [item]="p.item" (closed)="adding.set(false)" (added)="openLibrary($event)" />
+        <kr-discover-add [item]="p.item" (closed)="adding.set(false)" (added)="openLibrary($event)" (requested)="requested($event)" />
       }
     } @else {
       <p class="text-slate-500">Loading…</p>
@@ -116,11 +125,13 @@ export class TitlePreviewPage {
   /** Route parameter. */
   readonly tmdbId = input.required({ transform: numberAttribute });
 
-  /** Adding to the library is for admins and managers. */
+  /** Adding to the library is for admins and managers; plain users request titles instead. */
   protected readonly canAdd = inject(Auth).isStaff;
   protected readonly preview = signal<Preview | null>(null);
   protected readonly error = signal<string | null>(null);
   protected readonly adding = signal(false);
+  /** Pending request for this title, by anyone. */
+  protected readonly openRequest = signal<MediaRequest | null>(null);
   protected readonly tmdbUrl = computed(() => `https://www.themoviedb.org/${this.kind() === 'movie' ? 'movie' : 'tv'}/${this.tmdbId()}`);
 
   constructor() {
@@ -135,6 +146,7 @@ export class TitlePreviewPage {
     this.preview.set(null);
     this.error.set(null);
     this.adding.set(false);
+    this.openRequest.set(null);
     try {
       const preview = kind === 'movie' ? fromMovie(await this.api.tmdbMovie(tmdbId)) : fromSeries(await this.api.tmdbSeries(tmdbId));
       if (this.kind() !== kind || this.tmdbId() !== tmdbId) return;
@@ -145,6 +157,8 @@ export class TitlePreviewPage {
       }
       this.preview.set(preview);
       this.title.setTitle(`${preview.title} · Krakarr`);
+      const request = await this.api.requestFor(kind === 'movie' ? 'Movie' : 'Series', tmdbId).catch(() => null);
+      if (this.kind() === kind && this.tmdbId() === tmdbId) this.openRequest.set(request);
     } catch (e) {
       this.error.set(errorMessage(e));
     }
@@ -154,6 +168,11 @@ export class TitlePreviewPage {
     this.adding.set(false);
     const id = d.kind === 'movie' ? d.item.movieId : d.item.seriesId;
     if (id) this.router.navigate([d.kind === 'movie' ? '/movies' : '/series', id], { replaceUrl: true });
+  }
+
+  protected requested(r: MediaRequest) {
+    this.adding.set(false);
+    this.openRequest.set(r);
   }
 
   protected back() { history.back(); }

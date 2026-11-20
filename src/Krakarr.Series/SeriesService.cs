@@ -90,6 +90,11 @@ public sealed class SeriesService(
         await db.SaveChangesAsync(ct);
         logger.LogInformation("Added series {Title} ({Episodes} episodes)", series.Title, series.Episodes.Count);
         await eventHub.PublishAsync(EventNames.SeriesUpdated, new { series.Id }, ct);
+        if (await MediaRequestUpdates.ApproveMatchingAsync(db, MediaType.Series, series.TmdbId, series.TvdbId, ct) > 0)
+        {
+            await eventHub.PublishAsync(EventNames.RequestsUpdated, null, ct);
+        }
+
         return series;
     }
 

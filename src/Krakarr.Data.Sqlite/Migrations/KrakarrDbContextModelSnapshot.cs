@@ -15,7 +15,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261120164744_ReleaseLanguages";
+    public override string LastMigrationId => "20261120214816_MediaRequests";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -319,6 +319,65 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .IsUnique();
 
                 b.ToTable("Indexers");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.MediaRequest", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("DeclineReason")
+                    .HasMaxLength(500)
+                    .HasColumnType("TEXT");
+
+                b.Property<int>("MediaType")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("PosterUrl")
+                    .HasMaxLength(500)
+                    .HasColumnType("TEXT");
+
+                b.Property<long?>("ProcessedAt")
+                    .HasColumnType("INTEGER");
+
+                b.Property<int?>("ProcessedById")
+                    .HasColumnType("INTEGER");
+
+                b.Property<long>("RequestedAt")
+                    .HasColumnType("INTEGER");
+
+                b.Property<int>("RequestedById")
+                    .HasColumnType("INTEGER");
+
+                b.Property<int>("Status")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Title")
+                    .IsRequired()
+                    .HasMaxLength(500)
+                    .HasColumnType("TEXT");
+
+                b.Property<int>("TmdbId")
+                    .HasColumnType("INTEGER");
+
+                b.Property<int?>("TvdbId")
+                    .HasColumnType("INTEGER");
+
+                b.Property<int>("Year")
+                    .HasColumnType("INTEGER");
+
+                b.HasKey("Id");
+
+                b.HasIndex("ProcessedById");
+
+                b.HasIndex("RequestedById");
+
+                b.HasIndex("MediaType", "TmdbId");
+
+                b.HasIndex("Status", "RequestedAt");
+
+                b.ToTable("MediaRequests");
             });
 
         modelBuilder.Entity("Krakarr.Core.Domain.Movie", b =>
@@ -778,6 +837,24 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .HasForeignKey("SeriesId")
                     .OnDelete(DeleteBehavior.Cascade)
                     .IsRequired();
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.MediaRequest", b =>
+            {
+                b.HasOne("Krakarr.Core.Domain.User", "ProcessedBy")
+                    .WithMany()
+                    .HasForeignKey("ProcessedById")
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                b.HasOne("Krakarr.Core.Domain.User", "RequestedBy")
+                    .WithMany()
+                    .HasForeignKey("RequestedById")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.Navigation("ProcessedBy");
+
+                b.Navigation("RequestedBy");
             });
 
         modelBuilder.Entity("Krakarr.Core.Domain.Movie", b =>

@@ -29,11 +29,12 @@ public static class RoleAccess
         "/api/v1/rootfolders",
     ];
 
-    /// <summary>Open to every signed-in user, any method (sign out, own password, live events).</summary>
+    /// <summary>Open to every signed-in user, any method (sign out, own password, notifications, live events).</summary>
     private static readonly string[] Everyone =
     [
         "/api/v1/auth",
         "/api/v1/health",
+        "/api/v1/notifications", // each source filters by role
         "/hubs",
     ];
 
@@ -57,6 +58,14 @@ public static class RoleAccess
         "import", "releases", "organize", "lookup",
     };
 
+    /// <summary>
+    /// Requests: every user may list, create and withdraw their own (the endpoints check ownership); approving and
+    /// declining is for staff.
+    /// </summary>
+    private const string Requests = "/api/v1/requests";
+
+    private static readonly HashSet<string> RequestStaffSegments = new(StringComparer.OrdinalIgnoreCase) { "approve", "decline" };
+
     /// <summary>The least privileged role allowed to make this request.</summary>
     public static UserRole RequiredRole(string method, string path)
     {
@@ -64,6 +73,7 @@ public static class RoleAccess
         if (!Under(path, "/api") && !Under(path, "/hubs")) return UserRole.User;
         if (Everyone.Any(p => Under(path, p))) return UserRole.User;
         if (AdminOnly.Any(p => Under(path, p))) return UserRole.Admin;
+        if (Under(path, Requests)) return path.Split('/').Any(RequestStaffSegments.Contains) ? UserRole.Manager : UserRole.User;
 
         var read = HttpMethods.IsGet(method) || HttpMethods.IsHead(method);
         if (!read && AdminWrites.Any(p => Under(path, p))) return UserRole.Admin;

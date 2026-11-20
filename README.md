@@ -11,7 +11,7 @@
 | **qBittorrent** – torrent client | `Krakarr.Downloads` | ✅ Embedded [MonoTorrent](https://github.com/alanmcgovern/monotorrent) engine: magnets, .torrent files, DHT, speed limits, seeding ratio/time limits, fast-resume — *or* drive an existing qBittorrent (tag-scoped) |
 | **Sonarr** – TV series | `Krakarr.Series` | ✅ TMDB or TheTVDB metadata, seasons/episodes, monitoring, season-pack aware search, RSS sync, rename + hardlink import |
 | **Bazarr** – subtitles | `Krakarr.Subtitles` | ✅ OpenSubtitles.com, wanted languages, hash + release scoring, automatic and manual search |
-| **Seerr** – discovery | `Krakarr.Movies` / `Krakarr.Series` | ✅ Trending, popular, upcoming and top-rated lists, personal recommendations, recommended and similar titles, detail pages for any title, cast and person pages, one-click add |
+| **Seerr** – discovery | `Krakarr.Movies` / `Krakarr.Series` | ✅ Trending, popular, upcoming and top-rated lists, personal recommendations, recommended and similar titles, detail pages for any title, cast and person pages, one-click add, requests with approval |
 
 Everything (API, web UI, torrent engine, schedulers) runs in a single .NET process inside a single Docker container.
 There is nothing to wire together: no API keys between apps, no download-client configuration, no path mappings.
@@ -221,12 +221,26 @@ in *Settings → Users* and give each a role:
 | Role | Can |
 | --- | --- |
 | **Admin** | Everything: settings, indexers, download client, API key and users |
-| **Manager** | Add, search, grab and delete movies and series; manage downloads, subtitles and library imports |
-| **User** | Browse Discover, the library and the calendar, read-only |
+| **Manager** | Add, search, grab and delete movies and series; approve or decline requests; manage downloads, subtitles and library imports |
+| **User** | Browse Discover, the library and the calendar; request movies and series |
 
 Everyone changes their own username and password under *Account* (the current password is required). Changing a role
 takes effect immediately; resetting or changing a password, or deleting an account, signs that user out everywhere.
 There is always at least one admin, and admins can't delete themselves. The API key acts as an admin.
+
+### Requests
+
+Users can't add titles themselves, so wherever an admin or manager sees *+ Add* (Discover, a title's page, a person's
+credits) they see *Request* instead. Requests are listed under **Requests**:
+
+- **Users** see their own requests and can withdraw them while pending.
+- **Admins and managers** see everyone's. *Approve* opens the usual add dialog (root
+  folder, quality profile, monitoring, search) and adds the title; *Decline* takes an optional reason that the requester
+  sees. Adding a requested title directly (or importing it) approves its request too.
+- The notification bell in the top bar lists pending requests (those waiting for approval for admins and managers,
+  your own open ones for users) and links to the Requests page.
+- A title has at most one pending request. Once approved, each request shows whether the title is downloading,
+  partially available (series) or available.
 
 ### Security notes
 
@@ -336,4 +350,4 @@ API documentation (OpenAPI) is served at `/api/openapi/v1.json`.
 - **Subtitles (Bazarr):** more providers (Podnapisi, Addic7ed, …), embedded subtitle detection, per-series language profiles, sync/encoding fixes
 - **Indexers (Prowlarr):** native tracker definitions (Cardigann-style), per-indexer stats, Torznab proxy for other apps
 - **Downloads:** per-torrent limits, file selection, Usenet (NZB) support
-- Lists (Trakt/IMDb), notifications, requests (Seerr-style), optional renaming of imported libraries
+- Lists (Trakt/IMDb), notifications (including request updates), per-season requests, optional renaming of imported libraries

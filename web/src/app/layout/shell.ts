@@ -5,6 +5,8 @@ import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } fro
 import { Auth } from '../core/auth';
 import { Events } from '../core/events';
 import { SpeedPipe } from '../core/format';
+import { Notifications } from '../core/notifications';
+import { NotificationBell } from '../shared/notification-bell';
 
 interface NavItem { path: string; label: string; icon: string; section?: string; access?: 'staff' | 'admin'; }
 
@@ -21,12 +23,13 @@ const ICONS: Record<string, string> = {
   sparkles: 'M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z',
   calendar: 'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5',
   menu: 'M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5',
+  inbox: 'M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z',
 };
 
 @Component({
   selector: 'kr-shell',
   host: { '(document:keydown.escape)': 'menuOpen.set(false)' },
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, SpeedPipe],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, SpeedPipe, NotificationBell],
   template: `
     <div class="flex h-full">
       <!-- Sidebar -->
@@ -49,6 +52,9 @@ const ICONS: Record<string, string> = {
               <span class="flex-1">{{ item.label }}</span>
               @if (item.path === '/downloads' && activeDownloads() > 0) {
                 <span class="badge bg-accent-500/15 text-accent-300">{{ activeDownloads() }}</span>
+              }
+              @if (item.path === '/requests' && pendingRequests() > 0) {
+                <span class="badge bg-amber-500/15 text-amber-300" title="Waiting for approval">{{ pendingRequests() }}</span>
               }
             </a>
           }
@@ -79,6 +85,7 @@ const ICONS: Record<string, string> = {
               <span class="truncate font-semibold text-white">{{ current()?.label ?? 'Krakarr' }}</span>
             </a>
             <div class="flex-1"></div>
+            <kr-notification-bell />
             <a routerLink="/settings" class="hidden text-sm text-slate-400 hover:text-white sm:inline" title="Your account">{{ auth.status()?.username }}</a>
             <button class="btn-ghost btn-sm" (click)="logout()" [title]="'Sign out ' + (auth.status()?.username ?? '')">Sign out</button>
           </div>
@@ -118,6 +125,9 @@ export class Shell implements OnInit, OnDestroy {
   protected readonly events = inject(Events);
   private readonly router = inject(Router);
   protected readonly icons = ICONS;
+  private readonly notifications = inject(Notifications);
+  /** Requests waiting for approval (staff), for the sidebar badge. */
+  protected readonly pendingRequests = computed(() => this.notifications.count('requests.pending'));
   protected readonly menuOpen = signal(false);
 
   private readonly allNav: NavItem[] = [
@@ -125,6 +135,7 @@ export class Shell implements OnInit, OnDestroy {
     { path: '/movies', label: 'Movies', icon: 'film' },
     { path: '/series', label: 'Series', icon: 'tv' },
     { path: '/calendar', label: 'Calendar', icon: 'calendar' },
+    { path: '/requests', label: 'Requests', icon: 'inbox' },
     { path: '/subtitles', label: 'Subtitles', icon: 'cc', access: 'staff' },
     { path: '/search', label: 'Search', icon: 'search', section: 'Sources', access: 'staff' },
     { path: '/indexers', label: 'Indexers', icon: 'server', access: 'admin' },
@@ -157,11 +168,18 @@ export class Shell implements OnInit, OnDestroy {
   protected readonly totalDown = computed(() => this.events.downloads().reduce((s, d) => s + d.downloadRate, 0));
   protected readonly totalUp = computed(() => this.events.downloads().reduce((s, d) => s + d.uploadRate, 0));
 
-  ngOnInit() { this.events.start(); }
-  ngOnDestroy() { this.events.stop(); }
+  ngOnInit() {
+    this.events.start();
+    this.notifications.start();
+  }
+  ngOnDestroy() {
+    this.notifications.stop();
+    this.events.stop();
+  }
 
   async logout() {
     await this.auth.logout();
+    this.notifications.stop();
     await this.events.stop();
     this.router.navigateByUrl('/login');
   }

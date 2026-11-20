@@ -18,6 +18,8 @@ interface RowState { key: string; title: string; subtitle: string; link: string[
       @if (auth.isStaff()) {
         <a routerLink="/movies/add" class="btn-secondary">Search movies</a>
         <a routerLink="/series/add" class="btn-secondary">Search series</a>
+      } @else {
+        <a routerLink="/requests" class="btn-secondary">My requests</a>
       }
     </div>
 

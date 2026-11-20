@@ -5,7 +5,7 @@ import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
   IndexerError, IndexerTestResult, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListItem, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
-  UserAccount, UserRole,
+  UserAccount, UserRole, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification,
 } from './models';
 
 const API = 'api/v1';
@@ -141,6 +141,18 @@ export class Api {
   history(movieId?: number, page = 1, pageSize = 50, seriesId?: number) {
     return this.get<{ total: number; items: HistoryItem[] }>('history', { movieId, seriesId, page, pageSize });
   }
+
+  // Notifications (the bell): everything the signed-in user should look at.
+  notifications() { return this.get<AppNotification[]>('notifications'); }
+
+  // Requests: users ask for titles, staff approve (adds them) or decline.
+  requests(status?: RequestStatus, page = 1) { return this.get<MediaRequestPage>('requests', { status, page }); }
+  /** The open request for a TMDB title, or null. */
+  requestFor(mediaType: MediaType, tmdbId: number) { return this.get<MediaRequest | null>(`requests/tmdb/${mediaType}/${tmdbId}`); }
+  createRequest(mediaType: MediaType, tmdbId: number) { return this.post<MediaRequest>('requests', { mediaType, tmdbId }); }
+  approveRequest(id: number, options: ApproveRequestOptions) { return this.post<MediaRequest>(`requests/${id}/approve`, options); }
+  declineRequest(id: number, reason?: string) { return this.post<MediaRequest>(`requests/${id}/decline`, { reason: reason || null }); }
+  deleteRequest(id: number) { return this.delete<void>(`requests/${id}`); }
 
   // Series
   seriesList() { return this.get<SeriesListItem[]>('series'); }

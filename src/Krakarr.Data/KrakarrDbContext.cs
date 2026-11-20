@@ -31,6 +31,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
     public DbSet<SubtitleFile> SubtitleFiles => Set<SubtitleFile>();
     public DbSet<Download> Downloads => Set<Download>();
     public DbSet<HistoryEntry> History => Set<HistoryEntry>();
+    public DbSet<MediaRequest> MediaRequests => Set<MediaRequest>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -137,6 +138,19 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
         {
             e.HasIndex(x => x.Date);
             e.HasIndex(x => x.MovieId);
+        });
+
+        b.Entity<MediaRequest>(e =>
+        {
+            e.Property(x => x.Title).HasMaxLength(500);
+            e.Property(x => x.PosterUrl).HasMaxLength(500);
+            e.Property(x => x.DeclineReason).HasMaxLength(500);
+            e.HasIndex(x => new { x.MediaType, x.TmdbId });
+            e.HasIndex(x => new { x.Status, x.RequestedAt });
+            e.HasIndex(x => x.RequestedById);
+            // Deleting a user deletes their requests; deleting whoever processed one keeps it.
+            e.HasOne(x => x.RequestedBy).WithMany().HasForeignKey(x => x.RequestedById).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.ProcessedBy).WithMany().HasForeignKey(x => x.ProcessedById).OnDelete(DeleteBehavior.SetNull);
         });
     }
 }

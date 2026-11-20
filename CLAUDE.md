@@ -40,6 +40,7 @@ cd web && npx ng build && npx ng test --watch=false            # frontend build 
 - Package versions are managed centrally in `Directory.Packages.props`, and `Directory.Build.props` sets the shared build options.
 - Each module exposes `AddKrakarr<Module>()` for DI and `Map<Module>Endpoints()` for minimal API routes under `/api/v1`.
 - Roles (`Admin`, `Manager`, `User`) are enforced centrally by `RoleAccess` (`Krakarr.Host/Auth`), keyed on method and path. Endpoints not listed there need `Manager`, so add a rule when plain users need a new endpoint. In the UI, gate actions with `Auth.isStaff()`/`isAdmin()` and routes with `roleGuard`.
+- Notifications (the bell in the top bar): implement `INotificationSource` (`Krakarr.Core/Notifications`), register it as scoped, and publish `EventNames.NotificationsUpdated` when its state changes. Sources run on every bell refresh, so use cheap aggregate queries and filter by the caller's role. `GET /api/v1/notifications` aggregates them; `RequestNotificationSource` is the example.
 - Other code talks to downloads only through `ITorrentEngine`, which `DownloadClientRouter` points at the selected client.
 - Frontend: standalone components with inline templates, signals for async state, Tailwind utility classes (`btn-*`, `input`, `card` and others defined in `web/src/styles.css`).
 

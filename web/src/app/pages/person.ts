@@ -136,7 +136,7 @@ export function age(birthday: string, until: Date = new Date()): number {
       }
 
       @if (selected(); as d) {
-        <kr-discover-add [item]="d" (closed)="selected.set(null)" (added)="markAdded($event)" />
+        <kr-discover-add [item]="d" (closed)="selected.set(null)" (added)="markAdded($event)" (requested)="selected.set(null)" />
       }
     } @else {
       <p class="text-slate-500">Loading…</p>

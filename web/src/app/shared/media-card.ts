@@ -22,7 +22,7 @@ export function detailRoute(d: DiscoverItem): (string | number)[] | null {
   return [d.kind === 'movie' ? '/movies' : '/series', 'tmdb', d.item.tmdbId];
 }
 
-/** Poster card for a discovered movie or show: links to its detail page and offers to add it when not in the library. */
+/** Poster card for a discovered movie or show: links to its detail page and offers to add (or request) it when not in the library. */
 @Component({
   selector: 'kr-media-card',
   imports: [RouterLink, Poster],
@@ -50,8 +50,8 @@ export function detailRoute(d: DiscoverItem): (string | number)[] | null {
         <p class="mt-1 line-clamp-4 text-xs text-slate-300">{{ d.item.overview }}</p>
         @if (route(); as r) {
           <a [routerLink]="r" class="btn-secondary btn-sm pointer-events-auto mt-2 justify-center">Open</a>
-        } @else if (canAdd()) {
-          <button class="btn-primary btn-sm pointer-events-auto mt-2 justify-center" (click)="add.emit(d)">+ Add</button>
+        } @else if (d.item.tmdbId != null || staff()) {
+          <button class="btn-primary btn-sm pointer-events-auto mt-2 justify-center" (click)="add.emit(d)">{{ staff() ? '+ Add' : 'Request' }}</button>
         }
       </div>
     </div>
@@ -68,16 +68,16 @@ export function detailRoute(d: DiscoverItem): (string | number)[] | null {
     <div class="mt-1.5 hidden pointer-coarse:block">
       @if (route(); as r) {
         <a [routerLink]="r" class="btn-secondary btn-sm w-full">Open</a>
-      } @else if (canAdd()) {
-        <button class="btn-primary btn-sm w-full" (click)="add.emit(d)">+ Add</button>
+      } @else if (d.item.tmdbId != null || staff()) {
+        <button class="btn-primary btn-sm w-full" (click)="add.emit(d)">{{ staff() ? '+ Add' : 'Request' }}</button>
       }
     </div>
   `,
   host: { class: 'block' },
 })
 export class MediaCard {
-  /** Adding to the library is for admins and managers; plain users will request titles instead. */
-  protected readonly canAdd = inject(Auth).isStaff;
+  /** Admins and managers add titles to the library; plain users request them (the add output opens the right dialog). */
+  protected readonly staff = inject(Auth).isStaff;
   readonly item = input.required<DiscoverItem>();
   /** Optional line under the year, e.g. the character a person plays. */
   readonly caption = input<string | null | undefined>(null);
