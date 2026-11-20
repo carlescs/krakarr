@@ -9,6 +9,54 @@ import {
 import { Toasts } from '../../core/toast';
 import { Modal } from '../../shared/modal';
 
+interface TokenDoc { token: string; description: string; example: string; }
+
+const NAMING_TOKENS: { title: string; usedIn: string; tokens: TokenDoc[] }[] = [
+  {
+    title: 'Movie tokens',
+    usedIn: 'Movie folder and movie file formats ({Quality} and {Release Group} only in the file format).',
+    tokens: [
+      { token: 'Movie Title', description: 'Title in the metadata language', example: 'Amélie: The Fabulous Destiny' },
+      { token: 'Movie CleanTitle', description: 'Title with only letters, digits and spaces', example: 'Amélie The Fabulous Destiny' },
+      { token: 'Original Title', description: 'Title in the original language (falls back to the title)', example: 'Le Fabuleux Destin d’Amélie Poulain' },
+      { token: 'Release Year', description: 'Year of release', example: '2001' },
+      { token: 'Quality', description: 'Quality of the file', example: 'Bluray-1080p' },
+      { token: 'Release Group', description: 'Group that made the release, when known', example: 'KRK' },
+      { token: 'TmdbId', description: 'TMDB id', example: '194' },
+      { token: 'ImdbId', description: 'IMDb id, when known', example: 'tt0211915' },
+    ],
+  },
+  {
+    title: 'Series tokens',
+    usedIn: 'Series folder (series tokens and ids), season folder ({Season} only) and episode file formats (all).',
+    tokens: [
+      { token: 'Series Title', description: 'Series title', example: 'The Office' },
+      { token: 'Series CleanTitle', description: 'Title with only letters, digits and spaces', example: 'The Office' },
+      { token: 'Series Year', description: 'Year the series started (empty when the title already ends with a year)', example: '2005' },
+      { token: 'Season', description: 'Season number, two digits', example: '01' },
+      { token: 'Episode', description: 'Episode number, two digits; several episodes as 01-E02', example: '01' },
+      { token: 'Episode Title', description: 'Episode title; several episodes joined with " + "', example: 'Pilot' },
+      { token: 'Quality', description: 'Quality of the file', example: 'WEBDL-1080p' },
+      { token: 'Release Group', description: 'Group that made the release, when known', example: 'KRK' },
+      { token: 'TmdbId', description: 'TMDB id, when known', example: '2316' },
+      { token: 'TvdbId', description: 'TheTVDB id, when known', example: '73244' },
+      { token: 'ImdbId', description: 'IMDb id, when known', example: 'tt0386676' },
+    ],
+  },
+];
+
+function sampleValues(tokens: TokenDoc[]): Record<string, string> {
+  return Object.fromEntries(tokens.map(t => [t.token, t.example]));
+}
+
+/** Mirrors Krakarr.Media.Files.FileNameBuilder: expand tokens, drop empty brackets, sanitize. */
+export function buildName(format: string, values: Record<string, string>): string {
+  let result = format.replace(/\{([^{}]+)\}/g, (m, key: string) => (key in values ? values[key] : m));
+  result = result.replace(/\[\s*\]|\(\s*\)/g, '');
+  result = result.replace(/:/g, '-').replace(/[<>"|?*\\/\u0000-\u001f]/g, '');
+  return result.trim().replace(/\.+$/, '').replace(/\s{2,}/g, ' ').trim();
+}
+
 type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'general';
 
 @Component({
@@ -50,20 +98,70 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
         @if (media(); as m) {
           <section class="card space-y-4 p-4 sm:p-5">
             <h2 class="font-semibold text-white">File management</h2>
-            <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="m.renameFiles" /> Rename movie files</label>
+            <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="m.renameFiles" /> Rename movie and episode files (off keeps the original file names)</label>
             <div>
               <label class="label">Movie folder format</label><input class="input font-mono" [(ngModel)]="m.movieFolderFormat" />
+              <p class="hint break-all">Example: <span class="font-mono text-slate-400">{{ example(m.movieFolderFormat, sampleMovie) }}</span></p>
             </div>
             <div>
               <label class="label">Movie file format</label><input class="input font-mono" [(ngModel)]="m.movieFileFormat" />
-              <p class="hint">Tokens: {{ namingTokens }}</p>
+              <p class="hint break-all">Example: <span class="font-mono text-slate-400">{{ example(m.movieFileFormat, sampleMovie) }}.mkv</span></p>
             </div>
-            <div><label class="label">Series folder format</label><input class="input font-mono" [(ngModel)]="m.seriesFolderFormat" /></div>
-            <div><label class="label">Season folder format</label><input class="input font-mono" [(ngModel)]="m.seasonFolderFormat" /></div>
+            <div>
+              <label class="label">Series folder format</label><input class="input font-mono" [(ngModel)]="m.seriesFolderFormat" />
+              <p class="hint break-all">Example: <span class="font-mono text-slate-400">{{ example(m.seriesFolderFormat, sampleEpisode) }}</span></p>
+            </div>
+            <div>
+              <label class="label">Season folder format</label><input class="input font-mono" [(ngModel)]="m.seasonFolderFormat" />
+              <p class="hint break-all">Example: <span class="font-mono text-slate-400">{{ example(m.seasonFolderFormat, sampleEpisode) }}</span> · season 0 always goes to <span class="font-mono">Specials</span></p>
+            </div>
             <div>
               <label class="label">Episode file format</label><input class="input font-mono" [(ngModel)]="m.episodeFileFormat" />
-              <p class="hint">Tokens: {{ episodeTokens }}</p>
+              <p class="hint break-all">Example: <span class="font-mono text-slate-400">{{ example(m.episodeFileFormat, sampleEpisode) }}.mkv</span></p>
+              <p class="hint break-all">Two-episode file: <span class="font-mono text-slate-400">{{ example(m.episodeFileFormat, sampleMultiEpisode) }}.mkv</span></p>
             </div>
+
+            <details class="rounded-lg border border-surface-700 bg-surface-900/40 text-sm">
+              <summary class="cursor-pointer select-none px-4 py-2.5 font-medium text-slate-200">Naming reference</summary>
+              <div class="space-y-5 border-t border-surface-700 px-4 py-4 text-slate-300">
+                <p>
+                  Write any text and put tokens in braces, e.g. <code class="font-mono text-accent-300">{{ '{Movie Title} ({Release Year})' }}</code>.
+                  Token names are case sensitive. Unknown tokens are left as typed.
+                </p>
+                @for (group of tokenDocs; track group.title) {
+                  <div>
+                    <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{{ group.title }}</h3>
+                    <p class="mb-2 text-xs text-slate-500">{{ group.usedIn }}</p>
+                    <div class="overflow-x-auto">
+                      <table class="table text-xs">
+                        <thead><tr><th>Token</th><th>Value</th><th class="max-sm:hidden">Example</th></tr></thead>
+                        <tbody>
+                          @for (t of group.tokens; track t.token) {
+                            <tr>
+                              <td class="whitespace-nowrap font-mono text-accent-300">{{ '{' + t.token + '}' }}</td>
+                              <td>{{ t.description }}</td>
+                              <td class="whitespace-nowrap font-mono text-slate-400 max-sm:hidden">{{ t.example }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                }
+                <div>
+                  <h3 class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Rules</h3>
+                  <ul class="list-disc space-y-1 pl-5 text-xs text-slate-400">
+                    <li>A token without a value (no release group, no year…) becomes empty, and brackets left empty by it, <span class="font-mono">[]</span> or <span class="font-mono">()</span>, are removed.</li>
+                    <li><span class="font-mono">:</span> becomes <span class="font-mono">-</span>; other characters not allowed in file names (<span class="font-mono">/ \ * ? " &lt; &gt; |</span>) are dropped. Repeated spaces collapse and trailing dots are trimmed.</li>
+                    <li>File formats get the original file extension appended; don't add one yourself.</li>
+                    <li>A file holding several episodes lists them as <span class="font-mono">E01-E02</span> in <span class="font-mono">{{ '{Episode}' }}</span> and joins their titles with <span class="font-mono">+</span>.</li>
+                    <li><span class="font-mono">{{ '{Series Year}' }}</span> is left empty when the series title already ends with a year, e.g. "Doctor Who (2005)".</li>
+                    <li>Season folders are only used for series that have "Use season folders" enabled.</li>
+                    <li>Formats apply to new imports. To bring existing series in line, use <span class="font-medium text-slate-300">Organize</span> on the series page; it shows a preview first.</li>
+                  </ul>
+                </div>
+              </div>
+            </details>
             <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="m.useHardlinks" /> Use hardlinks instead of copies (keeps seeding without doubling disk usage)</label>
             <div class="max-w-xs"><label class="label">Minimum video size (MB)</label><input class="input" type="number" min="0" [(ngModel)]="m.minimumVideoFileSizeMb" /></div>
             <div class="flex justify-end"><button class="btn-primary" (click)="save('media', m)">Save</button></div>
@@ -424,10 +522,12 @@ export class SettingsPage implements OnInit {
   protected readonly testingSubtitles = signal(false);
   protected readonly testingClient = signal(false);
   protected readonly selectableQualities = computed(() => this.qualities().filter(q => q.id !== 0));
-  protected readonly namingTokens = ['Movie Title', 'Movie CleanTitle', 'Original Title', 'Release Year', 'Quality', 'Release Group', 'TmdbId', 'ImdbId']
-    .map(t => `{${t}}`).join(', ');
-  protected readonly episodeTokens = ['Series Title', 'Series CleanTitle', 'Series Year', 'Season', 'Episode', 'Episode Title', 'Quality', 'Release Group', 'TmdbId', 'TvdbId']
-    .map(t => `{${t}}`).join(', ');
+  protected readonly tokenDocs = NAMING_TOKENS;
+  protected readonly sampleMovie = sampleValues(NAMING_TOKENS[0].tokens);
+  protected readonly sampleEpisode = sampleValues(NAMING_TOKENS[1].tokens);
+  protected readonly sampleMultiEpisode = { ...this.sampleEpisode, 'Episode': '01-E02', 'Episode Title': 'Pilot + Diversity Day' };
+  /** Client-side approximation of the server's FileNameBuilder, for the examples under each format. */
+  protected example(format: string, values: Record<string, string>) { return buildName(format ?? '', values); }
   protected browsePath = '/';
   protected rootMediaType: 'Movie' | 'Series' = 'Movie';
   protected newUsername = '';

@@ -236,6 +236,20 @@ public static class SeriesEndpoints
             return Results.Accepted(value: command);
         });
 
+        // Organize: rename/move existing files (and optionally the series folder) to match the naming settings.
+        group.MapGet("/{id:int}/organize", async (int id, SeriesOrganizer organizer, CancellationToken ct) =>
+            await organizer.PreviewAsync(id, ct) is { } preview ? Results.Ok(preview) : Results.NotFound());
+
+        group.MapPost("/{id:int}/organize", async (int id, OrganizeRequest? req, KrakarrDbContext db, ICommandQueue commands, CancellationToken ct) =>
+        {
+            var series = await db.Series.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (series is null) return Results.NotFound();
+            var renameFolder = req?.RenameFolder ?? false;
+            var command = commands.Enqueue($"Organize: {series.Title}", async (sp, token) =>
+                await sp.GetRequiredService<SeriesOrganizer>().OrganizeAsync(id, renameFolder, token));
+            return Results.Accepted(value: command);
+        });
+
         group.MapPost("/{id:int}/search", async (int id, SeriesSearchRequest? req, KrakarrDbContext db, ICommandQueue commands, CancellationToken ct) =>
         {
             var series = await db.Series.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct);
