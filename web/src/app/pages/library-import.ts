@@ -2,8 +2,9 @@ import { Component, OnInit, computed, inject, input, signal } from '@angular/cor
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../core/api';
+import { AVAILABILITY_OPTIONS } from '../core/calendar';
 import { BytesPipe } from '../core/format';
-import { MatchConfidence, MonitorMode, MovieLookup, QualityProfile, RootFolder, SeriesLookup } from '../core/models';
+import { MatchConfidence, MinimumAvailability, MonitorMode, MovieLookup, QualityProfile, RootFolder, SeriesLookup } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Modal } from '../shared/modal';
 import { Poster } from '../shared/poster';
@@ -63,6 +64,12 @@ const CONFIDENCE_STYLE: Record<MatchConfidence, string> = {
             </select>
           </div>
           @if (isMovies()) {
+            <div>
+              <label class="label">Minimum availability</label>
+              <select class="input" [(ngModel)]="minimumAvailability">
+                @for (o of availabilityOptions; track o.value) { <option [value]="o.value">{{ o.label }}</option> }
+              </select>
+            </div>
             <label class="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="monitored" /> Monitored</label>
           } @else {
             <div>
@@ -195,6 +202,8 @@ export class LibraryImportPage implements OnInit {
   protected rootFolderId = 0;
   protected profileId = 0;
   protected monitored = true;
+  protected readonly availabilityOptions = AVAILABILITY_OPTIONS;
+  protected minimumAvailability: MinimumAvailability = 'Released';
   protected monitor: MonitorMode = 'All';
   protected search = false;
   protected term = '';
@@ -307,7 +316,7 @@ export class LibraryImportPage implements OnInit {
     try {
       if (this.isMovies()) {
         await this.api.importMovies(selected.map(r => ({
-          path: r.path, tmdbId: r.match!.id, qualityProfileId: this.profileId, monitored: this.monitored, searchForMovie: this.search,
+          path: r.path, tmdbId: r.match!.id, qualityProfileId: this.profileId, monitored: this.monitored, searchForMovie: this.search, minimumAvailability: this.minimumAvailability,
         })));
       } else {
         await this.api.importSeries(selected.map(r => ({

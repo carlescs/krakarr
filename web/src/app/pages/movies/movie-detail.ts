@@ -6,7 +6,8 @@ import { Router } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
 import { Events } from '../../core/events';
 import { AgoPipe, BytesPipe, DurationPipe, SpeedPipe } from '../../core/format';
-import { HistoryItem, IndexerError, Movie, QualityProfile, ReleaseDecision, SubtitleFile } from '../../core/models';
+import { AVAILABILITY_OPTIONS, RELEASE_LABELS } from '../../core/calendar';
+import { HistoryItem, IndexerError, MinimumAvailability, Movie, QualityProfile, ReleaseDateType, ReleaseDecision, SubtitleFile } from '../../core/models';
 import { Toasts } from '../../core/toast';
 import { Modal } from '../../shared/modal';
 import { Poster } from '../../shared/poster';
@@ -59,6 +60,36 @@ import { SubtitleManager } from '../../shared/subtitle-manager';
           </div>
         </div>
       </div>
+
+      <!-- Release dates -->
+      <section class="card mb-6 p-4 sm:p-5">
+        <div class="mb-3 flex flex-wrap items-center gap-2">
+          <h2 class="flex-1 text-sm font-semibold uppercase tracking-wide text-slate-400">Releases</h2>
+          <span class="badge" [class]="m.isAvailable ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'"
+                [title]="'Minimum availability: ' + availabilityLabel(m.minimumAvailability)">
+            {{ m.isAvailable ? 'Available' : 'Waits for: ' + availabilityLabel(m.minimumAvailability) }}
+          </span>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-3">
+          @for (r of m.releases; track r.type) {
+            <div class="rounded-lg border-l-2 bg-surface-850 px-3 py-2" [class]="releaseBar[r.type]">
+              <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ releaseLabels[r.type] }}</div>
+              @if (r.region ?? r.earliest; as shown) {
+                <div class="mt-0.5 text-sm font-medium text-slate-100">{{ shown.date | date: 'mediumDate' }}
+                  <span class="text-xs font-normal text-slate-400">{{ shown.country }}</span>
+                </div>
+                @if (r.region && r.earliest && r.earliest.date < r.region.date) {
+                  <div class="text-xs text-slate-500">Earliest: {{ r.earliest.date | date: 'mediumDate' }} ({{ r.earliest.country }})</div>
+                } @else if (!r.region && m.releaseRegion) {
+                  <div class="text-xs text-slate-500">Earliest worldwide · no date for {{ m.releaseRegion }}</div>
+                }
+              } @else {
+                <div class="mt-0.5 text-sm text-slate-500">Unknown</div>
+              }
+            </div>
+          }
+        </div>
+      </section>
 
       <!-- Active downloads -->
       @if (downloads().length > 0) {
@@ -181,6 +212,13 @@ import { SubtitleManager } from '../../shared/subtitle-manager';
           <div class="space-y-4">
             <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="editMonitored" /> Monitored</label>
             <div>
+              <label class="label">Minimum availability</label>
+              <select class="input" [(ngModel)]="editAvailability">
+                @for (o of availabilityOptions; track o.value) { <option [value]="o.value">{{ o.label }}</option> }
+              </select>
+              <p class="hint">Automatic searches and RSS grabs wait until the movie reaches this point. Interactive search always works.</p>
+            </div>
+            <div>
               <label class="label">Quality profile</label>
               <select class="input" [(ngModel)]="editProfileId">
                 @for (p of profiles(); track p.id) { <option [ngValue]="p.id">{{ p.name }}</option> }
@@ -232,6 +270,12 @@ export class MovieDetailPage implements OnInit {
   protected readonly subtitlesOpen = signal(false);
   protected editMonitored = true;
   protected editProfileId = 0;
+  protected editAvailability: MinimumAvailability = 'Released';
+  protected readonly availabilityOptions = AVAILABILITY_OPTIONS;
+  protected readonly releaseLabels = RELEASE_LABELS;
+  protected readonly releaseBar: Record<ReleaseDateType, string> = {
+    Theatrical: 'border-l-amber-400', Digital: 'border-l-violet-400', Physical: 'border-l-pink-400',
+  };
   protected deleteFiles = false;
 
   protected readonly downloads = computed(() => this.events.downloads().filter(d => d.movieId === this.id() && !d.imported));
@@ -245,6 +289,8 @@ export class MovieDetailPage implements OnInit {
     this.events.subtitlesUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => { if (e.movieId === this.id()) this.loadSubtitles(); });
   }
 
+  protected availabilityLabel(value: MinimumAvailability) { return AVAILABILITY_OPTIONS.find(o => o.value === value)?.label ?? value; }
+
   async loadSubtitles() { this.subtitles.set(await this.api.subtitleFiles({ movieId: this.id() })); }
 
   private async load() {
@@ -253,6 +299,7 @@ export class MovieDetailPage implements OnInit {
       this.movie.set(m);
       this.editMonitored = m.monitored;
       this.editProfileId = m.qualityProfileId;
+      this.editAvailability = m.minimumAvailability;
       await Promise.all([this.loadHistory(), this.loadSubtitles()]);
     } catch (e) {
       this.toasts.error(errorMessage(e));
@@ -297,14 +344,14 @@ export class MovieDetailPage implements OnInit {
 
   async toggleMonitored() {
     const m = this.movie()!;
-    await this.api.updateMovie(m.id, !m.monitored, m.qualityProfileId);
+    await this.api.updateMovie(m.id, !m.monitored, m.qualityProfileId, m.minimumAvailability);
     this.movie.set({ ...m, monitored: !m.monitored });
     this.editMonitored = !m.monitored;
   }
 
   async saveEdit() {
     try {
-      await this.api.updateMovie(this.id(), this.editMonitored, this.editProfileId);
+      await this.api.updateMovie(this.id(), this.editMonitored, this.editProfileId, this.editAvailability);
       this.editing.set(false);
       await this.load();
     } catch (e) {

@@ -2,7 +2,8 @@ import { Component, OnInit, inject, input, output, signal } from '@angular/core'
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../core/api';
-import { Movie, MovieLookup, QualityProfile, RootFolder } from '../core/models';
+import { AVAILABILITY_OPTIONS } from '../core/calendar';
+import { MinimumAvailability, Movie, MovieLookup, QualityProfile, RootFolder } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Modal } from './modal';
 
@@ -28,6 +29,13 @@ import { Modal } from './modal';
               @for (p of profiles(); track p.id) { <option [ngValue]="p.id">{{ p.name }}</option> }
             </select>
           </div>
+          <div>
+            <label class="label">Minimum availability</label>
+            <select class="input" [(ngModel)]="minimumAvailability">
+              @for (o of availabilityOptions; track o.value) { <option [value]="o.value">{{ o.label }}</option> }
+            </select>
+            <p class="hint">Automatic searches wait until the movie reaches this point.</p>
+          </div>
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" [(ngModel)]="monitored" class="accent-accent-500" /> Monitored</label>
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" [(ngModel)]="searchNow" class="accent-accent-500" /> Start search for movie</label>
         </div>
@@ -52,8 +60,10 @@ export class AddMovieModal implements OnInit {
   protected readonly profiles = signal<QualityProfile[]>([]);
   protected rootFolder = '';
   protected profileId = 0;
+  protected readonly availabilityOptions = AVAILABILITY_OPTIONS;
   protected monitored = true;
   protected searchNow = true;
+  protected minimumAvailability: MinimumAvailability = 'Released';
 
   async ngOnInit() {
     const [folders, profiles] = await Promise.all([this.api.rootFolders(), this.api.qualityProfiles()]);
@@ -68,7 +78,7 @@ export class AddMovieModal implements OnInit {
     try {
       const created = await this.api.addMovie({
         tmdbId: this.movie().tmdbId, qualityProfileId: this.profileId, rootFolderPath: this.rootFolder,
-        monitored: this.monitored, searchForMovie: this.searchNow,
+        monitored: this.monitored, searchForMovie: this.searchNow, minimumAvailability: this.minimumAvailability,
       });
       this.toasts.success(`Added ${created.title}`);
       this.added.emit(created);

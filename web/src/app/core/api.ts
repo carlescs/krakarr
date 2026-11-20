@@ -4,7 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
   IndexerError, IndexerTestResult, Language, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, MediaManagementSettings, MetadataSettings, Movie, MovieLookup, Quality, QualityProfile,
-  ReleaseDecision, ReleaseInfo, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
+  ReleaseDecision, ReleaseInfo, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
 } from './models';
 
 const API = 'api/v1';
@@ -100,14 +100,16 @@ export class Api {
   movies() { return this.get<Movie[]>('movies'); }
   movie(id: number) { return this.get<Movie>(`movies/${id}`); }
   lookupMovies(term: string) { return this.get<MovieLookup[]>('movies/lookup', { term }); }
-  addMovie(req: { tmdbId: number; qualityProfileId: number; rootFolderPath: string; monitored: boolean; searchForMovie: boolean }) {
+  addMovie(req: { tmdbId: number; qualityProfileId: number; rootFolderPath: string; monitored: boolean; searchForMovie: boolean; minimumAvailability: MinimumAvailability }) {
     return this.post<Movie>('movies', req);
   }
   discoverMovies(list: MovieDiscoverList, page = 1) { return this.get<DiscoverPage<MovieLookup>>(`movies/discover/${list}`, { page }); }
   moviesForYou() { return this.get<MovieLookup[]>('movies/discover/for-you'); }
   movieRecommendations(id: number) { return this.get<MovieLookup[]>(`movies/${id}/recommendations`); }
   similarMovies(id: number) { return this.get<MovieLookup[]>(`movies/${id}/similar`); }
-  updateMovie(id: number, monitored: boolean, qualityProfileId: number) { return this.put<void>(`movies/${id}`, { monitored, qualityProfileId }); }
+  updateMovie(id: number, monitored: boolean, qualityProfileId: number, minimumAvailability?: MinimumAvailability) {
+    return this.put<void>(`movies/${id}`, { monitored, qualityProfileId, minimumAvailability: minimumAvailability ?? null });
+  }
   deleteMovie(id: number, deleteFiles: boolean) { return this.delete<void>(`movies/${id}`, { deleteFiles }); }
   searchMovie(id: number) { return this.post<CommandInfo>(`movies/${id}/search`); }
   movieReleases(id: number) { return this.get<{ releases: ReleaseDecision[]; errors: IndexerError[] }>(`movies/${id}/releases`); }
@@ -144,6 +146,10 @@ export class Api {
   grabSeriesRelease(id: number, release: ReleaseInfo) { return this.post<unknown>(`series/${id}/releases/grab`, { release }); }
   deleteEpisodeFile(id: number) { return this.delete<void>(`episodefiles/${id}`); }
 
+  // Calendar
+  /** Library releases between two ISO dates (inclusive). */
+  calendar(start: string, end: string) { return this.get<CalendarEntry[]>('calendar', { start, end }); }
+
   // Subtitles
   subtitleLanguages() { return this.get<Language[]>('subtitles/languages'); }
   testSubtitleProviders(settings: SubtitleSettings) {
@@ -162,7 +168,7 @@ export class Api {
 
   // Library import
   scanMovieImport(rootFolderId: number) { return this.get<MovieImportCandidate[]>('movies/import/scan', { rootFolderId }); }
-  importMovies(items: { path: string; tmdbId: number; qualityProfileId: number; monitored: boolean; searchForMovie: boolean }[]) {
+  importMovies(items: { path: string; tmdbId: number; qualityProfileId: number; monitored: boolean; searchForMovie: boolean; minimumAvailability: MinimumAvailability }[]) {
     return this.post<CommandInfo>('movies/import', items);
   }
   scanSeriesImport(rootFolderId: number) { return this.get<SeriesImportCandidate[]>('series/import/scan', { rootFolderId }); }

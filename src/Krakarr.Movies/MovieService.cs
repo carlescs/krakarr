@@ -11,7 +11,14 @@ using Microsoft.Extensions.Logging;
 namespace Krakarr.Movies;
 
 /// <param name="ExistingPath">Use this existing folder as-is (library import) instead of building one from the naming format.</param>
-public sealed record AddMovieRequest(int TmdbId, int QualityProfileId, string RootFolderPath, bool Monitored = true, bool SearchForMovie = true, string? ExistingPath = null);
+public sealed record AddMovieRequest(
+    int TmdbId,
+    int QualityProfileId,
+    string RootFolderPath,
+    bool Monitored = true,
+    bool SearchForMovie = true,
+    string? ExistingPath = null,
+    MinimumAvailability MinimumAvailability = MinimumAvailability.Released);
 
 public sealed class MovieService(
     KrakarrDbContext db,
@@ -49,11 +56,12 @@ public sealed class MovieService(
             PosterUrl = lookup.PosterUrl,
             FanartUrl = lookup.FanartUrl,
             Runtime = lookup.Runtime,
-            Status = MapStatus(lookup.Status),
             Monitored = request.Monitored,
+            MinimumAvailability = request.MinimumAvailability,
             QualityProfileId = request.QualityProfileId,
             Path = string.Empty,
         };
+        MovieReleases.Apply(movie, lookup.ReleaseDates, MapStatus(lookup.Status), Today);
         var roots = await db.RootFolders.AsNoTracking().Where(r => r.MediaType == MediaType.Movie).Select(r => r.Path).ToListAsync(ct);
         movie.Path = LibraryPaths.ResolveItemFolder(roots, request.RootFolderPath, request.ExistingPath,
             () => MovieNaming.BuildFolderName(movie, media.MovieFolderFormat));
@@ -81,7 +89,7 @@ public sealed class MovieService(
         movie.PosterUrl = lookup.PosterUrl ?? movie.PosterUrl;
         movie.FanartUrl = lookup.FanartUrl ?? movie.FanartUrl;
         movie.Runtime = lookup.Runtime;
-        movie.Status = MapStatus(lookup.Status);
+        MovieReleases.Apply(movie, lookup.ReleaseDates, MapStatus(lookup.Status), Today);
         await db.SaveChangesAsync(ct);
     }
 
@@ -114,6 +122,11 @@ public sealed class MovieService(
         if (await HasActiveDownloadAsync(movie.Id, ct))
         {
             return $"{movie.Title}: a download is already in progress";
+        }
+
+        if (!MovieReleases.IsAvailable(movie, Today))
+        {
+            return $"{movie.Title}: not available yet (minimum availability: {AvailabilityLabel(movie.MinimumAvailability)})";
         }
 
         var (decisions, errors) = await SearchAsync(movie, ct);
@@ -176,10 +189,20 @@ public sealed class MovieService(
         return t.ToLowerInvariant();
     }
 
+    /// <summary>Local date used for release-date and availability checks.</summary>
+    public static DateOnly Today => DateOnly.FromDateTime(DateTime.Now);
+
+    public static string AvailabilityLabel(MinimumAvailability availability) => availability switch
+    {
+        MinimumAvailability.Announced => "announced",
+        MinimumAvailability.InCinemas => "in cinemas",
+        _ => "released",
+    };
+
+    /// <summary>TMDB status, used only when TMDB has no release dates for the movie.</summary>
     private static MovieStatus MapStatus(string? status) => status switch
     {
         "Released" => MovieStatus.Released,
-        "In Production" or "Post Production" => MovieStatus.InCinemas,
         _ => MovieStatus.Announced,
     };
 }

@@ -26,7 +26,13 @@ public sealed record MovieImportCandidate
     public string? Error { get; init; }
 }
 
-public sealed record MovieImportItem(string Path, int TmdbId, int QualityProfileId, bool Monitored = true, bool SearchForMovie = false);
+public sealed record MovieImportItem(
+    string Path,
+    int TmdbId,
+    int QualityProfileId,
+    bool Monitored = true,
+    bool SearchForMovie = false,
+    MinimumAvailability MinimumAvailability = MinimumAvailability.Released);
 
 /// <summary>Scans a movie root folder for existing movie folders and imports them in place.</summary>
 public sealed class MovieLibraryImport(
@@ -122,7 +128,7 @@ public sealed class MovieLibraryImport(
         var path = System.IO.Path.TrimEndingDirectorySeparator(item.Path);
         var folderName = System.IO.Path.GetFileName(path);
         var movie = await movies.AddAsync(new AddMovieRequest(
-            item.TmdbId, item.QualityProfileId, System.IO.Path.GetDirectoryName(path) ?? path, item.Monitored, SearchForMovie: false, ExistingPath: path), ct);
+            item.TmdbId, item.QualityProfileId, System.IO.Path.GetDirectoryName(path) ?? path, item.Monitored, SearchForMovie: false, ExistingPath: path, item.MinimumAvailability), ct);
 
         var files = MediaFolder.VideoFiles(path);
         if (files.Count == 0)

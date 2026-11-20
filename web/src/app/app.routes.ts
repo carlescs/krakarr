@@ -20,6 +20,7 @@ export const routes: Routes = [
       { path: 'series/import', loadComponent: () => import('./pages/library-import').then(m => m.LibraryImportPage), data: { kind: 'series' }, title: 'Import series · Krakarr' },
       { path: 'series/add', loadComponent: () => import('./pages/series/add-series').then(m => m.AddSeriesPage), title: 'Add series · Krakarr' },
       { path: 'series/:id', loadComponent: () => import('./pages/series/series-detail').then(m => m.SeriesDetailPage), title: 'Series · Krakarr' },
+      { path: 'calendar', loadComponent: () => import('./pages/calendar').then(m => m.CalendarPage), title: 'Calendar · Krakarr' },
       { path: 'subtitles', loadComponent: () => import('./pages/subtitles').then(m => m.SubtitlesPage), title: 'Subtitles · Krakarr' },
       { path: 'indexers', loadComponent: () => import('./pages/indexers').then(m => m.IndexersPage), title: 'Indexers · Krakarr' },
       { path: 'search', loadComponent: () => import('./pages/search').then(m => m.SearchPage), title: 'Search · Krakarr' },

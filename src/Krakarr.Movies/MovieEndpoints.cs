@@ -11,6 +11,12 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Krakarr.Movies;
 
+public sealed record ReleaseDateDto(DateOnly Date, string Country);
+
+/// <param name="Region">Date in the configured release region, when it has one.</param>
+/// <param name="Earliest">Earliest date in any country.</param>
+public sealed record MovieReleaseDto(ReleaseDateType Type, ReleaseDateDto? Region, ReleaseDateDto? Earliest);
+
 public sealed record MovieFileDto(int Id, string RelativePath, long Size, string Quality, string? ReleaseGroup, DateTimeOffset DateAdded);
 
 public sealed record MovieDto
@@ -26,6 +32,15 @@ public sealed record MovieDto
     public string? FanartUrl { get; init; }
     public int Runtime { get; init; }
     public MovieStatus Status { get; init; }
+    public DateOnly? InCinemas { get; init; }
+    public DateOnly? DigitalRelease { get; init; }
+    public DateOnly? PhysicalRelease { get; init; }
+    /// <summary>Theatrical, digital and physical dates: in the release region and earliest worldwide.</summary>
+    public IReadOnlyList<MovieReleaseDto> Releases { get; init; } = [];
+    public string? ReleaseRegion { get; init; }
+    public MinimumAvailability MinimumAvailability { get; init; }
+    /// <summary>The movie reached its minimum availability, so automatic searches run.</summary>
+    public bool IsAvailable { get; init; }
     public bool Monitored { get; init; }
     public int QualityProfileId { get; init; }
     public required string Path { get; init; }
@@ -36,7 +51,7 @@ public sealed record MovieDto
     public double? DownloadProgress { get; init; }
 }
 
-public sealed record UpdateMovieRequest(bool Monitored, int QualityProfileId);
+public sealed record UpdateMovieRequest(bool Monitored, int QualityProfileId, MinimumAvailability? MinimumAvailability = null);
 
 public sealed record ReleaseDecisionDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections);
 
@@ -48,17 +63,18 @@ public static class MovieEndpoints
     {
         var group = app.MapGroup("/api/v1/movies").WithTags("Movies");
 
-        group.MapGet("/", async (KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
+        group.MapGet("/", async (KrakarrDbContext db, ITorrentEngine engine, Krakarr.Data.ISettingsService settings, CancellationToken ct) =>
         {
             var movies = await db.Movies.AsNoTracking().Include(m => m.MovieFile).OrderBy(m => m.SortTitle).ToListAsync(ct);
             var progress = ActiveProgress(engine);
-            return movies.Select(m => ToDto(m, progress));
+            var region = await ReleaseRegionAsync(settings, ct);
+            return movies.Select(m => ToDto(m, progress, region));
         });
 
-        group.MapGet("/{id:int}", async (int id, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
+        group.MapGet("/{id:int}", async (int id, KrakarrDbContext db, ITorrentEngine engine, Krakarr.Data.ISettingsService settings, CancellationToken ct) =>
         {
             var movie = await db.Movies.AsNoTracking().Include(m => m.MovieFile).FirstOrDefaultAsync(m => m.Id == id, ct);
-            return movie is null ? Results.NotFound() : Results.Ok(ToDto(movie, ActiveProgress(engine)));
+            return movie is null ? Results.NotFound() : Results.Ok(ToDto(movie, ActiveProgress(engine), await ReleaseRegionAsync(settings, ct)));
         });
 
         // Library import: scan a root folder for existing movie folders, then import selected ones in place.
@@ -134,7 +150,7 @@ public static class MovieEndpoints
                     commands.Enqueue($"Search: {movie.Title}", async (sp, token) => await sp.GetRequiredService<MovieService>().AutoSearchAsync(id, token));
                 }
 
-                return Results.Created($"/api/v1/movies/{movie.Id}", ToDto(movie, new Dictionary<int, double>()));
+                return Results.Created($"/api/v1/movies/{movie.Id}", ToDto(movie, new Dictionary<int, double>(), await ReleaseRegionAsync(settings, ct)));
             }
             catch (Exception ex) when (ex is InvalidOperationException or MetadataException)
             {
@@ -150,6 +166,7 @@ public static class MovieEndpoints
                 return Results.Problem("Quality profile does not exist", statusCode: 400);
             movie.Monitored = req.Monitored;
             movie.QualityProfileId = req.QualityProfileId;
+            if (req.MinimumAvailability is { } availability) movie.MinimumAvailability = availability;
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         });
@@ -247,7 +264,12 @@ public static class MovieEndpoints
             .GroupBy(s => s.MovieId!.Value)
             .ToDictionary(g => g.Key, g => g.Max(s => s.Progress));
 
-    private static MovieDto ToDto(Movie m, IReadOnlyDictionary<int, double> progress) => new()
+    private static async Task<string?> ReleaseRegionAsync(Krakarr.Data.ISettingsService settings, CancellationToken ct) =>
+        MovieReleases.NormalizeRegion((await settings.GetAsync<Krakarr.Core.Configuration.MetadataSettings>(ct)).ReleaseRegion);
+
+    private static ReleaseDateDto? ToDto(MovieReleaseDate? d) => d is null ? null : new ReleaseDateDto(d.Date, d.Country);
+
+    private static MovieDto ToDto(Movie m, IReadOnlyDictionary<int, double> progress, string? region) => new()
     {
         Id = m.Id,
         TmdbId = m.TmdbId,
@@ -259,7 +281,16 @@ public static class MovieEndpoints
         PosterUrl = m.PosterUrl,
         FanartUrl = m.FanartUrl,
         Runtime = m.Runtime,
-        Status = m.Status,
+        Status = MovieReleases.CurrentStatus(m, MovieService.Today),
+        InCinemas = m.InCinemas,
+        DigitalRelease = m.DigitalRelease,
+        PhysicalRelease = m.PhysicalRelease,
+        Releases = MovieReleases.AllTypes
+            .Select(t => new MovieReleaseDto(t, ToDto(MovieReleases.ForRegion(m.ReleaseDates, t, region)), ToDto(MovieReleases.Earliest(m.ReleaseDates, t))))
+            .ToList(),
+        ReleaseRegion = region,
+        MinimumAvailability = m.MinimumAvailability,
+        IsAvailable = MovieReleases.IsAvailable(m, MovieService.Today),
         Monitored = m.Monitored,
         QualityProfileId = m.QualityProfileId,
         Path = m.Path,
