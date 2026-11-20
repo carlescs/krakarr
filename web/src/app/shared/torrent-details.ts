@@ -27,7 +27,7 @@ type Tab = 'overview' | 'files' | 'peers' | 'trackers';
           <span class="text-slate-400">↓ {{ d.status.downloadRate | speed }}</span>
           <span class="text-slate-400">↑ {{ d.status.uploadRate | speed }}</span>
           @if (d.status.state === 'Downloading') { <span class="text-slate-400">ETA {{ d.status.etaSeconds | duration }}</span> }
-          <span class="ml-auto text-xs text-slate-500">{{ d.client }}</span>
+          <span class="text-xs text-slate-500 sm:ml-auto">{{ d.client }}</span>
         </div>
 
         <!-- Piece map -->
@@ -44,9 +44,9 @@ type Tab = 'overview' | 'files' | 'peers' | 'trackers';
         }
 
         <!-- Tabs -->
-        <div class="mb-4 flex gap-1 border-b border-surface-700">
+        <div class="mb-4 flex gap-1 overflow-x-auto border-b border-surface-700 [scrollbar-width:none]">
           @for (t of tabs; track t.id) {
-            <button class="-mb-px border-b-2 px-3 py-1.5 text-sm font-medium"
+            <button class="-mb-px whitespace-nowrap border-b-2 px-3 py-1.5 text-sm font-medium"
                     [class]="tab() === t.id ? 'border-accent-400 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'"
                     (click)="tab.set(t.id)">
               {{ t.label }} @if (count(t.id) != null) { <span class="text-xs text-slate-500">{{ count(t.id) }}</span> }
@@ -54,7 +54,7 @@ type Tab = 'overview' | 'files' | 'peers' | 'trackers';
           }
         </div>
 
-        <div class="max-h-[55vh] overflow-auto">
+        <div class="overflow-x-auto sm:max-h-[55vh] sm:overflow-auto">
           @switch (tab()) {
             @case ('overview') {
               <div class="grid gap-x-8 gap-y-6 md:grid-cols-2">

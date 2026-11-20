@@ -10,16 +10,16 @@ import { CommandInfo, HistoryItem } from '../core/models';
   selector: 'kr-activity',
   imports: [DatePipe, RouterLink],
   template: `
-    <h1 class="page-title mb-6">Activity</h1>
+    <h1 class="page-title mb-4 sm:mb-6">Activity</h1>
     <div class="grid gap-6 xl:grid-cols-[1fr_380px]">
       <section class="card overflow-hidden">
-        <h2 class="border-b border-surface-700 px-5 py-3 text-sm font-semibold uppercase tracking-wide text-slate-400">History</h2>
+        <h2 class="border-b border-surface-700 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-slate-400 sm:px-5">History</h2>
         @if (history().length === 0) {
           <p class="px-5 py-8 text-sm text-slate-500">No history yet.</p>
         } @else {
           <div class="overflow-x-auto">
             <table class="table">
-              <thead><tr><th>Event</th><th>Release</th><th>Quality</th><th>Indexer</th><th>Date</th></tr></thead>
+              <thead><tr><th>Event</th><th>Release</th><th class="max-sm:hidden">Quality</th><th class="max-md:hidden">Indexer</th><th class="max-sm:hidden">Date</th></tr></thead>
               <tbody>
                 @for (h of history(); track h.id) {
                   <tr>
@@ -35,10 +35,11 @@ import { CommandInfo, HistoryItem } from '../core/models';
                         <a [routerLink]="['/series', h.seriesId]" class="block truncate hover:text-accent-300" [title]="h.sourceTitle">{{ h.sourceTitle }}</a>
                       } @else { <span class="block truncate">{{ h.sourceTitle }}</span> }
                       @if (h.message) { <div class="truncate text-xs text-slate-500" [title]="h.message">{{ h.message }}</div> }
+                      <div class="truncate text-xs text-slate-500 sm:hidden">{{ h.date | date: 'short' }}{{ h.quality ? ' · ' + h.quality : '' }}{{ h.indexer ? ' · ' + h.indexer : '' }}</div>
                     </td>
-                    <td class="whitespace-nowrap">{{ h.quality }}</td>
-                    <td class="text-slate-400">{{ h.indexer }}</td>
-                    <td class="whitespace-nowrap text-slate-400">{{ h.date | date: 'short' }}</td>
+                    <td class="whitespace-nowrap max-sm:hidden">{{ h.quality }}</td>
+                    <td class="text-slate-400 max-md:hidden">{{ h.indexer }}</td>
+                    <td class="whitespace-nowrap text-slate-400 max-sm:hidden">{{ h.date | date: 'short' }}</td>
                   </tr>
                 }
               </tbody>

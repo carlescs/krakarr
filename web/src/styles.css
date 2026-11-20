@@ -16,22 +16,24 @@
 
 @layer base {
   html, body { height: 100%; }
+  html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body { overscroll-behavior-y: none; }
   ::selection { background: color-mix(in oklab, var(--color-accent-500) 40%, transparent); }
   * { scrollbar-width: thin; scrollbar-color: var(--color-surface-600) transparent; }
 }
 
 @utility btn {
-  @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition
-    disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-400;
+  @apply inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg px-3.5 py-2 text-sm font-medium transition
+    disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:min-h-10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-400;
 }
 @utility btn-primary { @apply btn bg-accent-500 text-slate-950 hover:bg-accent-400; }
 @utility btn-secondary { @apply btn bg-surface-700 text-slate-100 hover:bg-surface-600; }
 @utility btn-ghost { @apply btn text-slate-300 hover:bg-surface-800 hover:text-white; }
 @utility btn-danger { @apply btn bg-rose-600/90 text-white hover:bg-rose-500; }
-@utility btn-sm { @apply px-2.5 py-1.5 text-xs; }
+@utility btn-sm { @apply px-2.5 py-1.5 text-xs pointer-coarse:min-h-9 pointer-coarse:min-w-9; }
 
 @utility input {
-  @apply w-full rounded-lg border border-surface-600 bg-surface-900 px-3 py-2 text-sm text-slate-100 placeholder-slate-500
+  @apply w-full rounded-lg border border-surface-600 bg-surface-900 px-3 py-2 text-base text-slate-100 sm:text-sm placeholder-slate-500
     outline-none transition focus:border-accent-500 focus:ring-2 focus:ring-accent-500/30;
 }
 @utility label { @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-400; }
@@ -42,7 +44,10 @@
 
 @layer components {
   .table { @apply w-full text-left text-sm; }
-  .table th { @apply border-b border-surface-700 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400; }
-  .table td { @apply border-b border-surface-800 px-3 py-2.5 align-middle; }
+  .table th { @apply border-b border-surface-700 px-2 py-2 sm:px-3 text-xs font-semibold uppercase tracking-wide text-slate-400; }
+  .table td { @apply border-b border-surface-800 px-2 py-2.5 align-middle sm:px-3; }
   .table tbody tr { @apply transition hover:bg-surface-850; }
 }
+
+/* Space for the mobile tab bar plus the home indicator / safe area. */
+@utility pb-tabbar { padding-bottom: calc(4rem + env(safe-area-inset-bottom)); }

@@ -1,5 +1,7 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { filter, map } from 'rxjs';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { Auth } from '../core/auth';
 import { Events } from '../core/events';
 import { SpeedPipe } from '../core/format';
@@ -22,12 +24,13 @@ const ICONS: Record<string, string> = {
 
 @Component({
   selector: 'kr-shell',
+  host: { '(document:keydown.escape)': 'menuOpen.set(false)' },
   imports: [RouterOutlet, RouterLink, RouterLinkActive, SpeedPipe],
   template: `
     <div class="flex h-full">
       <!-- Sidebar -->
-      <aside class="fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-surface-800 bg-surface-900/95 backdrop-blur transition-transform lg:translate-x-0"
-             [class.-translate-x-full]="!menuOpen()">
+      <aside class="fixed inset-y-0 left-0 z-40 flex w-64 flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] lg:w-60 border-r border-surface-800 bg-surface-900/95 backdrop-blur transition-transform lg:translate-x-0"
+             [class.-translate-x-full]="!menuOpen()" [class.max-lg:invisible]="!menuOpen()">
         <a routerLink="/movies" class="flex items-center gap-2.5 px-5 py-5">
           <img src="favicon.svg" alt="" class="size-8" />
           <span class="text-lg font-bold tracking-tight text-white">Krakarr</span>
@@ -38,7 +41,7 @@ const ICONS: Record<string, string> = {
               <div class="px-3 pt-4 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">{{ item.section }}</div>
             }
             <a [routerLink]="item.path" routerLinkActive="!bg-surface-700/70 !text-white" (click)="menuOpen.set(false)"
-               class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition hover:bg-surface-800 hover:text-slate-100">
+               class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm lg:py-2 font-medium text-slate-400 transition hover:bg-surface-800 hover:text-slate-100">
               <svg class="size-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons[item.icon]" />
               </svg>
@@ -60,23 +63,52 @@ const ICONS: Record<string, string> = {
         </div>
       </aside>
       @if (menuOpen()) {
-        <div class="fixed inset-0 z-30 bg-black/50 lg:hidden" (click)="menuOpen.set(false)"></div>
+        <div class="fixed inset-0 z-30 bg-black/50 backdrop-blur-[1px] lg:hidden" (click)="menuOpen.set(false)"></div>
       }
 
       <!-- Main -->
       <div class="flex min-w-0 flex-1 flex-col lg:pl-60">
-        <header class="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-surface-800 bg-surface-950/80 px-4 backdrop-blur lg:px-8">
-          <button class="btn-ghost -ml-2 lg:hidden" (click)="menuOpen.set(true)" aria-label="Open menu">
-            <svg class="size-6" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor"><path stroke-linecap="round" [attr.d]="icons['menu']" /></svg>
-          </button>
-          <div class="flex-1"></div>
-          <span class="text-sm text-slate-400">{{ auth.status()?.username }}</span>
-          <button class="btn-ghost btn-sm" (click)="logout()">Sign out</button>
+        <header class="sticky top-0 z-20 border-b border-surface-800 bg-surface-950/85 pt-[env(safe-area-inset-top)] backdrop-blur">
+          <div class="flex h-14 items-center gap-3 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] lg:px-8">
+            <button class="btn-ghost -ml-2 px-2 lg:hidden" (click)="menuOpen.set(true)" aria-label="Open menu">
+              <svg class="size-6" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor"><path stroke-linecap="round" [attr.d]="icons['menu']" /></svg>
+            </button>
+            <a routerLink="/movies" class="flex min-w-0 items-center gap-2 lg:hidden">
+              <img src="favicon.svg" alt="" class="size-7 shrink-0" />
+              <span class="truncate font-semibold text-white">{{ current()?.label ?? 'Krakarr' }}</span>
+            </a>
+            <div class="flex-1"></div>
+            <span class="hidden text-sm text-slate-400 sm:inline">{{ auth.status()?.username }}</span>
+            <button class="btn-ghost btn-sm" (click)="logout()" [title]="'Sign out ' + (auth.status()?.username ?? '')">Sign out</button>
+          </div>
         </header>
-        <main class="flex-1 px-4 py-6 lg:px-8">
+        <main class="flex-1 pt-6 pr-[max(1rem,env(safe-area-inset-right))] pb-tabbar pl-[max(1rem,env(safe-area-inset-left))] lg:px-8 lg:pb-6">
           <router-outlet />
         </main>
       </div>
+
+      <!-- Mobile tab bar -->
+      <nav class="fixed inset-x-0 bottom-0 z-30 border-t border-surface-800 bg-surface-900/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden" aria-label="Primary">
+        <div class="mx-auto grid h-16 max-w-lg grid-cols-5">
+          @for (item of tabs; track item.path) {
+            <a [routerLink]="item.path" routerLinkActive="!text-accent-300" (click)="menuOpen.set(false)"
+               class="relative flex flex-col items-center justify-center gap-1 text-[11px] font-medium text-slate-400 active:bg-surface-800">
+              <svg class="size-6" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons[item.icon]" />
+              </svg>
+              {{ item.label }}
+              @if (item.path === '/downloads' && activeDownloads() > 0) {
+                <span class="absolute top-1.5 left-1/2 ml-2 min-w-4 rounded-full bg-accent-500 px-1 text-center text-[10px] leading-4 font-semibold text-slate-950">{{ activeDownloads() }}</span>
+              }
+            </a>
+          }
+          <button class="flex flex-col items-center justify-center gap-1 text-[11px] font-medium active:bg-surface-800"
+                  [class]="menuOpen() || moreActive() ? 'text-accent-300' : 'text-slate-400'" (click)="menuOpen.set(!menuOpen())" aria-label="More">
+            <svg class="size-6" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor"><path stroke-linecap="round" [attr.d]="icons['menu']" /></svg>
+            More
+          </button>
+        </div>
+      </nav>
     </div>
   `,
 })
@@ -98,6 +130,15 @@ export class Shell implements OnInit, OnDestroy {
     { path: '/activity', label: 'Activity', icon: 'clock', section: 'System' },
     { path: '/settings', label: 'Settings', icon: 'cog' },
   ];
+
+  /** Primary destinations shown in the mobile tab bar; everything else lives behind "More". */
+  protected readonly tabs = ['/movies', '/series', '/downloads', '/activity'].map(p => this.nav.find(n => n.path === p)!);
+
+  private readonly url = toSignal(
+    this.router.events.pipe(filter(e => e instanceof NavigationEnd), map(e => (e as NavigationEnd).urlAfterRedirects)),
+    { initialValue: this.router.url });
+  protected readonly current = computed(() => this.nav.find(n => this.url().startsWith(n.path)));
+  protected readonly moreActive = computed(() => !this.tabs.some(t => this.url().startsWith(t.path)));
 
   protected readonly activeDownloads = computed(() =>
     this.events.downloads().filter(d => d.state === 'Downloading' || d.state === 'FetchingMetadata' || d.state === 'Queued').length);

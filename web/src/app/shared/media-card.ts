@@ -28,8 +28,8 @@ export function libraryRoute(d: DiscoverItem): (string | number)[] | null {
           <span class="badge bg-emerald-500/90 text-white" title="In library">✓</span>
         }
       </div>
-      <!-- Hover / focus details -->
-      <div class="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-surface-950 via-surface-950/85 to-surface-950/10 p-3 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
+      <!-- Hover / focus details (touch screens get the button under the title instead) -->
+      <div class="absolute inset-0 flex flex-col justify-end bg-gradient-to-t from-surface-950 via-surface-950/85 to-surface-950/10 p-3 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:hidden">
         <div class="text-xs text-slate-400">
           {{ d.item.year || '' }}
           @if (d.item.rating) { <span class="ml-1 text-amber-300">★ {{ d.item.rating }}</span> }
@@ -47,6 +47,13 @@ export function libraryRoute(d: DiscoverItem): (string | number)[] | null {
     <div class="text-xs text-slate-500">
       {{ d.item.year || '—' }}
       @if (d.item.rating) { <span class="ml-1">★ {{ d.item.rating }}</span> }
+    </div>
+    <div class="mt-1.5 hidden pointer-coarse:block">
+      @if (route(); as r) {
+        <a [routerLink]="r" class="btn-secondary btn-sm w-full">Open</a>
+      } @else {
+        <button class="btn-primary btn-sm w-full" (click)="add.emit(d)">+ Add</button>
+      }
     </div>
   `,
   host: { class: 'block' },

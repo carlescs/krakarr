@@ -9,7 +9,7 @@ import { Auth } from '../core/auth';
   imports: [FormsModule],
   template: `
     <div class="flex min-h-full items-center justify-center bg-[radial-gradient(ellipse_at_top,_var(--color-surface-800),_var(--color-surface-950)_60%)] px-4">
-      <form class="card w-full max-w-sm p-8" (ngSubmit)="submit()">
+      <form class="card w-full max-w-sm p-6 sm:p-8" (ngSubmit)="submit()">
         <div class="mb-6 flex flex-col items-center gap-3 text-center">
           <img src="favicon.svg" alt="" class="size-12" />
           <h1 class="text-xl font-semibold text-white">{{ setup() ? 'Welcome to Krakarr' : 'Sign in to Krakarr' }}</h1>

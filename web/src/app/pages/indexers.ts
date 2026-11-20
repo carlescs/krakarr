@@ -18,7 +18,7 @@ const blankIndexer = (): Indexer => ({
   selector: 'kr-indexers',
   imports: [FormsModule, Modal, CategoryPicker],
   template: `
-    <div class="mb-6 flex items-center gap-3">
+    <div class="mb-6 flex flex-wrap items-center gap-3">
       <h1 class="page-title mr-auto">Indexers</h1>
       <button class="btn-primary" (click)="edit(null)">+ Add indexer</button>
     </div>
@@ -31,17 +31,20 @@ const blankIndexer = (): Indexer => ({
     } @else {
       <div class="card overflow-hidden">
         <table class="table">
-          <thead><tr><th>Name</th><th>Protocol</th><th class="hidden md:table-cell">URL</th><th>Priority</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th class="max-sm:hidden">Protocol</th><th class="hidden md:table-cell">URL</th><th class="max-sm:hidden">Priority</th><th>Status</th><th></th></tr></thead>
           <tbody>
             @for (i of indexers(); track i.id) {
               <tr>
-                <td class="font-medium text-white">{{ i.name }}</td>
-                <td>{{ i.protocol }}</td>
+                <td class="font-medium text-white">
+                  {{ i.name }}
+                  <div class="text-xs font-normal text-slate-500 sm:hidden">{{ i.protocol }} · priority {{ i.priority }}</div>
+                </td>
+                <td class="max-sm:hidden">{{ i.protocol }}</td>
                 <td class="hidden max-w-xs truncate font-mono text-xs text-slate-400 md:table-cell">{{ i.baseUrl }}</td>
-                <td>{{ i.priority }}</td>
+                <td class="max-sm:hidden">{{ i.priority }}</td>
                 <td>
                   <span class="badge" [class]="i.enabled ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-500/15 text-slate-400'">{{ i.enabled ? 'Enabled' : 'Disabled' }}</span>
-                  @if (i.enableRss) { <span class="badge ml-1 bg-surface-700 text-slate-300">RSS</span> }
+                  @if (i.enableRss) { <span class="badge ml-1 bg-surface-700 max-sm:hidden text-slate-300">RSS</span> }
                 </td>
                 <td class="text-right"><button class="btn-ghost btn-sm" (click)="edit(i)">Edit</button></td>
               </tr>
@@ -66,7 +69,7 @@ const blankIndexer = (): Indexer => ({
             <p class="hint">Base URL of the Torznab endpoint. The API path is appended (Jackett: …/torznab with path “/api”).</p>
           </div>
           <div class="sm:col-span-2"><label class="label">API key</label><input class="input font-mono" [(ngModel)]="f.apiKey" autocomplete="off" /></div>
-          <div class="flex items-center gap-2 sm:col-span-2">
+          <div class="flex flex-wrap items-center gap-2 sm:col-span-2">
             <span class="text-sm text-slate-400">
               @if (categories().length > 0) { {{ categories().length }} categories from the indexer. }
               @else if (capsError()) { <span class="text-rose-300">Could not load categories: {{ capsError() }}</span> }

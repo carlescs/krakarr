@@ -15,8 +15,8 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
   selector: 'kr-settings',
   imports: [FormsModule, Modal, BytesPipe],
   template: `
-    <h1 class="page-title mb-6">Settings</h1>
-    <div class="mb-6 flex gap-1 overflow-x-auto border-b border-surface-700">
+    <h1 class="page-title mb-4 sm:mb-6">Settings</h1>
+    <div class="-mx-4 mb-6 flex gap-1 overflow-x-auto border-b border-surface-700 px-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
       @for (t of tabs; track t.id) {
         <button class="-mb-px whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition"
                 [class]="tab() === t.id ? 'border-accent-400 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'"
@@ -27,7 +27,7 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
     <!-- Media management -->
     @if (tab() === 'media') {
       <div class="space-y-6">
-        <section class="card p-5">
+        <section class="card p-4 sm:p-5">
           <div class="mb-4 flex items-center">
             <h2 class="flex-1 font-semibold text-white">Root folders</h2>
             <button class="btn-secondary btn-sm" (click)="openBrowser()">+ Add root folder</button>
@@ -37,9 +37,9 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
           }
           <ul class="divide-y divide-surface-800">
             @for (r of rootFolders(); track r.id) {
-              <li class="flex items-center gap-3 py-2 text-sm">
+              <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
                 <span class="badge" [class]="r.mediaType === 'Series' ? 'bg-violet-500/15 text-violet-300' : 'bg-accent-500/15 text-accent-300'">{{ r.mediaType === 'Series' ? 'Series' : 'Movies' }}</span>
-                <span class="flex-1 font-mono">{{ r.path }}</span>
+                <span class="min-w-0 flex-1 break-all font-mono">{{ r.path }}</span>
                 @if (!r.accessible) { <span class="badge bg-rose-500/15 text-rose-300">Not accessible</span> }
                 @if (r.freeSpace != null) { <span class="text-slate-400">{{ r.freeSpace | bytes }} free</span> }
                 <button class="btn-ghost btn-sm text-rose-300" (click)="deleteRoot(r)">Remove</button>
@@ -48,7 +48,7 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
           </ul>
         </section>
         @if (media(); as m) {
-          <section class="card space-y-4 p-5">
+          <section class="card space-y-4 p-4 sm:p-5">
             <h2 class="font-semibold text-white">File management</h2>
             <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="m.renameFiles" /> Rename movie files</label>
             <div>
@@ -77,7 +77,7 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
       <div class="mb-4 flex justify-end"><button class="btn-secondary btn-sm" (click)="editProfile(null)">+ Add profile</button></div>
       <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         @for (p of profiles(); track p.id) {
-          <button class="card flex flex-col items-start justify-start p-5 text-left transition hover:border-accent-500/50" (click)="editProfile(p)">
+          <button class="card flex flex-col items-start justify-start p-4 sm:p-5 text-left transition hover:border-accent-500/50" (click)="editProfile(p)">
             <div class="font-semibold text-white">{{ p.name }}</div>
             <div class="mt-2 flex flex-wrap gap-1">
               @for (q of qualitiesFor(p); track q.id) {
@@ -92,7 +92,7 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
     <!-- Download client -->
     @if (tab() === 'downloads') {
       @if (downloads(); as d) {
-        <section class="card mb-6 p-5">
+        <section class="card mb-6 p-4 sm:p-5">
           <h2 class="mb-3 font-semibold text-white">Download client</h2>
           <div class="grid gap-3 sm:grid-cols-2">
             @for (opt of clientOptions; track opt.id) {
@@ -109,7 +109,7 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
         </section>
 
         @if (d.client === 'QBittorrent') {
-          <section class="card grid gap-4 p-5 sm:grid-cols-2">
+          <section class="card grid gap-4 p-4 sm:p-5 sm:grid-cols-2">
             <h2 class="font-semibold text-white sm:col-span-2">qBittorrent</h2>
             <div class="sm:col-span-2">
               <label class="label">WebUI URL</label>
@@ -153,7 +153,7 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
             </div>
           </section>
         } @else {
-        <section class="card grid gap-4 p-5 sm:grid-cols-2">
+        <section class="card grid gap-4 p-4 sm:p-5 sm:grid-cols-2">
           <h2 class="font-semibold text-white sm:col-span-2">Built-in torrent client</h2>
           <div class="sm:col-span-2"><label class="label">Download directory</label><input class="input font-mono" [(ngModel)]="d.downloadDirectory" [placeholder]="status()?.downloadDirectory ?? ''" />
             <p class="hint">For hardlinks to work, downloads and your library must be on the same filesystem.</p></div>
@@ -170,7 +170,7 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
         }
       }
       @if (automation(); as a) {
-        <section class="card mt-6 grid gap-4 p-5 sm:grid-cols-2">
+        <section class="card mt-6 grid gap-4 p-4 sm:p-5 sm:grid-cols-2">
           <h2 class="font-semibold text-white sm:col-span-2">Automation</h2>
           <div><label class="label">RSS sync interval (minutes, 0 = off)</label><input class="input" type="number" min="0" [(ngModel)]="a.rssSyncIntervalMinutes" /></div>
           <div class="flex justify-end sm:col-span-2"><button class="btn-primary" (click)="save('automation', a)">Save</button></div>
@@ -182,7 +182,7 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
     @if (tab() === 'subtitles') {
       @if (subtitles(); as st) {
         <div class="space-y-6">
-          <section class="card space-y-4 p-5">
+          <section class="card space-y-4 p-4 sm:p-5">
             <label class="flex items-center gap-2 text-sm font-medium text-white"><input type="checkbox" class="accent-accent-500" [(ngModel)]="st.enabled" /> Download subtitles automatically</label>
             <div>
               <label class="label">Languages</label>
@@ -192,7 +192,7 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
                     <button class="ml-1 hover:text-white" (click)="st.languages = removeLanguage(st.languages, code)" aria-label="Remove">✕</button>
                   </span>
                 }
-                <select class="input w-56" (change)="st.languages = addLanguage(st.languages, $any($event.target).value); $any($event.target).value = ''">
+                <select class="input w-full sm:w-56" (change)="st.languages = addLanguage(st.languages, $any($event.target).value); $any($event.target).value = ''">
                   <option value="">Add language…</option>
                   @for (l of languages(); track l.code) {
                     @if (!st.languages.includes(l.code)) { <option [value]="l.code">{{ l.name }}</option> }
@@ -217,7 +217,7 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
             <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="st.includeAiTranslated" /> Allow AI / machine translated subtitles</label>
             <p class="hint">Score: 100 for a file-hash match; otherwise title, year or season/episode, source, resolution, release group and codec of the subtitle's release are compared with your file.</p>
           </section>
-          <section class="card grid gap-4 p-5 sm:grid-cols-2">
+          <section class="card grid gap-4 p-4 sm:p-5 sm:grid-cols-2">
             <h2 class="font-semibold text-white sm:col-span-2">OpenSubtitles.com</h2>
             <div class="sm:col-span-2">
               <label class="label">API key</label>
@@ -242,7 +242,7 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
     <!-- Metadata -->
     @if (tab() === 'metadata') {
       @if (metadata(); as m) {
-        <section class="card space-y-4 p-5">
+        <section class="card space-y-4 p-4 sm:p-5">
           <div>
             <label class="label">TMDB API key or read access token</label>
             <input class="input font-mono" type="password" autocomplete="off" [(ngModel)]="m.tmdbApiKey" />
@@ -274,7 +274,7 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
     @if (tab() === 'general') {
       <div class="space-y-6">
         @if (general(); as g) {
-          <section class="card space-y-4 p-5">
+          <section class="card space-y-4 p-4 sm:p-5">
             <h2 class="font-semibold text-white">Security</h2>
             <div>
               <label class="label">API key</label>
@@ -293,7 +293,7 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
           </section>
         }
         @if (status(); as s) {
-          <section class="card p-5">
+          <section class="card p-4 sm:p-5">
             <h2 class="mb-3 font-semibold text-white">About</h2>
             <dl class="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-[auto_1fr]">
               <dt class="text-slate-500">Version</dt><dd>{{ s.version }}</dd>

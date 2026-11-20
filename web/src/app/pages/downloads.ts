@@ -21,7 +21,7 @@ import { TorrentDetailsDialog } from '../shared/torrent-details';
         <span class="badge bg-surface-700 text-slate-300">{{ c.kind === 'QBittorrent' ? 'qBittorrent · tag ' + c.tag : 'Built-in client' }}</span>
       }
       <span class="mr-auto"></span>
-      <span class="text-sm text-slate-400">↓ {{ totalDown() | speed }} · ↑ {{ totalUp() | speed }}</span>
+      <span class="text-sm text-slate-400 max-sm:hidden">↓ {{ totalDown() | speed }} · ↑ {{ totalUp() | speed }}</span>
       <button class="btn-primary" (click)="addOpen.set(true)">+ Add torrent</button>
     </div>
 
@@ -36,10 +36,10 @@ import { TorrentDetailsDialog } from '../shared/torrent-details';
     } @else {
       <div class="space-y-2">
         @for (d of list(); track d.infoHash) {
-          <div class="card p-4">
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div class="card p-3 sm:p-4">
+            <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5 sm:gap-x-3">
               <kr-state-badge [state]="d.state" />
-              <button class="min-w-0 flex-1 truncate text-left font-medium text-slate-100 hover:text-accent-300" [title]="d.name + ' — show details'" (click)="details.set(d)">{{ d.name }}</button>
+              <button class="min-w-0 text-left font-medium text-slate-100 break-all hover:text-accent-300 max-sm:order-first max-sm:line-clamp-2 max-sm:basis-full sm:flex-1 sm:truncate" [title]="d.name + ' — show details'" (click)="details.set(d)">{{ d.name }}</button>
               @if (d.movieId) {
                 <a [routerLink]="['/movies', d.movieId]" class="badge bg-accent-500/15 text-accent-300 hover:bg-accent-500/25">Movie</a>
               }
@@ -47,8 +47,8 @@ import { TorrentDetailsDialog } from '../shared/torrent-details';
                 <a [routerLink]="['/series', d.seriesId]" class="badge bg-violet-500/15 text-violet-300 hover:bg-violet-500/25">Series</a>
               }
               @if (d.imported) { <span class="badge bg-emerald-500/15 text-emerald-300">Imported</span> }
-              <span class="badge bg-surface-700 text-slate-300">{{ d.category }}</span>
-              <div class="flex gap-1">
+              <span class="badge bg-surface-700 text-slate-300 max-sm:hidden">{{ d.category }}</span>
+              <div class="flex gap-1 max-sm:ml-auto">
                 @if (d.state === 'Paused' || d.state === 'Completed') {
                   <button class="btn-ghost btn-sm" (click)="resume(d)" title="Resume">▶</button>
                 } @else {
@@ -59,7 +59,7 @@ import { TorrentDetailsDialog } from '../shared/torrent-details';
               </div>
             </div>
             <kr-progress class="mt-3" [value]="d.progress" [color]="d.state === 'Seeding' || d.state === 'Completed' ? 'bg-emerald-500' : d.state === 'Paused' ? 'bg-amber-500' : 'bg-accent-500'" />
-            <div class="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-400">
+            <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400 sm:gap-x-5">
               <span>{{ d.progress.toFixed(1) }}% of {{ d.size | bytes }}</span>
               <span>↓ {{ d.downloadRate | speed }}</span>
               <span>↑ {{ d.uploadRate | speed }}</span>

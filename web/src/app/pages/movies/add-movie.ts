@@ -11,9 +11,9 @@ import { Poster } from '../../shared/poster';
   imports: [FormsModule, RouterLink, Poster, AddMovieModal],
   template: `
     <h1 class="page-title mb-6">Add movie</h1>
-    <form class="mb-8 flex gap-3" (ngSubmit)="search()">
-      <input class="input flex-1 !py-3 !text-base" name="term" [(ngModel)]="term" placeholder="Search TMDB, e.g. “The Matrix 1999”" autofocus />
-      <button class="btn-primary px-6" [disabled]="searching() || !term.trim()">{{ searching() ? 'Searching…' : 'Search' }}</button>
+    <form class="mb-6 flex gap-2 sm:mb-8 sm:gap-3" (ngSubmit)="search()">
+      <input class="input min-w-0 flex-1 !py-3 !text-base" type="search" enterkeyhint="search" name="term" [(ngModel)]="term" placeholder="Search TMDB, e.g. “The Matrix 1999”" autofocus />
+      <button class="btn-primary px-4 sm:px-6" [disabled]="searching() || !term.trim()">{{ searching() ? 'Searching…' : 'Search' }}</button>
     </form>
 
     @if (error()) {
@@ -24,11 +24,11 @@ import { Poster } from '../../shared/poster';
 
     <div class="space-y-3">
       @for (r of results(); track r.tmdbId) {
-        <div class="card flex gap-4 p-4">
+        <div class="card flex gap-3 p-3 sm:gap-4 sm:p-4">
           <kr-poster class="w-20 shrink-0 sm:w-24" [url]="r.posterUrl" [title]="r.title" />
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-baseline gap-x-2">
-              <h2 class="text-lg font-semibold text-white">{{ r.title }}</h2>
+              <h2 class="text-base font-semibold text-white sm:text-lg">{{ r.title }}</h2>
               <span class="text-slate-400">{{ r.year || '' }}</span>
             </div>
             @if (r.originalTitle && r.originalTitle !== r.title) {

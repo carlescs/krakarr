@@ -16,16 +16,18 @@ type Filter = 'all' | 'missing' | 'downloaded' | 'unmonitored';
   imports: [RouterLink, FormsModule, Poster, Progress],
   template: `
     <div class="mb-6 flex flex-wrap items-center gap-3">
-      <h1 class="page-title mr-auto">Movies <span class="ml-1 text-base font-normal text-slate-500">{{ movies().length }}</span></h1>
-      <input class="input w-56" placeholder="Filter…" [ngModel]="query()" (ngModelChange)="query.set($event)" />
-      <select class="input w-40" [ngModel]="filter()" (ngModelChange)="filter.set($event)">
+      <h1 class="page-title mr-auto max-sm:basis-full">Movies <span class="ml-1 text-base font-normal text-slate-500">{{ movies().length }}</span></h1>
+      <input class="input min-w-0 flex-1 sm:w-56 sm:flex-none" placeholder="Filter…" type="search" [ngModel]="query()" (ngModelChange)="query.set($event)" />
+      <select class="input w-36 sm:w-40" [ngModel]="filter()" (ngModelChange)="filter.set($event)">
         <option value="all">All</option>
         <option value="missing">Missing</option>
         <option value="downloaded">Downloaded</option>
         <option value="unmonitored">Unmonitored</option>
       </select>
-      <a routerLink="/movies/import" class="btn-secondary">Import library</a>
-      <a routerLink="/movies/add" class="btn-primary">+ Add movie</a>
+      <div class="flex gap-2 max-sm:basis-full">
+        <a routerLink="/movies/import" class="btn-secondary max-sm:flex-1">Import library</a>
+        <a routerLink="/movies/add" class="btn-primary max-sm:flex-1">+ Add movie</a>
+      </div>
     </div>
 
     @if (loading()) {
@@ -40,7 +42,7 @@ type Filter = 'all' | 'missing' | 'downloaded' | 'unmonitored';
         </div>
       </div>
     } @else {
-      <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
+      <div class="grid grid-cols-3 gap-x-3 gap-y-4 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
         @for (m of filtered(); track m.id) {
           <a [routerLink]="['/movies', m.id]" class="group">
             <div class="relative overflow-hidden rounded-lg ring-1 ring-surface-700 transition group-hover:ring-accent-500">
@@ -51,8 +53,8 @@ type Filter = 'all' | 'missing' | 'downloaded' | 'unmonitored';
                 <div class="absolute inset-x-2 bottom-3"><kr-progress [value]="m.downloadProgress" /></div>
               }
             </div>
-            <div class="mt-2 truncate text-sm font-medium text-slate-100 group-hover:text-white">{{ m.title }}</div>
-            <div class="text-xs text-slate-500">{{ m.year || '—' }}{{ m.movieFile ? ' · ' + m.movieFile.quality : '' }}</div>
+            <div class="mt-1.5 truncate text-xs font-medium sm:mt-2 sm:text-sm text-slate-100 group-hover:text-white">{{ m.title }}</div>
+            <div class="truncate text-[11px] text-slate-500 sm:text-xs">{{ m.year || '—' }}{{ m.movieFile ? ' · ' + m.movieFile.quality : '' }}</div>
           </a>
         }
       </div>

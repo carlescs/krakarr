@@ -11,8 +11,8 @@ import { Toasts } from '../core/toast';
   template: `
     <h1 class="page-title mb-6">Search indexers</h1>
     <form class="mb-6 flex flex-wrap gap-3" (ngSubmit)="search()">
-      <input class="input min-w-64 flex-1" name="q" [(ngModel)]="query" placeholder="Search all enabled indexers…" />
-      <select class="input w-36" name="type" [(ngModel)]="type">
+      <input class="input min-w-0 flex-1 max-sm:basis-full" name="q" [(ngModel)]="query" placeholder="Search all enabled indexers…" />
+      <select class="input flex-1 sm:w-36 sm:flex-none" name="type" [(ngModel)]="type">
         <option value="Generic">All</option><option value="Movie">Movies</option><option value="Tv">TV</option>
       </select>
       <button class="btn-primary" [disabled]="busy()">{{ busy() ? 'Searching…' : 'Search' }}</button>
@@ -23,17 +23,26 @@ import { Toasts } from '../core/toast';
     @if (results().length > 0) {
       <div class="card overflow-x-auto">
         <table class="table">
-          <thead><tr><th>Title</th><th>Indexer</th><th>Age</th><th>Size</th><th>Peers</th><th>Quality</th><th></th></tr></thead>
+          <thead><tr><th>Title</th><th class="max-md:hidden">Indexer</th><th class="max-sm:hidden">Age</th><th class="max-sm:hidden">Size</th><th class="max-sm:hidden">Peers</th><th class="max-sm:hidden">Quality</th><th></th></tr></thead>
           <tbody>
             @for (r of results(); track r.release.guid) {
               <tr>
-                <td class="w-full max-w-0"><div class="truncate" [title]="r.release.title">{{ r.release.title }}</div></td>
-                <td class="text-slate-400">{{ r.release.indexerName }}</td>
-                <td class="whitespace-nowrap text-slate-400">{{ r.release.publishDate | ago }}</td>
-                <td class="whitespace-nowrap">{{ r.release.size | bytes }}</td>
-                <td class="whitespace-nowrap"><span class="text-emerald-400">{{ r.release.seeders ?? '?' }}</span> / {{ r.release.peers ?? '?' }}</td>
-                <td><span class="badge bg-surface-700 text-slate-200">{{ r.quality }}</span></td>
-                <td class="text-right"><button class="btn-secondary btn-sm" (click)="grab(r)">Download</button></td>
+                <td class="w-full max-w-0">
+                  <div class="break-all sm:truncate sm:break-normal" [title]="r.release.title">{{ r.release.title }}</div>
+                  <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400 sm:hidden">
+                    <span class="badge bg-surface-700 text-slate-200">{{ r.quality }}</span>
+                    <span>{{ r.release.size | bytes }}</span>
+                    <span><span class="text-emerald-400">{{ r.release.seeders ?? '?' }}</span> / {{ r.release.peers ?? '?' }}</span>
+                    <span>{{ r.release.publishDate | ago }}</span>
+                    <span>{{ r.release.indexerName }}</span>
+                  </div>
+                </td>
+                <td class="text-slate-400 max-md:hidden">{{ r.release.indexerName }}</td>
+                <td class="whitespace-nowrap text-slate-400 max-sm:hidden">{{ r.release.publishDate | ago }}</td>
+                <td class="whitespace-nowrap max-sm:hidden">{{ r.release.size | bytes }}</td>
+                <td class="whitespace-nowrap max-sm:hidden"><span class="text-emerald-400">{{ r.release.seeders ?? '?' }}</span> / {{ r.release.peers ?? '?' }}</td>
+                <td class="max-sm:hidden"><span class="badge bg-surface-700 text-slate-200">{{ r.quality }}</span></td>
+                <td class="text-right"><button class="btn-secondary btn-sm" (click)="grab(r)" title="Download"><span class="max-sm:hidden">Download</span><span class="sm:hidden" aria-hidden="true">↓</span></button></td>
               </tr>
             }
           </tbody>

@@ -17,17 +17,19 @@ type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
   imports: [RouterLink, FormsModule, DatePipe, Poster, Progress],
   template: `
     <div class="mb-6 flex flex-wrap items-center gap-3">
-      <h1 class="page-title mr-auto">Series <span class="ml-1 text-base font-normal text-slate-500">{{ series().length }}</span></h1>
-      <input class="input w-56" placeholder="Filter…" [ngModel]="query()" (ngModelChange)="query.set($event)" />
-      <select class="input w-40" [ngModel]="filter()" (ngModelChange)="filter.set($event)">
+      <h1 class="page-title mr-auto max-sm:basis-full">Series <span class="ml-1 text-base font-normal text-slate-500">{{ series().length }}</span></h1>
+      <input class="input min-w-0 flex-1 sm:w-56 sm:flex-none" placeholder="Filter…" type="search" [ngModel]="query()" (ngModelChange)="query.set($event)" />
+      <select class="input w-36 sm:w-40" [ngModel]="filter()" (ngModelChange)="filter.set($event)">
         <option value="all">All</option>
         <option value="missing">Missing episodes</option>
         <option value="continuing">Continuing</option>
         <option value="ended">Ended</option>
         <option value="unmonitored">Unmonitored</option>
       </select>
-      <a routerLink="/series/import" class="btn-secondary">Import library</a>
-      <a routerLink="/series/add" class="btn-primary">+ Add series</a>
+      <div class="flex gap-2 max-sm:basis-full">
+        <a routerLink="/series/import" class="btn-secondary max-sm:flex-1">Import library</a>
+        <a routerLink="/series/add" class="btn-primary max-sm:flex-1">+ Add series</a>
+      </div>
     </div>
 
     @if (loading()) {
@@ -42,21 +44,21 @@ type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
         </div>
       </div>
     } @else {
-      <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
+      <div class="grid grid-cols-3 gap-x-3 gap-y-4 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
         @for (s of filtered(); track s.id) {
           <a [routerLink]="['/series', s.id]" class="group">
             <div class="relative overflow-hidden rounded-lg ring-1 ring-surface-700 transition group-hover:ring-accent-500">
               <kr-poster [url]="s.posterUrl" [title]="s.title" />
               @if (s.downloadingCount > 0) {
-                <span class="badge absolute top-2 right-2 bg-accent-500 text-slate-950">↓ {{ s.downloadingCount }}</span>
+                <span class="badge absolute top-1.5 right-1.5 bg-accent-500 sm:top-2 sm:right-2 text-slate-950">↓ {{ s.downloadingCount }}</span>
               }
             </div>
             <kr-progress class="mt-2" [value]="percent(s)" [color]="!s.monitored ? 'bg-slate-500' : s.episodeFileCount >= s.episodeCount ? 'bg-emerald-500' : 'bg-rose-500'" />
-            <div class="mt-1.5 truncate text-sm font-medium text-slate-100 group-hover:text-white">{{ s.title }}</div>
-            <div class="flex justify-between text-xs text-slate-500">
-              <span>{{ s.episodeFileCount }}/{{ s.episodeCount }} episodes</span>
-              @if (s.nextAiring) { <span [title]="'Next airing'">{{ s.nextAiring | date: 'MMM d' }}</span> }
-              @else { <span>{{ s.status }}</span> }
+            <div class="mt-1.5 truncate text-xs font-medium text-slate-100 group-hover:text-white sm:text-sm">{{ s.title }}</div>
+            <div class="flex justify-between gap-1 text-[11px] text-slate-500 sm:text-xs">
+              <span class="truncate">{{ s.episodeFileCount }}/{{ s.episodeCount }}<span class="max-sm:hidden"> episodes</span></span>
+              @if (s.nextAiring) { <span class="whitespace-nowrap" [title]="'Next airing'">{{ s.nextAiring | date: 'MMM d' }}</span> }
+              @else { <span class="truncate">{{ s.status }}</span> }
             </div>
           </a>
         }
