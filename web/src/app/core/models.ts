@@ -121,6 +121,7 @@ export interface MediaManagementSettings {
 export type SeriesMetadataSource = 'Tmdb' | 'Tvdb';
 export interface MetadataSettings { tmdbApiKey?: string; seriesSource: SeriesMetadataSource; tvdbApiKey?: string; tvdbPin?: string; language: string; releaseRegion?: string | null; }
 export type DownloadClientKind = 'Embedded' | 'QBittorrent';
+export type SeedLimitAction = 'Remove' | 'Stop';
 export interface QBittorrentSettings {
   url: string; username?: string; password?: string; tag: string; category?: string; savePath?: string;
   remotePathPrefix?: string; localPathPrefix?: string;
@@ -130,7 +131,7 @@ export interface DownloadClientStatus { kind: DownloadClientKind; connected: boo
 export interface DownloadClientSettings {
   client: DownloadClientKind; qBittorrent: QBittorrentSettings;
   downloadDirectory?: string; listenPort: number; maxDownloadRateKiB: number; maxUploadRateKiB: number; maxConnections: number;
-  seedRatioLimit: number; seedTimeLimitMinutes: number; enableDht: boolean; enablePortForwarding: boolean;
+  seedRatioLimit: number; seedTimeLimitMinutes: number; seedLimitAction: SeedLimitAction; enableDht: boolean; enablePortForwarding: boolean;
 }
 export interface AutomationSettings { rssSyncIntervalMinutes: number; searchOnAdd: boolean; }
 

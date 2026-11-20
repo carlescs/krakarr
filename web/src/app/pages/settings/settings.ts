@@ -140,7 +140,6 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
             </div>
             <p class="hint sm:col-span-2">
               Only needed when qBittorrent runs in another container and sees the downloads under a different path.
-              Seeding limits are managed by qBittorrent's own share-limit settings.
             </p>
             @if (clientTest(); as t) {
               <div class="rounded-lg px-3 py-2 text-sm sm:col-span-2" [class]="t.success ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'">
@@ -161,13 +160,29 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'gene
           <div><label class="label">Max connections</label><input class="input" type="number" [(ngModel)]="d.maxConnections" /></div>
           <div><label class="label">Download limit (KiB/s, 0 = ∞)</label><input class="input" type="number" min="0" [(ngModel)]="d.maxDownloadRateKiB" /></div>
           <div><label class="label">Upload limit (KiB/s, 0 = ∞)</label><input class="input" type="number" min="0" [(ngModel)]="d.maxUploadRateKiB" /></div>
-          <div><label class="label">Seed ratio limit (0 = none)</label><input class="input" type="number" step="0.1" min="0" [(ngModel)]="d.seedRatioLimit" /></div>
-          <div><label class="label">Seed time limit (minutes, 0 = none)</label><input class="input" type="number" min="0" [(ngModel)]="d.seedTimeLimitMinutes" /></div>
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="d.enableDht" /> Enable DHT</label>
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="d.enablePortForwarding" /> UPnP / NAT-PMP port forwarding</label>
           <div class="flex justify-end sm:col-span-2"><button class="btn-primary" (click)="save('downloads', d)">Save</button></div>
         </section>
         }
+        <section class="card mt-6 grid gap-4 p-4 sm:p-5 sm:grid-cols-2">
+          <h2 class="font-semibold text-white sm:col-span-2">Seeding</h2>
+          <div><label class="label">Seed ratio limit (0 = none)</label><input class="input" type="number" step="0.1" min="0" [(ngModel)]="d.seedRatioLimit" /></div>
+          <div><label class="label">Seed time limit (minutes, 0 = none)</label><input class="input" type="number" min="0" [(ngModel)]="d.seedTimeLimitMinutes" /></div>
+          <div class="sm:col-span-2">
+            <label class="label">When the limit is reached</label>
+            <select class="input" [(ngModel)]="d.seedLimitAction">
+              <option value="Remove">Remove from the download client</option>
+              <option value="Stop">Stop seeding and keep it in the download client</option>
+            </select>
+            <p class="hint">
+              Applies once a download has finished and its movie or episodes have been imported. Removing an imported download also deletes
+              its downloaded files (the library keeps its copy); other downloads keep their files.
+              @if (d.client === 'QBittorrent') { With both limits at 0, qBittorrent's own share limits apply. }
+            </p>
+          </div>
+          <div class="flex justify-end sm:col-span-2"><button class="btn-primary" (click)="save('downloads', d)">Save</button></div>
+        </section>
       }
       @if (automation(); as a) {
         <section class="card mt-6 grid gap-4 p-4 sm:p-5 sm:grid-cols-2">
