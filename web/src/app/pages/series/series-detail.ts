@@ -13,6 +13,7 @@ import { Languages } from '../../core/languages';
 import { LanguageOverride } from '../../shared/language-picker';
 import { Modal } from '../../shared/modal';
 import { Poster } from '../../shared/poster';
+import { LibraryCredits } from '../../shared/credits';
 import { RelatedTitles } from '../../shared/related-titles';
 import { Progress } from '../../shared/progress';
 import { SubtitleManager } from '../../shared/subtitle-manager';
@@ -26,7 +27,7 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
 
 @Component({
   selector: 'kr-series-detail',
-  imports: [RelatedTitles, LanguageOverride, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, BytesPipe, AgoPipe, SubtitleManager],
+  imports: [LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, BytesPipe, AgoPipe, SubtitleManager],
   template: `
     @if (series(); as s) {
       <!-- Hero -->
@@ -180,7 +181,9 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
         </section>
       }
 
-      <!-- Recommendations / similar (TMDB) -->
+      <!-- Cast & crew, recommendations and similar titles (TMDB) -->
+      <kr-library-credits kind="series" [id]="s.id" />
+
       <kr-related-titles kind="series" [id]="s.id" />
 
       <!-- Interactive search -->

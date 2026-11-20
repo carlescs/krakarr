@@ -14,6 +14,7 @@ import { Languages } from '../../core/languages';
 import { LanguageOverride } from '../../shared/language-picker';
 import { Modal } from '../../shared/modal';
 import { Poster } from '../../shared/poster';
+import { LibraryCredits } from '../../shared/credits';
 import { RelatedTitles } from '../../shared/related-titles';
 import { Progress } from '../../shared/progress';
 import { StateBadge } from '../../shared/state-badge';
@@ -21,7 +22,7 @@ import { SubtitleManager } from '../../shared/subtitle-manager';
 
 @Component({
   selector: 'kr-movie-detail',
-  imports: [RelatedTitles, LanguageOverride, FormsModule, DatePipe, Poster, Progress, Modal, StateBadge, SubtitleManager, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
+  imports: [LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, Poster, Progress, Modal, StateBadge, SubtitleManager, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
   template: `
     @if (movie(); as m) {
       <!-- Hero -->
@@ -167,7 +168,9 @@ import { SubtitleManager } from '../../shared/subtitle-manager';
         </section>
       }
 
-      <!-- Recommendations / similar (TMDB) -->
+      <!-- Cast & crew, recommendations and similar titles (TMDB) -->
+      <kr-library-credits kind="movie" [id]="m.id" />
+
       <kr-related-titles kind="movie" [id]="m.id" />
 
       <!-- Interactive search -->

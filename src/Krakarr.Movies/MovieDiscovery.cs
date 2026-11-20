@@ -11,6 +11,17 @@ namespace Krakarr.Movies;
 
 public enum MovieList { Trending, Popular, Upcoming, TopRated, NowPlaying }
 
+/// <summary>A movie's TMDB page: the lookup plus what a detail page shows for titles outside the library.</summary>
+public sealed record MovieDetails
+{
+    public required MovieLookup Movie { get; init; }
+    public string? Tagline { get; init; }
+    public DateOnly? ReleaseDate { get; init; }
+    public IReadOnlyList<string> Genres { get; init; } = [];
+    public IReadOnlyList<CastMember> Cast { get; init; } = [];
+    public IReadOnlyList<CrewMember> Crew { get; init; } = [];
+}
+
 /// <summary>TMDB movie discovery: curated lists plus per-title recommendations and similar titles.</summary>
 public interface IMovieDiscovery
 {
@@ -19,6 +30,9 @@ public interface IMovieDiscovery
     Task<IReadOnlyList<MovieLookup>> SimilarAsync(int tmdbId, CancellationToken ct = default);
     /// <summary>Recommendations for several titles at once (missing titles yield an empty list), in the order given.</summary>
     Task<IReadOnlyList<IReadOnlyList<MovieLookup>>> RecommendationsAsync(IReadOnlyList<int> tmdbIds, CancellationToken ct = default);
+    /// <summary>Details with cast and key crew, for any TMDB movie.</summary>
+    Task<MovieDetails> DetailsAsync(int tmdbId, CancellationToken ct = default);
+    Task<Credits> CreditsAsync(int tmdbId, CancellationToken ct = default);
 }
 
 public sealed class TmdbMovieDiscovery(TmdbApi api, ISettingsService settings, TimeProvider time) : IMovieDiscovery
@@ -61,6 +75,29 @@ public sealed class TmdbMovieDiscovery(TmdbApi api, ISettingsService settings, T
                 return (IReadOnlyList<MovieLookup>)[];
             }
         }));
+    }
+
+    public async Task<MovieDetails> DetailsAsync(int tmdbId, CancellationToken ct = default)
+    {
+        var meta = await settings.GetAsync<MetadataSettings>(ct);
+        var m = await api.GetAsync<TmdbClient.TmdbMovie>(meta, $"3/movie/{tmdbId.ToString(CultureInfo.InvariantCulture)}?append_to_response=credits", ct);
+        var lookup = TmdbClient.Map(m) with { Collection = TmdbClient.MapCollection(m.Collection) };
+        var credits = TmdbCredits.Map(m.Credits);
+        return new MovieDetails
+        {
+            Movie = lookup,
+            Tagline = string.IsNullOrWhiteSpace(m.Tagline) ? null : m.Tagline,
+            ReleaseDate = DateOnly.TryParseExact(m.ReleaseDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null,
+            Genres = (m.Genres ?? []).Select(g => g.Name).OfType<string>().ToList(),
+            Cast = credits.Cast,
+            Crew = credits.Crew,
+        };
+    }
+
+    public async Task<Credits> CreditsAsync(int tmdbId, CancellationToken ct = default)
+    {
+        var meta = await settings.GetAsync<MetadataSettings>(ct);
+        return TmdbCredits.Map(await api.GetAsync<TmdbCreditList>(meta, $"3/movie/{tmdbId.ToString(CultureInfo.InvariantCulture)}/credits", ct));
     }
 
     private async Task<IReadOnlyList<MovieLookup>> RelatedAsync(MetadataSettings meta, int tmdbId, string kind, CancellationToken ct)
@@ -107,6 +144,26 @@ public static class MovieDiscoveryEndpoints
 
         group.MapGet("/{id:int}/similar", (int id, IMovieDiscovery discovery, KrakarrDbContext db, CancellationToken ct) =>
             RelatedAsync(id, db, tmdbId => discovery.SimilarAsync(tmdbId, ct), ct));
+
+        group.MapGet("/{id:int}/credits", async (int id, IMovieDiscovery discovery, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            var tmdbId = await db.Movies.AsNoTracking().Where(m => m.Id == id).Select(m => (int?)m.TmdbId).FirstOrDefaultAsync(ct);
+            if (tmdbId is null) return Results.NotFound();
+            return await Run(() => discovery.CreditsAsync(tmdbId.Value, ct));
+        });
+
+        // Any TMDB movie, in the library or not: the detail page for titles found through discovery or a person.
+        group.MapGet("/tmdb/{tmdbId:int}", (int tmdbId, IMovieDiscovery discovery, KrakarrDbContext db, CancellationToken ct) => Run(async () =>
+        {
+            var details = await discovery.DetailsAsync(tmdbId, ct);
+            return details with { Movie = (await MarkLibraryAsync(db, [details.Movie], ct))[0] };
+        }));
+
+        group.MapGet("/tmdb/{tmdbId:int}/recommendations", (int tmdbId, IMovieDiscovery discovery, KrakarrDbContext db, CancellationToken ct) =>
+            Run(async () => await MarkLibraryAsync(db, await discovery.RecommendationsAsync(tmdbId, ct), ct)));
+
+        group.MapGet("/tmdb/{tmdbId:int}/similar", (int tmdbId, IMovieDiscovery discovery, KrakarrDbContext db, CancellationToken ct) =>
+            Run(async () => await MarkLibraryAsync(db, await discovery.SimilarAsync(tmdbId, ct), ct)));
 
         return app;
     }

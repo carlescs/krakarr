@@ -12,6 +12,25 @@ namespace Krakarr.Series;
 
 public enum SeriesList { Trending, Popular, Upcoming, TopRated, AiringToday }
 
+public sealed record SeasonSummary(int SeasonNumber, string? Name, int EpisodeCount, DateOnly? AirDate, string? PosterUrl);
+
+/// <summary>A show's TMDB page: the lookup plus what a detail page shows for shows outside the library.</summary>
+public sealed record SeriesDetails
+{
+    public required SeriesLookup Show { get; init; }
+    public string? FanartUrl { get; init; }
+    public string? ImdbId { get; init; }
+    public string? Tagline { get; init; }
+    public DateOnly? FirstAired { get; init; }
+    public DateOnly? LastAired { get; init; }
+    public int Runtime { get; init; }
+    public int EpisodeCount { get; init; }
+    public IReadOnlyList<string> Genres { get; init; } = [];
+    public IReadOnlyList<SeasonSummary> Seasons { get; init; } = [];
+    public IReadOnlyList<CastMember> Cast { get; init; } = [];
+    public IReadOnlyList<CrewMember> Crew { get; init; } = [];
+}
+
 /// <summary>
 /// TMDB TV discovery: curated lists plus per-show recommendations and similar shows. It needs a TMDB key whichever
 /// series metadata source is selected; results carry TMDB ids, which adding a series resolves for TheTVDB.
@@ -23,6 +42,10 @@ public interface ISeriesDiscovery
     Task<IReadOnlyList<SeriesLookup>> SimilarAsync(SeriesIds ids, CancellationToken ct = default);
     /// <summary>Recommendations for several shows at once (unknown shows yield an empty list), in the order given.</summary>
     Task<IReadOnlyList<IReadOnlyList<SeriesLookup>>> RecommendationsAsync(IReadOnlyList<SeriesIds> shows, CancellationToken ct = default);
+    /// <summary>Details with seasons, cast and key crew, for any TMDB show.</summary>
+    Task<SeriesDetails> DetailsAsync(int tmdbId, CancellationToken ct = default);
+    /// <summary>Cast across all seasons plus creators; empty when the show has no TMDB match.</summary>
+    Task<Credits> CreditsAsync(SeriesIds ids, CancellationToken ct = default);
 }
 
 public sealed class TmdbSeriesDiscovery(TmdbApi api, ISettingsService settings, TimeProvider time) : ISeriesDiscovery
@@ -67,22 +90,120 @@ public sealed class TmdbSeriesDiscovery(TmdbApi api, ISettingsService settings, 
         }));
     }
 
+    public async Task<SeriesDetails> DetailsAsync(int tmdbId, CancellationToken ct = default)
+    {
+        var meta = await settings.GetAsync<MetadataSettings>(ct);
+        var show = await api.GetAsync<TvDetails>(meta, $"3/tv/{tmdbId.ToString(CultureInfo.InvariantCulture)}?append_to_response=aggregate_credits,external_ids", ct);
+        var firstAired = Date(show.FirstAirDate);
+        var credits = TmdbCredits.Map(show.Credits, Creators(show.CreatedBy));
+        return new SeriesDetails
+        {
+            Show = TmdbTvClient.Map(new TmdbTvClient.TvResult
+            {
+                Id = show.Id, Name = show.Name, OriginalName = show.OriginalName, FirstAirDate = show.FirstAirDate, Overview = show.Overview,
+                PosterPath = show.PosterPath, VoteAverage = show.VoteAverage,
+            }) with
+            {
+                TvdbId = show.ExternalIds?.TvdbId is > 0 and var tvdb ? tvdb : null,
+                Network = show.Networks.Select(n => Blank(n.Name)).FirstOrDefault(n => n is not null),
+                Status = TmdbTvClient.NormalizeStatus(show.Status),
+            },
+            FanartUrl = TmdbApi.Image(show.BackdropPath, "original"),
+            ImdbId = Blank(show.ExternalIds?.ImdbId),
+            Tagline = Blank(show.Tagline),
+            FirstAired = firstAired,
+            LastAired = Date(show.LastAirDate),
+            Runtime = show.EpisodeRunTime.FirstOrDefault(r => r > 0),
+            EpisodeCount = show.NumberOfEpisodes ?? 0,
+            Genres = show.Genres.Select(g => Blank(g.Name)).OfType<string>().ToList(),
+            Seasons = show.Seasons
+                .OrderBy(s => s.SeasonNumber == 0 ? int.MaxValue : s.SeasonNumber)
+                .Select(s => new SeasonSummary(s.SeasonNumber, Blank(s.Name), s.EpisodeCount ?? 0, Date(s.AirDate), TmdbApi.Image(s.PosterPath, "w342")))
+                .ToList(),
+            Cast = credits.Cast,
+            Crew = credits.Crew,
+        };
+    }
+
+    public async Task<Credits> CreditsAsync(SeriesIds ids, CancellationToken ct = default)
+    {
+        var meta = await settings.GetAsync<MetadataSettings>(ct);
+        if (await ResolveTmdbIdAsync(meta, ids, ct) is not { } tmdbId) return Credits.Empty;
+        // aggregate_credits spans every season; plain "credits" only lists the latest one.
+        var show = await api.GetAsync<TvDetails>(meta, $"3/tv/{tmdbId.ToString(CultureInfo.InvariantCulture)}?append_to_response=aggregate_credits", ct);
+        return TmdbCredits.Map(show.Credits, Creators(show.CreatedBy));
+    }
+
+    private static IEnumerable<CrewMember> Creators(List<TvCreator> creators) =>
+        creators.Where(c => c.Id > 0 && Blank(c.Name) is not null).Select(c => new CrewMember(c.Id, c.Name!, "Creator", TmdbApi.Image(c.ProfilePath, "w185")));
+
+    private async Task<int?> ResolveTmdbIdAsync(MetadataSettings meta, SeriesIds ids, CancellationToken ct)
+    {
+        if (ids.TmdbId is not null || ids.TvdbId is not { } tvdbId) return ids.TmdbId;
+        // Shows added from TheTVDB may not know their TMDB id yet.
+        var found = await api.GetAsync<FindResponse>(meta, $"3/find/{tvdbId.ToString(CultureInfo.InvariantCulture)}?external_source=tvdb_id", ct);
+        return found.TvResults.FirstOrDefault()?.Id;
+    }
+
+    private static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
+
+    private static DateOnly? Date(string? s) =>
+        DateOnly.TryParseExact(s, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null;
+
     private async Task<IReadOnlyList<SeriesLookup>> RelatedAsync(MetadataSettings meta, SeriesIds ids, string kind, CancellationToken ct)
     {
-        var tmdbId = ids.TmdbId;
-        if (tmdbId is null && ids.TvdbId is { } tvdbId)
-        {
-            // Shows added from TheTVDB may not know their TMDB id yet.
-            var found = await api.GetAsync<FindResponse>(meta, $"3/find/{tvdbId.ToString(CultureInfo.InvariantCulture)}?external_source=tvdb_id", ct);
-            tmdbId = found.TvResults.FirstOrDefault()?.Id;
-        }
-
+        var tmdbId = await ResolveTmdbIdAsync(meta, ids, ct);
         if (tmdbId is null) return [];
         var result = await api.GetAsync<TmdbPaged<TmdbTvClient.TvResult>>(meta, $"3/tv/{tmdbId.Value.ToString(CultureInfo.InvariantCulture)}/{kind}?page=1", ct);
         return result.Results.Select(TmdbTvClient.Map).ToList();
     }
 
     private sealed record FindResponse([property: JsonPropertyName("tv_results")] List<TmdbTvClient.TvResult> TvResults);
+
+    private sealed record TvDetails
+    {
+        [JsonPropertyName("id")] public int Id { get; init; }
+        [JsonPropertyName("name")] public string? Name { get; init; }
+        [JsonPropertyName("original_name")] public string? OriginalName { get; init; }
+        [JsonPropertyName("tagline")] public string? Tagline { get; init; }
+        [JsonPropertyName("first_air_date")] public string? FirstAirDate { get; init; }
+        [JsonPropertyName("last_air_date")] public string? LastAirDate { get; init; }
+        [JsonPropertyName("overview")] public string? Overview { get; init; }
+        [JsonPropertyName("poster_path")] public string? PosterPath { get; init; }
+        [JsonPropertyName("backdrop_path")] public string? BackdropPath { get; init; }
+        [JsonPropertyName("status")] public string? Status { get; init; }
+        [JsonPropertyName("vote_average")] public double? VoteAverage { get; init; }
+        [JsonPropertyName("number_of_episodes")] public int? NumberOfEpisodes { get; init; }
+        [JsonPropertyName("episode_run_time")] public List<int> EpisodeRunTime { get; init; } = [];
+        [JsonPropertyName("genres")] public List<TmdbNamed> Genres { get; init; } = [];
+        [JsonPropertyName("networks")] public List<TmdbNamed> Networks { get; init; } = [];
+        [JsonPropertyName("created_by")] public List<TvCreator> CreatedBy { get; init; } = [];
+        [JsonPropertyName("seasons")] public List<TvSeasonSummary> Seasons { get; init; } = [];
+        [JsonPropertyName("external_ids")] public TvExternalIds? ExternalIds { get; init; }
+        [JsonPropertyName("aggregate_credits")] public TmdbCreditList? Credits { get; init; }
+    }
+
+    private sealed record TvCreator
+    {
+        [JsonPropertyName("id")] public int Id { get; init; }
+        [JsonPropertyName("name")] public string? Name { get; init; }
+        [JsonPropertyName("profile_path")] public string? ProfilePath { get; init; }
+    }
+
+    private sealed record TvSeasonSummary
+    {
+        [JsonPropertyName("season_number")] public int SeasonNumber { get; init; }
+        [JsonPropertyName("name")] public string? Name { get; init; }
+        [JsonPropertyName("episode_count")] public int? EpisodeCount { get; init; }
+        [JsonPropertyName("air_date")] public string? AirDate { get; init; }
+        [JsonPropertyName("poster_path")] public string? PosterPath { get; init; }
+    }
+
+    private sealed record TvExternalIds
+    {
+        [JsonPropertyName("imdb_id")] public string? ImdbId { get; init; }
+        [JsonPropertyName("tvdb_id")] public int? TvdbId { get; init; }
+    }
 }
 
 public static class SeriesDiscoveryEndpoints
@@ -124,6 +245,31 @@ public static class SeriesDiscoveryEndpoints
 
         group.MapGet("/{id:int}/similar", (int id, ISeriesDiscovery discovery, KrakarrDbContext db, CancellationToken ct) =>
             RelatedAsync(id, db, ids => discovery.SimilarAsync(ids, ct), ct));
+
+        group.MapGet("/{id:int}/credits", async (int id, ISeriesDiscovery discovery, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            var show = await db.Series.AsNoTracking().Where(s => s.Id == id).Select(s => new { s.TmdbId, s.TvdbId }).FirstOrDefaultAsync(ct);
+            if (show is null) return Results.NotFound();
+            return await Run(() => discovery.CreditsAsync(new SeriesIds(show.TmdbId, show.TvdbId), ct));
+        });
+
+        // Any TMDB show, in the library or not: the detail page for shows found through discovery or a person.
+        group.MapGet("/tmdb/{tmdbId:int}", (int tmdbId, ISeriesDiscovery discovery, KrakarrDbContext db, CancellationToken ct) => Run(async () =>
+        {
+            var details = await discovery.DetailsAsync(tmdbId, ct);
+            var show = details.Show;
+            // Shows added from TheTVDB may be stored without their TMDB id.
+            var seriesId = await db.Series.AsNoTracking()
+                .Where(s => s.TmdbId == show.TmdbId || (show.TvdbId != null && s.TvdbId == show.TvdbId))
+                .Select(s => (int?)s.Id).FirstOrDefaultAsync(ct);
+            return details with { Show = show with { SeriesId = seriesId } };
+        }));
+
+        group.MapGet("/tmdb/{tmdbId:int}/recommendations", (int tmdbId, ISeriesDiscovery discovery, KrakarrDbContext db, CancellationToken ct) =>
+            Run(async () => await MarkLibraryAsync(db, await discovery.RecommendationsAsync(new SeriesIds(tmdbId, null), ct), ct)));
+
+        group.MapGet("/tmdb/{tmdbId:int}/similar", (int tmdbId, ISeriesDiscovery discovery, KrakarrDbContext db, CancellationToken ct) =>
+            Run(async () => await MarkLibraryAsync(db, await discovery.SimilarAsync(new SeriesIds(tmdbId, null), ct), ct)));
 
         return app;
     }

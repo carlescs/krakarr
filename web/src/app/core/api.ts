@@ -4,7 +4,7 @@ import { firstValueFrom } from 'rxjs';
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
   IndexerError, IndexerTestResult, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListItem, MovieLookup, Quality, QualityProfile,
-  ReleaseDecision, ReleaseInfo, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
+  ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
   UserAccount, UserRole,
 } from './models';
 
@@ -124,6 +124,11 @@ export class Api {
   moviesForYou() { return this.get<MovieLookup[]>('movies/discover/for-you'); }
   movieRecommendations(id: number) { return this.get<MovieLookup[]>(`movies/${id}/recommendations`); }
   similarMovies(id: number) { return this.get<MovieLookup[]>(`movies/${id}/similar`); }
+  movieCredits(id: number) { return this.get<Credits>(`movies/${id}/credits`); }
+  /** Any TMDB movie, whether or not it is in the library. */
+  tmdbMovie(tmdbId: number) { return this.get<MovieDetails>(`movies/tmdb/${tmdbId}`); }
+  tmdbMovieRecommendations(tmdbId: number) { return this.get<MovieLookup[]>(`movies/tmdb/${tmdbId}/recommendations`); }
+  tmdbSimilarMovies(tmdbId: number) { return this.get<MovieLookup[]>(`movies/tmdb/${tmdbId}/similar`); }
   /** Replaces the editable fields; `languages` null = use the global default. */
   updateMovie(id: number, monitored: boolean, qualityProfileId: number, minimumAvailability: MinimumAvailability | undefined, languages: string[] | null) {
     return this.put<void>(`movies/${id}`, { monitored, qualityProfileId, minimumAvailability: minimumAvailability ?? null, languages });
@@ -148,6 +153,14 @@ export class Api {
   seriesForYou() { return this.get<SeriesLookup[]>('series/discover/for-you'); }
   seriesRecommendations(id: number) { return this.get<SeriesLookup[]>(`series/${id}/recommendations`); }
   similarSeries(id: number) { return this.get<SeriesLookup[]>(`series/${id}/similar`); }
+  seriesCredits(id: number) { return this.get<Credits>(`series/${id}/credits`); }
+  /** Any TMDB show, whether or not it is in the library. */
+  tmdbSeries(tmdbId: number) { return this.get<SeriesDetails>(`series/tmdb/${tmdbId}`); }
+  tmdbSeriesRecommendations(tmdbId: number) { return this.get<SeriesLookup[]>(`series/tmdb/${tmdbId}/recommendations`); }
+  tmdbSimilarSeries(tmdbId: number) { return this.get<SeriesLookup[]>(`series/tmdb/${tmdbId}/similar`); }
+
+  // People
+  person(tmdbId: number) { return this.get<PersonDetails>(`people/${tmdbId}`); }
   /** Replaces the editable fields; `languages` null = use the global default. */
   updateSeries(id: number, monitored: boolean, qualityProfileId: number, seasonFolder: boolean, languages: string[] | null) {
     return this.put<void>(`series/${id}`, { monitored, qualityProfileId, seasonFolder, languages });

@@ -135,6 +135,9 @@ public sealed class TmdbClient(TmdbApi api, ISettingsService settings) : ITmdbCl
         [JsonPropertyName("vote_average")] public double? VoteAverage { get; init; }
         [JsonPropertyName("release_dates")] public TmdbReleaseDates? ReleaseDates { get; init; }
         [JsonPropertyName("belongs_to_collection")] public TmdbCollection? Collection { get; init; }
+        [JsonPropertyName("tagline")] public string? Tagline { get; init; }
+        [JsonPropertyName("genres")] public List<TmdbNamed>? Genres { get; init; }
+        [JsonPropertyName("credits")] public TmdbCreditList? Credits { get; init; }
     }
 
     internal sealed record TmdbCollection
