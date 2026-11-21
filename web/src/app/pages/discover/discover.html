@@ -1,0 +1,25 @@
+<div class="mb-6 flex flex-wrap items-center gap-3">
+  <h1 class="page-title mr-auto">Discover</h1>
+  <a routerLink="/movies/add" class="btn-secondary">Search movies</a>
+  <a routerLink="/series/add" class="btn-secondary">Search series</a>
+  @if (!auth.isStaff()) {
+    <a routerLink="/requests" class="btn-secondary">My requests</a>
+  }
+</div>
+
+@if (setupError()) {
+  <div class="card mb-6 border-amber-500/30 px-5 py-4 text-sm text-amber-200">
+    {{ setupError() }} — recommendations come from TMDB. @if (auth.isAdmin()) { <a routerLink="/settings" class="underline">Add a TMDB API key in Settings</a>. } @else { Ask an admin to add a TMDB API key. }
+  </div>
+}
+
+@if (!setupError()) {
+  @if (forYou().loading || forYou().items.length > 0) {
+    <kr-media-row title="Recommended for you" subtitle="Based on what you added recently"
+                  [items]="forYou().items" [loading]="forYou().loading" [error]="forYou().error" />
+  }
+  @for (row of rows(); track row.key) {
+    <kr-media-row [title]="row.title" [subtitle]="row.subtitle" [link]="row.link"
+                  [items]="row.items" [loading]="row.loading" [error]="row.error" />
+  }
+}

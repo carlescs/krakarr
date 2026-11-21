@@ -1,0 +1,7 @@
+@if (url()) {
+  <img [src]="url()" [alt]="title()" loading="lazy" class="h-full w-full object-cover" />
+} @else {
+  <div class="flex h-full w-full items-center justify-center bg-gradient-to-br from-surface-700 to-surface-850 p-3 text-center text-sm font-medium text-slate-400">
+    {{ title() }}
+  </div>
+}

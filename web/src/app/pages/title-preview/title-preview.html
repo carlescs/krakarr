@@ -1,0 +1,74 @@
+@if (error()) {
+  <div class="card p-6 text-center">
+    <p class="text-rose-300">{{ error() }}</p>
+    <button class="btn-secondary mt-4" (click)="back()">Go back</button>
+  </div>
+} @else if (preview(); as p) {
+  <!-- Hero -->
+  <div class="relative -mx-4 -mt-6 mb-6 overflow-hidden lg:-mx-8">
+    @if (p.fanartUrl) { <img [src]="p.fanartUrl" alt="" class="absolute inset-0 h-full w-full object-cover opacity-20" /> }
+    <div class="absolute inset-0 bg-gradient-to-t from-surface-950 via-surface-950/80 to-surface-950/40"></div>
+    <div class="relative flex flex-col gap-5 px-4 py-6 sm:flex-row sm:gap-6 sm:py-8 lg:px-8">
+      <kr-poster class="w-32 shrink-0 shadow-2xl sm:w-48" [url]="p.posterUrl" [title]="p.title" />
+      <div class="min-w-0 flex-1">
+        <h1 class="text-2xl font-bold tracking-tight text-white sm:text-3xl">{{ p.title }} @if (p.year) { <span class="font-normal text-slate-400">({{ p.year }})</span> }</h1>
+        @if (p.tagline) { <p class="mt-1 text-sm italic text-slate-400">{{ p.tagline }}</p> }
+        <div class="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-400">
+          @for (f of p.facts; track $index) { @if ($index > 0) { <span>·</span> } <span>{{ f }}</span> }
+          @if (p.rating) { @if (p.facts.length) { <span>·</span> } <span class="text-amber-300">★ {{ p.rating }}</span> }
+          <span>·</span><a class="hover:text-white" [href]="tmdbUrl()" target="_blank" rel="noopener">TMDB</a>
+          @if (p.tvdbId) { <span>·</span><a class="hover:text-white" [href]="'https://thetvdb.com/dereferrer/series/' + p.tvdbId" target="_blank" rel="noopener">TVDB</a> }
+          @if (p.imdbId) { <span>·</span><a class="hover:text-white" [href]="'https://www.imdb.com/title/' + p.imdbId" target="_blank" rel="noopener">IMDb</a> }
+        </div>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <span class="badge" [class]="kind() === 'movie' ? 'bg-sky-500/15 text-sky-300' : 'bg-violet-500/15 text-violet-300'">{{ kind() === 'movie' ? 'Movie' : 'Series' }}</span>
+          <span class="badge bg-slate-500/15 text-slate-400">Not in library</span>
+          @if (openRequest(); as r) {
+            <span class="badge bg-amber-500/15 text-amber-300">Requested{{ r.requestedBy ? ' by ' + r.requestedBy : '' }}</span>
+          }
+          @for (g of p.genres; track g) { <span class="badge bg-surface-700 text-slate-300">{{ g }}</span> }
+        </div>
+        @if (p.overview) { <p class="mt-4 max-w-3xl text-sm leading-relaxed text-slate-300">{{ p.overview }}</p> }
+        <div class="mt-5 flex flex-wrap gap-2">
+          @if (canAdd()) {
+            <button class="btn-primary" (click)="adding.set(true)">+ Add to library</button>
+          } @else if (openRequest()) {
+            <a routerLink="/requests" class="btn-secondary">View requests</a>
+          } @else {
+            <button class="btn-primary" (click)="adding.set(true)">Request</button>
+          }
+          <button class="btn-ghost" (click)="back()">Back</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Seasons (series) -->
+  @if (p.seasons.length > 0) {
+    <section class="mb-8">
+      <h2 class="mb-3 text-lg font-semibold text-white">Seasons</h2>
+      <div class="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-8">
+        @for (s of p.seasons; track s.seasonNumber) {
+          <div class="min-w-0">
+            <kr-poster [url]="s.posterUrl ?? p.posterUrl" [title]="s.name ?? 'Season ' + s.seasonNumber" />
+            <div class="mt-1.5 truncate text-sm font-medium text-slate-100">{{ s.name ?? (s.seasonNumber === 0 ? 'Specials' : 'Season ' + s.seasonNumber) }}</div>
+            <div class="text-xs text-slate-500">
+              {{ s.episodeCount }} {{ s.episodeCount === 1 ? 'episode' : 'episodes' }}
+              @if (s.airDate) { · {{ s.airDate | date: 'y' }} }
+            </div>
+          </div>
+        }
+      </div>
+    </section>
+  }
+
+  <kr-credits [cast]="p.cast" [crew]="p.crew" />
+
+  <kr-related-titles [kind]="kind()" [id]="tmdbId()" source="tmdb" />
+
+  @if (adding()) {
+    <kr-discover-add [item]="p.item" (closed)="adding.set(false)" (added)="openLibrary($event)" (requested)="requested($event)" />
+  }
+} @else {
+  <p class="text-slate-500">Loading…</p>
+}

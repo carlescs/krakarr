@@ -1,0 +1,6 @@
+@if (recommendations().loading || recommendations().items.length > 0 || recommendations().error) {
+  <kr-media-row title="Recommendations" [items]="recommendations().items" [loading]="recommendations().loading" [error]="recommendations().error" />
+}
+@if (similar().loading || similar().items.length > 0 || similar().error) {
+  <kr-media-row [title]="kind() === 'movie' ? 'Similar movies' : 'Similar series'" [items]="similar().items" [loading]="similar().loading" [error]="similar().error" />
+}

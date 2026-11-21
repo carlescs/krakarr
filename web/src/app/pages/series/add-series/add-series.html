@@ -1,0 +1,52 @@
+<h1 class="page-title mb-6">{{ auth.isStaff() ? 'Add series' : 'Search series' }}</h1>
+<form class="mb-6 flex gap-2 sm:mb-8 sm:gap-3" (ngSubmit)="search()">
+  <input class="input min-w-0 flex-1 !py-3 !text-base" type="search" enterkeyhint="search" name="term" [(ngModel)]="term" placeholder="Search for a show, e.g. “Breaking Bad”" autofocus />
+  <button class="btn-primary px-4 sm:px-6" [disabled]="searching() || !term.trim()">{{ searching() ? 'Searching…' : 'Search' }}</button>
+</form>
+
+@if (error()) {
+  <div class="card mb-6 border-rose-500/30 px-5 py-4 text-sm text-rose-300">
+    {{ error() }} @if (error()!.includes('TMDB') || error()!.includes('TheTVDB')) { — <a routerLink="/settings" class="underline">open settings</a> }
+  </div>
+}
+
+<div class="space-y-3">
+  @for (r of results(); track (r.tmdbId ?? 0) + '-' + (r.tvdbId ?? 0)) {
+    @let detail = detailRoute({ kind: 'series', item: r });
+    <div class="card flex gap-3 p-3 sm:gap-4 sm:p-4">
+      @if (detail) {
+        <a [routerLink]="detail" class="w-20 shrink-0 sm:w-24" [attr.aria-label]="r.title"><kr-poster [url]="r.posterUrl" [title]="r.title" /></a>
+      } @else {
+        <kr-poster class="w-20 shrink-0 sm:w-24" [url]="r.posterUrl" [title]="r.title" />
+      }
+      <div class="min-w-0 flex-1">
+        <div class="flex flex-wrap items-baseline gap-x-2">
+          <h2 class="text-base font-semibold text-white sm:text-lg">
+            @if (detail) { <a [routerLink]="detail" class="hover:text-accent-300">{{ r.title }}</a> } @else { {{ r.title }} }
+          </h2>
+          <span class="text-slate-400">{{ r.year || '' }}</span>
+        </div>
+        <div class="text-xs text-slate-500">{{ r.network }}{{ r.network && r.status ? ' · ' : '' }}{{ r.status }}</div>
+        <p class="mt-2 line-clamp-3 text-sm text-slate-400">{{ r.overview }}</p>
+      </div>
+      <div class="shrink-0 self-center">
+        @if (r.seriesId) {
+          <a [routerLink]="['/series', r.seriesId]" class="btn-secondary">In library</a>
+        } @else if (auth.isStaff()) {
+          <button class="btn-primary" (click)="selected.set(r)">Add</button>
+        } @else if (r.tmdbId && requested().has(r.tmdbId)) {
+          <a routerLink="/requests" class="btn-secondary">Requested</a>
+        } @else {
+          <button class="btn-primary" [disabled]="!r.tmdbId" [title]="r.tmdbId ? '' : 'Only titles on TMDB can be requested'" (click)="requesting.set(r)">Request</button>
+        }
+      </div>
+    </div>
+  }
+</div>
+
+@if (requestItem(); as item) {
+  <kr-request-modal [item]="item" (closed)="requesting.set(null)" (requested)="markRequested($event)" />
+}
+@if (selected(); as show) {
+  <kr-add-series-modal [show]="show" (closed)="selected.set(null)" (added)="router.navigate(['/series', $event.id])" />
+}
