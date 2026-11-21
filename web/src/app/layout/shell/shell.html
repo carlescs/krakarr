@@ -2,7 +2,7 @@
   <!-- Sidebar -->
   <aside class="fixed inset-y-0 left-0 z-40 flex w-64 flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] lg:w-60 border-r border-surface-800 bg-surface-900/95 backdrop-blur transition-transform lg:translate-x-0"
          [class.-translate-x-full]="!menuOpen()" [class.max-lg:invisible]="!menuOpen()">
-    <a routerLink="/movies" class="flex items-center gap-2.5 px-5 py-5">
+    <a routerLink="/" class="flex items-center gap-2.5 px-5 py-5">
       <img src="favicon.svg" alt="" class="size-8" />
       <span class="text-lg font-bold tracking-tight text-white">Krakarr</span>
     </a>
@@ -47,7 +47,7 @@
         <button class="btn-ghost -ml-2 px-2 lg:hidden" (click)="menuOpen.set(true)" aria-label="Open menu">
           <svg class="size-6" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor"><path stroke-linecap="round" [attr.d]="icons['menu']" /></svg>
         </button>
-        <a routerLink="/movies" class="flex min-w-0 items-center gap-2 lg:hidden">
+        <a routerLink="/" class="flex min-w-0 items-center gap-2 lg:hidden">
           <img src="favicon.svg" alt="" class="size-7 shrink-0" />
           <span class="truncate font-semibold text-white">{{ current()?.label ?? 'Krakarr' }}</span>
         </a>

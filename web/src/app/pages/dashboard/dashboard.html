@@ -1,0 +1,293 @@
+<ng-template #bar let-segments>
+  <!-- Segmented bar with a legend below it, so no part is identified by colour alone. -->
+  <div class="flex h-2 w-full gap-0.5 overflow-hidden rounded-full bg-surface-700" role="img"
+       [attr.aria-label]="segmentsLabel(segments)">
+    @for (s of segments; track s.label) {
+      @if (s.value > 0) {
+        <div class="h-full first:rounded-l-full last:rounded-r-full" [class]="s.color" [style.width.%]="percent(s.value, total(segments))" [title]="s.label + ': ' + s.value"></div>
+      }
+    }
+  </div>
+  <ul class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
+    @for (s of segments; track s.label) {
+      <li class="flex items-center gap-1.5">
+        <span class="size-2 rounded-full" [class]="s.color"></span>{{ s.label }} <span class="font-medium text-slate-200 tabular-nums">{{ s.value }}</span>
+      </li>
+    }
+  </ul>
+</ng-template>
+
+<h1 class="page-title mb-4 sm:mb-6">Dashboard</h1>
+
+@if (error(); as err) {
+  <div class="card mb-6 border-rose-500/40 px-5 py-4 text-sm text-rose-300">{{ err }}</div>
+}
+
+@if (stats(); as s) {
+  <!-- Headline figures -->
+  <div class="mb-6 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 xl:grid-cols-6">
+    <a routerLink="/movies" class="card px-4 py-3 transition hover:border-surface-600" data-stat="movies">
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-400">Movies</div>
+      <div class="mt-1 text-2xl font-semibold text-white tabular-nums">{{ s.library.movies.total }}</div>
+      <div class="text-xs text-slate-500">{{ s.library.movies.missing }} missing</div>
+    </a>
+    <a routerLink="/series" class="card px-4 py-3 transition hover:border-surface-600" data-stat="series">
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-400">Series</div>
+      <div class="mt-1 text-2xl font-semibold text-white tabular-nums">{{ s.library.series.total }}</div>
+      <div class="text-xs text-slate-500">{{ s.library.series.continuing }} continuing</div>
+    </a>
+    <div class="card px-4 py-3" data-stat="episodes">
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-400">Episodes</div>
+      <div class="mt-1 text-2xl font-semibold text-white tabular-nums">{{ s.library.episodes.downloaded }}</div>
+      <div class="text-xs text-slate-500">of {{ s.library.episodes.total }} · {{ s.library.episodes.missing }} missing</div>
+    </div>
+    <div class="card px-4 py-3" data-stat="disk">
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-400">On disk</div>
+      <div class="mt-1 text-2xl font-semibold text-white tabular-nums">{{ s.library.sizeOnDisk | bytes }}</div>
+      <div class="text-xs text-slate-500">{{ s.library.files }} files · {{ s.library.subtitles }} subtitles</div>
+    </div>
+    <a routerLink="/requests" class="card px-4 py-3 transition hover:border-surface-600" data-stat="requests">
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-400">Pending requests</div>
+      <div class="mt-1 text-2xl font-semibold tabular-nums" [class]="s.requests.pending > 0 ? 'text-amber-300' : 'text-white'">{{ s.requests.pending }}</div>
+      <div class="text-xs text-slate-500">{{ s.requests.last30Days }} in the last 30 days</div>
+    </a>
+    <div class="card px-4 py-3" data-stat="users">
+      <div class="text-xs font-semibold uppercase tracking-wide text-slate-400">Users</div>
+      <div class="mt-1 text-2xl font-semibold text-white tabular-nums">{{ s.users.total }}</div>
+      <div class="text-xs text-slate-500">{{ s.users.admins + s.users.managers }} staff</div>
+    </div>
+  </div>
+
+  <div class="grid gap-6 xl:grid-cols-3">
+    <!-- Downloads (live) -->
+    <section class="card overflow-hidden xl:col-span-2" data-section="downloads">
+      <div class="flex items-center justify-between border-b border-surface-700 px-4 py-3 sm:px-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Downloads</h2>
+        <a routerLink="/downloads" class="text-xs text-accent-300 hover:text-accent-200">View all</a>
+      </div>
+      <div class="space-y-4 px-4 py-4 sm:px-5">
+        <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div>
+            <div class="text-xs text-slate-500">Active</div>
+            <div class="text-xl font-semibold text-white tabular-nums" data-stat="active">{{ active().length }}</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500">Download</div>
+            <div class="text-xl font-semibold text-white tabular-nums">↓ {{ downloadRate() | speed }}</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500">Upload</div>
+            <div class="text-xl font-semibold text-white tabular-nums">↑ {{ uploadRate() | speed }}</div>
+          </div>
+          <div>
+            <div class="text-xs text-slate-500">Remaining</div>
+            <div class="text-xl font-semibold text-white tabular-nums">{{ activeTotals().remaining | bytes }}</div>
+            @if (active().length > 0) { <div class="text-xs text-slate-500">ETA {{ eta() | duration }}</div> }
+          </div>
+        </div>
+
+        @if (active().length > 0) {
+          <div>
+            <div class="mb-1 flex justify-between text-xs text-slate-400">
+              <span>Overall</span><span class="tabular-nums">{{ activeTotals().progress.toFixed(1) }}% of {{ activeTotals().size | bytes }}</span>
+            </div>
+            <kr-progress [value]="activeTotals().progress" />
+          </div>
+        }
+
+        @if (downloads().length === 0) {
+          <p class="text-sm text-slate-500">Nothing in the download client.</p>
+        } @else {
+          <ng-container *ngTemplateOutlet="bar; context: { $implicit: stateSegments() }" />
+        }
+
+        @if (errors() > 0 || s.activity.importIssues > 0) {
+          <div class="flex flex-wrap gap-2 text-xs">
+            @if (errors() > 0) {
+              <a routerLink="/downloads" class="badge bg-rose-500/15 text-rose-300">⚠ {{ errors() }} {{ errors() === 1 ? 'download' : 'downloads' }} with errors</a>
+            }
+            @if (s.activity.importIssues > 0) {
+              <a routerLink="/downloads" class="badge bg-amber-500/15 text-amber-300">⚠ {{ s.activity.importIssues }} {{ s.activity.importIssues === 1 ? 'import needs' : 'imports need' }} attention</a>
+            }
+          </div>
+        }
+
+        @if (topDownloads().length > 0) {
+          <ul class="divide-y divide-surface-800" data-list="active-downloads">
+            @for (d of topDownloads(); track d.id) {
+              <li class="py-2.5">
+                <div class="flex items-center gap-2 text-sm">
+                  <kr-state-badge [state]="d.state" />
+                  @if (d.movieId) {
+                    <a [routerLink]="['/movies', d.movieId]" class="min-w-0 flex-1 truncate hover:text-accent-300" [title]="d.name">{{ d.name }}</a>
+                  } @else if (d.seriesId) {
+                    <a [routerLink]="['/series', d.seriesId]" class="min-w-0 flex-1 truncate hover:text-accent-300" [title]="d.name">{{ d.name }}</a>
+                  } @else {
+                    <span class="min-w-0 flex-1 truncate" [title]="d.name">{{ d.name }}</span>
+                  }
+                  <span class="shrink-0 text-xs text-slate-400 tabular-nums">{{ d.downloadRate | speed }}</span>
+                </div>
+                <kr-progress class="mt-1.5" [value]="d.progress" />
+                <div class="mt-1 flex justify-between text-xs text-slate-500 tabular-nums">
+                  <span>{{ d.progress.toFixed(1) }}% of {{ d.size | bytes }}</span>
+                  @if (d.state === 'Downloading') { <span>ETA {{ d.etaSeconds | duration }}</span> }
+                </div>
+              </li>
+            }
+          </ul>
+          @if (active().length > topDownloads().length) {
+            <a routerLink="/downloads" class="block text-xs text-slate-400 hover:text-white">and {{ active().length - topDownloads().length }} more…</a>
+          }
+        }
+      </div>
+    </section>
+
+    <!-- Last 7 days -->
+    <section class="card overflow-hidden" data-section="activity">
+      <div class="flex items-center justify-between border-b border-surface-700 px-4 py-3 sm:px-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Last 7 days</h2>
+        <a routerLink="/activity" class="text-xs text-accent-300 hover:text-accent-200">Activity</a>
+      </div>
+      <dl class="grid grid-cols-2 gap-4 px-4 py-4 sm:px-5">
+        <div><dt class="text-xs text-slate-500">Grabbed</dt><dd class="text-xl font-semibold text-white tabular-nums">{{ s.activity.grabbed }}</dd></div>
+        <div><dt class="text-xs text-slate-500">Imported</dt><dd class="text-xl font-semibold text-white tabular-nums">{{ s.activity.imported }}</dd></div>
+        <div><dt class="text-xs text-slate-500">Failed</dt><dd class="text-xl font-semibold tabular-nums" [class]="s.activity.failed > 0 ? 'text-rose-300' : 'text-white'">{{ s.activity.failed }}</dd></div>
+        <div><dt class="text-xs text-slate-500">Subtitles</dt><dd class="text-xl font-semibold text-white tabular-nums">{{ s.activity.subtitles }}</dd></div>
+      </dl>
+      @if (s.library.episodes.airingThisWeek > 0) {
+        <a routerLink="/calendar" class="block border-t border-surface-800 px-4 py-3 text-sm text-slate-300 hover:bg-surface-850 sm:px-5">
+          {{ s.library.episodes.airingThisWeek }} {{ s.library.episodes.airingThisWeek === 1 ? 'episode airs' : 'episodes air' }} in the next 7 days →
+        </a>
+      }
+    </section>
+
+    <!-- Library -->
+    <section class="card overflow-hidden xl:col-span-2" data-section="library">
+      <h2 class="border-b border-surface-700 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-slate-400 sm:px-5">Library</h2>
+      <div class="grid gap-6 px-4 py-4 sm:px-5 md:grid-cols-2">
+        <div class="space-y-5">
+          <div>
+            <div class="mb-2 text-sm text-slate-300">Movies</div>
+            <ng-container *ngTemplateOutlet="bar; context: { $implicit: movieSegments() }" />
+          </div>
+          <div>
+            <div class="mb-2 text-sm text-slate-300">Episodes</div>
+            <ng-container *ngTemplateOutlet="bar; context: { $implicit: episodeSegments() }" />
+          </div>
+        </div>
+        <div>
+          <div class="mb-2 text-sm text-slate-300">By resolution</div>
+          @if (s.library.resolutions.length === 0) {
+            <p class="text-sm text-slate-500">No files yet.</p>
+          } @else {
+            <ul class="space-y-2" data-list="resolutions">
+              @for (r of s.library.resolutions; track r.resolution) {
+                <li class="grid grid-cols-[4.5rem_1fr_auto] items-center gap-3 text-xs">
+                  <span class="text-slate-300">{{ resolutionLabel(r.resolution) }}</span>
+                  <div class="h-2 overflow-hidden rounded-full bg-surface-700">
+                    <div class="h-full rounded-full bg-accent-500" [style.width.%]="percent(r.size, maxResolutionSize())"></div>
+                  </div>
+                  <span class="text-right text-slate-400 tabular-nums">{{ r.size | bytes }} · {{ r.files }}</span>
+                </li>
+              }
+            </ul>
+          }
+        </div>
+      </div>
+      @if (rootFolders().length > 0) {
+        <div class="border-t border-surface-800 px-4 py-3 sm:px-5">
+          <div class="mb-2 text-sm text-slate-300">Free space</div>
+          <ul class="space-y-1 text-xs" data-list="root-folders">
+            @for (f of rootFolders(); track f.id) {
+              <li class="flex justify-between gap-3">
+                <span class="truncate text-slate-400" [title]="f.path">{{ f.path }}</span>
+                @if (f.accessible) {
+                  <span class="shrink-0 text-slate-200 tabular-nums">{{ f.freeSpace | bytes }} free</span>
+                } @else {
+                  <span class="shrink-0 text-rose-300">Not accessible</span>
+                }
+              </li>
+            }
+          </ul>
+        </div>
+      }
+    </section>
+
+    <!-- Users -->
+    <section class="card overflow-hidden" data-section="users">
+      <h2 class="border-b border-surface-700 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-slate-400 sm:px-5">Users</h2>
+      <div class="space-y-5 px-4 py-4 sm:px-5">
+        <ng-container *ngTemplateOutlet="bar; context: { $implicit: roleSegments() }" />
+        <div>
+          <div class="mb-2 text-sm text-slate-300">Top requesters</div>
+          @if (s.users.topRequesters.length === 0) {
+            <p class="text-sm text-slate-500">No requests yet.</p>
+          } @else {
+            <ul class="space-y-2" data-list="requesters">
+              @for (u of s.users.topRequesters; track u.username) {
+                <li class="grid grid-cols-[minmax(0,7rem)_1fr_auto] items-center gap-3 text-xs">
+                  <span class="truncate text-slate-300">{{ u.username }}</span>
+                  <div class="h-2 overflow-hidden rounded-full bg-surface-700">
+                    <div class="h-full rounded-full bg-accent-500" [style.width.%]="percent(u.requests, maxRequester())"></div>
+                  </div>
+                  <span class="text-slate-400 tabular-nums">{{ u.requests }}</span>
+                </li>
+              }
+            </ul>
+          }
+        </div>
+      </div>
+    </section>
+
+    <!-- Requests -->
+    <section class="card overflow-hidden xl:col-span-2" data-section="requests">
+      <div class="flex items-center justify-between border-b border-surface-700 px-4 py-3 sm:px-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Requests</h2>
+        <a routerLink="/requests" class="text-xs text-accent-300 hover:text-accent-200">View all</a>
+      </div>
+      <div class="px-4 py-4 sm:px-5">
+        @if (s.requests.total === 0) {
+          <p class="text-sm text-slate-500">No requests yet.</p>
+        } @else {
+          <ng-container *ngTemplateOutlet="bar; context: { $implicit: requestSegments() }" />
+          <ul class="mt-4 divide-y divide-surface-800" data-list="recent-requests">
+            @for (r of s.requests.recent; track r.id) {
+              <li class="flex items-center gap-3 py-2">
+                <a routerLink="/requests" class="w-9 shrink-0"><kr-poster [url]="r.posterUrl" [title]="r.title" /></a>
+                <div class="min-w-0 flex-1">
+                  <div class="truncate text-sm text-slate-100">{{ r.title }} <span class="text-slate-500">({{ r.year }})</span></div>
+                  <div class="truncate text-xs text-slate-500">{{ r.mediaType }} · {{ r.requestedBy ?? 'Unknown user' }} · {{ r.requestedAt | ago }}</div>
+                </div>
+                <span class="badge" [class]="r.status === 'Pending' ? 'bg-amber-500/15 text-amber-300' : r.status === 'Approved' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-rose-500/15 text-rose-300'">{{ r.status }}</span>
+              </li>
+            }
+          </ul>
+        }
+      </div>
+    </section>
+
+    <!-- Recently imported -->
+    <section class="card overflow-hidden" data-section="recent">
+      <h2 class="border-b border-surface-700 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-slate-400 sm:px-5">Recently imported</h2>
+      <div class="px-4 py-4 sm:px-5">
+        @if (s.recentlyImported.length === 0) {
+          <p class="text-sm text-slate-500">Nothing imported yet.</p>
+        } @else {
+          <ul class="grid grid-cols-3 gap-3" data-list="recently-imported">
+            @for (r of s.recentlyImported; track r.mediaType + r.id) {
+              <li>
+                <a [routerLink]="link(r.mediaType, r.id)" class="group block" [title]="r.title + ' (' + r.year + ')'">
+                  <kr-poster [url]="r.posterUrl" [title]="r.title" />
+                  <div class="mt-1 truncate text-xs text-slate-300 group-hover:text-accent-300">{{ r.title }}</div>
+                  <div class="text-[11px] text-slate-500">{{ r.date | ago }}</div>
+                </a>
+              </li>
+            }
+          </ul>
+        }
+      </div>
+    </section>
+  </div>
+} @else if (!error()) {
+  <p class="text-sm text-slate-500">Loading…</p>
+}
