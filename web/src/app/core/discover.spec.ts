@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { interleave, movieItems, seriesItems } from './discover';
-import { detailRoute, discoverKey, libraryRoute } from '../shared/media-card';
+import { detailRoute, discoverKey, libraryRoute } from '../shared/media-card/media-card';
 
 describe('discover helpers', () => {
   it('interleaves lists of different lengths', () => {

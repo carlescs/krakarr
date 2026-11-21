@@ -1,10 +1,11 @@
 import { Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
-import { ToastHost } from './core/toast';
+import { ToastHost } from './shared/toast-host/toast-host';
 
 @Component({
   selector: 'kr-root',
   imports: [RouterOutlet, ToastHost],
-  template: `<router-outlet /><kr-toasts />`,
+  templateUrl: './app.html',
+  styleUrl: './app.scss',
 })
 export class App {}

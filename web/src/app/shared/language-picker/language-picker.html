@@ -1,0 +1,20 @@
+<div class="flex flex-wrap items-center gap-2">
+  @for (code of value(); track code; let i = $index, first = $first, last = $last) {
+    <span class="badge gap-1 bg-accent-500/15 text-accent-300">
+      @if (!first) {
+        <button type="button" class="hover:text-white" (click)="move(i, -1)" [attr.aria-label]="'Prefer ' + catalog.name(code) + ' more'">‹</button>
+      }
+      <span>{{ i + 1 }}. {{ catalog.name(code) }}</span>
+      @if (!last) {
+        <button type="button" class="hover:text-white" (click)="move(i, 1)" [attr.aria-label]="'Prefer ' + catalog.name(code) + ' less'">›</button>
+      }
+      <button type="button" class="ml-1 hover:text-white" (click)="remove(code)" [attr.aria-label]="'Remove ' + catalog.name(code)">✕</button>
+    </span>
+  }
+  <select class="input w-full sm:w-56" [attr.aria-label]="'Add language'" (change)="add($any($event.target).value); $any($event.target).value = ''">
+    <option value="">Add language…</option>
+    @for (l of languages(); track l.code) {
+      @if (!value().includes(l.code)) { <option [value]="l.code">{{ l.name }}</option> }
+    }
+  </select>
+</div>

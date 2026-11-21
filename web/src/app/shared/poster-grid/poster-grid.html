@@ -1,0 +1,9 @@
+<div [class]="grid" aria-busy="true" aria-label="Loading">
+  @for (i of cards(); track i) {
+    <div class="animate-pulse">
+      <div class="aspect-[2/3] rounded-lg bg-surface-800"></div>
+      <div class="mt-2 h-3 w-3/4 rounded bg-surface-800"></div>
+      <div class="mt-1.5 h-2.5 w-1/3 rounded bg-surface-800"></div>
+    </div>
+  }
+</div>

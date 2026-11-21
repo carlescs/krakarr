@@ -1,0 +1,41 @@
+@if (crew().length > 0) {
+  <section class="mb-6">
+    <h2 class="mb-3 text-lg font-semibold text-white">Crew</h2>
+    <div class="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
+      @for (c of crew(); track c.tmdbId) {
+        <a [routerLink]="['/people', c.tmdbId]" class="group min-w-0">
+          <div class="truncate text-sm font-medium text-slate-100 group-hover:text-accent-300">{{ c.name }}</div>
+          <div class="truncate text-xs text-slate-500" [title]="c.jobs">{{ c.jobs }}</div>
+        </a>
+      }
+    </div>
+  </section>
+}
+@if (loading()) {
+  <section class="mb-8">
+    <h2 class="mb-3 text-lg font-semibold text-white">Cast</h2>
+    <div class="flex gap-3 overflow-hidden">
+      @for (i of placeholders; track i) { <div class="aspect-[2/3] w-24 shrink-0 animate-pulse rounded-lg bg-surface-800 sm:w-28"></div> }
+    </div>
+  </section>
+} @else if (cast().length > 0) {
+  <section class="mb-8">
+    <h2 class="mb-3 text-lg font-semibold text-white">Cast</h2>
+    <div class="-mx-1 flex snap-x gap-3 overflow-x-auto px-1 pt-1 pb-2 [scrollbar-width:thin]">
+      @for (c of cast(); track c.tmdbId) {
+        <a [routerLink]="['/people', c.tmdbId]" class="group w-24 shrink-0 snap-start sm:w-28">
+          <div class="aspect-[2/3] overflow-hidden rounded-lg bg-surface-800 ring-1 ring-surface-700 transition group-hover:ring-accent-500">
+            @if (c.profileUrl) {
+              <img [src]="c.profileUrl" [alt]="c.name" loading="lazy" class="h-full w-full object-cover" />
+            } @else {
+              <div class="flex h-full w-full items-center justify-center bg-gradient-to-br from-surface-700 to-surface-850 text-2xl font-semibold text-slate-500">{{ initials(c.name) }}</div>
+            }
+          </div>
+          <div class="mt-1.5 truncate text-sm font-medium text-slate-100 group-hover:text-accent-300" [title]="c.name">{{ c.name }}</div>
+          @if (c.character) { <div class="line-clamp-2 text-xs text-slate-400" [title]="c.character">{{ c.character }}</div> }
+          @if (c.episodes) { <div class="text-xs text-slate-500">{{ c.episodes }} {{ c.episodes === 1 ? 'episode' : 'episodes' }}</div> }
+        </a>
+      }
+    </div>
+  </section>
+}
