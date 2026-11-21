@@ -5,7 +5,7 @@ import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
   IndexerError, IndexerTestResult, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListItem, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
-  DashboardStats, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber,
+  DashboardStats, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber,
 } from './models';
 
 const API = 'api/v1';
@@ -32,7 +32,7 @@ export function errorMessage(err: unknown): string {
 type SettingsMap = {
   general: GeneralSettings; media: MediaManagementSettings; metadata: MetadataSettings;
   downloads: DownloadClientSettings; automation: AutomationSettings; subtitles: SubtitleSettings; languages: LanguageSettings;
-  jellyfin: JellyfinSettings;
+  jellyfin: JellyfinSettings; telemetry: TelemetrySettings;
 };
 
 @Injectable({ providedIn: 'root' })
@@ -78,6 +78,7 @@ export class Api {
   // Settings
   settings<K extends keyof SettingsMap>(section: K) { return this.get<SettingsMap[K]>(`settings/${section}`); }
   saveSettings<K extends keyof SettingsMap>(section: K, value: SettingsMap[K]) { return this.put<SettingsMap[K]>(`settings/${section}`, value); }
+  telemetryStatus() { return this.get<TelemetryStatus>('settings/telemetry/status'); }
   testJellyfin(settings: JellyfinSettings) { return this.post<JellyfinTestResult>('settings/jellyfin/test', settings); }
   regenerateApiKey() { return this.post<GeneralSettings>('settings/general/regenerate-api-key'); }
   qualities() { return this.get<Quality[]>('qualities'); }

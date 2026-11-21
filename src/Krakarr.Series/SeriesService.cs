@@ -2,6 +2,7 @@ using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Events;
 using Krakarr.Core.Metadata;
+using Krakarr.Core.Telemetry;
 using Krakarr.Data;
 using Krakarr.Downloads;
 using Krakarr.Indexers;
@@ -263,7 +264,28 @@ public sealed class SeriesService(
     /// </summary>
     public async Task<string> AutoSearchAsync(int seriesId, int? seasonNumber, IReadOnlyCollection<int>? episodeIds, CancellationToken ct = default)
     {
+        using var activity = KrakarrTelemetry.ActivitySource.StartActivity("series search");
+        activity?.SetTag(KrakarrTelemetry.MediaTypeTag, "series");
+        activity?.SetTag("krakarr.series.id", seriesId);
+        activity?.SetTag("krakarr.search.season", seasonNumber);
+        activity?.SetTag("krakarr.search.episodes", episodeIds?.Count);
+        try
+        {
+            var result = await AutoSearchCoreAsync(seriesId, seasonNumber, episodeIds, ct);
+            activity?.SetTag("krakarr.search.result", result);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            activity.RecordException(ex);
+            throw;
+        }
+    }
+
+    private async Task<string> AutoSearchCoreAsync(int seriesId, int? seasonNumber, IReadOnlyCollection<int>? episodeIds, CancellationToken ct)
+    {
         var series = await LoadAsync(seriesId, ct) ?? throw new KeyNotFoundException($"Series {seriesId} not found");
+        System.Diagnostics.Activity.Current?.SetTag("krakarr.series.title", series.Title);
         var profile = series.QualityProfile!;
         var busy = await ActiveEpisodeIdsAsync(ct);
         var wanted = series.Episodes

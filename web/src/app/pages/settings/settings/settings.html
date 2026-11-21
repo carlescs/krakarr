@@ -368,6 +368,79 @@
   }
 }
 
+<!-- Telemetry -->
+@if (tab() === 'telemetry') {
+  @if (telemetry(); as t) {
+    <section class="card grid gap-4 p-4 sm:p-5 sm:grid-cols-2">
+      <div class="sm:col-span-2">
+        <p class="text-sm text-slate-400">
+          Send traces, metrics and logs over OTLP to an OpenTelemetry Collector or any compatible backend (Grafana Alloy, Tempo,
+          Jaeger, SigNoz, Aspire Dashboard…). Covers API requests, indexer searches, grabs, imports, scheduled tasks, library totals and
+          download client activity. Changes apply right away, without a restart.
+        </p>
+        @if (telemetryStatus(); as s) {
+          <div class="mt-3 rounded-lg px-3 py-2 text-sm"
+               [class]="s.error ? 'bg-rose-500/10 text-rose-300' : s.active ? 'bg-emerald-500/10 text-emerald-300' : 'bg-surface-800 text-slate-400'">
+            @if (s.error) { Export failed to start: {{ s.error }} }
+            @else if (s.active) { Exporting {{ s.signals.join(', ') }} to {{ s.endpoint || 'the default endpoint' }} ({{ s.protocol === 'Grpc' ? 'gRPC' : 'HTTP' }}) }
+            @else { Telemetry is off }
+          </div>
+        }
+      </div>
+      <label class="flex items-center gap-2 text-sm font-medium text-white sm:col-span-2"><input type="checkbox" class="accent-accent-500" [(ngModel)]="t.enabled" /> Export telemetry</label>
+      <div>
+        <label class="label">Endpoint</label>
+        <input class="input font-mono" [(ngModel)]="t.endpoint" [placeholder]="t.protocol === 'Grpc' ? 'http://otel-collector:4317' : 'http://otel-collector:4318'" />
+        <p class="hint">For HTTP, <code>/v1/traces</code>, <code>/v1/metrics</code> and <code>/v1/logs</code> are added. Empty uses <code>OTEL_EXPORTER_OTLP_ENDPOINT</code>.</p>
+      </div>
+      <div>
+        <label class="label">Protocol</label>
+        <select class="input" [ngModel]="t.protocol" (ngModelChange)="setProtocol(t, $event)">
+          <option value="Grpc">gRPC (port 4317)</option>
+          <option value="HttpProtobuf">HTTP/protobuf (port 4318)</option>
+        </select>
+      </div>
+      <div class="sm:col-span-2">
+        <label class="label">Headers (optional)</label>
+        <input class="input font-mono" type="password" autocomplete="off" [(ngModel)]="t.headers" placeholder="Authorization=Bearer token,X-Scope-OrgID=home" />
+        <p class="hint">Comma-separated <code>key=value</code> pairs sent with every export, e.g. for authentication. Stored like a password.</p>
+      </div>
+      <div>
+        <label class="label">Service name</label>
+        <input class="input" [(ngModel)]="t.serviceName" placeholder="krakarr" />
+      </div>
+      <div>
+        <label class="label">Resource attributes (optional)</label>
+        <input class="input font-mono" [(ngModel)]="t.resourceAttributes" placeholder="deployment.environment=home" />
+        <p class="hint">Comma-separated <code>key=value</code> pairs added to everything exported.</p>
+      </div>
+      <fieldset class="space-y-2 sm:col-span-2">
+        <legend class="label">Signals</legend>
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="t.exportTraces" /> Traces: API requests, searches, grabs, imports, tasks and outgoing HTTP calls</label>
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="t.exportMetrics" /> Metrics: request rates and latency, library and download gauges, indexer and task statistics, .NET runtime</label>
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="t.exportLogs" /> Logs: the application log, linked to traces</label>
+      </fieldset>
+      <div>
+        <label class="label">Trace sampling</label>
+        <input class="input" type="number" min="0" max="1" step="0.05" [(ngModel)]="t.traceSampleRatio" />
+        <p class="hint">Share of traces kept, from 0 to 1 (1 = all).</p>
+      </div>
+      <div>
+        <label class="label">Metric export interval (seconds)</label>
+        <input class="input" type="number" min="5" max="3600" [(ngModel)]="t.metricExportIntervalSeconds" />
+      </div>
+      <div>
+        <label class="label">Library recount interval (minutes)</label>
+        <input class="input" type="number" min="1" max="1440" [(ngModel)]="t.libraryStatsIntervalMinutes" />
+        <p class="hint">How often movie, series, episode and size totals are recounted for the library gauges.</p>
+      </div>
+      <div class="flex items-end justify-end gap-2">
+        <button class="btn-primary" (click)="saveTelemetry(t)" [disabled]="savingTelemetry()">{{ savingTelemetry() ? 'Saving…' : 'Save' }}</button>
+      </div>
+    </section>
+  }
+}
+
 @if (tab() === 'account') { <kr-account-settings /> }
 @if (tab() === 'users') { <kr-users-settings /> }
 

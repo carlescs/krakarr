@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Events;
 using Krakarr.Core.Jobs;
+using Krakarr.Core.Telemetry;
 using Krakarr.Data;
 using Krakarr.Downloads;
 using Krakarr.Media.Files;
@@ -33,12 +35,20 @@ public sealed class SeriesImportService(
 
         foreach (var download in pending)
         {
+            using var activity = KrakarrTelemetry.ActivitySource.StartActivity("import series", ActivityKind.Internal, parentContext: default);
+            activity?.SetTag(KrakarrTelemetry.MediaTypeTag, "series");
+            activity?.SetTag("krakarr.download.name", download.Name);
+            activity?.SetTag("krakarr.download.info_hash", download.InfoHash);
+            activity?.SetTag(KrakarrTelemetry.IndexerTag, download.IndexerName);
             try
             {
                 await ImportAsync(download, cancellationToken);
+                activity?.SetTag("krakarr.import.message", download.ImportMessage);
+                if (!download.Imported) activity?.SetStatus(ActivityStatusCode.Error, download.ImportMessage);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                activity.RecordException(ex);
                 logger.LogError(ex, "Import of {Name} failed", download.Name);
                 await FinishAsync(download, null, [], [$"Import failed: {ex.Message}"], cancellationToken);
             }

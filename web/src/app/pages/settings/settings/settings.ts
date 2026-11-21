@@ -5,8 +5,8 @@ import { Api, errorMessage } from '../../../core/api';
 import { BytesPipe } from '../../../core/format';
 import { Events } from '../../../core/events';
 import {
-  AutomationSettings, DirectoryListing, Language, SubtitleSettings, DownloadClientKind, DownloadClientSettings, DownloadClientTestResult, GeneralSettings, JellyfinSettings, JellyfinTestResult, MediaManagementSettings, MetadataSettings, Quality,
-  QualityProfile, RootFolder, ScheduledTaskInfo, SystemStatus,
+  AutomationSettings, DirectoryListing, Language, SubtitleSettings, DownloadClientKind, DownloadClientSettings, DownloadClientTestResult, GeneralSettings, JellyfinSettings, JellyfinTestResult, MediaManagementSettings, MetadataSettings, OtlpProtocol, Quality,
+  QualityProfile, RootFolder, ScheduledTaskInfo, SystemStatus, TelemetrySettings, TelemetryStatus,
 } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
 import { Modal } from '../../../shared/modal/modal';
@@ -64,7 +64,7 @@ export function buildName(format: string, values: Record<string, string>): strin
   return result.trim().replace(/\.+$/, '').replace(/\s{2,}/g, ' ').trim();
 }
 
-type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'jellyfin' | 'tasks' | 'users' | 'general' | 'account';
+type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'jellyfin' | 'telemetry' | 'tasks' | 'users' | 'general' | 'account';
 
 @Component({
   selector: 'kr-settings',
@@ -86,6 +86,7 @@ export class SettingsPage implements OnInit {
     { id: 'subtitles', label: 'Subtitles' },
     { id: 'metadata', label: 'Metadata' },
     { id: 'jellyfin', label: 'Jellyfin' },
+    { id: 'telemetry', label: 'Telemetry' },
     { id: 'tasks', label: 'Tasks' },
     { id: 'users', label: 'Users' },
     { id: 'general', label: 'General' },
@@ -115,6 +116,11 @@ export class SettingsPage implements OnInit {
   protected readonly jellyfin = signal<JellyfinSettings | null>(null);
   protected readonly jellyfinTest = signal<JellyfinTestResult | null>(null);
   protected readonly testingJellyfin = signal(false);
+  protected readonly telemetry = signal<TelemetrySettings | null>(null);
+  protected readonly telemetryStatus = signal<TelemetryStatus | null>(null);
+  protected readonly savingTelemetry = signal(false);
+  /** Wait after saving before reading the status: the server restarts the exporters in the background. */
+  telemetryStatusDelayMs = 1500;
   protected readonly languages = signal<Language[]>([]);
   protected readonly languageCatalog = inject(Languages);
   protected wantedLanguages: string[] = [];
@@ -159,6 +165,8 @@ export class SettingsPage implements OnInit {
     this.status.set(status);
     this.api.settings('languages').then(l => this.wantedLanguages = l.preferred, () => {});
     this.api.settings('jellyfin').then(j => this.jellyfin.set(j), () => {});
+    this.api.settings('telemetry').then(t => this.telemetry.set(t), () => {});
+    this.api.telemetryStatus().then(s => this.telemetryStatus.set(s), () => {});
     this.languageCatalog.load().catch(() => {});
     const [subs, langs] = await Promise.all([this.api.settings('subtitles'), this.api.subtitleLanguages()]);
     this.subtitles.set(subs);
@@ -242,6 +250,27 @@ export class SettingsPage implements OnInit {
       this.toasts.success('Settings saved');
     } catch (e) {
       this.toasts.error(errorMessage(e));
+    }
+  }
+
+  /** Switching protocol moves an endpoint on the other protocol's default port (4317 gRPC, 4318 HTTP) along with it. */
+  protected setProtocol(t: TelemetrySettings, protocol: OtlpProtocol) {
+    const [from, to] = protocol === 'Grpc' ? [':4318', ':4317'] : [':4317', ':4318'];
+    if (t.endpoint?.endsWith(from)) t.endpoint = t.endpoint.slice(0, -from.length) + to;
+    t.protocol = protocol;
+  }
+
+  async saveTelemetry(settings: TelemetrySettings) {
+    this.savingTelemetry.set(true);
+    try {
+      this.telemetry.set(await this.api.saveSettings('telemetry', settings));
+      this.toasts.success('Settings saved');
+      await new Promise(resolve => setTimeout(resolve, this.telemetryStatusDelayMs));
+      this.telemetryStatus.set(await this.api.telemetryStatus());
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+    } finally {
+      this.savingTelemetry.set(false);
     }
   }
 

@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Threading.Channels;
 using Krakarr.Core.Events;
+using Krakarr.Core.Telemetry;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -58,6 +60,9 @@ public sealed class ScheduledTaskRunner : BackgroundService, IScheduledTaskManag
 {
     /// <summary>How often a waiting task re-reads its interval, so settings changes apply without a restart.</summary>
     private static readonly TimeSpan RecheckInterval = TimeSpan.FromMinutes(1);
+
+    /// <summary>Scheduled runs of tasks at least this far apart get a trace span; manual runs always do.</summary>
+    private static readonly TimeSpan TracedTaskInterval = TimeSpan.FromMinutes(1);
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IEventHub _eventHub;
@@ -159,8 +164,10 @@ public sealed class ScheduledTaskRunner : BackgroundService, IScheduledTaskManag
     /// <summary>Runs the task once. Returns false when the host is stopping.</summary>
     private async Task<bool> RunAsync(TaskState state, CancellationToken ct)
     {
+        bool manual;
         lock (state)
         {
+            manual = state.TriggerPending;
             state.IsRunning = true;
             state.TriggerPending = false;
         }
@@ -169,6 +176,15 @@ public sealed class ScheduledTaskRunner : BackgroundService, IScheduledTaskManag
         state.LastRun = started;
         state.NextRun = state.Interval is { } i ? started + i : null;
         await PublishAsync(state);
+
+        // Tasks that poll every few seconds (imports) would be an empty root span each time; their real work
+        // (an import) starts its own span. Every run still counts in the duration histogram.
+        using var activity = manual || state.Interval is null || state.Interval >= TracedTaskInterval
+            ? KrakarrTelemetry.ActivitySource.StartActivity($"task {state.Id}", ActivityKind.Internal, parentContext: default)
+            : null;
+        activity?.SetTag(KrakarrTelemetry.TaskTag, state.Id);
+        activity?.SetTag("krakarr.task.manual", manual);
+        var outcome = KrakarrTelemetry.Success;
         try
         {
             using var scope = _scopeFactory.CreateScope();
@@ -178,6 +194,7 @@ public sealed class ScheduledTaskRunner : BackgroundService, IScheduledTaskManag
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            outcome = "cancelled";
             return false;
         }
         catch (Exception ex)
@@ -185,10 +202,15 @@ public sealed class ScheduledTaskRunner : BackgroundService, IScheduledTaskManag
             _logger.LogError(ex, "Scheduled task {Task} failed", state.Name);
             state.LastSucceeded = false;
             state.LastError = ex.Message;
+            outcome = KrakarrTelemetry.Failure;
+            activity.RecordException(ex);
         }
         finally
         {
             state.LastDuration = DateTimeOffset.UtcNow - started;
+            KrakarrTelemetry.TaskDuration.Record(state.LastDuration.Value.TotalSeconds,
+                new KeyValuePair<string, object?>(KrakarrTelemetry.TaskTag, state.Id),
+                new KeyValuePair<string, object?>(KrakarrTelemetry.OutcomeTag, outcome));
             lock (state)
             {
                 state.IsRunning = false;
@@ -291,8 +313,8 @@ public sealed class CommandQueue(
     IEventHub eventHub,
     ILogger<CommandQueue> logger) : BackgroundService, ICommandQueue
 {
-    private readonly Channel<(CommandInfo Info, Func<IServiceProvider, CancellationToken, Task<string?>> Work)> _channel =
-        Channel.CreateUnbounded<(CommandInfo, Func<IServiceProvider, CancellationToken, Task<string?>>)>();
+    private readonly Channel<(CommandInfo Info, Func<IServiceProvider, CancellationToken, Task<string?>> Work, ActivityContext Origin)> _channel =
+        Channel.CreateUnbounded<(CommandInfo, Func<IServiceProvider, CancellationToken, Task<string?>>, ActivityContext)>();
 
     private readonly ConcurrentQueue<CommandInfo> _recent = new();
 
@@ -306,36 +328,58 @@ public sealed class CommandQueue(
         {
         }
 
-        _channel.Writer.TryWrite((info, work));
+        // The command runs after the request that queued it has ended: link its span to that request's trace.
+        _channel.Writer.TryWrite((info, work, Activity.Current?.Context ?? default));
         _ = eventHub.PublishAsync(EventNames.CommandUpdated, info);
         return info;
     }
 
+    /// <summary>Low-cardinality command kind for telemetry: the first word of the name ("Search: Dune" → "search").</summary>
+    public static string CommandKind(string name)
+    {
+        var span = name.AsSpan().TrimStart();
+        var end = span.IndexOfAny(' ', ':', '(');
+        var word = (end < 0 ? span : span[..end]).ToString().ToLowerInvariant();
+        return word.Length is > 0 and <= 32 ? word : "other";
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await foreach (var (info, work) in _channel.Reader.ReadAllAsync(stoppingToken))
+        await foreach (var (info, work, origin) in _channel.Reader.ReadAllAsync(stoppingToken))
         {
             info.Status = CommandStatus.Running;
             info.Started = DateTimeOffset.UtcNow;
             await eventHub.PublishAsync(EventNames.CommandUpdated, info, stoppingToken);
-            try
+            var kind = CommandKind(info.Name);
+            ActivityLink[]? links = origin == default ? null : [new ActivityLink(origin)];
+            using (var activity = KrakarrTelemetry.ActivitySource.StartActivity($"command {kind}", ActivityKind.Internal, parentContext: default, links: links))
             {
-                using var scope = scopeFactory.CreateScope();
-                info.Message = await work(scope.ServiceProvider, stoppingToken);
-                info.Status = CommandStatus.Completed;
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Command {Command} failed", info.Name);
-                info.Status = CommandStatus.Failed;
-                info.Message = ex.Message;
+                activity?.SetTag(KrakarrTelemetry.CommandTag, kind);
+                activity?.SetTag("krakarr.command.name", info.Name);
+                try
+                {
+                    using var scope = scopeFactory.CreateScope();
+                    info.Message = await work(scope.ServiceProvider, stoppingToken);
+                    info.Status = CommandStatus.Completed;
+                    activity?.SetTag("krakarr.command.result", info.Message);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Command {Command} failed", info.Name);
+                    info.Status = CommandStatus.Failed;
+                    info.Message = ex.Message;
+                    activity.RecordException(ex);
+                }
             }
 
             info.Ended = DateTimeOffset.UtcNow;
+            KrakarrTelemetry.CommandDuration.Record((info.Ended.Value - info.Started.Value).TotalSeconds,
+                new KeyValuePair<string, object?>(KrakarrTelemetry.CommandTag, kind),
+                new KeyValuePair<string, object?>(KrakarrTelemetry.OutcomeTag, info.Status == CommandStatus.Completed ? KrakarrTelemetry.Success : KrakarrTelemetry.Failure));
             await eventHub.PublishAsync(EventNames.CommandUpdated, info, stoppingToken);
         }
     }
