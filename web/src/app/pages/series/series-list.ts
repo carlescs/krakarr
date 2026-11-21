@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Auth } from '../../core/auth';
 import { Library } from '../../core/library';
+import { Subscriptions } from '../../core/subscriptions';
 import { SeriesListItem } from '../../core/models';
 import { NearViewport } from '../../shared/near-viewport';
 import { Poster } from '../../shared/poster';
@@ -11,7 +12,7 @@ import { GRID_CHUNK, POSTER_GRID, PosterGridSkeleton } from '../../shared/poster
 import { MoreMenu } from '../../shared/more-menu';
 import { Progress } from '../../shared/progress';
 
-type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
+type Filter = 'all' | 'following' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
 
 @Component({
   selector: 'kr-series-list',
@@ -22,6 +23,7 @@ type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
       <input class="input min-w-0 flex-1 sm:w-56 sm:flex-none" placeholder="Filter…" type="search" [ngModel]="query()" (ngModelChange)="query.set($event)" />
       <select class="input w-36 sm:w-40" [ngModel]="filter()" (ngModelChange)="filter.set($event)">
         <option value="all">All</option>
+        <option value="following">Following</option>
         <option value="missing">Missing episodes</option>
         <option value="continuing">Continuing</option>
         <option value="ended">Ended</option>
@@ -34,6 +36,8 @@ type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
             <a routerLink="/series/import" class="menu-item" role="menuitem">Import existing library…</a>
           </kr-more-menu>
         </div>
+      } @else {
+        <a routerLink="/series/add" class="btn-secondary max-sm:basis-full">Search &amp; request</a>
       }
     </div>
 
@@ -54,7 +58,9 @@ type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
         }
       </div>
     } @else if (filtered().length === 0) {
-      <p class="py-12 text-center text-slate-500">No series match the filter.</p>
+      <p class="py-12 text-center text-slate-500">
+        {{ filter() === 'following' && !query() ? 'You don\'t follow any series yet. Open one and press Follow to see it here and in your calendar.' : 'No series match the filter.' }}
+      </p>
     } @else {
       <div [class]="grid">
         @for (s of visible(); track s.id) {
@@ -84,6 +90,7 @@ type Filter = 'all' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
 export class SeriesListPage {
   protected readonly auth = inject(Auth);
   private readonly cache = inject(Library).series;
+  private readonly subscriptions = inject(Subscriptions);
 
   protected readonly grid = POSTER_GRID;
   protected readonly loading = computed(() => this.cache.items() === null);
@@ -94,9 +101,11 @@ export class SeriesListPage {
   protected readonly filtered = computed(() => {
     const q = this.query().toLowerCase().trim();
     const filter = this.filter();
+    const following = filter === 'following' ? this.subscriptions.seriesIds() : null;
     return this.series().filter(s => {
       if (q && !s.title.toLowerCase().includes(q)) return false;
       switch (filter) {
+        case 'following': return following!.has(s.id);
         case 'missing': return s.monitored && s.episodeFileCount < s.episodeCount;
         case 'continuing': return s.status !== 'Ended';
         case 'ended': return s.status === 'Ended';
@@ -111,6 +120,7 @@ export class SeriesListPage {
   protected readonly visible = computed(() => this.filtered().slice(0, this.limit()));
 
   constructor() {
+    void this.subscriptions.refresh();
     inject(DestroyRef).onDestroy(this.cache.attach());
   }
 

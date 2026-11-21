@@ -205,6 +205,7 @@ app.MapSubtitleEndpoints();
 app.MapCalendarEndpoints();
 app.MapPeopleEndpoints();
 app.MapRequestEndpoints();
+app.MapSubscriptionEndpoints();
 app.MapNotificationEndpoints();
 app.MapHub<EventsHub>("/hubs/events");
 app.MapKrakarrSpa(urlBase);

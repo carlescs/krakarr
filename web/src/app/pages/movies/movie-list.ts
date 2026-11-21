@@ -5,6 +5,7 @@ import { RouterLink } from '@angular/router';
 import { Events } from '../../core/events';
 import { Auth } from '../../core/auth';
 import { Library } from '../../core/library';
+import { Subscriptions } from '../../core/subscriptions';
 import { MovieListItem } from '../../core/models';
 import { MovieGroup, groupByCollection } from '../../core/movie-groups';
 import { NearViewport } from '../../shared/near-viewport';
@@ -13,7 +14,7 @@ import { GRID_CHUNK, POSTER_GRID, PosterGridSkeleton } from '../../shared/poster
 import { MoreMenu } from '../../shared/more-menu';
 import { Progress } from '../../shared/progress';
 
-type Filter = 'all' | 'missing' | 'downloading' | 'downloaded' | 'unmonitored';
+type Filter = 'all' | 'following' | 'missing' | 'downloading' | 'downloaded' | 'unmonitored';
 type Grouping = 'none' | 'collection';
 
 const GROUPING_KEY = 'krakarr.movies.groupBy';
@@ -31,6 +32,7 @@ function storedGrouping(): Grouping {
       <input class="input min-w-0 flex-1 max-sm:basis-full sm:w-56 sm:flex-none" placeholder="Filter…" type="search" [ngModel]="query()" (ngModelChange)="query.set($event)" />
       <select class="input min-w-0 max-sm:flex-1 sm:w-40" [ngModel]="filter()" (ngModelChange)="filter.set($event)">
         <option value="all">All</option>
+        <option value="following">Following</option>
         <option value="missing">Missing</option>
         <option value="downloading">Downloading</option>
         <option value="downloaded">Downloaded</option>
@@ -47,6 +49,8 @@ function storedGrouping(): Grouping {
             <a routerLink="/movies/import" class="menu-item" role="menuitem">Import existing library…</a>
           </kr-more-menu>
         </div>
+      } @else {
+        <a routerLink="/movies/add" class="btn-secondary max-sm:basis-full">Search &amp; request</a>
       }
     </div>
 
@@ -67,7 +71,9 @@ function storedGrouping(): Grouping {
         }
       </div>
     } @else if (filtered().length === 0) {
-      <p class="py-12 text-center text-slate-500">No movies match the filter.</p>
+      <p class="py-12 text-center text-slate-500">
+        {{ filter() === 'following' && !query() ? 'You don\'t follow any movies yet. Open one and press Follow to see it here and in your calendar.' : 'No movies match the filter.' }}
+      </p>
     } @else if (visibleGroups(); as groups) {
       @for (g of groups; track g.group.key) {
         <section class="mb-8">
@@ -123,6 +129,7 @@ export class MovieListPage {
   protected readonly auth = inject(Auth);
   private readonly events = inject(Events);
   private readonly library = inject(Library);
+  private readonly subscriptions = inject(Subscriptions);
 
   protected readonly grid = POSTER_GRID;
   protected readonly loading = computed(() => this.library.movies.items() === null);
@@ -139,9 +146,11 @@ export class MovieListPage {
     const q = this.query().toLowerCase().trim();
     const filter = this.filter();
     const names = this.collectionNames();
+    const following = filter === 'following' ? this.subscriptions.movieIds() : null;
     return this.movies().filter(m => {
       if (q && !m.title.toLowerCase().includes(q) && !(m.collectionId != null && names.get(m.collectionId)?.includes(q))) return false;
       switch (filter) {
+        case 'following': return following!.has(m.id);
         case 'missing': return m.monitored && !m.hasFile;
         case 'downloading': return this.progressOf(m) != null;
         case 'downloaded': return m.hasFile;
@@ -193,6 +202,7 @@ export class MovieListPage {
   });
 
   constructor() {
+    void this.subscriptions.refresh();
     const destroyRef = inject(DestroyRef);
     destroyRef.onDestroy(this.library.movies.attach());
     destroyRef.onDestroy(this.library.movieCollections.attach());

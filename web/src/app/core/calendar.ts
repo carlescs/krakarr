@@ -193,8 +193,8 @@ export interface FeedOptions {
   unmonitored: boolean; pastDays: number; futureDays: number;
 }
 
-/** Absolute URL of the iCal feed, authenticated with the API key. */
-export function feedUrl(base: string, apiKey: string, o: FeedOptions): string {
+/** Absolute URL of the iCal feed, authenticated with the API key; `userId` limits it to the titles that user follows. */
+export function feedUrl(base: string, apiKey: string, o: FeedOptions, userId?: number): string {
   const types = (['theatrical', 'digital', 'physical'] as const).filter(t => o[t]);
   const params = new URLSearchParams({
     apikey: apiKey,
@@ -205,5 +205,6 @@ export function feedUrl(base: string, apiKey: string, o: FeedOptions): string {
     unmonitored: String(o.unmonitored),
   });
   if (types.length > 0 && types.length < 3) params.set('releaseTypes', types.join(','));
+  if (userId != null) params.set('userId', String(userId));
   return `${base.replace(/\/$/, '')}/api/v1/calendar/feed.ics?${params}`;
 }

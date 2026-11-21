@@ -11,7 +11,7 @@ import {
   feedUrl, groupByDay, itemState, localeFirstDayOfWeek, parseIsoDate, shiftAnchor, toIsoDate, viewRange,
 } from '../core/calendar';
 import { Events } from '../core/events';
-import { CalendarEntry } from '../core/models';
+import { CalendarEntry, Subscriber } from '../core/models';
 import { Toasts } from '../core/toast';
 import { Modal } from '../shared/modal';
 import { Poster } from '../shared/poster';
@@ -36,7 +36,10 @@ const STATES: Record<ItemState, { label: string; badge: string; icon: string }> 
   unmonitored: { label: 'Unmonitored', badge: 'bg-slate-500/15 text-slate-400', icon: '' },
 };
 
-interface Stored { view?: CalendarView; filters?: Partial<CalendarFilters>; feed?: Partial<FeedOptions>; }
+/** Whose titles the calendar shows: the whole library, the signed-in user's followed titles, or (staff) another user's. */
+type Owner = 'all' | 'me' | number;
+
+interface Stored { view?: CalendarView; filters?: Partial<CalendarFilters>; feed?: Partial<FeedOptions>; owner?: Owner; }
 
 function readStored(): Stored {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as Stored; } catch { return {}; }
@@ -57,6 +60,13 @@ function readStored(): Stored {
       <span class="text-base font-semibold text-slate-100">{{ rangeLabel() }}</span>
       @if (loading()) { <span class="size-4 animate-spin rounded-full border-2 border-surface-600 border-t-accent-400" aria-label="Loading"></span> }
       <div class="flex-1"></div>
+      <select class="input !w-auto !py-1.5 text-xs sm:text-xs max-sm:max-w-40" aria-label="Whose titles" [ngModel]="owner()" (ngModelChange)="owner.set($event)">
+        <option value="all">Everything</option>
+        <option value="me">My titles</option>
+        @for (u of subscribers(); track u.id) {
+          <option [ngValue]="u.id">{{ u.username }}'s titles</option>
+        }
+      </select>
       <div class="inline-flex rounded-lg border border-surface-700 bg-surface-900 p-0.5" role="tablist" aria-label="View">
         @for (v of views; track v.id) {
           <button class="rounded-md px-3 py-1.5 text-xs font-medium transition pointer-coarse:min-h-9 max-[359px]:px-2"
@@ -292,7 +302,10 @@ function readStored(): Stored {
     <!-- Agenda -->
     @if (view() === 'agenda') {
       @if (agendaDays().length === 0 && !loading()) {
-        <div class="card px-6 py-14 text-center text-sm text-slate-400">Nothing in {{ rangeLabel() }}{{ hiddenCount() > 0 ? ' with these filters' : '' }}.</div>
+        <div class="card px-6 py-14 text-center text-sm text-slate-400">
+          Nothing {{ owner() === 'all' ? '' : owner() === 'me' ? 'you follow ' : 'they follow ' }}in {{ rangeLabel() }}{{ hiddenCount() > 0 ? ' with these filters' : '' }}.
+          @if (owner() === 'me') { <span class="mt-1 block text-xs text-slate-500">Follow movies and series from their pages to see them here, or switch to Everything.</span> }
+        </div>
       }
       <div class="space-y-4">
         @for (day of agendaDays(); track day) {
@@ -399,6 +412,10 @@ export class CalendarPage {
     this.stored.view ?? (typeof matchMedia !== 'undefined' && matchMedia('(max-width: 639px)').matches ? 'agenda' : 'month'));
   protected readonly anchor = signal(new Date());
   protected readonly filters = signal<CalendarFilters>({ ...DEFAULT_FILTERS, ...this.stored.filters });
+  /** Plain users start on their own titles; staff on the whole library. */
+  protected readonly owner = signal<Owner>(this.stored.owner ?? (this.auth.isStaff() ? 'all' : 'me'));
+  /** Staff: users who follow titles, to view the calendar as them. */
+  protected readonly subscribers = signal<Subscriber[]>([]);
   protected readonly entries = signal<CalendarEntry[]>([]);
   protected readonly loading = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -472,18 +489,26 @@ export class CalendarPage {
   private scrollToToday = true;
 
   constructor() {
-    effect(() => { void this.load(this.range()); });
+    effect(() => { void this.load(this.range(), false, this.owner()); });
+    if (this.auth.isStaff()) {
+      this.api.subscribers().then(users => {
+        this.subscribers.set(users);
+        // A stored user who no longer follows anything (or was removed) falls back to the whole library.
+        const owner = this.owner();
+        if (typeof owner === 'number' && !users.some(u => u.id === owner)) this.owner.set('all');
+      }).catch(() => { /* picker keeps Everything / My titles */ });
+    }
     effect(() => this.persist());
     merge(this.events.movieUpdated, this.events.seriesUpdated, this.events.historyAdded)
       .pipe(debounceTime(1500), takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => void this.load(this.range(), true));
+      .subscribe(() => void this.load(this.range(), true, this.owner()));
   }
 
-  private async load(range: { start: Date; end: Date }, quiet = false) {
+  private async load(range: { start: Date; end: Date }, quiet: boolean, owner: Owner) {
     const id = ++this.requestId;
     if (!quiet) this.loading.set(true);
     try {
-      const entries = await this.api.calendar(toIsoDate(range.start), toIsoDate(range.end));
+      const entries = await this.api.calendar(toIsoDate(range.start), toIsoDate(range.end), owner === 'all' ? null : owner);
       if (id !== this.requestId) return;
       this.entries.set(entries);
       this.error.set(null);
@@ -506,7 +531,7 @@ export class CalendarPage {
   }
 
   private persist() {
-    const value: Stored = { view: this.view(), filters: this.filters(), feed: this.feed };
+    const value: Stored = { view: this.view(), filters: this.filters(), feed: this.feed, owner: this.owner() };
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(value)); } catch { /* storage unavailable */ }
   }
 
@@ -586,7 +611,10 @@ export class CalendarPage {
     }
   }
 
-  protected feedLink(key: string) { return feedUrl(document.baseURI, key, this.feed); }
+  protected feedLink(key: string) {
+    const owner = this.owner();
+    return feedUrl(document.baseURI, key, this.feed, typeof owner === 'number' ? owner : undefined);
+  }
 
   protected closeFeed() {
     this.feedOpen.set(false);

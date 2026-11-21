@@ -52,10 +52,13 @@ public static class RoleAccess
         "/api/v1/subtitles/files",
     ];
 
-    /// <summary>Path segments under movies/series that trigger indexer searches or touch the disk: not for plain users.</summary>
+    /// <summary>
+    /// Path segments under movies/series that trigger indexer searches or touch the disk: not for plain users.
+    /// (<c>lookup</c> only asks TMDB/TheTVDB, so users may search for titles to request.)
+    /// </summary>
     private static readonly HashSet<string> StaffSegments = new(StringComparer.OrdinalIgnoreCase)
     {
-        "import", "releases", "organize", "lookup",
+        "import", "releases", "organize",
     };
 
     /// <summary>
@@ -66,6 +69,12 @@ public static class RoleAccess
 
     private static readonly HashSet<string> RequestStaffSegments = new(StringComparer.OrdinalIgnoreCase) { "approve", "decline" };
 
+    /// <summary>
+    /// Subscriptions: every user follows and unfollows titles for themselves (the endpoints use the caller's id);
+    /// listing which users follow titles is for staff.
+    /// </summary>
+    private const string Subscriptions = "/api/v1/subscriptions";
+
     /// <summary>The least privileged role allowed to make this request.</summary>
     public static UserRole RequiredRole(string method, string path)
     {
@@ -73,6 +82,7 @@ public static class RoleAccess
         if (!Under(path, "/api") && !Under(path, "/hubs")) return UserRole.User;
         if (Everyone.Any(p => Under(path, p))) return UserRole.User;
         if (AdminOnly.Any(p => Under(path, p))) return UserRole.Admin;
+        if (Under(path, Subscriptions)) return Under(path, Subscriptions + "/users") ? UserRole.Manager : UserRole.User;
         if (Under(path, Requests)) return path.Split('/').Any(RequestStaffSegments.Contains) ? UserRole.Manager : UserRole.User;
 
         var read = HttpMethods.IsGet(method) || HttpMethods.IsHead(method);
