@@ -39,6 +39,10 @@ import { ROLE_INFO } from './users';
           <button class="btn-primary" type="submit" [disabled]="saving() || !currentPassword || !username.trim()">Save</button>
         </div>
       </form>
+      <div class="flex flex-wrap items-center gap-3 border-t border-surface-700 pt-4">
+        <p class="hint flex-1">Lost a device or signed in somewhere you shouldn't have? Sign out everywhere except this browser.</p>
+        <button class="btn-secondary" type="button" (click)="revokeOthers()" [disabled]="revoking()">Sign out other sessions</button>
+      </div>
     </section>
   `,
 })
@@ -48,6 +52,7 @@ export class AccountSettings {
   private readonly toasts = inject(Toasts);
   protected readonly roleInfo = ROLE_INFO;
   protected readonly saving = signal(false);
+  protected readonly revoking = signal(false);
 
   protected username = this.auth.status()?.username ?? '';
   protected currentPassword = '';
@@ -70,6 +75,18 @@ export class AccountSettings {
       this.toasts.error(errorMessage(e));
     } finally {
       this.saving.set(false);
+    }
+  }
+
+  async revokeOthers() {
+    this.revoking.set(true);
+    try {
+      await this.api.revokeOtherSessions();
+      this.toasts.success('Signed out of every other session');
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+    } finally {
+      this.revoking.set(false);
     }
   }
 }

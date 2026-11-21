@@ -146,9 +146,25 @@ public static class AuthEndpoints
 
             await db.SaveChangesAsync(ct);
             sessions.Invalidate(user.Id);
-            await SignInAsync(http, user);
+            await SignInAsync(http, user); // the current password was just checked: a fresh sign-in
             return Results.NoContent();
         }).WithTags("Auth").RequireRateLimiting(RateLimitPolicy);
+
+        // "Sign out everywhere else": rotating the stamp invalidates every cookie of this user; this one is re-issued.
+        app.MapPost("/api/v1/auth/sessions/revoke", async (HttpContext http, KrakarrDbContext db, UserSessions sessions,
+            ILoggerFactory loggers, CancellationToken ct) =>
+        {
+            var id = http.User.GetUserId();
+            var user = id is null ? null : await db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
+            if (user is null) return Results.NotFound();
+
+            user.SecurityStamp = User.NewSecurityStamp();
+            await db.SaveChangesAsync(ct);
+            sessions.Invalidate(user.Id);
+            await SignInAsync(http, user, http.User.GetSignedInAt()); // not a fresh sign-in: keeps the absolute lifetime
+            loggers.CreateLogger(LogCategory).LogInformation("{Username} signed out their other sessions from {Ip}", user.Username, ClientIp(http));
+            return Results.NoContent();
+        }).WithTags("Auth");
 
         return app;
     }
@@ -177,7 +193,9 @@ public static class AuthEndpoints
     internal static IResult UsernameTaken() =>
         Results.ValidationProblem(new Dictionary<string, string[]> { ["username"] = ["That username is already taken"] });
 
-    private static Task SignInAsync(HttpContext http, User user) =>
-        http.SignInAsync(AuthConstants.CookieScheme, UserClaims.Create(user.Id, user.Username, user.Role, user.SecurityStamp),
+    private static Task SignInAsync(HttpContext http, User user, DateTimeOffset? signedInAt = null) =>
+        http.SignInAsync(AuthConstants.CookieScheme,
+            UserClaims.Create(user.Id, user.Username, user.Role, user.SecurityStamp,
+                signedInAt ?? http.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow()),
             new AuthenticationProperties { IsPersistent = true });
 }

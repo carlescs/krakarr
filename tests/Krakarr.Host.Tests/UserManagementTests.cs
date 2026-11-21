@@ -205,4 +205,20 @@ public sealed class UserManagementTests(UsersFactory factory) : IClassFixture<Us
         Assert.Equal(HttpStatusCode.Unauthorized, await GetStatus(other, "/api/v1/movies"));
         Assert.Equal("User", (await client.GetFromJsonAsync<JsonElement>("/api/v1/auth/status", Ct)).GetProperty("role").GetString());
     }
+
+    [Fact]
+    public async Task Signing_out_other_sessions_keeps_only_the_current_one()
+    {
+        var admin = await AdminAsync();
+        await CreateUserAsync(admin, "lost-phone", "User");
+        var current = await LoginAsync("lost-phone");
+        var stolen = await LoginAsync("lost-phone");
+        Assert.Equal(HttpStatusCode.OK, await GetStatus(stolen, "/api/v1/movies"));
+
+        Assert.Equal(HttpStatusCode.NoContent, (await current.PostAsync("/api/v1/auth/sessions/revoke", null, Ct)).StatusCode);
+
+        Assert.Equal(HttpStatusCode.OK, await GetStatus(current, "/api/v1/movies"));
+        Assert.Equal(HttpStatusCode.Unauthorized, await GetStatus(stolen, "/api/v1/movies"));
+        Assert.Equal(HttpStatusCode.Unauthorized, (await NewClient().PostAsync("/api/v1/auth/sessions/revoke", null, Ct)).StatusCode);
+    }
 }
