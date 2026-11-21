@@ -260,6 +260,10 @@ Anyone can **Follow** a movie or series that is already in the library from its 
 *My titles* in the calendar and the *Following* filter of the movie and series lists. Admins and managers see who
 follows a title next to the button. Removing a title (or a user) removes its follows.
 
+- Whoever adds a title follows it, and requesters follow their titles once they are in the library.
+- The notification bell tells you when monitored titles you follow are released (movies out on digital or physical
+  media) or air (episodes), today or yesterday.
+
 ### Security notes
 
 - **Root folders are the boundary.** Movie and series folders must be directly inside a configured root folder, and

@@ -8,8 +8,9 @@ namespace Krakarr.Host.Endpoints;
 
 /// <summary>
 /// Monitored movies released (out on digital or physical media) and monitored episodes that aired today or yesterday,
-/// using the same dates as the calendar (the configured release region's date when it has one). Visible to every user,
-/// like the calendar. Notifications are computed from the date, so they go away on their own after the window.
+/// using the same dates as the calendar (the configured release region's date when it has one). Each user only hears
+/// about titles they follow (<see cref="MediaSubscription"/>). Notifications are computed from the date, so they go away
+/// on their own after the window.
 /// </summary>
 public sealed class ReleaseNotificationSource(KrakarrDbContext db, ISettingsService settings, TimeProvider time) : INotificationSource
 {
@@ -29,22 +30,25 @@ public sealed class ReleaseNotificationSource(KrakarrDbContext db, ISettingsServ
 
     public async Task<IReadOnlyList<Notification>> GetAsync(NotificationContext context, CancellationToken ct = default)
     {
+        // The API key has no user, so it follows nothing.
+        if (context.UserId is not { } userId) return [];
         var now = time.GetLocalNow();
         var today = DateOnly.FromDateTime(now.DateTime);
         var start = today.AddDays(1 - WindowDays);
         var result = new List<Notification>(2);
-        if (await MoviesAsync(start, today, now.Offset, ct) is { } movies) result.Add(movies);
-        if (await EpisodesAsync(start, today, now.Offset, ct) is { } episodes) result.Add(episodes);
+        if (await MoviesAsync(userId, start, today, now.Offset, ct) is { } movies) result.Add(movies);
+        if (await EpisodesAsync(userId, start, today, now.Offset, ct) is { } episodes) result.Add(episodes);
         return result;
     }
 
-    private async Task<Notification?> MoviesAsync(DateOnly start, DateOnly today, TimeSpan offset, CancellationToken ct)
+    private async Task<Notification?> MoviesAsync(int userId, DateOnly start, DateOnly today, TimeSpan offset, CancellationToken ct)
     {
         var region = MovieReleases.NormalizeRegion((await settings.GetAsync<MetadataSettings>(ct)).ReleaseRegion);
         // The earliest-date columns bound the query: a region's date is never earlier than the earliest worldwide one.
         var from = region is null ? start : start.AddDays(-RegionLagDays);
         var rows = await db.Movies.AsNoTracking()
             .Where(m => m.Monitored
+                && db.MediaSubscriptions.Any(x => x.UserId == userId && x.MovieId == m.Id)
                 && ((m.DigitalRelease >= from && m.DigitalRelease <= today) || (m.PhysicalRelease >= from && m.PhysicalRelease <= today)))
             .Select(m => new { m.Title, m.ReleaseDates })
             .ToListAsync(ct);
@@ -70,13 +74,14 @@ public sealed class ReleaseNotificationSource(KrakarrDbContext db, ISettingsServ
             Summarize(names, n), "/calendar", n, Date: AtMidnight(released.Max(r => r.Date), offset));
     }
 
-    private async Task<Notification?> EpisodesAsync(DateOnly start, DateOnly today, TimeSpan offset, CancellationToken ct)
+    private async Task<Notification?> EpisodesAsync(int userId, DateOnly start, DateOnly today, TimeSpan offset, CancellationToken ct)
     {
         // One row per series, aggregated in SQL.
         var perSeries = await (
             from e in db.Episodes.AsNoTracking()
             join s in db.Series.AsNoTracking() on e.SeriesId equals s.Id
             where e.AirDate >= start && e.AirDate <= today && e.Monitored && s.Monitored
+                && db.MediaSubscriptions.Any(x => x.UserId == userId && x.SeriesId == s.Id)
             group e by new { s.Id, s.Title } into g
             select new { g.Key.Title, Count = g.Count(), Latest = g.Max(e => e.AirDate) })
             .ToListAsync(ct);

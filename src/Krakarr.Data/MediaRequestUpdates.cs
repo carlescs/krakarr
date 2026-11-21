@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Security.Claims;
 using Krakarr.Core.Domain;
 using Microsoft.EntityFrameworkCore;
 
@@ -41,6 +43,15 @@ public static class MediaSubscriptions
         type == MediaType.Movie
             ? db.MediaSubscriptions.Where(s => s.MovieId == libraryId)
             : db.MediaSubscriptions.Where(s => s.SeriesId == libraryId);
+
+    /// <summary>
+    /// Makes whoever added a title follow it. Does nothing for the API key, which is no user (the user id is the
+    /// sign-in's <see cref="ClaimTypes.NameIdentifier"/> claim).
+    /// </summary>
+    public static Task<int> FollowAsAdderAsync(KrakarrDbContext db, ClaimsPrincipal adder, MediaType type, int libraryId, CancellationToken ct = default) =>
+        int.TryParse(adder.FindFirstValue(ClaimTypes.NameIdentifier), CultureInfo.InvariantCulture, out var userId)
+            ? SubscribeAsync(db, [userId], type, libraryId, ct)
+            : Task.FromResult(0);
 
     /// <summary>Subscribes users to a library title, skipping those already subscribed. Returns how many were added.</summary>
     public static async Task<int> SubscribeAsync(KrakarrDbContext db, IReadOnlyCollection<int> userIds, MediaType type, int libraryId, CancellationToken ct = default)

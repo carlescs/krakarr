@@ -188,6 +188,13 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
         var followed = subscriptions!.Where(s => s.GetProperty("mediaType").GetString() == "Movie").Select(s => s.GetProperty("libraryId").GetInt32()).ToArray();
         Assert.Contains(movieId, followed);
         Assert.Equal(2, followed.Length);
+
+        // Whoever adds a title follows it; approving someone else's request doesn't.
+        var adminFollows = (await admin.GetFromJsonAsync<JsonElement[]>("/api/v1/subscriptions", Ct))!
+            .Select(x => x.GetProperty("libraryId").GetInt32()).ToArray();
+        var addedId = (await added.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("id").GetInt32();
+        Assert.Contains(addedId, adminFollows);
+        Assert.DoesNotContain(movieId, adminFollows);
     }
 
     [Fact]
