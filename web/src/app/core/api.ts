@@ -206,7 +206,12 @@ export class Api {
   }
   subtitleFiles(filter: { movieId?: number; seriesId?: number }) { return this.get<SubtitleFile[]>('subtitles/files', filter); }
   wantedSubtitles() { return this.get<WantedSubtitle[]>('subtitles/wanted'); }
-  searchSubtitles(ref: SubtitleFileRef = {}) { return this.post<CommandInfo>('subtitles/search', { movieFileId: ref.movieFileId ?? null, episodeFileId: ref.episodeFileId ?? null }); }
+  /** Searches one file, a whole movie or series (every wanted language, upgrading existing ones), or all wanted files when empty. */
+  searchSubtitles(ref: SubtitleFileRef & { movieId?: number; seriesId?: number } = {}) {
+    return this.post<CommandInfo>('subtitles/search', {
+      movieFileId: ref.movieFileId ?? null, episodeFileId: ref.episodeFileId ?? null, movieId: ref.movieId ?? null, seriesId: ref.seriesId ?? null,
+    });
+  }
   subtitleCandidates(ref: SubtitleFileRef, language?: string) {
     return this.get<{ label: string; results: ScoredSubtitle[]; errors: string[] }>('subtitles/candidates', { ...ref, language });
   }

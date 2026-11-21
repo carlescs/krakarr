@@ -63,6 +63,7 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
               <p class="mt-3 break-all font-mono text-xs text-slate-500">{{ s.path }}</p>
               <div class="mt-5 flex flex-wrap gap-2">
                 <button class="btn-primary" (click)="searchMissing()">Search missing</button>
+                @if (s.episodeFileCount > 0) { <button class="btn-secondary" (click)="searchSubtitles()">Search subtitles</button> }
                 <button class="btn-secondary" (click)="refresh()">Refresh</button>
                 <button class="btn-secondary" (click)="openOrganize()" title="Rename files and folders to match the naming settings">Organize</button>
                 <button class="btn-secondary" (click)="toggleSeries()">{{ s.monitored ? 'Unmonitor' : 'Monitor' }}</button>
@@ -517,6 +518,11 @@ export class SeriesDetailPage implements OnInit {
   async searchMissing() {
     await this.api.searchSeries(this.id());
     this.toasts.show('Searching for missing episodes…');
+  }
+
+  async searchSubtitles() {
+    await this.api.searchSubtitles({ seriesId: this.id() });
+    this.toasts.show('Searching subtitles for every episode file…');
   }
 
   async searchSeason(n: number) {

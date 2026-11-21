@@ -61,6 +61,7 @@ import { SubtitleManager } from '../../shared/subtitle-manager';
               <div class="mt-5 flex flex-wrap gap-2">
                 <button class="btn-primary" (click)="autoSearch()">Automatic search</button>
                 <button class="btn-secondary" (click)="interactiveSearch()">Interactive search</button>
+                @if (m.hasFile) { <button class="btn-secondary" (click)="searchSubtitles()">Search subtitles</button> }
                 <button class="btn-secondary" (click)="toggleMonitored()">{{ m.monitored ? 'Unmonitor' : 'Monitor' }}</button>
                 <button class="btn-ghost" (click)="editing.set(true)">Edit</button>
                 <button class="btn-ghost text-rose-300" (click)="confirmDelete.set(true)">Delete</button>
@@ -369,6 +370,11 @@ export class MovieDetailPage implements OnInit {
   async autoSearch() {
     await this.api.searchMovie(this.id());
     this.toasts.show('Search started — results will appear in History');
+  }
+
+  async searchSubtitles() {
+    await this.api.searchSubtitles({ movieId: this.id() });
+    this.toasts.show('Searching subtitles — new ones will appear under File');
   }
 
   async interactiveSearch() {
