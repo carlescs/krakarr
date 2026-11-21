@@ -395,6 +395,11 @@ public class MediaRequest
     public DateTimeOffset? ProcessedAt { get; set; }
     /// <summary>Optional reason given when declining.</summary>
     public string? DeclineReason { get; set; }
+    /// <summary>
+    /// The request was approved or declined and the requester hasn't seen the result yet: it shows in their
+    /// notification bell until they open the Requests page.
+    /// </summary>
+    public bool ResultUnseen { get; set; }
 }
 
 /// <summary>

@@ -51,7 +51,16 @@ export class RequestsPage implements OnInit {
 
   ngOnInit() {
     this.load();
-    this.events.requestsUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.load());
+    this.markSeen();
+    this.events.requestsUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      this.load();
+      this.markSeen();
+    });
+  }
+
+  /** Approvals and declines show up right here, so they no longer need a notification. */
+  private markSeen() {
+    this.api.markRequestsSeen().catch(() => undefined);
   }
 
   protected setFilter(f: Filter) {

@@ -48,6 +48,11 @@ describe('RequestsPage', () => {
     expect(text(el)).toContain('No requests.');
   });
 
+  it('marks the results of the user\'s requests as seen', async () => {
+    const { api } = await render('User', [request({ status: 'Approved' })], { markRequestsSeen: async () => undefined });
+    expect(api.markRequestsSeen).toHaveBeenCalled();
+  });
+
   it('lets users withdraw their own pending requests', async () => {
     vi.stubGlobal('confirm', () => true);
     const { api, fixture, el } = await render('User', [request({ id: 5 })], { deleteRequest: async () => undefined });

@@ -140,6 +140,17 @@ public static class RequestEndpoints
             return Results.Created($"/api/v1/requests/{request.Id}", dto);
         });
 
+        // The caller has seen how their requests were handled (the Requests page calls this), so the bell stops
+        // reporting approvals and declines.
+        group.MapPost("/seen", async (HttpContext http, KrakarrDbContext db, IEventHub events, CancellationToken ct) =>
+        {
+            if (http.User.GetUserId() is not { } userId) return Results.NoContent();
+            var changed = await db.MediaRequests.Where(r => r.RequestedById == userId && r.ResultUnseen)
+                .ExecuteUpdateAsync(s => s.SetProperty(r => r.ResultUnseen, false), ct);
+            if (changed > 0) await events.PublishAsync(EventNames.NotificationsUpdated, null, ct);
+            return Results.NoContent();
+        });
+
         // Users withdraw their own pending requests; staff remove any request.
         group.MapDelete("/{id:int}", async (int id, HttpContext http, KrakarrDbContext db, IEventHub events, CancellationToken ct) =>
         {
@@ -207,6 +218,7 @@ public static class RequestEndpoints
             request.ProcessedById = http.User.GetUserId();
             request.ProcessedAt = time.GetUtcNow();
             request.DeclineReason = null;
+            request.ResultUnseen = request.RequestedById != request.ProcessedById;
             await db.SaveChangesAsync(ct);
             await events.PublishAsync(EventNames.RequestsUpdated, null, ct);
             return Results.Ok(await DtoAsync(db, request.Id, Today(time), ct));
@@ -223,6 +235,7 @@ public static class RequestEndpoints
             request.ProcessedById = http.User.GetUserId();
             request.ProcessedAt = time.GetUtcNow();
             request.DeclineReason = Truncate(string.IsNullOrWhiteSpace(req?.Reason) ? null : req.Reason.Trim(), 500);
+            request.ResultUnseen = request.RequestedById != request.ProcessedById;
             await db.SaveChangesAsync(ct);
             await events.PublishAsync(EventNames.RequestsUpdated, null, ct);
             return Results.Ok(await DtoAsync(db, request.Id, Today(time), ct));
