@@ -6,6 +6,7 @@ import { Auth } from '../../core/auth';
 import { DiscoverItem, MediaRequest, MovieLookup } from '../../core/models';
 import { RequestModal } from '../../shared/request-modal';
 import { AddMovieModal } from '../../shared/add-movie-modal';
+import { detailRoute } from '../../shared/media-card';
 import { Poster } from '../../shared/poster';
 
 @Component({
@@ -26,15 +27,18 @@ import { Poster } from '../../shared/poster';
 
     <div class="space-y-3">
       @for (r of results(); track r.tmdbId) {
+        @let detail = detailRoute({ kind: 'movie', item: r });
         <div class="card flex gap-3 p-3 sm:gap-4 sm:p-4">
-          <kr-poster class="w-20 shrink-0 sm:w-24" [url]="r.posterUrl" [title]="r.title" />
+          @if (detail) {
+            <a [routerLink]="detail" class="w-20 shrink-0 sm:w-24" [attr.aria-label]="r.title"><kr-poster [url]="r.posterUrl" [title]="r.title" /></a>
+          } @else {
+            <kr-poster class="w-20 shrink-0 sm:w-24" [url]="r.posterUrl" [title]="r.title" />
+          }
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-baseline gap-x-2">
-              @if (r.tmdbId) {
-                <a [routerLink]="['/movies/tmdb', r.tmdbId]" class="text-base font-semibold text-white hover:text-accent-300 sm:text-lg">{{ r.title }}</a>
-              } @else {
-                <h2 class="text-base font-semibold text-white sm:text-lg">{{ r.title }}</h2>
-              }
+              <h2 class="text-base font-semibold text-white sm:text-lg">
+                @if (detail) { <a [routerLink]="detail" class="hover:text-accent-300">{{ r.title }}</a> } @else { {{ r.title }} }
+              </h2>
               <span class="text-slate-400">{{ r.year || '' }}</span>
             </div>
             @if (r.originalTitle && r.originalTitle !== r.title) {
@@ -68,6 +72,7 @@ import { Poster } from '../../shared/poster';
 export class AddMoviePage {
   private readonly api = inject(Api);
   protected readonly router = inject(Router);
+  protected readonly detailRoute = detailRoute;
 
   protected term = '';
   protected readonly searching = signal(false);
