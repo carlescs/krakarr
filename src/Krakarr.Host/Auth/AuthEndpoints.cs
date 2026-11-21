@@ -1,4 +1,5 @@
 using Krakarr.Core.Domain;
+using Krakarr.Core.Telemetry;
 using Krakarr.Data;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
@@ -82,6 +83,7 @@ public static class AuthEndpoints
                 var seconds = (int)Math.Ceiling(wait.TotalSeconds);
                 http.Response.Headers.RetryAfter = seconds.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 logger.LogWarning("Rejected login for locked username {Username} from {Ip}", username, ClientIp(http));
+                KrakarrTelemetry.Logins.Add(1, new KeyValuePair<string, object?>(KrakarrTelemetry.OutcomeTag, "locked"));
                 return Results.Problem($"Too many failed login attempts. Try again in {seconds} seconds.", statusCode: StatusCodes.Status429TooManyRequests);
             }
 
@@ -101,6 +103,7 @@ public static class AuthEndpoints
             {
                 throttle.RecordFailure(username);
                 logger.LogWarning("Failed login for username {Username} from {Ip}", username, ClientIp(http));
+                KrakarrTelemetry.Logins.Add(1, new KeyValuePair<string, object?>(KrakarrTelemetry.OutcomeTag, KrakarrTelemetry.Failure));
                 return Results.Problem("Invalid username or password", statusCode: StatusCodes.Status401Unauthorized);
             }
 
@@ -112,6 +115,7 @@ public static class AuthEndpoints
             }
 
             await SignInAsync(http, user);
+            KrakarrTelemetry.Logins.Add(1, new KeyValuePair<string, object?>(KrakarrTelemetry.OutcomeTag, KrakarrTelemetry.Success));
             return Results.NoContent();
         }).RequireRateLimiting(RateLimitPolicy);
 

@@ -1,6 +1,7 @@
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Events;
+using Krakarr.Core.Telemetry;
 using Krakarr.Data;
 using Krakarr.Media.Files;
 using Microsoft.EntityFrameworkCore;
@@ -191,6 +192,24 @@ public sealed class SubtitleService(
     /// </summary>
     public async Task<string> SearchMissingAsync(SubtitleTarget target, CancellationToken ct = default, bool upgrade = false)
     {
+        using var activity = KrakarrTelemetry.ActivitySource.StartActivity("subtitle search");
+        activity?.SetTag("krakarr.subtitle.target", target.Label);
+        activity?.SetTag("krakarr.subtitle.upgrade", upgrade);
+        try
+        {
+            var result = await SearchMissingCoreAsync(target, upgrade, ct);
+            activity?.SetTag("krakarr.subtitle.result", result);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            activity.RecordException(ex);
+            throw;
+        }
+    }
+
+    private async Task<string> SearchMissingCoreAsync(SubtitleTarget target, bool upgrade, CancellationToken ct)
+    {
         var s = await settings.GetAsync<SubtitleSettings>(ct);
         await SyncDiskAsync(target, ct);
         var missing = await MissingLanguagesAsync(target, s, ct);
@@ -253,6 +272,10 @@ public sealed class SubtitleService(
         if (!File.Exists(target.VideoPath))
             throw new SubtitleProviderException($"Video file not found: {target.VideoPath}");
 
+        using var activity = KrakarrTelemetry.ActivitySource.StartActivity("subtitle download");
+        activity?.SetTag("krakarr.subtitle.provider", candidate.Provider);
+        activity?.SetTag("krakarr.subtitle.language", candidate.Language);
+        activity?.SetTag("krakarr.subtitle.score", score);
         var content = await provider.DownloadAsync(candidate, s, ct);
         if (content.Data.Length == 0) throw new SubtitleProviderException("Downloaded subtitle is empty");
 

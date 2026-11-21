@@ -34,6 +34,22 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
     public DbSet<MediaRequest> MediaRequests => Set<MediaRequest>();
     public DbSet<MediaSubscription> MediaSubscriptions => Set<MediaSubscription>();
 
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        var telemetry = ChangeTelemetry.Collect(this);
+        var result = base.SaveChanges(acceptAllChangesOnSuccess);
+        ChangeTelemetry.Record(telemetry);
+        return result;
+    }
+
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        var telemetry = ChangeTelemetry.Collect(this);
+        var result = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        ChangeTelemetry.Record(telemetry);
+        return result;
+    }
+
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         if (Database.ProviderName == SqliteProviderName)

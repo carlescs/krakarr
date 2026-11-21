@@ -187,6 +187,35 @@ Nothing is moved or renamed.
 - Downloaded movies and series then show an **Open in Jellyfin** button, for every user. The title is found on Jellyfin by
   its TMDB, TheTVDB or IMDb id (falling back to name and year), so the button appears once Jellyfin has scanned it.
 
+### Telemetry (OpenTelemetry)
+
+Optional, and off by default. **Settings → Telemetry** exports traces, metrics and logs over OTLP (gRPC on 4317 or
+HTTP/protobuf on 4318) to an OpenTelemetry Collector or any compatible backend: Grafana Alloy/Tempo/Mimir/Loki, Jaeger,
+SigNoz, Aspire Dashboard and so on. Changes apply right away, without a restart, and an empty endpoint falls back to
+`OTEL_EXPORTER_OTLP_ENDPOINT`. Headers (for example `Authorization=Bearer …`) are stored like a password.
+
+- **Traces:** API requests (tagged with the user and role), indexer searches with one span per indexer, grabs, imports,
+  movie, series and subtitle searches, scheduled tasks, queued commands (linked to the request that queued them) and
+  outgoing HTTP calls made by any of these. Query strings are redacted, so API keys in indexer URLs are not exported.
+- **Metrics:** HTTP server and client rates and latency, .NET runtime and EF Core, plus Krakarr's own:
+
+  | Metric | What it measures |
+  | --- | --- |
+  | `krakarr.library.movies`, `.series`, `.episodes` | Library totals by state (downloaded, missing, unaired, unmonitored) |
+  | `krakarr.library.size`, `krakarr.library.subtitles` | Media bytes per media type, subtitle files |
+  | `krakarr.library.items.added` / `.removed` | Movies and series added or removed |
+  | `krakarr.history.events` | Grabbed, imported, download failed, file deleted, subtitle downloaded |
+  | `krakarr.downloads.torrents`, `.rate`, `.remaining`, `.pending_import` | Download client state, throughput and backlog |
+  | `krakarr.downloads.grabs`, `.grabbed.size` | Releases sent to the client, by indexer and outcome |
+  | `krakarr.indexer.queries`, `.query.duration`, `.releases` | Per-indexer query count, latency, errors and results |
+  | `krakarr.task.duration`, `krakarr.command.duration` | Scheduled task and command runs, by outcome |
+  | `krakarr.media_requests.created`, `.pending`, `krakarr.auth.logins` | Requests and sign-ins |
+
+- **Logs:** the application log, filtered by `Logging:LogLevel` and linked to the active trace.
+
+Library totals come from a few aggregate queries every few minutes (configurable), and only while metrics are exported.
+With telemetry off, nothing listens to the instrumentation, so it costs next to nothing.
+
 ### Using an existing qBittorrent instead of the built-in client
 
 *Settings → Download client → qBittorrent* switches Krakarr from its built-in engine to an external qBittorrent

@@ -27,7 +27,7 @@ describe('SettingsPage', () => {
     const el = fixture.nativeElement as HTMLElement;
     expect(text(el, 'h1')).toBe('Settings');
     expect([...el.querySelectorAll('h1 + div button')].map(b => b.textContent)).toEqual([
-      'Media management', 'Quality profiles', 'Download client', 'Subtitles', 'Metadata', 'Jellyfin', 'Tasks', 'Users', 'General', 'Account',
+      'Media management', 'Quality profiles', 'Download client', 'Subtitles', 'Metadata', 'Jellyfin', 'Telemetry', 'Tasks', 'Users', 'General', 'Account',
     ]);
     expect(api.settings).toHaveBeenCalledWith('media');
     expect(api.settings).toHaveBeenCalledWith('general');
@@ -61,5 +61,42 @@ describe('SettingsPage', () => {
     TestBed.inject(Events).taskUpdated.next(task({ isRunning: true }));
     await settle(fixture);
     expect(text(el, 'tbody')).toContain('Running…');
+  });
+
+  it('saves the telemetry settings and shows the export status', async () => {
+    const settings = {
+      enabled: false, endpoint: 'http://otel:4317', protocol: 'Grpc', headers: null, serviceName: 'krakarr', resourceAttributes: null,
+      exportTraces: true, exportMetrics: true, exportLogs: false, traceSampleRatio: 1, metricExportIntervalSeconds: 60, libraryStatsIntervalMinutes: 5,
+    };
+    let status = { active: false, signals: [] as string[], endpoint: null as string | null, protocol: null as string | null, error: null };
+    const api = setupTest({
+      api: mockApi({
+        settings: async (section: string) => (section === 'telemetry' ? { ...settings } : section === 'languages' ? { preferred: [] } : {}),
+        rootFolders: async () => [], qualityProfiles: async () => [], qualities: async () => [], systemStatus: async () => ({}),
+        telemetryStatus: async () => status,
+        saveSettings: async (_: string, value: unknown) => value,
+      }),
+    });
+    const fixture = TestBed.createComponent(SettingsPage);
+    fixture.componentInstance.telemetryStatusDelayMs = 0;
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    button(el, 'Telemetry').click();
+    await settle(fixture);
+    expect(text(el)).toContain('Telemetry is off');
+
+    const protocol = el.querySelector('select') as HTMLSelectElement;
+    protocol.value = 'HttpProtobuf';
+    protocol.dispatchEvent(new Event('change'));
+    const enabled = [...el.querySelectorAll('label')].find(l => l.textContent?.includes('Export telemetry'))!.querySelector('input')!;
+    enabled.click();
+    await settle(fixture);
+
+    status = { active: true, signals: ['traces', 'metrics'], endpoint: 'http://otel:4318', protocol: 'HttpProtobuf', error: null };
+    button(el, 'Save').click();
+    await settle(fixture);
+    await settle(fixture);
+    expect(api.saveSettings).toHaveBeenCalledWith('telemetry', expect.objectContaining({ enabled: true, protocol: 'HttpProtobuf', endpoint: 'http://otel:4318' }));
+    expect(text(el)).toContain('Exporting traces, metrics to http://otel:4318 (HTTP)');
   });
 });

@@ -52,6 +52,16 @@ public static class SettingsEndpoints
                 : !IsHttpUrl(s.PublicUrl) ? "Jellyfin public URL must be an absolute http(s) URL"
                 : null);
 
+        MapSection<TelemetrySettings>(settings, "telemetry",
+            merge: (current, incoming) => incoming with
+            {
+                Headers = incoming.Headers == TelemetrySettings.HeadersMask ? current.Headers : incoming.Headers,
+                Endpoint = string.IsNullOrWhiteSpace(incoming.Endpoint) ? null : incoming.Endpoint.Trim(),
+                ServiceName = incoming.ServiceName?.Trim() ?? string.Empty,
+            },
+            present: s => string.IsNullOrEmpty(s.Headers) ? s : s with { Headers = TelemetrySettings.HeadersMask },
+            validate: s => s.Validate());
+
         MapSection<LanguageSettings>(settings, "languages",
             merge: (_, incoming) => incoming with { Preferred = MediaLanguages.Clean(incoming.Preferred) });
 

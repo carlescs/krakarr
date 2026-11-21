@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using Krakarr.Core.Domain;
+using Krakarr.Core.Telemetry;
 using Krakarr.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -30,20 +32,46 @@ public sealed class IndexerSearchService(KrakarrDbContext db, ITorznabClient cli
             query = query.Where(i => indexerIds.Contains(i.Id));
         }
 
+        var kind = criteria.Rss ? "rss" : criteria.Type.ToString().ToLowerInvariant();
+        using var activity = KrakarrTelemetry.ActivitySource.StartActivity($"indexer search {kind}");
+        if (activity is not null)
+        {
+            activity.SetTag(KrakarrTelemetry.SearchKindTag, kind);
+            activity.SetTag("krakarr.search.query", criteria.Query);
+            activity.SetTag("krakarr.search.imdb_id", criteria.ImdbId);
+            activity.SetTag("krakarr.search.tmdb_id", criteria.TmdbId);
+            activity.SetTag("krakarr.search.tvdb_id", criteria.TvdbId);
+            activity.SetTag("krakarr.search.season", criteria.Season);
+            activity.SetTag("krakarr.search.episode", criteria.Episode);
+        }
+
         var indexers = await query.ToListAsync(ct);
+        activity?.SetTag("krakarr.search.indexers", indexers.Count);
         var errors = new List<IndexerError>();
 
         var tasks = indexers.Select(async indexer =>
         {
+            using var queryActivity = KrakarrTelemetry.ActivitySource.StartActivity("indexer query", ActivityKind.Client);
+            queryActivity?.SetTag(KrakarrTelemetry.IndexerTag, indexer.Name);
+            queryActivity?.SetTag(KrakarrTelemetry.SearchKindTag, kind);
+            var started = Stopwatch.GetTimestamp();
+            var outcome = KrakarrTelemetry.Success;
             try
             {
                 using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeout.CancelAfter(TimeSpan.FromSeconds(60));
                 var releases = await client.SearchAsync(indexer, criteria, timeout.Token);
-                return releases.Where(r => r.Seeders is null || r.Seeders >= indexer.MinimumSeeders).ToList();
+                var kept = releases.Where(r => r.Seeders is null || r.Seeders >= indexer.MinimumSeeders).ToList();
+                queryActivity?.SetTag("krakarr.indexer.releases", kept.Count);
+                KrakarrTelemetry.IndexerReleases.Add(kept.Count,
+                    new KeyValuePair<string, object?>(KrakarrTelemetry.IndexerTag, indexer.Name),
+                    new KeyValuePair<string, object?>(KrakarrTelemetry.SearchKindTag, kind));
+                return kept;
             }
             catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
             {
+                outcome = KrakarrTelemetry.Failure;
+                queryActivity.RecordException(ex);
                 logger.LogWarning("Search on {Indexer} failed: {Message}", indexer.Name, ex.Message);
                 lock (errors)
                 {
@@ -51,6 +79,17 @@ public sealed class IndexerSearchService(KrakarrDbContext db, ITorznabClient cli
                 }
 
                 return [];
+            }
+            finally
+            {
+                KeyValuePair<string, object?>[] tags =
+                [
+                    new(KrakarrTelemetry.IndexerTag, indexer.Name),
+                    new(KrakarrTelemetry.SearchKindTag, kind),
+                    new(KrakarrTelemetry.OutcomeTag, outcome),
+                ];
+                KrakarrTelemetry.IndexerQueries.Add(1, tags);
+                KrakarrTelemetry.IndexerQueryDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, tags);
             }
         });
 
@@ -62,6 +101,8 @@ public sealed class IndexerSearchService(KrakarrDbContext db, ITorznabClient cli
             .Select(g => g.OrderBy(r => r.IndexerPriority).ThenByDescending(r => r.Seeders ?? 0).First())
             .ToList();
 
+        activity?.SetTag("krakarr.search.releases", deduped.Count);
+        activity?.SetTag("krakarr.search.errors", errors.Count);
         return new IndexerSearchResult(deduped, errors);
     }
 }

@@ -197,3 +197,94 @@ public sealed record JellyfinSettings : ISettingsSection
     [System.Text.Json.Serialization.JsonIgnore]
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(ApiKey);
 }
+
+/// <summary>Transport of the OTLP exporter.</summary>
+public enum OtlpProtocol
+{
+    /// <summary>OTLP over gRPC, usually port 4317.</summary>
+    Grpc = 0,
+    /// <summary>OTLP over HTTP with protobuf payloads, usually port 4318.</summary>
+    HttpProtobuf = 1,
+}
+
+/// <summary>
+/// Optional OpenTelemetry export (traces, metrics, logs) to an OTLP endpoint such as the OpenTelemetry Collector,
+/// Grafana Alloy, Jaeger, Tempo, SigNoz or Aspire Dashboard. Changes apply without a restart.
+/// </summary>
+public sealed record TelemetrySettings : ISettingsSection
+{
+    /// <summary>Placeholder returned instead of the stored headers; sending it back keeps the stored value.</summary>
+    public const string HeadersMask = "********";
+    public static string SectionKey => "telemetry";
+
+    public bool Enabled { get; init; }
+    /// <summary>
+    /// OTLP endpoint, e.g. http://otel-collector:4317 (gRPC) or http://otel-collector:4318 (HTTP). For HTTP the
+    /// per-signal paths (/v1/traces, /v1/metrics, /v1/logs) are added. Empty = OTEL_EXPORTER_OTLP_ENDPOINT or the default.
+    /// </summary>
+    public string? Endpoint { get; init; } = "http://localhost:4317";
+    public OtlpProtocol Protocol { get; init; } = OtlpProtocol.Grpc;
+    /// <summary>Extra request headers, e.g. for authentication: <c>Authorization=Bearer abc,X-Scope-OrgID=home</c>.</summary>
+    public string? Headers { get; init; }
+    /// <summary>The <c>service.name</c> resource attribute.</summary>
+    public string ServiceName { get; init; } = "krakarr";
+    /// <summary>Extra resource attributes, e.g. <c>deployment.environment=home,host.name=nas</c>.</summary>
+    public string? ResourceAttributes { get; init; }
+
+    public bool ExportTraces { get; init; } = true;
+    public bool ExportMetrics { get; init; } = true;
+    public bool ExportLogs { get; init; }
+
+    /// <summary>Fraction of traces kept (0-1). Child spans follow their parent's decision.</summary>
+    public double TraceSampleRatio { get; init; } = 1.0;
+    /// <summary>How often metrics are exported.</summary>
+    public int MetricExportIntervalSeconds { get; init; } = 60;
+    /// <summary>How often library totals (movies, series, episodes, sizes) are recounted for the library gauges.</summary>
+    public int LibraryStatsIntervalMinutes { get; init; } = 5;
+
+    /// <summary>Parses <c>key=value,key2=value2</c> (the OTEL_EXPORTER_OTLP_HEADERS / OTEL_RESOURCE_ATTRIBUTES format).</summary>
+    public static IReadOnlyList<KeyValuePair<string, string>> ParsePairs(string? value)
+    {
+        var result = new List<KeyValuePair<string, string>>();
+        if (string.IsNullOrWhiteSpace(value)) return result;
+        foreach (var part in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var eq = part.IndexOf('=');
+            if (eq <= 0) throw new FormatException($"'{part}' is not a key=value pair");
+            result.Add(new(Uri.UnescapeDataString(part[..eq].Trim()), Uri.UnescapeDataString(part[(eq + 1)..].Trim())));
+        }
+
+        return result;
+    }
+
+    /// <summary>A problem with the settings, or null when they are usable.</summary>
+    public string? Validate()
+    {
+        if (!string.IsNullOrWhiteSpace(Endpoint)
+            && (!Uri.TryCreate(Endpoint.Trim(), UriKind.Absolute, out var u) || (u.Scheme != Uri.UriSchemeHttp && u.Scheme != Uri.UriSchemeHttps)))
+            return "Endpoint must be an absolute http(s) URL, e.g. http://otel-collector:4317";
+        if (string.IsNullOrWhiteSpace(ServiceName)) return "Service name is required";
+        if (TraceSampleRatio is < 0 or > 1 || double.IsNaN(TraceSampleRatio)) return "Trace sample ratio must be between 0 and 1";
+        if (MetricExportIntervalSeconds is < 5 or > 3600) return "Metric export interval must be between 5 and 3600 seconds";
+        if (LibraryStatsIntervalMinutes is < 1 or > 1440) return "Library stats interval must be between 1 and 1440 minutes";
+        try
+        {
+            if (Headers != HeadersMask) ParsePairs(Headers);
+        }
+        catch (FormatException ex)
+        {
+            return $"Headers: {ex.Message}";
+        }
+
+        try
+        {
+            ParsePairs(ResourceAttributes);
+        }
+        catch (FormatException ex)
+        {
+            return $"Resource attributes: {ex.Message}";
+        }
+
+        return null;
+    }
+}

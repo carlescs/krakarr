@@ -1,6 +1,7 @@
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Events;
+using Krakarr.Core.Telemetry;
 using Krakarr.Data;
 using Krakarr.Downloads;
 using Krakarr.Indexers;
@@ -154,8 +155,27 @@ public sealed class MovieService(
     /// <summary>Searches and grabs the best approved release. Returns a human readable outcome.</summary>
     public async Task<string> AutoSearchAsync(int movieId, CancellationToken ct = default)
     {
+        using var activity = KrakarrTelemetry.ActivitySource.StartActivity("movie search");
+        activity?.SetTag(KrakarrTelemetry.MediaTypeTag, "movie");
+        activity?.SetTag("krakarr.movie.id", movieId);
+        try
+        {
+            var result = await AutoSearchCoreAsync(movieId, ct);
+            activity?.SetTag("krakarr.search.result", result);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            activity.RecordException(ex);
+            throw;
+        }
+    }
+
+    private async Task<string> AutoSearchCoreAsync(int movieId, CancellationToken ct)
+    {
         var movie = await db.Movies.Include(m => m.QualityProfile).FirstOrDefaultAsync(m => m.Id == movieId, ct)
             ?? throw new KeyNotFoundException($"Movie {movieId} not found");
+        System.Diagnostics.Activity.Current?.SetTag("krakarr.movie.title", movie.Title);
 
         if (await HasActiveDownloadAsync(movie.Id, ct))
         {
