@@ -12,6 +12,7 @@ using Krakarr.Host.Auth;
 using Krakarr.Host.Endpoints;
 using Krakarr.Host.Hosting;
 using Krakarr.Host.Hubs;
+using Krakarr.Host.Integrations;
 using Krakarr.Indexers;
 using Krakarr.Media;
 using Krakarr.Movies;
@@ -82,8 +83,10 @@ builder.Services.AddKrakarrDownloads();
 builder.Services.AddKrakarrMovies();
 builder.Services.AddKrakarrSeries(builder.Configuration);
 builder.Services.AddKrakarrSubtitles();
+builder.Services.AddKrakarrJellyfin();
 builder.Services.AddScoped<CalendarService>();
 builder.Services.AddScoped<Krakarr.Core.Notifications.INotificationSource, RequestNotificationSource>();
+builder.Services.AddScoped<Krakarr.Core.Notifications.INotificationSource, ReleaseNotificationSource>();
 
 // ---- Web: JSON, SignalR, auth --------------------------------------------------------------
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
@@ -207,6 +210,7 @@ app.MapPeopleEndpoints();
 app.MapRequestEndpoints();
 app.MapSubscriptionEndpoints();
 app.MapNotificationEndpoints();
+app.MapJellyfinEndpoints();
 app.MapHub<EventsHub>("/hubs/events");
 app.MapKrakarrSpa(urlBase);
 

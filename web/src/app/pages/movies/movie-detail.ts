@@ -57,6 +57,14 @@ import { SubscribeButton } from '../../shared/subscribe-button';
               </span>
             </div>
             <p class="mt-4 max-w-3xl text-sm leading-relaxed text-slate-300">{{ m.overview }}</p>
+            @if (jellyfinUrl(); as url) {
+              <div class="mt-4">
+                <a class="btn bg-violet-600/90 text-white hover:bg-violet-500" [href]="url" target="_blank" rel="noopener">
+                  <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l11-6.86a1 1 0 0 0 0-1.7l-11-6.86A1 1 0 0 0 8 5.14Z"/></svg>
+                  Open in Jellyfin
+                </a>
+              </div>
+            }
             @if (auth.isStaff()) {
               <p class="mt-3 break-all font-mono text-xs text-slate-500">{{ m.path }}</p>
             }
@@ -64,6 +72,7 @@ import { SubscribeButton } from '../../shared/subscribe-button';
               @if (auth.isStaff()) {
                 <button class="btn-primary" (click)="autoSearch()">Automatic search</button>
                 <button class="btn-secondary" (click)="interactiveSearch()">Interactive search</button>
+                @if (m.hasFile) { <button class="btn-secondary" (click)="searchSubtitles()">Search subtitles</button> }
                 <button class="btn-secondary" (click)="toggleMonitored()">{{ m.monitored ? 'Unmonitor' : 'Monitor' }}</button>
                 <button class="btn-ghost" (click)="editing.set(true)">Edit</button>
                 <button class="btn-ghost text-rose-300" (click)="confirmDelete.set(true)">Delete</button>
@@ -289,6 +298,9 @@ export class MovieDetailPage implements OnInit {
   protected readonly confirmDelete = signal(false);
   protected readonly subtitles = signal<SubtitleFile[]>([]);
   protected readonly subtitlesOpen = signal(false);
+  /** The movie's page on Jellyfin, once it's downloaded and Jellyfin is set up. */
+  protected readonly jellyfinUrl = signal<string | null>(null);
+  private jellyfinCheckedFor: number | null = null;
   protected editMonitored = true;
   protected editProfileId = 0;
   protected editAvailability: MinimumAvailability = 'Released';
@@ -345,6 +357,8 @@ export class MovieDetailPage implements OnInit {
     this.editing.set(false);
     this.confirmDelete.set(false);
     this.subtitlesOpen.set(false);
+    this.jellyfinUrl.set(null);
+    this.jellyfinCheckedFor = null;
     this.deleteFiles = false;
   }
 
@@ -357,9 +371,22 @@ export class MovieDetailPage implements OnInit {
       this.editProfileId = m.qualityProfileId;
       this.editAvailability = m.minimumAvailability;
       this.editLanguages = m.languages ? [...m.languages] : null;
+      this.loadJellyfin(id, m.hasFile);
       await Promise.all([this.loadHistory(), this.loadSubtitles()]);
     } catch (e) {
       this.toasts.error(errorMessage(e));
+    }
+  }
+
+  /** Looks the title up on Jellyfin once per page, as soon as something is downloaded. Failures just hide the button. */
+  private async loadJellyfin(id: number, hasFile: boolean) {
+    if (!hasFile || this.jellyfinCheckedFor === id) return;
+    this.jellyfinCheckedFor = id;
+    try {
+      const link = await this.api.movieJellyfinLink(id);
+      if (id === this.id()) this.jellyfinUrl.set(link?.url ?? null);
+    } catch {
+      // Not configured, unreachable or unknown to Jellyfin: no button.
     }
   }
 
@@ -373,6 +400,11 @@ export class MovieDetailPage implements OnInit {
   async autoSearch() {
     await this.api.searchMovie(this.id());
     this.toasts.show('Search started — results will appear in History');
+  }
+
+  async searchSubtitles() {
+    await this.api.searchSubtitles({ movieId: this.id() });
+    this.toasts.show('Searching subtitles — new ones will appear under File');
   }
 
   async interactiveSearch() {

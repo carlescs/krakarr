@@ -185,28 +185,45 @@ public sealed class SubtitleService(
 
     /// <summary>
     /// Automatic search: downloads the best acceptable subtitle for each missing wanted language.
+    /// With <paramref name="upgrade"/>, languages that already have a subtitle are searched too, and replaced when a
+    /// candidate scores higher than the current one. Subtitles found on disk have no score and are never replaced.
     /// Returns a short summary for the task log.
     /// </summary>
-    public async Task<string> SearchMissingAsync(SubtitleTarget target, CancellationToken ct = default)
+    public async Task<string> SearchMissingAsync(SubtitleTarget target, CancellationToken ct = default, bool upgrade = false)
     {
         var s = await settings.GetAsync<SubtitleSettings>(ct);
         await SyncDiskAsync(target, ct);
         var missing = await MissingLanguagesAsync(target, s, ct);
         await MarkSearchedAsync(target, ct);
-        if (missing.Count == 0) return $"{target.Label}: all subtitles present";
 
-        var (candidates, providerErrors) = await SearchProvidersAsync(target, missing, s, ct);
+        // Score to beat per language already present (upgrade only); disk subtitles are left alone.
+        var current = new Dictionary<string, int>();
+        if (upgrade)
+        {
+            foreach (var group in (await RowsAsync(target, ct)).Where(r => !r.Forced && s.Languages.Contains(r.Language)).GroupBy(r => r.Language))
+            {
+                if (group.Any(r => r.Provider == "disk")) continue;
+                current[group.Key] = group.Max(r => r.Score ?? 0);
+            }
+        }
+
+        var languages = missing.Concat(current.Keys).ToList();
+        if (languages.Count == 0) return $"{target.Label}: all subtitles present";
+
+        var (candidates, providerErrors) = await SearchProvidersAsync(target, languages, s, ct);
         var errors = providerErrors.ToList();
         var downloaded = new List<string>();
-        foreach (var language in missing)
+        var upgraded = new List<string>();
+        foreach (var language in languages)
         {
+            var toBeat = current.TryGetValue(language, out var score) ? score : -1;
             var ranked = SubtitleScorer.Rank(target.Video, candidates.Where(c => c.Language == language), s);
-            foreach (var choice in ranked.Where(r => r.Acceptable).Take(3))
+            foreach (var choice in ranked.Where(r => r.Acceptable && r.Score > toBeat).Take(3))
             {
                 try
                 {
                     await DownloadAsync(target, choice.Candidate, choice.Score, s, ct);
-                    downloaded.Add(language);
+                    (toBeat >= 0 ? upgraded : downloaded).Add(language);
                     break;
                 }
                 catch (SubtitleProviderException ex)
@@ -218,8 +235,11 @@ public sealed class SubtitleService(
         }
 
         var stillMissing = missing.Except(downloaded).ToList();
-        var summary = downloaded.Count > 0 ? $"downloaded {string.Join(", ", downloaded)}" : "nothing suitable found";
-        if (stillMissing.Count > 0 && downloaded.Count > 0) summary += $"; still missing {string.Join(", ", stillMissing)}";
+        var parts = new List<string>();
+        if (downloaded.Count > 0) parts.Add($"downloaded {string.Join(", ", downloaded)}");
+        if (upgraded.Count > 0) parts.Add($"upgraded {string.Join(", ", upgraded)}");
+        var summary = parts.Count > 0 ? string.Join("; ", parts) : current.Count > 0 && missing.Count == 0 ? "no better subtitles found" : "nothing suitable found";
+        if (stillMissing.Count > 0 && parts.Count > 0) summary += $"; still missing {string.Join(", ", stillMissing)}";
         if (errors.Count > 0) summary += $" ({string.Join("; ", errors.Distinct())})";
         return $"{target.Label}: {summary}";
     }

@@ -179,3 +179,21 @@ public sealed record SubtitleSearchState : ISettingsSection
     public static string SectionKey => "subtitles-state";
     public string? LanguagesSignature { get; init; }
 }
+
+/// <summary>Optional Jellyfin server; when set, downloaded movies and series link to their Jellyfin page.</summary>
+public sealed record JellyfinSettings : ISettingsSection
+{
+    /// <summary>Placeholder returned instead of the stored API key; sending it back keeps the stored value.</summary>
+    public const string ApiKeyMask = "********";
+    public static string SectionKey => "jellyfin";
+
+    /// <summary>Address Krakarr uses to reach Jellyfin (e.g. http://jellyfin:8096). Empty = integration off.</summary>
+    public string? Url { get; init; }
+    /// <summary>API key from Jellyfin → Dashboard → API Keys.</summary>
+    public string? ApiKey { get; init; }
+    /// <summary>Address the browser opens, when it differs from <see cref="Url"/> (e.g. https://jellyfin.example.com).</summary>
+    public string? PublicUrl { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(ApiKey);
+}
