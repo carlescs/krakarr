@@ -39,7 +39,11 @@ const STATES: Record<ItemState, { label: string; badge: string; icon: string }> 
 /** Whose titles the calendar shows: the whole library, the signed-in user's followed titles, or (staff) another user's. */
 type Owner = 'all' | 'me' | number;
 
-interface Stored { view?: CalendarView; filters?: Partial<CalendarFilters>; feed?: Partial<FeedOptions>; owner?: Owner; }
+/**
+ * `whose` replaces `owner`: every visit used to save the old default ("me"), which would otherwise pin staff
+ * to their followed titles after the default changed.
+ */
+interface Stored { view?: CalendarView; filters?: Partial<CalendarFilters>; feed?: Partial<FeedOptions>; whose?: Owner; }
 
 function readStored(): Stored {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as Stored; } catch { return {}; }
@@ -79,8 +83,11 @@ export class CalendarPage {
     this.stored.view ?? (typeof matchMedia !== 'undefined' && matchMedia('(max-width: 639px)').matches ? 'agenda' : 'month'));
   protected readonly anchor = signal(new Date());
   protected readonly filters = signal<CalendarFilters>({ ...DEFAULT_FILTERS, ...this.stored.filters });
-  /** Everyone starts on the titles they follow. */
-  protected readonly owner = signal<Owner>(this.stored.owner ?? 'me');
+  /**
+   * Staff start on the whole library they manage; plain users on the titles they follow. Titles only get followed
+   * when added or requested, so a library that predates following (or was imported) follows nothing yet.
+   */
+  protected readonly owner = signal<Owner>(this.stored.whose ?? (this.auth.isStaff() ? 'all' : 'me'));
   /** Staff: users who follow titles, to view the calendar as them. */
   protected readonly subscribers = signal<Subscriber[]>([]);
   protected readonly entries = signal<CalendarEntry[]>([]);
@@ -99,6 +106,8 @@ export class CalendarPage {
   protected readonly items = computed(() => buildItems(this.entries(), this.filters()));
   protected readonly byDay = computed(() => groupByDay(this.items()));
   protected readonly agendaDays = computed(() => this.days().filter(d => this.byDay().has(d)));
+  /** Nothing to show in the range (with the current filters), once loaded. */
+  protected readonly empty = computed(() => !this.loading() && !this.error() && this.items().length === 0);
   protected readonly hiddenCount = computed(() => {
     const all = buildItems(this.entries(), { ...DEFAULT_FILTERS, unmonitored: true }).length;
     return Math.max(0, all - this.items().length);
@@ -198,7 +207,7 @@ export class CalendarPage {
   }
 
   private persist() {
-    const value: Stored = { view: this.view(), filters: this.filters(), feed: this.feed, owner: this.owner() };
+    const value: Stored = { view: this.view(), filters: this.filters(), feed: this.feed, whose: this.owner() };
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(value)); } catch { /* storage unavailable */ }
   }
 
