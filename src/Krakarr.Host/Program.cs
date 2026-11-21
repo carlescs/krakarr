@@ -205,6 +205,7 @@ app.MapOpenApi("/api/openapi/{documentName}.json");
 app.MapAuthEndpoints();
 app.MapUserEndpoints();
 app.MapSystemEndpoints();
+app.MapDashboardEndpoints();
 app.MapSettingsEndpoints();
 app.MapIndexerEndpoints();
 app.MapDownloadEndpoints();

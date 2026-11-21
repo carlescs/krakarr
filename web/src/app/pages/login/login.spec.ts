@@ -15,7 +15,7 @@ async function render(api: ReturnType<typeof mockApi>, setupRequired: boolean) {
 }
 
 describe('LoginPage', () => {
-  it('signs in and opens the movies', async () => {
+  it('signs in and opens the home page', async () => {
     const api = mockApi({ login: async () => undefined, authStatus: async () => ({ setupRequired: false, authenticated: true }) });
     const { fixture, navigate, el } = await render(api, false);
     expect(text(el, 'h1')).toBe('Sign in to Krakarr');
@@ -25,7 +25,7 @@ describe('LoginPage', () => {
     button(el, 'Sign in').click();
     await settle(fixture);
     expect(api.login).toHaveBeenCalledWith('admin', 'secret');
-    expect(navigate).toHaveBeenCalledWith('/movies');
+    expect(navigate).toHaveBeenCalledWith('/');
   });
 
   it('creates the first account with the setup token', async () => {

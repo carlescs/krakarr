@@ -31,7 +31,7 @@ export class LoginPage implements OnInit {
     try {
       if (this.setup()) await this.auth.setup(this.username, this.password, this.setupToken.trim());
       else await this.auth.login(this.username, this.password);
-      this.router.navigateByUrl(this.setup() ? '/settings' : '/movies');
+      this.router.navigateByUrl(this.setup() ? '/settings' : '/');
     } catch (e) {
       this.error.set(errorMessage(e));
     } finally {

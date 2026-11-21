@@ -283,3 +283,22 @@ export interface Subscription { mediaType: MediaType; libraryId: number; title: 
 export interface SubscriptionState { subscribed: boolean; subscribers?: string[] | null; }
 /** A user who follows at least one title (staff calendar picker). */
 export interface Subscriber { id: number; username: string; count: number; }
+
+export interface DashboardStats {
+  library: {
+    movies: { total: number; monitored: number; downloaded: number; missing: number };
+    series: { total: number; monitored: number; continuing: number; ended: number };
+    episodes: { total: number; downloaded: number; missing: number; airingThisWeek: number };
+    files: number; sizeOnDisk: number; subtitles: number;
+    /** Resolution 0 = unknown. */
+    resolutions: { resolution: number; files: number; size: number }[];
+  };
+  users: { total: number; admins: number; managers: number; users: number; topRequesters: { username: string; requests: number }[] };
+  requests: {
+    total: number; pending: number; approved: number; declined: number; last30Days: number;
+    recent: { id: number; mediaType: MediaType; title: string; year: number; posterUrl?: string; status: RequestStatus; requestedBy?: string; requestedAt: string }[];
+  };
+  /** Last 7 days, plus downloads whose import failed. */
+  activity: { grabbed: number; imported: number; failed: number; subtitles: number; importIssues: number };
+  recentlyImported: { mediaType: MediaType; id: number; title: string; year: number; posterUrl?: string; date: string }[];
+}

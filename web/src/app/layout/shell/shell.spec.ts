@@ -23,7 +23,7 @@ describe('Shell', () => {
   it('shows admins every section', async () => {
     const { el, events } = await render('Admin');
     expect(events.start).toHaveBeenCalled();
-    expect(navLabels(el)).toEqual(['Discover', 'Movies', 'Series', 'Calendar', 'Requests', 'Subtitles', 'Search', 'Indexers', 'Downloads', 'Activity', 'Settings']);
+    expect(navLabels(el)).toEqual(['Dashboard', 'Discover', 'Movies', 'Series', 'Calendar', 'Requests', 'Subtitles', 'Search', 'Indexers', 'Downloads', 'Activity', 'Settings']);
   });
 
   it('hides admin and staff pages from plain users', async () => {
