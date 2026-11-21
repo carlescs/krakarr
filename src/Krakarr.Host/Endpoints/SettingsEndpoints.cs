@@ -45,6 +45,13 @@ public static class SettingsEndpoints
                 : s.MinimumScoreMovies is < 0 or > 100 || s.MinimumScoreEpisodes is < 0 or > 100 ? "Minimum scores must be between 0 and 100"
                 : null);
 
+        MapSection<JellyfinSettings>(settings, "jellyfin",
+            merge: (current, incoming) => incoming.ApiKey == JellyfinSettings.ApiKeyMask ? incoming with { ApiKey = current.ApiKey } : incoming,
+            present: s => string.IsNullOrEmpty(s.ApiKey) ? s : s with { ApiKey = JellyfinSettings.ApiKeyMask },
+            validate: s => !IsHttpUrl(s.Url) ? "Jellyfin URL must be an absolute http(s) URL"
+                : !IsHttpUrl(s.PublicUrl) ? "Jellyfin public URL must be an absolute http(s) URL"
+                : null);
+
         MapSection<LanguageSettings>(settings, "languages",
             merge: (_, incoming) => incoming with { Preferred = MediaLanguages.Clean(incoming.Preferred) });
 
@@ -168,6 +175,11 @@ public static class SettingsEndpoints
             return Results.Ok(present(value));
         });
     }
+
+    /// <summary>True for an empty value or an absolute http(s) URL.</summary>
+    private static bool IsHttpUrl(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+        || (Uri.TryCreate(value.Trim(), UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps));
 
     private static IResult? ValidateProfile(QualityProfile p)
     {

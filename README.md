@@ -177,6 +177,13 @@ Nothing is moved or renamed.
 - The **Subtitles** page lists files missing languages. Every movie and episode has a subtitle dialog with
   automatic search, manual search (all candidates with score and reasons) and delete.
 
+### Jellyfin
+
+- **Settings → Jellyfin:** enter the URL Krakarr reaches Jellyfin on (e.g. `http://jellyfin:8096`) and an API key
+  (Jellyfin → Dashboard → API Keys). Set a public URL too if browsers open Jellyfin on a different address.
+- Downloaded movies and series then show an **Open in Jellyfin** button, for every user. The title is found on Jellyfin by
+  its TMDB, TheTVDB or IMDb id (falling back to name and year), so the button appears once Jellyfin has scanned it.
+
 ### Using an existing qBittorrent instead of the built-in client
 
 *Settings → Download client → qBittorrent* switches Krakarr from its built-in engine to an external qBittorrent

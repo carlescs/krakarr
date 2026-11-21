@@ -172,6 +172,8 @@ export interface MediaManagementSettings {
 }
 export type SeriesMetadataSource = 'Tmdb' | 'Tvdb';
 export interface MetadataSettings { tmdbApiKey?: string; seriesSource: SeriesMetadataSource; tvdbApiKey?: string; tvdbPin?: string; language: string; releaseRegion?: string | null; }
+export interface JellyfinSettings { url?: string | null; apiKey?: string | null; publicUrl?: string | null; }
+export interface JellyfinTestResult { success: boolean; serverName?: string; version?: string; message?: string; }
 export type DownloadClientKind = 'Embedded' | 'QBittorrent';
 export type SeedLimitAction = 'Remove' | 'Stop';
 export interface QBittorrentSettings {

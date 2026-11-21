@@ -5,7 +5,7 @@ import { Api, errorMessage } from '../../core/api';
 import { BytesPipe } from '../../core/format';
 import { Events } from '../../core/events';
 import {
-  AutomationSettings, DirectoryListing, Language, SubtitleSettings, DownloadClientKind, DownloadClientSettings, DownloadClientTestResult, GeneralSettings, MediaManagementSettings, MetadataSettings, Quality,
+  AutomationSettings, DirectoryListing, Language, SubtitleSettings, DownloadClientKind, DownloadClientSettings, DownloadClientTestResult, GeneralSettings, JellyfinSettings, JellyfinTestResult, MediaManagementSettings, MetadataSettings, Quality,
   QualityProfile, RootFolder, ScheduledTaskInfo, SystemStatus,
 } from '../../core/models';
 import { Toasts } from '../../core/toast';
@@ -64,7 +64,7 @@ export function buildName(format: string, values: Record<string, string>): strin
   return result.trim().replace(/\.+$/, '').replace(/\s{2,}/g, ' ').trim();
 }
 
-type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'tasks' | 'users' | 'general' | 'account';
+type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'jellyfin' | 'tasks' | 'users' | 'general' | 'account';
 
 @Component({
   selector: 'kr-settings',
@@ -407,6 +407,39 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'task
       }
     }
 
+    <!-- Jellyfin -->
+    @if (tab() === 'jellyfin') {
+      @if (jellyfin(); as j) {
+        <section class="card grid gap-4 p-4 sm:p-5 sm:grid-cols-2">
+          <p class="text-sm text-slate-400 sm:col-span-2">Downloaded movies and series get an <span class="text-slate-200">Open in Jellyfin</span> button, for every user. Leave the URL empty to turn it off.</p>
+          <div>
+            <label class="label">URL</label>
+            <input class="input" [(ngModel)]="j.url" placeholder="http://jellyfin:8096" />
+            <p class="hint">How Krakarr reaches Jellyfin.</p>
+          </div>
+          <div>
+            <label class="label">Public URL (optional)</label>
+            <input class="input" [(ngModel)]="j.publicUrl" placeholder="https://jellyfin.example.com" />
+            <p class="hint">What the browser opens, when it differs from the URL above.</p>
+          </div>
+          <div class="sm:col-span-2">
+            <label class="label">API key</label>
+            <input class="input font-mono" type="password" autocomplete="off" [(ngModel)]="j.apiKey" />
+            <p class="hint">Jellyfin → Dashboard → API Keys. Used to find each title in your Jellyfin library.</p>
+          </div>
+          @if (jellyfinTest(); as t) {
+            <div class="rounded-lg px-3 py-2 text-sm sm:col-span-2" [class]="t.success ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'">
+              {{ t.success ? 'Connected to ' + (t.serverName || 'Jellyfin') + (t.version ? ' ' + t.version : '') : t.message }}
+            </div>
+          }
+          <div class="flex justify-end gap-2 sm:col-span-2">
+            <button class="btn-secondary" (click)="testJellyfin(j)" [disabled]="testingJellyfin()">{{ testingJellyfin() ? 'Testing…' : 'Test' }}</button>
+            <button class="btn-primary" (click)="save('jellyfin', j)">Save</button>
+          </div>
+        </section>
+      }
+    }
+
     @if (tab() === 'account') { <kr-account-settings /> }
     @if (tab() === 'users') { <kr-users-settings /> }
 
@@ -553,6 +586,7 @@ export class SettingsPage implements OnInit {
     { id: 'downloads', label: 'Download client' },
     { id: 'subtitles', label: 'Subtitles' },
     { id: 'metadata', label: 'Metadata' },
+    { id: 'jellyfin', label: 'Jellyfin' },
     { id: 'tasks', label: 'Tasks' },
     { id: 'users', label: 'Users' },
     { id: 'general', label: 'General' },
@@ -579,6 +613,9 @@ export class SettingsPage implements OnInit {
   ];
   protected readonly clientTest = signal<DownloadClientTestResult | null>(null);
   protected readonly subtitles = signal<SubtitleSettings | null>(null);
+  protected readonly jellyfin = signal<JellyfinSettings | null>(null);
+  protected readonly jellyfinTest = signal<JellyfinTestResult | null>(null);
+  protected readonly testingJellyfin = signal(false);
   protected readonly languages = signal<Language[]>([]);
   protected readonly languageCatalog = inject(Languages);
   protected wantedLanguages: string[] = [];
@@ -622,6 +659,7 @@ export class SettingsPage implements OnInit {
     this.general.set(general);
     this.status.set(status);
     this.api.settings('languages').then(l => this.wantedLanguages = l.preferred, () => {});
+    this.api.settings('jellyfin').then(j => this.jellyfin.set(j), () => {});
     this.languageCatalog.load().catch(() => {});
     const [subs, langs] = await Promise.all([this.api.settings('subtitles'), this.api.subtitleLanguages()]);
     this.subtitles.set(subs);
@@ -689,7 +727,7 @@ export class SettingsPage implements OnInit {
     return this.qualities().filter(q => p.allowedQualityIds.includes(q.id)).sort((a, b) => b.weight - a.weight);
   }
 
-  async save<K extends 'media' | 'downloads' | 'automation' | 'metadata' | 'subtitles'>(section: K, value: Parameters<Api['saveSettings']>[1] & object) {
+  async save<K extends 'media' | 'downloads' | 'automation' | 'metadata' | 'subtitles' | 'jellyfin'>(section: K, value: Parameters<Api['saveSettings']>[1] & object) {
     try {
       await this.api.saveSettings(section, value as never);
       this.toasts.success('Settings saved');
@@ -706,6 +744,13 @@ export class SettingsPage implements OnInit {
     } catch (e) {
       this.toasts.error(errorMessage(e));
     }
+  }
+
+  async testJellyfin(settings: JellyfinSettings) {
+    this.testingJellyfin.set(true);
+    try { this.jellyfinTest.set(await this.api.testJellyfin(settings)); }
+    catch (e) { this.jellyfinTest.set({ success: false, message: errorMessage(e) }); }
+    finally { this.testingJellyfin.set(false); }
   }
 
   async testClient(settings: DownloadClientSettings) {
