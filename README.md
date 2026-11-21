@@ -127,7 +127,7 @@ TheTVDB is the series metadata source.
 - **Filters:** series, movies, each movie release type, unmonitored items and download status (any / not downloaded /
   downloaded). The view and filters are remembered per browser.
 - **Whose titles:** *Everything* (the whole library) or *My titles* (what you follow, see [Following titles](#following-titles));
-  plain users start on *My titles*. Admins and managers can also pick any user who follows titles to see their calendar.
+  the calendar starts on *My titles*. Admins and managers can also pick any user who follows titles to see their calendar.
 - **iCal feed:** *iCal* gives a URL (`/api/v1/calendar/feed.ics?apikey=…`) for Google Calendar, Apple Calendar or Outlook,
   with its own filters and day range. It carries the API key, so treat it like a password. Only admins see it. With
   another user picked under *Whose titles*, the feed is limited to that user's titles (`userId=`).

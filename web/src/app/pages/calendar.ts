@@ -61,8 +61,8 @@ function readStored(): Stored {
       @if (loading()) { <span class="size-4 animate-spin rounded-full border-2 border-surface-600 border-t-accent-400" aria-label="Loading"></span> }
       <div class="flex-1"></div>
       <select class="input !w-auto !py-1.5 text-xs sm:text-xs max-sm:max-w-40" aria-label="Whose titles" [ngModel]="owner()" (ngModelChange)="owner.set($event)">
-        <option value="all">Everything</option>
         <option value="me">My titles</option>
+        <option value="all">Everything</option>
         @for (u of subscribers(); track u.id) {
           <option [ngValue]="u.id">{{ u.username }}'s titles</option>
         }
@@ -412,8 +412,8 @@ export class CalendarPage {
     this.stored.view ?? (typeof matchMedia !== 'undefined' && matchMedia('(max-width: 639px)').matches ? 'agenda' : 'month'));
   protected readonly anchor = signal(new Date());
   protected readonly filters = signal<CalendarFilters>({ ...DEFAULT_FILTERS, ...this.stored.filters });
-  /** Plain users start on their own titles; staff on the whole library. */
-  protected readonly owner = signal<Owner>(this.stored.owner ?? (this.auth.isStaff() ? 'all' : 'me'));
+  /** Everyone starts on the titles they follow. */
+  protected readonly owner = signal<Owner>(this.stored.owner ?? 'me');
   /** Staff: users who follow titles, to view the calendar as them. */
   protected readonly subscribers = signal<Subscriber[]>([]);
   protected readonly entries = signal<CalendarEntry[]>([]);
@@ -493,9 +493,9 @@ export class CalendarPage {
     if (this.auth.isStaff()) {
       this.api.subscribers().then(users => {
         this.subscribers.set(users);
-        // A stored user who no longer follows anything (or was removed) falls back to the whole library.
+        // A stored user who no longer follows anything (or was removed) falls back to your own titles.
         const owner = this.owner();
-        if (typeof owner === 'number' && !users.some(u => u.id === owner)) this.owner.set('all');
+        if (typeof owner === 'number' && !users.some(u => u.id === owner)) this.owner.set('me');
       }).catch(() => { /* picker keeps Everything / My titles */ });
     }
     effect(() => this.persist());
