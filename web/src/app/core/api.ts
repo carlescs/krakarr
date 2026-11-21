@@ -157,6 +157,8 @@ export class Api {
   approveRequest(id: number, options: ApproveRequestOptions) { return this.post<MediaRequest>(`requests/${id}/approve`, options); }
   declineRequest(id: number, reason?: string) { return this.post<MediaRequest>(`requests/${id}/decline`, { reason: reason || null }); }
   deleteRequest(id: number) { return this.delete<void>(`requests/${id}`); }
+  /** The caller has seen how their requests were handled: clears the approved/declined notifications. */
+  markRequestsSeen() { return this.post<void>('requests/seen'); }
 
   // Subscriptions: library titles a user follows (calendar and list "My titles").
   subscriptions() { return this.get<Subscription[]>('subscriptions'); }

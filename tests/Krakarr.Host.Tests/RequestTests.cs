@@ -83,6 +83,12 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
         return await res.Content.ReadFromJsonAsync<JsonElement>(Ct);
     }
 
+    private static async Task<JsonElement?> BellAsync(HttpClient client, string id)
+    {
+        var all = await client.GetFromJsonAsync<JsonElement[]>("/api/v1/notifications", Ct);
+        return all!.Select(n => (JsonElement?)n).SingleOrDefault(n => n!.Value.GetProperty("id").GetString() == id);
+    }
+
     private static async Task<int[]> ListIdsAsync(HttpClient client, string? status = null)
     {
         var page = await client.GetFromJsonAsync<JsonElement>("/api/v1/requests" + (status is null ? "" : $"?status={status}"), Ct);
@@ -138,6 +144,15 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
         Assert.Equal("Not on any indexer", row.GetProperty("declineReason").GetString());
         Assert.Equal("mona", row.GetProperty("processedBy").GetString());
 
+        // Alice hears about the decline until she opens her requests; bob, whose request is untouched, doesn't.
+        var declinedBell = (await BellAsync(alice, "requests.declined"))!.Value;
+        Assert.Equal(1, declinedBell.GetProperty("count").GetInt32());
+        Assert.Equal("Your request was declined", declinedBell.GetProperty("title").GetString());
+        Assert.Equal("Movie 1001", declinedBell.GetProperty("message").GetString());
+        Assert.Null(await BellAsync(bob, "requests.declined"));
+        Assert.Equal(HttpStatusCode.NoContent, (await alice.PostAsync("/api/v1/requests/seen", null, Ct)).StatusCode);
+        Assert.Null(await BellAsync(alice, "requests.declined"));
+
         // Declined requests can't be withdrawn by the user, but the title can be requested again.
         Assert.Equal(HttpStatusCode.Conflict, (await alice.DeleteAsync($"/api/v1/requests/{id}", Ct)).StatusCode);
         var again = await CreateAsync(alice, "Movie", 1001);
@@ -170,6 +185,9 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
         Assert.Equal("Missing", dto.GetProperty("availability").GetString());
         var movieId = dto.GetProperty("libraryId").GetInt32();
         Assert.Equal(HttpStatusCode.OK, (await carol.GetAsync($"/api/v1/movies/{movieId}", Ct)).StatusCode);
+        var approvedBell = (await BellAsync(carol, "requests.approved"))!.Value;
+        Assert.Equal("Your request was approved", approvedBell.GetProperty("title").GetString());
+        Assert.Equal("Movie 2001", approvedBell.GetProperty("message").GetString());
 
         // In the library now: no new requests, and approving twice is refused.
         Assert.Equal(HttpStatusCode.Conflict, (await carol.PostAsJsonAsync("/api/v1/requests", new { mediaType = "Movie", tmdbId = 2001 }, Ct)).StatusCode);
@@ -182,6 +200,13 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
             new { tmdbId = 2002, qualityProfileId = profile, rootFolderPath = root, searchForMovie = false }, Ct);
         Assert.Equal(HttpStatusCode.Created, added.StatusCode);
         Assert.Contains(other, await ListIdsAsync(carol, "approved"));
+
+        // Requests fulfilled by adding the title directly count as approved too.
+        approvedBell = (await BellAsync(carol, "requests.approved"))!.Value;
+        Assert.Equal(2, approvedBell.GetProperty("count").GetInt32());
+        Assert.Equal("2 of your requests were approved", approvedBell.GetProperty("title").GetString());
+        Assert.Equal(HttpStatusCode.NoContent, (await carol.PostAsync("/api/v1/requests/seen", null, Ct)).StatusCode);
+        Assert.Null(await BellAsync(carol, "requests.approved"));
 
         // Both titles are in carol's subscriptions now, so they show in her "My titles".
         var subscriptions = await carol.GetFromJsonAsync<JsonElement[]>("/api/v1/subscriptions", Ct);

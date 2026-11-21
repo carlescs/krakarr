@@ -17,7 +17,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261121075011_MediaSubscriptions";
+    public override string LastMigrationId => "20261121084409_RequestResultUnseen";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -368,6 +368,9 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<int>("RequestedById")
                     .HasColumnType("integer");
 
+                b.Property<bool>("ResultUnseen")
+                    .HasColumnType("boolean");
+
                 b.Property<int>("Status")
                     .HasColumnType("integer");
 
@@ -389,9 +392,9 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.HasIndex("ProcessedById");
 
-                b.HasIndex("RequestedById");
-
                 b.HasIndex("MediaType", "TmdbId");
+
+                b.HasIndex("RequestedById", "ResultUnseen");
 
                 b.HasIndex("Status", "RequestedAt");
 

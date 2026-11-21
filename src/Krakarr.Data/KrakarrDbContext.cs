@@ -148,7 +148,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
             e.Property(x => x.DeclineReason).HasMaxLength(500);
             e.HasIndex(x => new { x.MediaType, x.TmdbId });
             e.HasIndex(x => new { x.Status, x.RequestedAt });
-            e.HasIndex(x => x.RequestedById);
+            e.HasIndex(x => new { x.RequestedById, x.ResultUnseen });
             // Deleting a user deletes their requests; deleting whoever processed one keeps it.
             e.HasOne(x => x.RequestedBy).WithMany().HasForeignKey(x => x.RequestedById).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.ProcessedBy).WithMany().HasForeignKey(x => x.ProcessedById).OnDelete(DeleteBehavior.SetNull);

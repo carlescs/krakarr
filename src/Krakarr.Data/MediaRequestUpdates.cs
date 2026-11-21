@@ -9,8 +9,8 @@ public static class MediaRequestUpdates
 {
     /// <summary>
     /// Marks pending requests for a title approved once it is in the library, however it got there (approving the
-    /// request, adding it directly or a library import), and subscribes their requesters to library title
-    /// <paramref name="libraryId"/>. Returns how many requests changed.
+    /// request, adding it directly or a library import), subscribes their requesters to library title
+    /// <paramref name="libraryId"/> and flags the result for their notification bell. Returns how many requests changed.
     /// </summary>
     public static async Task<int> ApproveMatchingAsync(KrakarrDbContext db, MediaType type, int? tmdbId, int? tvdbId, int libraryId, CancellationToken ct = default)
     {
@@ -24,7 +24,8 @@ public static class MediaRequestUpdates
         await MediaSubscriptions.SubscribeAsync(db, requesters, type, libraryId, ct);
 
         var now = DateTimeOffset.UtcNow;
-        return await matching.ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, RequestStatus.Approved).SetProperty(r => r.ProcessedAt, now), ct);
+        return await matching.ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, RequestStatus.Approved).SetProperty(r => r.ProcessedAt, now)
+            .SetProperty(r => r.ResultUnseen, true), ct);
     }
 }
 
