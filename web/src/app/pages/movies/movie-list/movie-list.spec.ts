@@ -70,7 +70,7 @@ describe('MovieListPage', () => {
   it('guides plain users to Discover when the library is empty', async () => {
     const { el } = await render([], 'User');
     expect(text(el)).toContain('Your movie library is empty');
-    expect(el.querySelector('a[href="/movies/add"]')).toBeNull();
+    expect(el.querySelector('a[href="/movies/add"]')?.textContent).toBe('Search & request');
     expect(el.querySelector('a[href="/discover"]')).not.toBeNull();
   });
 });

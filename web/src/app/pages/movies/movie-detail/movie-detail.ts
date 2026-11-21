@@ -19,10 +19,11 @@ import { RelatedTitles } from '../../../shared/related-titles/related-titles';
 import { Progress } from '../../../shared/progress/progress';
 import { StateBadge } from '../../../shared/state-badge/state-badge';
 import { SubtitleManager } from '../../../shared/subtitle-manager/subtitle-manager';
+import { SubscribeButton } from '../../../shared/subscribe-button/subscribe-button';
 
 @Component({
   selector: 'kr-movie-detail',
-  imports: [LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, Poster, Progress, Modal, StateBadge, SubtitleManager, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
+  imports: [SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, Poster, Progress, Modal, StateBadge, SubtitleManager, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
   templateUrl: './movie-detail.html',
   styleUrl: './movie-detail.scss',
 })

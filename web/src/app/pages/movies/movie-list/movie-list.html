@@ -3,6 +3,7 @@
   <input class="input min-w-0 flex-1 max-sm:basis-full sm:w-56 sm:flex-none" placeholder="Filter…" type="search" [ngModel]="query()" (ngModelChange)="query.set($event)" />
   <select class="input min-w-0 max-sm:flex-1 sm:w-40" [ngModel]="filter()" (ngModelChange)="filter.set($event)">
     <option value="all">All</option>
+    <option value="following">Following</option>
     <option value="missing">Missing</option>
     <option value="downloading">Downloading</option>
     <option value="downloaded">Downloaded</option>
@@ -19,6 +20,8 @@
         <a routerLink="/movies/import" class="menu-item" role="menuitem">Import existing library…</a>
       </kr-more-menu>
     </div>
+  } @else {
+    <a routerLink="/movies/add" class="btn-secondary max-sm:basis-full">Search &amp; request</a>
   }
 </div>
 
@@ -39,7 +42,9 @@
     }
   </div>
 } @else if (filtered().length === 0) {
-  <p class="py-12 text-center text-slate-500">No movies match the filter.</p>
+  <p class="py-12 text-center text-slate-500">
+    {{ filter() === 'following' && !query() ? 'You don't follow any movies yet. Open one and press Follow to see it here and in your calendar.' : 'No movies match the filter.' }}
+  </p>
 } @else if (visibleGroups(); as groups) {
   @for (g of groups; track g.group.key) {
     <section class="mb-8">

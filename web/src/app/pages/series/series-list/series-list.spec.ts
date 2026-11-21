@@ -52,7 +52,7 @@ describe('SeriesListPage', () => {
     expect(staff.el.querySelector('a[href="/series/add"]')).not.toBeNull();
     TestBed.resetTestingModule();
     const user = await render([], 'User');
-    expect(user.el.querySelector('a[href="/series/add"]')).toBeNull();
+    expect(user.el.querySelector('a[href="/series/add"]')?.textContent).toBe('Search & request');
     expect(user.el.querySelector('a[href="/discover"]')).not.toBeNull();
   });
 });

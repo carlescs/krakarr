@@ -5,6 +5,7 @@ import { RouterLink } from '@angular/router';
 import { Events } from '../../../core/events';
 import { Auth } from '../../../core/auth';
 import { Library } from '../../../core/library';
+import { Subscriptions } from '../../../core/subscriptions';
 import { MovieListItem } from '../../../core/models';
 import { MovieGroup, groupByCollection } from '../../../core/movie-groups';
 import { NearViewport } from '../../../shared/near-viewport/near-viewport';
@@ -13,7 +14,7 @@ import { GRID_CHUNK, POSTER_GRID, PosterGridSkeleton } from '../../../shared/pos
 import { MoreMenu } from '../../../shared/more-menu/more-menu';
 import { Progress } from '../../../shared/progress/progress';
 
-type Filter = 'all' | 'missing' | 'downloading' | 'downloaded' | 'unmonitored';
+type Filter = 'all' | 'following' | 'missing' | 'downloading' | 'downloaded' | 'unmonitored';
 type Grouping = 'none' | 'collection';
 
 const GROUPING_KEY = 'krakarr.movies.groupBy';
@@ -32,6 +33,7 @@ export class MovieListPage {
   protected readonly auth = inject(Auth);
   private readonly events = inject(Events);
   private readonly library = inject(Library);
+  private readonly subscriptions = inject(Subscriptions);
 
   protected readonly grid = POSTER_GRID;
   protected readonly loading = computed(() => this.library.movies.items() === null);
@@ -48,9 +50,11 @@ export class MovieListPage {
     const q = this.query().toLowerCase().trim();
     const filter = this.filter();
     const names = this.collectionNames();
+    const following = filter === 'following' ? this.subscriptions.movieIds() : null;
     return this.movies().filter(m => {
       if (q && !m.title.toLowerCase().includes(q) && !(m.collectionId != null && names.get(m.collectionId)?.includes(q))) return false;
       switch (filter) {
+        case 'following': return following!.has(m.id);
         case 'missing': return m.monitored && !m.hasFile;
         case 'downloading': return this.progressOf(m) != null;
         case 'downloaded': return m.hasFile;
@@ -102,6 +106,7 @@ export class MovieListPage {
   });
 
   constructor() {
+    void this.subscriptions.refresh();
     const destroyRef = inject(DestroyRef);
     destroyRef.onDestroy(this.library.movies.attach());
     destroyRef.onDestroy(this.library.movieCollections.attach());

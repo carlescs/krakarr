@@ -1,0 +1,18 @@
+<button [class]="subscribed() === false && primary() ? 'btn-primary' : 'btn-secondary'" [disabled]="busy() || subscribed() === null" (click)="toggle()"
+        [attr.aria-pressed]="subscribed()" [title]="subscribed() ? 'Stop showing it in My titles' : 'Show it in your calendar and My titles'">
+  <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" aria-hidden="true">
+    @if (subscribed()) {
+      <path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+    } @else {
+      <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+    }
+  </svg>
+  {{ subscribed() ? 'Following' : 'Follow' }}
+</button>
+@if (subscribers(); as names) {
+  @if (names.length > 0) {
+    <span class="self-center text-xs text-slate-400" [title]="names.join(', ')">
+      Followed by {{ names.length <= 3 ? names.join(', ') : names.slice(0, 3).join(', ') + ' +' + (names.length - 3) }}
+    </span>
+  }
+}

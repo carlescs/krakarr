@@ -24,9 +24,9 @@ describe('DiscoverPage', () => {
     expect(rows.length).toBe(9);
     expect(text(el)).toContain('Arrival');
     expect(text(el)).toContain('Dune');
-    // Plain users get their requests instead of the add pages.
+    // Plain users can search too, and get a link to their requests.
     expect(el.querySelector('a[href="/requests"]')).not.toBeNull();
-    expect(el.querySelector('a[href="/movies/add"]')).toBeNull();
+    expect(el.querySelector('a[href="/movies/add"]')).not.toBeNull();
   });
 
   it('explains a missing TMDB key instead of showing empty rows', async () => {

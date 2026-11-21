@@ -162,11 +162,13 @@ public static class SeriesEndpoints
             }
         });
 
-        group.MapPost("/", async (AddSeriesRequest req, SeriesService service, ICommandQueue commands, TimeProvider time, CancellationToken ct) =>
+        group.MapPost("/", async (AddSeriesRequest req, HttpContext http, SeriesService service, KrakarrDbContext db, ICommandQueue commands,
+            TimeProvider time, CancellationToken ct) =>
         {
             try
             {
                 var series = await service.AddAsync(req, ct);
+                await MediaSubscriptions.FollowAsAdderAsync(db, http.User, MediaType.Series, series.Id, ct);
                 if (req.SearchForMissing && req.Monitor != MonitorMode.None)
                 {
                     var id = series.Id;

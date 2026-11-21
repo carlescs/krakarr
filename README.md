@@ -126,8 +126,11 @@ TheTVDB is the series metadata source.
 - **Episodes** appear on their air date; several episodes of a show on the same day are grouped (`S01E01–E08`).
 - **Filters:** series, movies, each movie release type, unmonitored items and download status (any / not downloaded /
   downloaded). The view and filters are remembered per browser.
+- **Whose titles:** *Everything* (the whole library) or *My titles* (what you follow, see [Following titles](#following-titles));
+  the calendar starts on *My titles*. Admins and managers can also pick any user who follows titles to see their calendar.
 - **iCal feed:** *iCal* gives a URL (`/api/v1/calendar/feed.ics?apikey=…`) for Google Calendar, Apple Calendar or Outlook,
-  with its own filters and day range. It carries the API key, so treat it like a password. Only admins see it.
+  with its own filters and day range. It carries the API key, so treat it like a password. Only admins see it. With
+  another user picked under *Whose titles*, the feed is limited to that user's titles (`userId=`).
 
 **Minimum availability:** each movie has a *minimum availability* (*announced*, *in cinemas* or *released*; new movies
 default to *released*). Automatic searches, search on add and RSS grabs wait until the movie reaches it, judged by the
@@ -229,7 +232,7 @@ in *Settings → Users* and give each a role:
 | --- | --- |
 | **Admin** | Everything: settings, indexers, download client, API key and users |
 | **Manager** | Add, search, grab and delete movies and series; approve or decline requests; manage downloads, subtitles and library imports |
-| **User** | Browse Discover, the library and the calendar; request movies and series |
+| **User** | Browse Discover, the library and the calendar; search TMDB/TheTVDB and request movies and series; follow library titles |
 
 Everyone changes their own username and password under *Account* (the current password is required). Changing a role
 takes effect immediately; resetting or changing a password, or deleting an account, signs that user out everywhere.
@@ -238,7 +241,8 @@ There is always at least one admin, and admins can't delete themselves. The API 
 ### Requests
 
 Users can't add titles themselves, so wherever an admin or manager sees *+ Add* (Discover, a title's page, a person's
-credits) they see *Request* instead. Requests are listed under **Requests**:
+credits, the movie and series search pages) they see *Request* instead. Users reach the search pages from Discover
+(*Search movies* / *Search series*) or *Search & request* on the library lists. Requests are listed under **Requests**:
 
 - **Users** see their own requests and can withdraw them while pending.
 - **Admins and managers** see everyone's. *Approve* opens the usual add dialog (root
@@ -248,6 +252,17 @@ credits) they see *Request* instead. Requests are listed under **Requests**:
   your own open ones for users) and links to the Requests page.
 - A title has at most one pending request. Once approved, each request shows whether the title is downloading,
   partially available (series) or available.
+- Once a requested title is in the library, its requesters follow it automatically.
+
+### Following titles
+
+Anyone can **Follow** a movie or series that is already in the library from its page; followed titles show under
+*My titles* in the calendar and the *Following* filter of the movie and series lists. Admins and managers see who
+follows a title next to the button. Removing a title (or a user) removes its follows.
+
+- Whoever adds a title follows it, and requesters follow their titles once they are in the library.
+- The notification bell tells you when monitored titles you follow are released (movies out on digital or physical
+  media) or air (episodes), today or yesterday.
 
 ### Security notes
 

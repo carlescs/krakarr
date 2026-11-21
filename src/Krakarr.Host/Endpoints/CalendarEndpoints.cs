@@ -3,6 +3,7 @@ using System.Text;
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Krakarr.Data;
+using Krakarr.Host.Auth;
 using Microsoft.EntityFrameworkCore;
 
 namespace Krakarr.Host.Endpoints;
@@ -54,6 +55,8 @@ public sealed class CalendarQuery
     public bool Series { get; init; } = true;
     public IReadOnlyCollection<ReleaseDateType> ReleaseTypes { get; init; } = MovieReleases.AllTypes;
     public bool IncludeUnmonitored { get; init; } = true;
+    /// <summary>Only titles this user subscribes to; null = the whole library.</summary>
+    public int? SubscriberId { get; init; }
 }
 
 /// <summary>Builds calendar entries for the library (movies and episodes).</summary>
@@ -108,6 +111,8 @@ public sealed class CalendarService(KrakarrDbContext db, ISettingsService settin
         }
 
         if (!query.IncludeUnmonitored) movies = movies.Where(m => m.Monitored);
+        if (query.SubscriberId is { } subscriber)
+            movies = movies.Where(m => db.MediaSubscriptions.Any(x => x.UserId == subscriber && x.MovieId == m.Id));
 
         var rows = await movies
             .Select(m => new { m.Id, m.Title, m.Year, m.PosterUrl, m.Overview, m.Runtime, m.Monitored, m.MovieFileId, m.ReleaseDates })
@@ -150,9 +155,12 @@ public sealed class CalendarService(KrakarrDbContext db, ISettingsService settin
     private async Task<List<CalendarEntry>> EpisodesAsync(CalendarQuery query, HashSet<int> downloading, CancellationToken ct)
     {
         var (start, end) = (query.Start, query.End);
+        var series = db.Series.AsNoTracking();
+        if (query.SubscriberId is { } subscriber)
+            series = series.Where(s => db.MediaSubscriptions.Any(x => x.UserId == subscriber && x.SeriesId == s.Id));
         var rows = await (
             from e in db.Episodes.AsNoTracking()
-            join s in db.Series.AsNoTracking() on e.SeriesId equals s.Id
+            join s in series on e.SeriesId equals s.Id
             where e.AirDate >= start && e.AirDate <= end
                 && (query.IncludeUnmonitored || (e.Monitored && s.Monitored))
             select new
@@ -286,8 +294,29 @@ public static class CalendarEndpoints
     {
         var group = app.MapGroup("/api/v1/calendar").WithTags("Calendar");
 
-        group.MapGet("/", async (DateOnly? start, DateOnly? end, bool? unmonitored, CalendarService calendar, CancellationToken ct) =>
+        // user: "me" for the caller's subscriptions, or (staff only) another user's id; omitted = the whole library.
+        group.MapGet("/", async (DateOnly? start, DateOnly? end, bool? unmonitored, string? user, HttpContext http, CalendarService calendar, CancellationToken ct) =>
         {
+            int? subscriber = null;
+            if (!string.IsNullOrEmpty(user))
+            {
+                if (user.Equals("me", StringComparison.OrdinalIgnoreCase))
+                {
+                    subscriber = http.User.GetUserId();
+                    if (subscriber is null) return Results.Problem("user=me needs a user account, not the API key.", statusCode: 400);
+                }
+                else if (int.TryParse(user, NumberStyles.None, CultureInfo.InvariantCulture, out var id))
+                {
+                    if (id != http.User.GetUserId() && http.User.GetRole() is not (UserRole.Admin or UserRole.Manager))
+                        return Results.Problem("You can only see your own titles.", statusCode: StatusCodes.Status403Forbidden);
+                    subscriber = id;
+                }
+                else
+                {
+                    return Results.Problem("user must be \"me\" or a user id", statusCode: 400);
+                }
+            }
+
             var from = start ?? Today().AddDays(-7);
             var to = end ?? from.AddDays(35);
             if (to < from) return Results.Problem("end must not be before start", statusCode: 400);
@@ -296,11 +325,11 @@ public static class CalendarEndpoints
                 return Results.Problem($"The range may span at most {CalendarService.MaxRangeDays} days", statusCode: 400);
             }
 
-            return Results.Ok(await calendar.GetAsync(new CalendarQuery { Start = from, End = to, IncludeUnmonitored = unmonitored ?? true }, ct));
+            return Results.Ok(await calendar.GetAsync(new CalendarQuery { Start = from, End = to, IncludeUnmonitored = unmonitored ?? true, SubscriberId = subscriber }, ct));
         });
 
-        // iCalendar feed for external calendar apps; authenticate with ?apikey=.
-        group.MapGet("/feed.ics", async (int? pastDays, int? futureDays, bool? movies, bool? series, string? releaseTypes, bool? unmonitored,
+        // iCalendar feed for external calendar apps; authenticate with ?apikey=. userId limits it to that user's titles.
+        group.MapGet("/feed.ics", async (int? pastDays, int? futureDays, bool? movies, bool? series, string? releaseTypes, bool? unmonitored, int? userId,
             CalendarService calendar, ISettingsService settings, CancellationToken ct) =>
         {
             var types = ParseReleaseTypes(releaseTypes);
@@ -314,6 +343,7 @@ public static class CalendarEndpoints
                 Series = series ?? true,
                 ReleaseTypes = types,
                 IncludeUnmonitored = unmonitored ?? false,
+                SubscriberId = userId,
             }, ct);
             var name = (await settings.GetAsync<GeneralSettings>(ct)).InstanceName;
             var ics = ICalendarWriter.Write(entries, string.IsNullOrWhiteSpace(name) ? "Krakarr" : name, DateTimeOffset.UtcNow);

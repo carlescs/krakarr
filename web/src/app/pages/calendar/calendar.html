@@ -9,6 +9,13 @@
   <span class="text-base font-semibold text-slate-100">{{ rangeLabel() }}</span>
   @if (loading()) { <span class="size-4 animate-spin rounded-full border-2 border-surface-600 border-t-accent-400" aria-label="Loading"></span> }
   <div class="flex-1"></div>
+  <select class="input !w-auto !py-1.5 text-xs sm:text-xs max-sm:max-w-40" aria-label="Whose titles" [ngModel]="owner()" (ngModelChange)="owner.set($event)">
+    <option value="me">My titles</option>
+    <option value="all">Everything</option>
+    @for (u of subscribers(); track u.id) {
+      <option [ngValue]="u.id">{{ u.username }}'s titles</option>
+    }
+  </select>
   <div class="inline-flex rounded-lg border border-surface-700 bg-surface-900 p-0.5" role="tablist" aria-label="View">
     @for (v of views; track v.id) {
       <button class="rounded-md px-3 py-1.5 text-xs font-medium transition pointer-coarse:min-h-9 max-[359px]:px-2"
@@ -244,7 +251,10 @@
 <!-- Agenda -->
 @if (view() === 'agenda') {
   @if (agendaDays().length === 0 && !loading()) {
-    <div class="card px-6 py-14 text-center text-sm text-slate-400">Nothing in {{ rangeLabel() }}{{ hiddenCount() > 0 ? ' with these filters' : '' }}.</div>
+    <div class="card px-6 py-14 text-center text-sm text-slate-400">
+      Nothing {{ owner() === 'all' ? '' : owner() === 'me' ? 'you follow ' : 'they follow ' }}in {{ rangeLabel() }}{{ hiddenCount() > 0 ? ' with these filters' : '' }}.
+      @if (owner() === 'me') { <span class="mt-1 block text-xs text-slate-500">Follow movies and series from their pages to see them here, or switch to Everything.</span> }
+    </div>
   }
   <div class="space-y-4">
     @for (day of agendaDays(); track day) {

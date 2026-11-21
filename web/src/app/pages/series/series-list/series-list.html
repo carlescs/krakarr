@@ -3,6 +3,7 @@
   <input class="input min-w-0 flex-1 sm:w-56 sm:flex-none" placeholder="Filter…" type="search" [ngModel]="query()" (ngModelChange)="query.set($event)" />
   <select class="input w-36 sm:w-40" [ngModel]="filter()" (ngModelChange)="filter.set($event)">
     <option value="all">All</option>
+    <option value="following">Following</option>
     <option value="missing">Missing episodes</option>
     <option value="continuing">Continuing</option>
     <option value="ended">Ended</option>
@@ -15,6 +16,8 @@
         <a routerLink="/series/import" class="menu-item" role="menuitem">Import existing library…</a>
       </kr-more-menu>
     </div>
+  } @else {
+    <a routerLink="/series/add" class="btn-secondary max-sm:basis-full">Search &amp; request</a>
   }
 </div>
 
@@ -35,7 +38,9 @@
     }
   </div>
 } @else if (filtered().length === 0) {
-  <p class="py-12 text-center text-slate-500">No series match the filter.</p>
+  <p class="py-12 text-center text-slate-500">
+    {{ filter() === 'following' && !query() ? 'You don't follow any series yet. Open one and press Follow to see it here and in your calendar.' : 'No series match the filter.' }}
+  </p>
 } @else {
   <div [class]="grid">
     @for (s of visible(); track s.id) {

@@ -11,7 +11,7 @@ import {
   feedUrl, groupByDay, itemState, localeFirstDayOfWeek, parseIsoDate, shiftAnchor, toIsoDate, viewRange,
 } from '../../core/calendar';
 import { Events } from '../../core/events';
-import { CalendarEntry } from '../../core/models';
+import { CalendarEntry, Subscriber } from '../../core/models';
 import { Toasts } from '../../core/toast';
 import { Modal } from '../../shared/modal/modal';
 import { Poster } from '../../shared/poster/poster';
@@ -36,7 +36,10 @@ const STATES: Record<ItemState, { label: string; badge: string; icon: string }> 
   unmonitored: { label: 'Unmonitored', badge: 'bg-slate-500/15 text-slate-400', icon: '' },
 };
 
-interface Stored { view?: CalendarView; filters?: Partial<CalendarFilters>; feed?: Partial<FeedOptions>; }
+/** Whose titles the calendar shows: the whole library, the signed-in user's followed titles, or (staff) another user's. */
+type Owner = 'all' | 'me' | number;
+
+interface Stored { view?: CalendarView; filters?: Partial<CalendarFilters>; feed?: Partial<FeedOptions>; owner?: Owner; }
 
 function readStored(): Stored {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}') as Stored; } catch { return {}; }
@@ -76,6 +79,10 @@ export class CalendarPage {
     this.stored.view ?? (typeof matchMedia !== 'undefined' && matchMedia('(max-width: 639px)').matches ? 'agenda' : 'month'));
   protected readonly anchor = signal(new Date());
   protected readonly filters = signal<CalendarFilters>({ ...DEFAULT_FILTERS, ...this.stored.filters });
+  /** Everyone starts on the titles they follow. */
+  protected readonly owner = signal<Owner>(this.stored.owner ?? 'me');
+  /** Staff: users who follow titles, to view the calendar as them. */
+  protected readonly subscribers = signal<Subscriber[]>([]);
   protected readonly entries = signal<CalendarEntry[]>([]);
   protected readonly loading = signal(false);
   protected readonly error = signal<string | null>(null);
@@ -149,18 +156,26 @@ export class CalendarPage {
   private scrollToToday = true;
 
   constructor() {
-    effect(() => { void this.load(this.range()); });
+    effect(() => { void this.load(this.range(), false, this.owner()); });
+    if (this.auth.isStaff()) {
+      this.api.subscribers().then(users => {
+        this.subscribers.set(users);
+        // A stored user who no longer follows anything (or was removed) falls back to your own titles.
+        const owner = this.owner();
+        if (typeof owner === 'number' && !users.some(u => u.id === owner)) this.owner.set('me');
+      }).catch(() => { /* picker keeps Everything / My titles */ });
+    }
     effect(() => this.persist());
     merge(this.events.movieUpdated, this.events.seriesUpdated, this.events.historyAdded)
       .pipe(debounceTime(1500), takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => void this.load(this.range(), true));
+      .subscribe(() => void this.load(this.range(), true, this.owner()));
   }
 
-  private async load(range: { start: Date; end: Date }, quiet = false) {
+  private async load(range: { start: Date; end: Date }, quiet: boolean, owner: Owner) {
     const id = ++this.requestId;
     if (!quiet) this.loading.set(true);
     try {
-      const entries = await this.api.calendar(toIsoDate(range.start), toIsoDate(range.end));
+      const entries = await this.api.calendar(toIsoDate(range.start), toIsoDate(range.end), owner === 'all' ? null : owner);
       if (id !== this.requestId) return;
       this.entries.set(entries);
       this.error.set(null);
@@ -183,7 +198,7 @@ export class CalendarPage {
   }
 
   private persist() {
-    const value: Stored = { view: this.view(), filters: this.filters(), feed: this.feed };
+    const value: Stored = { view: this.view(), filters: this.filters(), feed: this.feed, owner: this.owner() };
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(value)); } catch { /* storage unavailable */ }
   }
 
@@ -263,7 +278,10 @@ export class CalendarPage {
     }
   }
 
-  protected feedLink(key: string) { return feedUrl(document.baseURI, key, this.feed); }
+  protected feedLink(key: string) {
+    const owner = this.owner();
+    return feedUrl(document.baseURI, key, this.feed, typeof owner === 'number' ? owner : undefined);
+  }
 
   protected closeFeed() {
     this.feedOpen.set(false);
