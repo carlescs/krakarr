@@ -13,11 +13,16 @@ import { Poster } from '../../../shared/poster/poster';
 import { GRID_CHUNK, POSTER_GRID, PosterGridSkeleton } from '../../../shared/poster-grid/poster-grid';
 import { MoreMenu } from '../../../shared/more-menu/more-menu';
 import { Progress } from '../../../shared/progress/progress';
+import { BulkActions } from '../../../shared/bulk-actions/bulk-actions';
+import { ViewToggle } from '../../../shared/view-toggle/view-toggle';
+import { Selection, ViewMode, storeView, storedView } from '../../../core/selection';
 
 type Filter = 'all' | 'following' | 'missing' | 'downloading' | 'downloaded' | 'unmonitored';
 type Grouping = 'none' | 'collection';
+type SortKey = 'title' | 'year' | 'status';
 
 const GROUPING_KEY = 'krakarr.movies.groupBy';
+const VIEW_KEY = 'krakarr.movies.view';
 
 function storedGrouping(): Grouping {
   try { return localStorage.getItem(GROUPING_KEY) === 'collection' ? 'collection' : 'none'; } catch { return 'none'; }
@@ -25,7 +30,7 @@ function storedGrouping(): Grouping {
 
 @Component({
   selector: 'kr-movie-list',
-  imports: [RouterLink, FormsModule, NgTemplateOutlet, Poster, Progress, NearViewport, PosterGridSkeleton, MoreMenu],
+  imports: [RouterLink, FormsModule, NgTemplateOutlet, Poster, Progress, NearViewport, PosterGridSkeleton, MoreMenu, BulkActions, ViewToggle],
   templateUrl: './movie-list.html',
   styleUrl: './movie-list.scss',
 })
@@ -43,6 +48,11 @@ export class MovieListPage {
   protected readonly filter = signal<Filter>('all');
   protected readonly grouping = signal<Grouping>(storedGrouping());
   protected readonly collapsed = signal<ReadonlySet<string>>(new Set());
+  protected readonly view = signal<ViewMode>(storedView(VIEW_KEY));
+  /** Grid selection mode: cards toggle selection instead of opening the movie. The table always has checkboxes. */
+  protected readonly selecting = signal(false);
+  protected readonly sort = signal<{ key: SortKey; desc: boolean }>({ key: 'title', desc: false });
+  protected readonly following = this.subscriptions.movieIds;
 
   private readonly collectionNames = computed(() => new Map(this.collections().map(c => [c.id, c.name.toLowerCase()])));
 
@@ -50,7 +60,7 @@ export class MovieListPage {
     const q = this.query().toLowerCase().trim();
     const filter = this.filter();
     const names = this.collectionNames();
-    const following = filter === 'following' ? this.subscriptions.movieIds() : null;
+    const following = filter === 'following' ? this.following() : null;
     return this.movies().filter(m => {
       if (q && !m.title.toLowerCase().includes(q) && !(m.collectionId != null && names.get(m.collectionId)?.includes(q))) return false;
       switch (filter) {
@@ -64,14 +74,32 @@ export class MovieListPage {
     });
   });
 
+  /** The filtered list in the chosen sort order (the API sorts by title). Groups keep their own order. */
+  private readonly sorted = computed(() => {
+    const { key, desc } = this.sort();
+    const list = this.filtered();
+    if (key === 'title') return desc ? [...list].reverse() : list;
+    const value = key === 'year' ? (m: MovieListItem) => m.year || 9999 : (m: MovieListItem) => this.statusRank(m);
+    const sign = desc ? -1 : 1;
+    // Array sort is stable: ties keep the title order.
+    return [...list].sort((a, b) => sign * (value(a) - value(b)));
+  });
+
   /** Cards rendered so far: more are added as the end of the list scrolls into view, and a new filter starts over. */
-  private readonly limit = linkedSignal({ source: () => [this.query(), this.filter(), this.grouping()], computation: () => GRID_CHUNK });
+  private readonly limit = linkedSignal({ source: () => [this.query(), this.filter(), this.grouping(), this.sort()], computation: () => GRID_CHUNK });
 
-  /** Flat grid: the first `limit` movies. */
-  protected readonly visible = computed(() => this.filtered().slice(0, this.limit()));
+  /** Flat list: the first `limit` movies. */
+  protected readonly visible = computed(() => this.sorted().slice(0, this.limit()));
 
-  /** Sections when grouping by collection; null for the flat grid. */
+  /** Sections when grouping by collection; null for the flat list. */
   private readonly groups = computed(() => this.grouping() === 'collection' ? groupByCollection(this.filtered(), this.collections()) : null);
+
+  /** Every filtered movie in display order: what "select all" and Shift+click ranges work on. */
+  private readonly ordered = computed(() => this.groups()?.flatMap(g => g.movies) ?? this.sorted());
+  protected readonly selection = new Selection(this.ordered);
+
+  /** The bulk toolbar shows while something is selected in the table, and throughout grid selection mode. */
+  protected readonly showBulk = computed(() => this.view() === 'table' ? this.selection.count() > 0 : this.selecting());
 
   /** The sections with the first `limit` cards spread over the expanded ones; null for the flat grid. */
   protected readonly visibleGroups = computed(() => {
@@ -91,7 +119,7 @@ export class MovieListPage {
 
   protected readonly hasMore = computed(() => {
     const visible = this.visibleGroups();
-    if (!visible) return this.visible().length < this.filtered().length;
+    if (!visible) return this.visible().length < this.sorted().length;
     const collapsed = this.collapsed();
     return visible.length < this.groups()!.length
       || visible.some(g => !collapsed.has(g.group.key) && g.movies.length < g.group.movies.length);
@@ -117,7 +145,45 @@ export class MovieListPage {
     return live ? (live.get(m.id) ?? null) : (m.downloadProgress ?? null);
   }
 
+  /** Status order for sorting: missing, unmonitored, downloading, downloaded. */
+  protected statusRank(m: MovieListItem): number {
+    return m.hasFile ? 3 : this.progressOf(m) != null ? 2 : !m.monitored ? 1 : 0;
+  }
+
+  protected statusLabel(m: MovieListItem): string {
+    const progress = this.progressOf(m);
+    return m.hasFile ? 'Downloaded' : progress != null ? `Downloading ${Math.round(progress)}%` : !m.monitored ? 'Unmonitored' : 'Missing';
+  }
+
   protected showMore() { this.limit.update(n => n + GRID_CHUNK); }
+
+  protected setView(mode: ViewMode) {
+    this.view.set(mode);
+    storeView(VIEW_KEY, mode);
+    // Keep a selection made in the table visible (and actionable) in the grid.
+    this.selecting.set(mode === 'grid' && this.selection.count() > 0);
+  }
+
+  protected stopSelecting() {
+    this.selecting.set(false);
+    this.selection.clear();
+  }
+
+  /** Grid card click (or Enter/Space): toggles the movie in selection mode (Shift selects a range), otherwise follows the link. */
+  protected cardClick(event: Event, m: MovieListItem) {
+    if (!this.selecting()) return;
+    event.preventDefault();
+    this.selection.toggle(m.id, (event as MouseEvent | KeyboardEvent).shiftKey);
+  }
+
+  protected sortBy(key: SortKey) {
+    this.sort.update(s => ({ key, desc: s.key === key ? !s.desc : false }));
+  }
+
+  protected ariaSort(key: SortKey): 'ascending' | 'descending' | 'none' {
+    const s = this.sort();
+    return s.key !== key || this.grouping() !== 'none' ? 'none' : s.desc ? 'descending' : 'ascending';
+  }
 
   protected setGrouping(value: Grouping) {
     this.grouping.set(value);

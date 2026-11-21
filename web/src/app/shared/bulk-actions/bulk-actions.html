@@ -1,0 +1,51 @@
+<div class="card sticky top-[calc(3.5rem+env(safe-area-inset-top)+0.5rem)] z-10 mb-4 flex flex-wrap items-center gap-2 px-3 py-2 shadow-lg"
+     role="toolbar" aria-label="Bulk actions">
+  <span class="text-sm font-medium text-white" aria-live="polite">{{ count() }} selected</span>
+  <button type="button" class="btn-ghost btn-sm" (click)="selection().toggleAll()">{{ selection().all() ? 'Select none' : 'Select all ' + total() }}</button>
+  <div class="flex-1"></div>
+  <div class="flex flex-wrap items-center gap-2">
+    <button type="button" class="btn-secondary btn-sm" [disabled]="busy() || !count()" (click)="follow(true)">Follow</button>
+    <button type="button" class="btn-secondary btn-sm" [disabled]="busy() || !count()" (click)="follow(false)">Unfollow</button>
+    @if (auth.isStaff()) {
+      <button type="button" class="btn-secondary btn-sm" [disabled]="busy() || !count()" (click)="monitor(true)">Monitor</button>
+      <button type="button" class="btn-secondary btn-sm" [disabled]="busy() || !count()" (click)="monitor(false)">Unmonitor</button>
+      <button type="button" class="btn-secondary btn-sm" [disabled]="busy() || !count()" (click)="search()">{{ mediaType() === 'Movie' ? 'Search' : 'Search missing' }}</button>
+      <kr-more-menu label="More bulk actions">
+        <button type="button" class="menu-item" role="menuitem" [disabled]="busy() || !count()" (click)="refresh()">Refresh metadata</button>
+        <button type="button" class="menu-item" role="menuitem" [disabled]="busy() || !count()" (click)="openProfile()">Change quality profile…</button>
+        <button type="button" class="menu-item text-rose-300" role="menuitem" [disabled]="busy() || !count()" (click)="confirmDelete.set(true)">Delete…</button>
+      </kr-more-menu>
+    }
+    @if (closable()) {
+      <button type="button" class="btn-primary btn-sm" (click)="closed.emit()">Done</button>
+    }
+  </div>
+</div>
+
+@if (editingProfile()) {
+  <kr-modal title="Change quality profile" (closed)="editingProfile.set(false)">
+    <label class="label" for="bulk-profile">Quality profile for {{ count() }} {{ noun(count()) }}</label>
+    @if (profiles(); as list) {
+      <select id="bulk-profile" class="input" [(ngModel)]="profileId">
+        @for (p of list; track p.id) { <option [ngValue]="p.id">{{ p.name }}</option> }
+      </select>
+    } @else {
+      <p class="text-sm text-slate-500">Loading…</p>
+    }
+    <ng-container footer>
+      <button type="button" class="btn-ghost" (click)="editingProfile.set(false)">Cancel</button>
+      <button type="button" class="btn-primary" [disabled]="busy() || profileId == null" (click)="saveProfile()">Save</button>
+    </ng-container>
+  </kr-modal>
+}
+
+@if (confirmDelete()) {
+  <kr-modal [title]="'Delete ' + count() + ' ' + noun(count())" (closed)="confirmDelete.set(false)">
+    <p class="text-sm text-slate-300">Remove the selected {{ noun(count()) }} from the library?</p>
+    <label class="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" class="accent-rose-500" [(ngModel)]="deleteFiles" /> Also delete their folders from disk</label>
+    <ng-container footer>
+      <button type="button" class="btn-ghost" (click)="confirmDelete.set(false)">Cancel</button>
+      <button type="button" class="btn-danger" [disabled]="busy()" (click)="delete()">Delete</button>
+    </ng-container>
+  </kr-modal>
+}

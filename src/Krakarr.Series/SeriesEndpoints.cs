@@ -204,24 +204,112 @@ public static class SeriesEndpoints
         {
             var series = await db.Series.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (series is null) return Results.NotFound();
-            if (deleteFiles == true && Directory.Exists(series.Path))
+            return await DeleteAsync(db, series, deleteFiles == true, ct) is { } error
+                ? Results.Problem(error, statusCode: StatusCodes.Status400BadRequest)
+                : Results.NoContent();
+        });
+
+        // Bulk actions on a multi-selection of the series table.
+        group.MapPut("/bulk", async (BulkEditRequest req, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            if (BulkLimits.Clean(req.Ids) is not { } ids) return Results.Problem(BulkLimits.InvalidMessage, statusCode: 400);
+            if (req.Monitored is null && req.QualityProfileId is null) return Results.Problem("Nothing to change", statusCode: 400);
+            if (req.QualityProfileId is { } profileId && !await db.QualityProfiles.AnyAsync(p => p.Id == profileId, ct))
+                return Results.Problem("Quality profile does not exist", statusCode: 400);
+            var affected = await db.Series.Where(x => ids.Contains(x.Id)).ExecuteUpdateAsync(s =>
             {
-                // Only ever delete strictly inside a configured root folder (never a root itself or anything outside).
-                var roots = await db.RootFolders.AsNoTracking().Select(r => r.Path).ToListAsync(ct);
-                if (!Krakarr.Media.Files.LibraryPaths.CanDeleteRecursively(roots, series.Path))
+                if (req.Monitored is { } monitored) s.SetProperty(x => x.Monitored, monitored);
+                if (req.QualityProfileId is { } qualityProfileId) s.SetProperty(x => x.QualityProfileId, qualityProfileId);
+            }, ct);
+            return Results.Ok(new BulkResult(affected, []));
+        });
+
+        group.MapPost("/bulk/search", async (BulkIdsRequest req, KrakarrDbContext db, ICommandQueue commands, CancellationToken ct) =>
+        {
+            if (BulkLimits.Clean(req.Ids) is not { } requested) return Results.Problem(BulkLimits.InvalidMessage, statusCode: 400);
+            var ids = await db.Series.AsNoTracking().Where(x => requested.Contains(x.Id)).OrderBy(x => x.SortTitle).Select(x => x.Id).ToListAsync(ct);
+            if (ids.Count == 0) return Results.NotFound();
+            var command = commands.Enqueue($"Search missing: {ids.Count} series", async (sp, token) =>
+            {
+                var scopedDb = sp.GetRequiredService<KrakarrDbContext>();
+                var service = sp.GetRequiredService<SeriesService>();
+                var (searched, failures) = (0, new List<string>());
+                foreach (var id in ids)
                 {
-                    return Results.Problem($"Refusing to delete {series.Path}: it is not inside a configured root folder", statusCode: StatusCodes.Status400BadRequest);
+                    scopedDb.ChangeTracker.Clear(); // don't keep every searched series (and its episodes) tracked
+                    try
+                    {
+                        await service.AutoSearchAsync(id, null, null, token);
+                        searched++;
+                    }
+                    catch (KeyNotFoundException)
+                    {
+                        // Deleted since the command was queued.
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        failures.Add(ex.Message);
+                    }
                 }
 
-                Directory.Delete(series.Path, recursive: true);
+                return BulkLimits.Summary($"Searched {searched} series", failures);
+            });
+            return Results.Accepted(value: command);
+        });
+
+        group.MapPost("/bulk/refresh", async (BulkIdsRequest req, KrakarrDbContext db, ICommandQueue commands, CancellationToken ct) =>
+        {
+            if (BulkLimits.Clean(req.Ids) is not { } requested) return Results.Problem(BulkLimits.InvalidMessage, statusCode: 400);
+            var ids = await db.Series.AsNoTracking().Where(x => requested.Contains(x.Id)).OrderBy(x => x.SortTitle).Select(x => x.Id).ToListAsync(ct);
+            if (ids.Count == 0) return Results.NotFound();
+            var command = commands.Enqueue($"Refresh: {ids.Count} series", async (sp, token) =>
+            {
+                var scopedDb = sp.GetRequiredService<KrakarrDbContext>();
+                var service = sp.GetRequiredService<SeriesService>();
+                var (refreshed, failures) = (0, new List<string>());
+                foreach (var id in ids)
+                {
+                    scopedDb.ChangeTracker.Clear(); // RefreshAsync saves; don't keep every refreshed series (and its episodes) tracked
+                    var series = await service.LoadAsync(id, token);
+                    if (series is null) continue;
+                    try
+                    {
+                        await service.RefreshAsync(series, token);
+                        refreshed++;
+                    }
+                    catch (MetadataException ex)
+                    {
+                        failures.Add($"{series.Title}: {ex.Message}");
+                        if (failures.Count >= 3 && refreshed == 0) break; // likely a missing key or the source is down
+                    }
+                }
+
+                return BulkLimits.Summary($"Refreshed {refreshed} series", failures);
+            });
+            return Results.Accepted(value: command);
+        });
+
+        group.MapPost("/bulk/delete", async (BulkDeleteRequest req, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            if (BulkLimits.Clean(req.Ids) is not { } ids) return Results.Problem(BulkLimits.InvalidMessage, statusCode: 400);
+            var (deleted, errors) = (0, new List<string>());
+            foreach (var id in ids)
+            {
+                db.ChangeTracker.Clear(); // one series tracked at a time
+                var series = await db.Series.FirstOrDefaultAsync(x => x.Id == id, ct);
+                if (series is null) continue;
+                try
+                {
+                    if (await DeleteAsync(db, series, req.DeleteFiles, ct) is { } error) errors.Add(error);
+                    else deleted++;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    errors.Add($"{series.Title}: {ex.Message}");
+                }
             }
 
-            await db.Downloads.Where(d => d.SeriesId == id)
-                .ExecuteUpdateAsync(s => s.SetProperty(d => d.SeriesId, (int?)null).SetProperty(d => d.EpisodeIds, new List<int>()), ct);
-            await db.Episodes.Where(e => e.SeriesId == id).ExecuteUpdateAsync(s => s.SetProperty(e => e.EpisodeFileId, (int?)null), ct);
-            db.Series.Remove(series);
-            await db.SaveChangesAsync(ct);
-            return Results.NoContent();
+            return Results.Ok(new BulkResult(deleted, errors));
         });
 
         group.MapGet("/{id:int}/episodes", async (int id, KrakarrDbContext db, ITorrentEngine engine, TimeProvider time, CancellationToken ct) =>
@@ -345,6 +433,30 @@ public static class SeriesEndpoints
 
         app.MapSeriesDiscoveryEndpoints();
         return app;
+    }
+
+    /// <summary>Removes a tracked series, and its folder when asked. Returns why not, or null when deleted.</summary>
+    private static async Task<string?> DeleteAsync(KrakarrDbContext db, Krakarr.Core.Domain.Series series, bool deleteFiles, CancellationToken ct)
+    {
+        if (deleteFiles && Directory.Exists(series.Path))
+        {
+            // Only ever delete strictly inside a configured root folder (never a root itself or anything outside).
+            var roots = await db.RootFolders.AsNoTracking().Select(r => r.Path).ToListAsync(ct);
+            if (!Krakarr.Media.Files.LibraryPaths.CanDeleteRecursively(roots, series.Path))
+            {
+                return $"Refusing to delete {series.Path}: it is not inside a configured root folder";
+            }
+
+            Directory.Delete(series.Path, recursive: true);
+        }
+
+        var id = series.Id;
+        await db.Downloads.Where(d => d.SeriesId == id)
+            .ExecuteUpdateAsync(s => s.SetProperty(d => d.SeriesId, (int?)null).SetProperty(d => d.EpisodeIds, new List<int>()), ct);
+        await db.Episodes.Where(e => e.SeriesId == id).ExecuteUpdateAsync(s => s.SetProperty(e => e.EpisodeFileId, (int?)null), ct);
+        db.Series.Remove(series);
+        await db.SaveChangesAsync(ct);
+        return null;
     }
 
     private static DateOnly Today(TimeProvider time) => DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);

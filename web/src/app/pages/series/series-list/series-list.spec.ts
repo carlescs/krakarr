@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { SeriesListItem, UserRole } from '../../../core/models';
-import { mockApi, settle, setupTest, text, type } from '../../../../testing/test-setup';
+import { button, mockApi, settle, setupTest, text, type } from '../../../../testing/test-setup';
 import { SeriesListPage } from './series-list';
 
 const show = (s: Partial<SeriesListItem>): SeriesListItem => ({
@@ -23,6 +23,26 @@ async function render(list: SeriesListItem[], role: UserRole = 'Admin') {
 const titles = (el: HTMLElement) => [...el.querySelectorAll('a[href^="/series/"] .truncate.text-xs.font-medium')].map(e => e.textContent);
 
 describe('SeriesListPage', () => {
+  afterEach(() => localStorage.clear());
+
+  it('shows a sortable table with bulk selection', async () => {
+    const { fixture, el } = await render(shows);
+    button(el, 'Table').click();
+    await settle(fixture);
+    const rows = () => [...el.querySelectorAll('tbody a')].map(a => a.textContent);
+    expect(rows()).toEqual(['Severance', 'Dark', 'Lost']);
+    expect(text(el, 'tbody tr')).toContain('4/10');
+
+    button(el, 'Episodes').click();
+    await settle(fixture);
+    expect(rows()).toEqual(['Lost', 'Severance', 'Dark']);
+
+    (el.querySelector('input[aria-label="Select all"]') as HTMLInputElement).click();
+    await settle(fixture);
+    expect(text(el, 'kr-bulk-actions')).toContain('3 selected');
+    expect(text(el, 'kr-bulk-actions')).toContain('Search missing');
+  });
+
   it('lists the library with episode counts and downloads', async () => {
     const { el } = await render(shows);
     expect(text(el, 'h1')).toBe('Series 3');

@@ -5,10 +5,12 @@ import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
   IndexerError, IndexerTestResult, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListItem, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
-  DashboardStats, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber,
+  DashboardStats, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult,
 } from './models';
 
 const API = 'api/v1';
+
+const libraryPath = (mediaType: MediaType) => mediaType === 'Movie' ? 'movies' : 'series';
 
 /** Optional library item a manual download is imported into. */
 export interface DownloadLink { movieId?: number; seriesId?: number; }
@@ -171,6 +173,21 @@ export class Api {
   unsubscribe(mediaType: MediaType, id: number) { return this.delete<void>(`subscriptions/${mediaType}/${id}`); }
   /** Staff: users who follow at least one title. */
   subscribers() { return this.get<Subscriber[]>('subscriptions/users'); }
+
+  /** Follows or unfollows several library titles at once. */
+  bulkSubscribe(mediaType: MediaType, ids: number[], subscribed: boolean) {
+    return this.post<BulkResult>('subscriptions/bulk', { mediaType, ids, subscribed });
+  }
+
+  // Bulk actions on library titles (movies or series), for the tables' multi-selection.
+  bulkEdit(mediaType: MediaType, ids: number[], changes: { monitored?: boolean; qualityProfileId?: number }) {
+    return this.put<BulkResult>(`${libraryPath(mediaType)}/bulk`, { ids, ...changes });
+  }
+  bulkSearch(mediaType: MediaType, ids: number[]) { return this.post<CommandInfo>(`${libraryPath(mediaType)}/bulk/search`, { ids }); }
+  bulkRefresh(mediaType: MediaType, ids: number[]) { return this.post<CommandInfo>(`${libraryPath(mediaType)}/bulk/refresh`, { ids }); }
+  bulkDelete(mediaType: MediaType, ids: number[], deleteFiles: boolean) {
+    return this.post<BulkResult>(`${libraryPath(mediaType)}/bulk/delete`, { ids, deleteFiles });
+  }
 
   // Series
   seriesList() { return this.get<SeriesListItem[]>('series'); }

@@ -68,6 +68,8 @@ export interface MovieListItem {
   id: number; title: string; year: number; posterUrl?: string | null; monitored: boolean; hasFile: boolean;
   quality?: string | null; downloadProgress?: number | null; collectionId?: number | null;
 }
+/** Outcome of a bulk action: how many titles it applied to, and why it couldn't for the rest. */
+export interface BulkResult { affected: number; errors: string[]; }
 /** A TMDB collection ("The Lord of the Rings Collection") with at least one movie in the library. */
 export interface MovieCollection { id: number; tmdbId: number; name: string; posterUrl?: string | null; }
 
