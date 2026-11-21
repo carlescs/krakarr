@@ -14,9 +14,9 @@ const entries = [
   entry({ kind: 'Movie', movieId: 3, title: 'Arrival', releaseType: 'Digital', hasFile: true }),
 ];
 
-async function render(view: 'agenda' | 'month', extra: Record<string, (...args: never[]) => unknown> = {}) {
-  localStorage.setItem('krakarr.calendar', JSON.stringify({ view }));
-  const api = setupTest({ api: mockApi({ calendar: async () => entries, ...extra }) });
+async function render(view: 'agenda' | 'month', extra: Record<string, (...args: never[]) => unknown> = {}, role: 'Admin' | 'User' = 'Admin', stored: object = {}) {
+  localStorage.setItem('krakarr.calendar', JSON.stringify({ view, ...stored }));
+  const api = setupTest({ role, api: mockApi({ calendar: async () => entries, subscribers: async () => [], ...extra }) });
   const fixture = TestBed.createComponent(CalendarPage);
   await settle(fixture);
   return { api, fixture, el: fixture.nativeElement as HTMLElement };
@@ -43,6 +43,28 @@ describe('CalendarPage', () => {
     expect(el.querySelector('a[href="/series/4"]')).toBeNull();
     expect(el.querySelector('a[href="/movies/3"]')).not.toBeNull();
     expect(JSON.parse(localStorage.getItem('krakarr.calendar')!).filters.series).toBe(false);
+  });
+
+  it('shows staff the whole library and plain users the titles they follow', async () => {
+    const admin = await render('agenda');
+    expect(admin.api.calendar.mock.calls[0][2]).toBeNull();
+    TestBed.resetTestingModule();
+    localStorage.clear();
+    const user = await render('agenda', {}, 'User');
+    expect(user.api.calendar.mock.calls[0][2]).toBe('me');
+  });
+
+  it('ignores the "my titles" default saved by earlier versions', async () => {
+    const { api } = await render('agenda', {}, 'Admin', { owner: 'me' });
+    expect(api.calendar.mock.calls[0][2]).toBeNull();
+  });
+
+  it('offers to show everything when nothing followed is in the month', async () => {
+    const { api, fixture, el } = await render('month', { calendar: async () => [] }, 'User');
+    expect(text(el)).toContain('Nothing you follow in');
+    button(el, 'show everything').click();
+    await settle(fixture);
+    expect(api.calendar.mock.calls.at(-1)![2]).toBeNull();
   });
 
   it('moves between periods and views', async () => {

@@ -151,6 +151,22 @@
   <p class="mb-4 rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-300">{{ error() }}</p>
 }
 
+@if (empty() && view() !== 'agenda') {
+  <div class="mb-4 rounded-lg border border-surface-700 bg-surface-900 px-3 py-2 text-sm text-slate-400">
+    <ng-container *ngTemplateOutlet="emptyMessage" />
+  </div>
+}
+
+<ng-template #emptyMessage>
+  Nothing {{ owner() === 'all' ? '' : owner() === 'me' ? 'you follow ' : 'they follow ' }}in {{ rangeLabel() }}{{ hiddenCount() > 0 ? ' with these filters' : '' }}.
+  @if (owner() !== 'all') {
+    <span class="mt-1 block text-xs text-slate-500">
+      @if (owner() === 'me') { Follow movies and series from their pages to see them here, or }
+      <button class="font-medium text-accent-300 hover:text-accent-200" (click)="owner.set('all')">{{ owner() === 'me' ? 'show everything' : 'Show everything' }}</button>.
+    </span>
+  }
+</ng-template>
+
 <!-- Month -->
 @if (view() === 'month') {
   <div class="card overflow-hidden">
@@ -250,10 +266,9 @@
 
 <!-- Agenda -->
 @if (view() === 'agenda') {
-  @if (agendaDays().length === 0 && !loading()) {
+  @if (empty()) {
     <div class="card px-6 py-14 text-center text-sm text-slate-400">
-      Nothing {{ owner() === 'all' ? '' : owner() === 'me' ? 'you follow ' : 'they follow ' }}in {{ rangeLabel() }}{{ hiddenCount() > 0 ? ' with these filters' : '' }}.
-      @if (owner() === 'me') { <span class="mt-1 block text-xs text-slate-500">Follow movies and series from their pages to see them here, or switch to Everything.</span> }
+      <ng-container *ngTemplateOutlet="emptyMessage" />
     </div>
   }
   <div class="space-y-4">
