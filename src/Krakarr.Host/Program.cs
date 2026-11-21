@@ -84,6 +84,7 @@ builder.Services.AddKrakarrSeries(builder.Configuration);
 builder.Services.AddKrakarrSubtitles();
 builder.Services.AddScoped<CalendarService>();
 builder.Services.AddScoped<Krakarr.Core.Notifications.INotificationSource, RequestNotificationSource>();
+builder.Services.AddScoped<Krakarr.Core.Notifications.INotificationSource, ReleaseNotificationSource>();
 
 // ---- Web: JSON, SignalR, auth --------------------------------------------------------------
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
