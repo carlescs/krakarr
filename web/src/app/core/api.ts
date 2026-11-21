@@ -56,6 +56,8 @@ export class Api {
   login(username: string, password: string) { return this.post<void>('auth/login', { username, password }); }
   setup(username: string, password: string, setupToken: string) { return this.post<void>('auth/setup', { username, password, setupToken }); }
   logout() { return this.post<void>('auth/logout'); }
+  /** Signs out every other browser and device of the current user; this session stays signed in. */
+  revokeOtherSessions() { return this.post<void>('auth/sessions/revoke'); }
   changeCredentials(username: string, currentPassword: string, newPassword?: string) {
     return this.post<void>('auth/password', { username, currentPassword, newPassword: newPassword || null });
   }

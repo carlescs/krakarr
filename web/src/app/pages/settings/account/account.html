@@ -27,4 +27,8 @@
       <button class="btn-primary" type="submit" [disabled]="saving() || !currentPassword || !username.trim()">Save</button>
     </div>
   </form>
+  <div class="flex flex-wrap items-center gap-3 border-t border-surface-700 pt-4">
+    <p class="hint flex-1">Lost a device or signed in somewhere you shouldn't have? Sign out everywhere except this browser.</p>
+    <button class="btn-secondary" type="button" (click)="revokeOthers()" [disabled]="revoking()">Sign out other sessions</button>
+  </div>
 </section>

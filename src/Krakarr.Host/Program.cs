@@ -99,6 +99,7 @@ builder.Services.AddDataProtection()
     .SetApplicationName("Krakarr")
     .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(configDir, "keys")));
 
+var authSecurity = builder.Configuration.GetSection(AuthSecurityOptions.SectionName).Get<AuthSecurityOptions>() ?? new AuthSecurityOptions();
 builder.Services
     .AddAuthentication(AuthConstants.SmartScheme)
     .AddPolicyScheme(AuthConstants.SmartScheme, "Cookie or API key", o =>
@@ -114,12 +115,14 @@ builder.Services
         o.Cookie.SecurePolicy = builder.Configuration.GetValue<bool>("Krakarr:SecureCookies")
             ? CookieSecurePolicy.Always
             : CookieSecurePolicy.SameAsRequest;
-        o.ExpireTimeSpan = TimeSpan.FromDays(30);
+        // Idle timeout; the absolute lifetime (SessionMaxAge) is enforced by UserSessions.
+        o.ExpireTimeSpan = authSecurity.SessionIdleTimeout > TimeSpan.Zero ? authSecurity.SessionIdleTimeout : TimeSpan.FromDays(14);
         o.SlidingExpiration = true;
         // APIs answer 401/403 instead of redirecting to a login page.
         o.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = StatusCodes.Status401Unauthorized; return Task.CompletedTask; };
         o.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
-        // Re-checks the account on every request so deletions, password resets and role changes apply immediately.
+        // Re-checks the account on every request so deletions, password resets, revoked sessions and role changes apply
+        // immediately.
         o.Events.OnValidatePrincipal = UserSessions.ValidateAsync;
     })
     .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(AuthConstants.ApiKeyScheme, null);
@@ -182,6 +185,7 @@ app.Logger.LogInformation("Krakarr {Version} starting. Config: {Config}, DB: {Pr
 // ---- Pipeline ------------------------------------------------------------------------------
 app.UseUntrustedProxyWarning();
 app.UseForwardedHeaders();
+app.UseSecurityHeaders(app.Configuration);
 if (!string.IsNullOrEmpty(urlBase))
 {
     app.UsePathBase(urlBase);

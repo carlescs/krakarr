@@ -3,7 +3,7 @@ using Microsoft.Extensions.Options;
 
 namespace Krakarr.Host.Auth;
 
-/// <summary>Brute-force protection settings (section <c>Krakarr:Auth</c>).</summary>
+/// <summary>Brute-force protection and session settings (section <c>Krakarr:Auth</c>).</summary>
 public sealed class AuthSecurityOptions
 {
     public const string SectionName = "Krakarr:Auth";
@@ -18,6 +18,15 @@ public sealed class AuthSecurityOptions
     public TimeSpan InitialLockout { get; set; } = TimeSpan.FromSeconds(30);
 
     public TimeSpan MaxLockout { get; set; } = TimeSpan.FromMinutes(15);
+
+    /// <summary>A sign-in expires after this long without any request (sliding).</summary>
+    public TimeSpan SessionIdleTimeout { get; set; } = TimeSpan.FromDays(14);
+
+    /// <summary>
+    /// A sign-in expires this long after the password was entered, however active it is, so a stolen cookie can't be
+    /// kept alive forever. Zero or negative disables the limit.
+    /// </summary>
+    public TimeSpan SessionMaxAge { get; set; } = TimeSpan.FromDays(30);
 }
 
 /// <summary>

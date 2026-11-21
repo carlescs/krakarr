@@ -42,4 +42,14 @@ describe('AccountSettings', () => {
     expect(api.changeCredentials).not.toHaveBeenCalled();
     expect(TestBed.inject(Toasts).items().map(t => t.message)).toEqual(['The new passwords do not match']);
   });
+
+  it('signs out the other sessions', async () => {
+    const api = setupTest({ api: mockApi({ revokeOtherSessions: async () => undefined }) });
+    const fixture = TestBed.createComponent(AccountSettings);
+    await settle(fixture);
+    button(fixture.nativeElement as HTMLElement, 'Sign out other sessions').click();
+    await settle(fixture);
+    expect(api.revokeOtherSessions).toHaveBeenCalled();
+    expect(TestBed.inject(Toasts).items().map(t => t.message)).toEqual(['Signed out of every other session']);
+  });
 });

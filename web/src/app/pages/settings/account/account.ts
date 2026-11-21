@@ -18,6 +18,7 @@ export class AccountSettings {
   private readonly toasts = inject(Toasts);
   protected readonly roleInfo = ROLE_INFO;
   protected readonly saving = signal(false);
+  protected readonly revoking = signal(false);
 
   protected username = this.auth.status()?.username ?? '';
   protected currentPassword = '';
@@ -40,6 +41,18 @@ export class AccountSettings {
       this.toasts.error(errorMessage(e));
     } finally {
       this.saving.set(false);
+    }
+  }
+
+  async revokeOthers() {
+    this.revoking.set(true);
+    try {
+      await this.api.revokeOtherSessions();
+      this.toasts.success('Signed out of every other session');
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+    } finally {
+      this.revoking.set(false);
     }
   }
 }

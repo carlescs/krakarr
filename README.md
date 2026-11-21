@@ -220,6 +220,10 @@ Each client keeps its own list of torrents, so switching back and forth never mi
 | `Krakarr__SetupToken` | *(generated)* | Preset the first-run setup token instead of using a random one (useful for automated deployments) |
 | `Krakarr__Auth__AttemptsPerMinutePerIp` | `10` | Requests per minute and client IP to the login, setup and password endpoints |
 | `Krakarr__Auth__FailuresBeforeLockout` | `5` | Failed logins for one username before it is locked temporarily (30 s, doubling up to 15 min) |
+| `Krakarr__Auth__SessionIdleTimeout` | `14.00:00:00` | A sign-in expires after this long without use |
+| `Krakarr__Auth__SessionMaxAge` | `30.00:00:00` | A sign-in expires this long after the password was entered, however active it is (`0` disables) |
+| `Krakarr__Hsts` | `false` | Send `Strict-Transport-Security` on HTTPS requests. Usually your reverse proxy should do this instead |
+| `Krakarr__ContentSecurityPolicy` | *(built in)* | Replace the `Content-Security-Policy` header (e.g. to allow another image host), or `off` to drop it |
 
 Any setting can also be placed in `/config/config.json` (environment variables win).
 
@@ -275,6 +279,12 @@ follows a title next to the button. Removing a title (or a user) removes its fol
 - **Reverse proxies must be trusted explicitly.** `X-Forwarded-For`/`X-Forwarded-Proto` are only honoured from loopback
   and `Krakarr__TrustedProxies`, so clients cannot fake their IP (rate limits, logs) or HTTPS. If your proxy runs in
   another container or host, add its address or network; Krakarr logs a warning naming the address it ignored.
+- **Sessions can be revoked.** Every request re-checks the account, so deleting a user, changing a role or changing a
+  password applies at once, and a password change signs out every other session. *Settings → Account → Sign out other
+  sessions* does the same without changing the password. Sign-ins also expire 30 days after the password was entered.
+- **Browser hardening headers.** Every response carries a strict `Content-Security-Policy` (scripts only from Krakarr
+  itself, images also from TMDB and TheTVDB), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: no-referrer` and a restrictive `Permissions-Policy`.
 
 ## Architecture
 
