@@ -1,6 +1,14 @@
+import { inject } from '@angular/core';
 import { Routes } from '@angular/router';
-import { authGuard, guestGuard, roleGuard } from './core/auth';
+import { Auth, authGuard, guestGuard, roleGuard } from './core/auth';
 import { Shell } from './layout/shell/shell';
+
+/** Staff land on the dashboard, plain users on the library. Runs before the guards, so it may have to load the status. */
+async function homeRedirect(): Promise<string> {
+  const auth = inject(Auth);
+  const status = auth.status() ?? (await auth.refresh().catch(() => null));
+  return status?.role === 'Admin' || status?.role === 'Manager' ? 'dashboard' : 'movies';
+}
 
 export const routes: Routes = [
   { path: 'login', canActivate: [guestGuard], loadComponent: () => import('./pages/login/login').then(m => m.LoginPage), title: 'Login · Krakarr' },
@@ -9,7 +17,8 @@ export const routes: Routes = [
     component: Shell,
     canActivate: [authGuard],
     children: [
-      { path: '', pathMatch: 'full', redirectTo: 'movies' },
+      { path: '', pathMatch: 'full', redirectTo: homeRedirect },
+      { path: 'dashboard', canActivate: [roleGuard('Manager')], loadComponent: () => import('./pages/dashboard/dashboard').then(m => m.DashboardPage), title: 'Dashboard · Krakarr' },
       { path: 'discover', loadComponent: () => import('./pages/discover/discover').then(m => m.DiscoverPage), title: 'Discover · Krakarr' },
       { path: 'discover/:media/:list', loadComponent: () => import('./pages/discover-list/discover-list').then(m => m.DiscoverListPage), title: 'Discover · Krakarr' },
       { path: 'movies', loadComponent: () => import('./pages/movies/movie-list/movie-list').then(m => m.MovieListPage), title: 'Movies · Krakarr' },

@@ -54,7 +54,7 @@ export const guestGuard: CanActivateFn = async () => {
   const auth = inject(Auth);
   const router = inject(Router);
   const status = auth.status() ?? (await auth.refresh().catch(() => null));
-  return status?.authenticated ? router.createUrlTree(['/movies']) : true;
+  return status?.authenticated ? router.createUrlTree(['/']) : true;
 };
 
 const RANK: Record<UserRole, number> = { Admin: 0, Manager: 1, User: 2 };
