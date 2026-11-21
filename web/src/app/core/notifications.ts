@@ -1,8 +1,11 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { merge, Subscription } from 'rxjs';
+import { interval, merge, Subscription } from 'rxjs';
 import { Api } from './api';
 import { Events } from './events';
 import { AppNotification } from './models';
+
+/** Some notifications depend on the date (e.g. today's releases), so also refetch now and then without an event. */
+const REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 
 /**
  * The bell's contents. The server computes notifications from every registered source; this keeps them fresh by
@@ -27,7 +30,7 @@ export class Notifications {
 
   start() {
     if (this.subscription) return;
-    this.subscription = merge(this.events.notificationsUpdated, this.events.requestsUpdated).subscribe(() => this.refresh());
+    this.subscription = merge(this.events.notificationsUpdated, this.events.requestsUpdated, interval(REFRESH_INTERVAL_MS)).subscribe(() => this.refresh());
     this.refresh();
   }
 
