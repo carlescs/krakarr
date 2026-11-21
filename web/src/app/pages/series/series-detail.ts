@@ -59,6 +59,14 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
               @if (s.sizeOnDisk) { <span class="badge bg-surface-700 text-slate-300">{{ s.sizeOnDisk | bytes }}</span> }
             </div>
             <p class="mt-4 line-clamp-4 max-w-3xl text-sm leading-relaxed text-slate-300">{{ s.overview }}</p>
+            @if (jellyfinUrl(); as url) {
+              <div class="mt-4">
+                <a class="btn bg-violet-600/90 text-white hover:bg-violet-500" [href]="url" target="_blank" rel="noopener">
+                  <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l11-6.86a1 1 0 0 0 0-1.7l-11-6.86A1 1 0 0 0 8 5.14Z"/></svg>
+                  Open in Jellyfin
+                </a>
+              </div>
+            }
             @if (auth.isStaff()) {
               <p class="mt-3 break-all font-mono text-xs text-slate-500">{{ s.path }}</p>
               <div class="mt-5 flex flex-wrap gap-2">
@@ -356,6 +364,9 @@ export class SeriesDetailPage implements OnInit {
     return map;
   });
   protected readonly series = signal<Series | null>(null);
+  /** The series' page on Jellyfin, once an episode is downloaded and Jellyfin is set up. */
+  protected readonly jellyfinUrl = signal<string | null>(null);
+  private jellyfinCheckedFor: number | null = null;
   protected readonly episodes = signal<Episode[]>([]);
   protected readonly history = signal<HistoryItem[]>([]);
   protected readonly profiles = signal<QualityProfile[]>([]);
@@ -420,6 +431,8 @@ export class SeriesDetailPage implements OnInit {
   /** Clears everything tied to the previous series so nothing leaks across navigations. */
   private reset() {
     this.series.set(null);
+    this.jellyfinUrl.set(null);
+    this.jellyfinCheckedFor = null;
     this.episodes.set([]);
     this.history.set([]);
     this.subtitles.set([]);
@@ -447,6 +460,7 @@ export class SeriesDetailPage implements OnInit {
       this.editSeasonFolder = s.seasonFolder;
       this.editProfileId = s.qualityProfileId;
       this.editLanguages = s.languages ? [...s.languages] : null;
+      this.loadJellyfin(id, s.episodeFileCount > 0);
       if (!this.expandedInitialised) {
         // Open the latest regular season by default.
         const latest = Math.max(0, ...s.seasons.map(x => x.seasonNumber));
@@ -469,6 +483,18 @@ export class SeriesDetailPage implements OnInit {
       if (id === this.id()) this.episodes.set(episodes);
     } finally {
       if (this.loadingEpisodesFor === id) this.loadingEpisodesFor = null;
+    }
+  }
+
+  /** Looks the title up on Jellyfin once per page, as soon as something is downloaded. Failures just hide the button. */
+  private async loadJellyfin(id: number, hasFile: boolean) {
+    if (!hasFile || this.jellyfinCheckedFor === id) return;
+    this.jellyfinCheckedFor = id;
+    try {
+      const link = await this.api.seriesJellyfinLink(id);
+      if (id === this.id()) this.jellyfinUrl.set(link?.url ?? null);
+    } catch {
+      // Not configured, unreachable or unknown to Jellyfin: no button.
     }
   }
 

@@ -5,7 +5,7 @@ import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
   IndexerError, IndexerTestResult, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListItem, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
-  UserAccount, UserRole, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification,
+  UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification,
 } from './models';
 
 const API = 'api/v1';
@@ -32,6 +32,7 @@ export function errorMessage(err: unknown): string {
 type SettingsMap = {
   general: GeneralSettings; media: MediaManagementSettings; metadata: MetadataSettings;
   downloads: DownloadClientSettings; automation: AutomationSettings; subtitles: SubtitleSettings; languages: LanguageSettings;
+  jellyfin: JellyfinSettings;
 };
 
 @Injectable({ providedIn: 'root' })
@@ -74,6 +75,7 @@ export class Api {
   // Settings
   settings<K extends keyof SettingsMap>(section: K) { return this.get<SettingsMap[K]>(`settings/${section}`); }
   saveSettings<K extends keyof SettingsMap>(section: K, value: SettingsMap[K]) { return this.put<SettingsMap[K]>(`settings/${section}`, value); }
+  testJellyfin(settings: JellyfinSettings) { return this.post<JellyfinTestResult>('settings/jellyfin/test', settings); }
   regenerateApiKey() { return this.post<GeneralSettings>('settings/general/regenerate-api-key'); }
   qualities() { return this.get<Quality[]>('qualities'); }
   qualityProfiles() { return this.get<QualityProfile[]>('qualityprofiles'); }
@@ -117,6 +119,8 @@ export class Api {
   movies() { return this.get<MovieListItem[]>('movies'); }
   movieCollections() { return this.get<MovieCollection[]>('movies/collections'); }
   movie(id: number) { return this.get<Movie>(`movies/${id}`); }
+  /** The movie's Jellyfin page; null (HTTP 204) when Jellyfin isn't set up or doesn't have it. */
+  movieJellyfinLink(id: number) { return this.get<{ url: string } | null>(`movies/${id}/jellyfin`); }
   lookupMovies(term: string) { return this.get<MovieLookup[]>('movies/lookup', { term }); }
   addMovie(req: { tmdbId: number; qualityProfileId: number; rootFolderPath: string; monitored: boolean; searchForMovie: boolean; minimumAvailability: MinimumAvailability }) {
     return this.post<Movie>('movies', req);
@@ -157,6 +161,8 @@ export class Api {
   // Series
   seriesList() { return this.get<SeriesListItem[]>('series'); }
   series(id: number) { return this.get<Series>(`series/${id}`); }
+  /** The series' Jellyfin page; null (HTTP 204) when Jellyfin isn't set up or doesn't have it. */
+  seriesJellyfinLink(id: number) { return this.get<{ url: string } | null>(`series/${id}/jellyfin`); }
   episodes(seriesId: number) { return this.get<Episode[]>(`series/${seriesId}/episodes`); }
   lookupSeries(term: string) { return this.get<SeriesLookup[]>('series/lookup', { term }); }
   addSeries(req: { tmdbId?: number; tvdbId?: number; qualityProfileId: number; rootFolderPath: string; monitor: MonitorMode; seasonFolder: boolean; searchForMissing: boolean }) {
