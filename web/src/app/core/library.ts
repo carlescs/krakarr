@@ -45,6 +45,9 @@ export class ListCache<T> {
     }, this.delayMs);
   }
 
+  /** Reloads the list now (e.g. after a bulk action on the page showing it). */
+  reload(): Promise<void> { return this.refresh(); }
+
   /** Drops the cached list (e.g. on logout). */
   clear() {
     clearTimeout(this.timer);

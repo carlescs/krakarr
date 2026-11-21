@@ -35,4 +35,11 @@ export class Subscriptions {
     await (subscribed ? this.api.subscribe(mediaType, id) : this.api.unsubscribe(mediaType, id));
     if (this.list() !== null) void this.refresh();
   }
+
+  /** Follows or unfollows several titles at once. Returns how many changed. */
+  async setMany(mediaType: MediaType, ids: number[], subscribed: boolean): Promise<number> {
+    const result = await this.api.bulkSubscribe(mediaType, ids, subscribed);
+    await this.refresh();
+    return result.affected;
+  }
 }

@@ -14,7 +14,7 @@ const movies = [
 const collections = [{ id: 10, tmdbId: 8091, name: 'Alien Collection' }];
 
 async function render(list: MovieListItem[], role: UserRole = 'Admin') {
-  setupTest({ role, api: mockApi({ movies: async () => list, movieCollections: async () => collections }) });
+  setupTest({ role, api: mockApi({ movies: async () => list, movieCollections: async () => collections, subscriptions: async () => [{ mediaType: 'Movie', libraryId: 3, title: 'Arrival', year: 2016, subscribedAt: '' }] }) });
   const fixture = TestBed.createComponent(MovieListPage);
   await settle(fixture);
   return { fixture, el: fixture.nativeElement as HTMLElement };
@@ -65,6 +65,64 @@ describe('MovieListPage', () => {
     await settle(fixture);
     expect(titles(el)).toEqual(['Aliens']);
     expect(el.querySelector('kr-progress')).not.toBeNull();
+  });
+
+  it('shows a sortable table and remembers the view', async () => {
+    const { fixture, el } = await render(movies);
+    button(el, 'Table').click();
+    await settle(fixture);
+    expect(localStorage.getItem('krakarr.movies.view')).toBe('table');
+    const rows = () => [...el.querySelectorAll('tbody tr')].map(r => text(r as HTMLElement));
+    expect(rows()[0]).toContain('Alien');
+    expect(rows()[0]).toContain('Downloaded');
+    expect(rows()[2]).toContain('Unmonitored');
+    expect(rows()[2]).toContain('Following');
+
+    button(el, 'Year').click();
+    button(el, 'Year').click();
+    await settle(fixture);
+    expect([...el.querySelectorAll('tbody a')].map(a => a.textContent)).toEqual(['Arrival', 'Aliens', 'Alien']);
+    expect(el.querySelector('th[aria-sort="descending"]')).not.toBeNull();
+  });
+
+  it('selects rows and shows the bulk toolbar', async () => {
+    localStorage.setItem('krakarr.movies.view', 'table');
+    const { fixture, el } = await render(movies);
+    expect(el.querySelector('kr-bulk-actions')).toBeNull();
+
+    (el.querySelector('input[aria-label="Select Alien"]') as HTMLInputElement).click();
+    (el.querySelector('input[aria-label="Select Arrival"]') as HTMLInputElement).dispatchEvent(new MouseEvent('click', { shiftKey: true }));
+    await settle(fixture);
+    expect(text(el, 'kr-bulk-actions')).toContain('3 selected');
+
+    // Filtering narrows what bulk actions apply to.
+    type(el, 'select', 'missing');
+    await settle(fixture);
+    expect(text(el, 'kr-bulk-actions')).toContain('1 selected');
+  });
+
+  it('selects cards in grid selection mode instead of opening them', async () => {
+    const { fixture, el } = await render(movies);
+    button(el, 'Select').click();
+    await settle(fixture);
+    expect(text(el, 'kr-bulk-actions')).toContain('0 selected');
+
+    const card = () => el.querySelectorAll<HTMLElement>('a.group')[1];
+    expect(card().hasAttribute('href')).toBe(false);
+    card().click();
+    await settle(fixture);
+    expect(card().getAttribute('aria-checked')).toBe('true');
+    card().dispatchEvent(new KeyboardEvent('keydown', { key: ' ' }));
+    await settle(fixture);
+    expect(card().getAttribute('aria-checked')).toBe('false');
+    card().click();
+    await settle(fixture);
+    expect(text(el, 'kr-bulk-actions')).toContain('1 selected');
+
+    button(el, 'Done').click();
+    await settle(fixture);
+    expect(el.querySelector('kr-bulk-actions')).toBeNull();
+    expect(card().getAttribute('href')).toBe('/movies/2');
   });
 
   it('guides plain users to Discover when the library is empty', async () => {

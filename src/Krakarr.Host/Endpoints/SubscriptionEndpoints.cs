@@ -13,6 +13,9 @@ public sealed record SubscriptionState(bool Subscribed, IReadOnlyList<string>? S
 
 public sealed record SubscriberDto(int Id, string Username, int Count);
 
+/// <summary>Follow or unfollow several library titles of one type at once (table view multi-selection).</summary>
+public sealed record BulkSubscriptionRequest(MediaType MediaType, IReadOnlyList<int> Ids, bool Subscribed);
+
 /// <summary>
 /// Users subscribe to library movies and series to see them in their calendar and "My titles" filters. Every
 /// signed-in user manages their own subscriptions; listing who follows what is for staff (<see cref="RoleAccess"/>).
@@ -44,6 +47,56 @@ public static class SubscriptionEndpoints
                 .OrderBy(u => u.Username)
                 .Select(u => new SubscriberDto(u.Id, u.Username, db.MediaSubscriptions.Count(s => s.UserId == u.Id)))
                 .ToListAsync(ct)));
+
+        group.MapPost("/bulk", async (BulkSubscriptionRequest req, HttpContext http, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            if (http.User.GetUserId() is not { } userId)
+                return Results.Problem("Subscriptions belong to user accounts, not the API key.", statusCode: StatusCodes.Status400BadRequest);
+            if (!Enum.IsDefined(req.MediaType)) return Results.NotFound();
+            if (BulkLimits.Clean(req.Ids) is not { } ids) return Results.Problem(BulkLimits.InvalidMessage, statusCode: StatusCodes.Status400BadRequest);
+            var movies = req.MediaType == MediaType.Movie;
+
+            if (!req.Subscribed)
+            {
+                var removed = movies
+                    ? await db.MediaSubscriptions.Where(s => s.UserId == userId && s.MovieId != null && ids.Contains(s.MovieId.Value)).ExecuteDeleteAsync(ct)
+                    : await db.MediaSubscriptions.Where(s => s.UserId == userId && s.SeriesId != null && ids.Contains(s.SeriesId.Value)).ExecuteDeleteAsync(ct);
+                return Results.Ok(new BulkResult(removed, []));
+            }
+
+            var titles = movies
+                ? await db.Movies.AsNoTracking().Where(m => ids.Contains(m.Id)).Select(m => m.Id).ToListAsync(ct)
+                : await db.Series.AsNoTracking().Where(x => ids.Contains(x.Id)).Select(x => x.Id).ToListAsync(ct);
+            // Bounded by MaxPerUser.
+            var followed = await MediaSubscriptions.Of(db, userId, req.MediaType).AsNoTracking()
+                .Select(s => movies ? s.MovieId!.Value : s.SeriesId!.Value).ToListAsync(ct);
+            var toAdd = titles.Except(followed).ToList();
+            if (toAdd.Count == 0) return Results.Ok(new BulkResult(0, []));
+
+            var total = await db.MediaSubscriptions.CountAsync(s => s.UserId == userId, ct);
+            if (total + toAdd.Count > MediaSubscriptions.MaxPerUser)
+            {
+                return Results.Problem($"You can follow at most {MediaSubscriptions.MaxPerUser} titles.", statusCode: StatusCodes.Status409Conflict);
+            }
+
+            db.MediaSubscriptions.AddRange(toAdd.Select(id => new MediaSubscription
+            {
+                UserId = userId,
+                MovieId = movies ? id : null,
+                SeriesId = movies ? null : id,
+            }));
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException)
+            {
+                // A concurrent follow won the unique index for one of them.
+                return Results.Problem("Your followed titles changed meanwhile; try again.", statusCode: StatusCodes.Status409Conflict);
+            }
+
+            return Results.Ok(new BulkResult(toAdd.Count, []));
+        });
 
         group.MapGet("/{mediaType}/{id:int}", async (MediaType mediaType, int id, HttpContext http, KrakarrDbContext db, CancellationToken ct) =>
         {

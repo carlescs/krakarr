@@ -1,0 +1,12 @@
+<button type="button" class="rounded-md px-2.5 py-1.5 pointer-coarse:min-h-9" [class]="mode() === 'grid' ? 'bg-surface-600 text-white' : 'text-slate-400 hover:text-white'"
+        aria-label="Poster grid" title="Poster grid" [attr.aria-pressed]="mode() === 'grid'" (click)="mode.set('grid')">
+  <svg class="size-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+    <path d="M3 3h6v6H3V3Zm8 0h6v6h-6V3ZM3 11h6v6H3v-6Zm8 0h6v6h-6v-6Z" />
+  </svg>
+</button>
+<button type="button" class="rounded-md px-2.5 py-1.5 pointer-coarse:min-h-9" [class]="mode() === 'table' ? 'bg-surface-600 text-white' : 'text-slate-400 hover:text-white'"
+        aria-label="Table" title="Table" [attr.aria-pressed]="mode() === 'table'" (click)="mode.set('table')">
+  <svg class="size-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+    <path d="M3 4h14v2H3V4Zm0 5h14v2H3V9Zm0 5h14v2H3v-2Z" />
+  </svg>
+</button>

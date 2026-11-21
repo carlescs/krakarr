@@ -201,30 +201,116 @@ public static class MovieEndpoints
         {
             var movie = await db.Movies.Include(m => m.MovieFile).FirstOrDefaultAsync(m => m.Id == id, ct);
             if (movie is null) return Results.NotFound();
-
-            if (deleteFiles == true && Directory.Exists(movie.Path))
-            {
-                // Only ever delete strictly inside a configured root folder (never a root itself or anything outside).
-                var roots = await db.RootFolders.AsNoTracking().Select(r => r.Path).ToListAsync(ct);
-                if (!Krakarr.Media.Files.LibraryPaths.CanDeleteRecursively(roots, movie.Path))
-                {
-                    return Results.Problem($"Refusing to delete {movie.Path}: it is not inside a configured root folder", statusCode: StatusCodes.Status400BadRequest);
-                }
-
-                Directory.Delete(movie.Path, recursive: true);
-            }
-
-            if (movie.MovieFile is { } file)
-            {
-                movie.MovieFileId = null;
-                db.MovieFiles.Remove(file);
-            }
-
-            await db.Downloads.Where(d => d.MovieId == id).ExecuteUpdateAsync(s => s.SetProperty(d => d.MovieId, (int?)null), ct);
-            db.Movies.Remove(movie);
-            await db.SaveChangesAsync(ct);
+            if (await DeleteAsync(db, movie, deleteFiles == true, ct) is { } error)
+                return Results.Problem(error, statusCode: StatusCodes.Status400BadRequest);
             await MovieService.PruneCollectionsAsync(db, ct);
             return Results.NoContent();
+        });
+
+        // Bulk actions on a multi-selection of the movie table.
+        group.MapPut("/bulk", async (BulkEditRequest req, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            if (BulkLimits.Clean(req.Ids) is not { } ids) return Results.Problem(BulkLimits.InvalidMessage, statusCode: 400);
+            if (req.Monitored is null && req.QualityProfileId is null) return Results.Problem("Nothing to change", statusCode: 400);
+            if (req.QualityProfileId is { } profileId && !await db.QualityProfiles.AnyAsync(p => p.Id == profileId, ct))
+                return Results.Problem("Quality profile does not exist", statusCode: 400);
+            var affected = await db.Movies.Where(m => ids.Contains(m.Id)).ExecuteUpdateAsync(s =>
+            {
+                if (req.Monitored is { } monitored) s.SetProperty(m => m.Monitored, monitored);
+                if (req.QualityProfileId is { } qualityProfileId) s.SetProperty(m => m.QualityProfileId, qualityProfileId);
+            }, ct);
+            return Results.Ok(new BulkResult(affected, []));
+        });
+
+        group.MapPost("/bulk/search", async (BulkIdsRequest req, KrakarrDbContext db, ICommandQueue commands, CancellationToken ct) =>
+        {
+            if (BulkLimits.Clean(req.Ids) is not { } requested) return Results.Problem(BulkLimits.InvalidMessage, statusCode: 400);
+            var ids = await db.Movies.AsNoTracking().Where(m => requested.Contains(m.Id)).OrderBy(m => m.SortTitle).Select(m => m.Id).ToListAsync(ct);
+            if (ids.Count == 0) return Results.NotFound();
+            var command = commands.Enqueue($"Search: {ids.Count} movie(s)", async (sp, token) =>
+            {
+                var scopedDb = sp.GetRequiredService<KrakarrDbContext>();
+                var service = sp.GetRequiredService<MovieService>();
+                var (searched, grabbed, failures) = (0, 0, new List<string>());
+                foreach (var id in ids)
+                {
+                    scopedDb.ChangeTracker.Clear(); // keep only the current movie tracked
+                    try
+                    {
+                        var result = await service.AutoSearchAsync(id, token);
+                        searched++;
+                        if (result.Contains(": grabbed ", StringComparison.Ordinal)) grabbed++;
+                    }
+                    catch (KeyNotFoundException)
+                    {
+                        // Deleted since the command was queued.
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        failures.Add(ex.Message);
+                    }
+                }
+
+                return BulkLimits.Summary($"Searched {searched} movie(s), grabbed {grabbed}", failures);
+            });
+            return Results.Accepted(value: command);
+        });
+
+        group.MapPost("/bulk/refresh", async (BulkIdsRequest req, KrakarrDbContext db, ICommandQueue commands, CancellationToken ct) =>
+        {
+            if (BulkLimits.Clean(req.Ids) is not { } requested) return Results.Problem(BulkLimits.InvalidMessage, statusCode: 400);
+            var ids = await db.Movies.AsNoTracking().Where(m => requested.Contains(m.Id)).OrderBy(m => m.SortTitle).Select(m => m.Id).ToListAsync(ct);
+            if (ids.Count == 0) return Results.NotFound();
+            var command = commands.Enqueue($"Refresh: {ids.Count} movie(s)", async (sp, token) =>
+            {
+                var scopedDb = sp.GetRequiredService<KrakarrDbContext>();
+                var service = sp.GetRequiredService<MovieService>();
+                var (refreshed, failures) = (0, new List<string>());
+                foreach (var id in ids)
+                {
+                    scopedDb.ChangeTracker.Clear(); // RefreshAsync saves; keep only the current movie tracked
+                    var movie = await scopedDb.Movies.FirstOrDefaultAsync(m => m.Id == id, token);
+                    if (movie is null) continue;
+                    try
+                    {
+                        await service.RefreshAsync(movie, token);
+                        refreshed++;
+                    }
+                    catch (MetadataException ex)
+                    {
+                        failures.Add($"{movie.Title}: {ex.Message}");
+                        if (failures.Count >= 3 && refreshed == 0) break; // likely a missing API key: don't hammer TMDB
+                    }
+                }
+
+                await MovieService.PruneCollectionsAsync(scopedDb, token);
+                return BulkLimits.Summary($"Refreshed {refreshed} movie(s)", failures);
+            });
+            return Results.Accepted(value: command);
+        });
+
+        group.MapPost("/bulk/delete", async (BulkDeleteRequest req, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            if (BulkLimits.Clean(req.Ids) is not { } ids) return Results.Problem(BulkLimits.InvalidMessage, statusCode: 400);
+            var (deleted, errors) = (0, new List<string>());
+            foreach (var id in ids)
+            {
+                db.ChangeTracker.Clear(); // one movie (and its file) tracked at a time
+                var movie = await db.Movies.Include(m => m.MovieFile).FirstOrDefaultAsync(m => m.Id == id, ct);
+                if (movie is null) continue;
+                try
+                {
+                    if (await DeleteAsync(db, movie, req.DeleteFiles, ct) is { } error) errors.Add(error);
+                    else deleted++;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    errors.Add($"{movie.Title}: {ex.Message}");
+                }
+            }
+
+            await MovieService.PruneCollectionsAsync(db, ct);
+            return Results.Ok(new BulkResult(deleted, errors));
         });
 
         group.MapPost("/{id:int}/search", async (int id, KrakarrDbContext db, ICommandQueue commands, CancellationToken ct) =>
@@ -283,6 +369,34 @@ public static class MovieEndpoints
 
         app.MapMovieDiscoveryEndpoints();
         return app;
+    }
+
+    /// <summary>Removes a tracked movie (loaded with its file), and its folder when asked. Returns why not, or null when deleted.</summary>
+    private static async Task<string?> DeleteAsync(KrakarrDbContext db, Movie movie, bool deleteFiles, CancellationToken ct)
+    {
+        if (deleteFiles && Directory.Exists(movie.Path))
+        {
+            // Only ever delete strictly inside a configured root folder (never a root itself or anything outside).
+            var roots = await db.RootFolders.AsNoTracking().Select(r => r.Path).ToListAsync(ct);
+            if (!Krakarr.Media.Files.LibraryPaths.CanDeleteRecursively(roots, movie.Path))
+            {
+                return $"Refusing to delete {movie.Path}: it is not inside a configured root folder";
+            }
+
+            Directory.Delete(movie.Path, recursive: true);
+        }
+
+        if (movie.MovieFile is { } file)
+        {
+            movie.MovieFileId = null;
+            db.MovieFiles.Remove(file);
+        }
+
+        var id = movie.Id;
+        await db.Downloads.Where(d => d.MovieId == id).ExecuteUpdateAsync(s => s.SetProperty(d => d.MovieId, (int?)null), ct);
+        db.Movies.Remove(movie);
+        await db.SaveChangesAsync(ct);
+        return null;
     }
 
     private static Dictionary<int, double> ActiveProgress(ITorrentEngine engine) =>
