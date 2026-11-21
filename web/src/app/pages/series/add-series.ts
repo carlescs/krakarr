@@ -4,6 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
 import { SeriesLookup } from '../../core/models';
 import { AddSeriesModal } from '../../shared/add-series-modal';
+import { detailRoute } from '../../shared/media-card';
 import { Poster } from '../../shared/poster';
 
 @Component({
@@ -24,11 +25,18 @@ import { Poster } from '../../shared/poster';
 
     <div class="space-y-3">
       @for (r of results(); track (r.tmdbId ?? 0) + '-' + (r.tvdbId ?? 0)) {
+        @let detail = detailRoute({ kind: 'series', item: r });
         <div class="card flex gap-3 p-3 sm:gap-4 sm:p-4">
-          <kr-poster class="w-20 shrink-0 sm:w-24" [url]="r.posterUrl" [title]="r.title" />
+          @if (detail) {
+            <a [routerLink]="detail" class="w-20 shrink-0 sm:w-24" [attr.aria-label]="r.title"><kr-poster [url]="r.posterUrl" [title]="r.title" /></a>
+          } @else {
+            <kr-poster class="w-20 shrink-0 sm:w-24" [url]="r.posterUrl" [title]="r.title" />
+          }
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-baseline gap-x-2">
-              <h2 class="text-base font-semibold text-white sm:text-lg">{{ r.title }}</h2>
+              <h2 class="text-base font-semibold text-white sm:text-lg">
+                @if (detail) { <a [routerLink]="detail" class="hover:text-accent-400 hover:underline">{{ r.title }}</a> } @else { {{ r.title }} }
+              </h2>
               <span class="text-slate-400">{{ r.year || '' }}</span>
             </div>
             <div class="text-xs text-slate-500">{{ r.network }}{{ r.network && r.status ? ' · ' : '' }}{{ r.status }}</div>
@@ -53,6 +61,7 @@ import { Poster } from '../../shared/poster';
 export class AddSeriesPage {
   private readonly api = inject(Api);
   protected readonly router = inject(Router);
+  protected readonly detailRoute = detailRoute;
 
   protected term = '';
   protected readonly searching = signal(false);
