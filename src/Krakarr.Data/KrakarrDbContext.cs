@@ -32,6 +32,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
     public DbSet<Download> Downloads => Set<Download>();
     public DbSet<HistoryEntry> History => Set<HistoryEntry>();
     public DbSet<MediaRequest> MediaRequests => Set<MediaRequest>();
+    public DbSet<MediaSubscription> MediaSubscriptions => Set<MediaSubscription>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
@@ -151,6 +152,19 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
             // Deleting a user deletes their requests; deleting whoever processed one keeps it.
             e.HasOne(x => x.RequestedBy).WithMany().HasForeignKey(x => x.RequestedById).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.ProcessedBy).WithMany().HasForeignKey(x => x.ProcessedById).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        b.Entity<MediaSubscription>(e =>
+        {
+            // NULLs are distinct in unique indexes (SQLite and PostgreSQL), so each pair only constrains its own kind.
+            e.HasIndex(x => new { x.UserId, x.MovieId }).IsUnique();
+            e.HasIndex(x => new { x.UserId, x.SeriesId }).IsUnique();
+            e.HasIndex(x => x.MovieId);
+            e.HasIndex(x => x.SeriesId);
+            // Removing the user or the title removes the subscription.
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Movie).WithMany().HasForeignKey(x => x.MovieId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Series).WithMany().HasForeignKey(x => x.SeriesId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

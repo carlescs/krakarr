@@ -15,10 +15,9 @@ interface RowState { key: string; title: string; subtitle: string; link: string[
   template: `
     <div class="mb-6 flex flex-wrap items-center gap-3">
       <h1 class="page-title mr-auto">Discover</h1>
-      @if (auth.isStaff()) {
-        <a routerLink="/movies/add" class="btn-secondary">Search movies</a>
-        <a routerLink="/series/add" class="btn-secondary">Search series</a>
-      } @else {
+      <a routerLink="/movies/add" class="btn-secondary">Search movies</a>
+      <a routerLink="/series/add" class="btn-secondary">Search series</a>
+      @if (!auth.isStaff()) {
         <a routerLink="/requests" class="btn-secondary">My requests</a>
       }
     </div>

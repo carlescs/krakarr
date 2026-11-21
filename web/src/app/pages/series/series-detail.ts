@@ -17,6 +17,7 @@ import { LibraryCredits } from '../../shared/credits';
 import { RelatedTitles } from '../../shared/related-titles';
 import { Progress } from '../../shared/progress';
 import { SubtitleManager } from '../../shared/subtitle-manager';
+import { SubscribeButton } from '../../shared/subscribe-button';
 
 const ICON_SEARCH = 'm21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z';
 const ICON_LIST = 'M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM3.75 12h.007v.008H3.75V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm-.375 5.25h.007v.008H3.75v-.008Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z';
@@ -27,7 +28,7 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
 
 @Component({
   selector: 'kr-series-detail',
-  imports: [LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, BytesPipe, AgoPipe, SubtitleManager],
+  imports: [SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, BytesPipe, AgoPipe, SubtitleManager],
   template: `
     @if (series(); as s) {
       <!-- Hero -->
@@ -69,7 +70,9 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
             }
             @if (auth.isStaff()) {
               <p class="mt-3 break-all font-mono text-xs text-slate-500">{{ s.path }}</p>
-              <div class="mt-5 flex flex-wrap gap-2">
+            }
+            <div class="mt-5 flex flex-wrap gap-2">
+              @if (auth.isStaff()) {
                 <button class="btn-primary" (click)="searchMissing()">Search missing</button>
                 @if (s.episodeFileCount > 0) { <button class="btn-secondary" (click)="searchSubtitles()">Search subtitles</button> }
                 <button class="btn-secondary" (click)="refresh()">Refresh</button>
@@ -77,8 +80,9 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
                 <button class="btn-secondary" (click)="toggleSeries()">{{ s.monitored ? 'Unmonitor' : 'Monitor' }}</button>
                 <button class="btn-ghost" (click)="editing.set(true)">Edit</button>
                 <button class="btn-ghost text-rose-300" (click)="confirmDelete.set(true)">Delete</button>
-              </div>
-            }
+              }
+              <kr-subscribe-button mediaType="Series" [libraryId]="s.id" [primary]="!auth.isStaff()" />
+            </div>
           </div>
         </div>
       </div>

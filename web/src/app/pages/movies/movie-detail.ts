@@ -19,10 +19,11 @@ import { RelatedTitles } from '../../shared/related-titles';
 import { Progress } from '../../shared/progress';
 import { StateBadge } from '../../shared/state-badge';
 import { SubtitleManager } from '../../shared/subtitle-manager';
+import { SubscribeButton } from '../../shared/subscribe-button';
 
 @Component({
   selector: 'kr-movie-detail',
-  imports: [LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, Poster, Progress, Modal, StateBadge, SubtitleManager, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
+  imports: [SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, Poster, Progress, Modal, StateBadge, SubtitleManager, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
   template: `
     @if (movie(); as m) {
       <!-- Hero -->
@@ -66,15 +67,18 @@ import { SubtitleManager } from '../../shared/subtitle-manager';
             }
             @if (auth.isStaff()) {
               <p class="mt-3 break-all font-mono text-xs text-slate-500">{{ m.path }}</p>
-              <div class="mt-5 flex flex-wrap gap-2">
+            }
+            <div class="mt-5 flex flex-wrap gap-2">
+              @if (auth.isStaff()) {
                 <button class="btn-primary" (click)="autoSearch()">Automatic search</button>
                 <button class="btn-secondary" (click)="interactiveSearch()">Interactive search</button>
                 @if (m.hasFile) { <button class="btn-secondary" (click)="searchSubtitles()">Search subtitles</button> }
                 <button class="btn-secondary" (click)="toggleMonitored()">{{ m.monitored ? 'Unmonitor' : 'Monitor' }}</button>
                 <button class="btn-ghost" (click)="editing.set(true)">Edit</button>
                 <button class="btn-ghost text-rose-300" (click)="confirmDelete.set(true)">Delete</button>
-              </div>
-            }
+              }
+              <kr-subscribe-button mediaType="Movie" [libraryId]="m.id" [primary]="!auth.isStaff()" />
+            </div>
           </div>
         </div>
       </div>

@@ -270,3 +270,10 @@ export type NotificationSeverity = 'Info' | 'Warning' | 'Error';
 export interface AppNotification {
   id: string; kind: string; title: string; message?: string | null; link: string; count: number; severity: NotificationSeverity; date?: string | null;
 }
+
+/** A library title the signed-in user follows (shows in "My titles"). */
+export interface Subscription { mediaType: MediaType; libraryId: number; title: string; year: number; posterUrl?: string | null; subscribedAt: string; }
+/** Whether the caller follows a title; `subscribers` lists everyone who does, for staff only. */
+export interface SubscriptionState { subscribed: boolean; subscribers?: string[] | null; }
+/** A user who follows at least one title (staff calendar picker). */
+export interface Subscriber { id: number; username: string; count: number; }

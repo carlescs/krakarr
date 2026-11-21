@@ -208,6 +208,7 @@ app.MapSubtitleEndpoints();
 app.MapCalendarEndpoints();
 app.MapPeopleEndpoints();
 app.MapRequestEndpoints();
+app.MapSubscriptionEndpoints();
 app.MapNotificationEndpoints();
 app.MapJellyfinEndpoints();
 app.MapHub<EventsHub>("/hubs/events");

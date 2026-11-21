@@ -396,3 +396,20 @@ public class MediaRequest
     /// <summary>Optional reason given when declining.</summary>
     public string? DeclineReason { get; set; }
 }
+
+/// <summary>
+/// A user following a library movie or series: it shows in their "My titles" calendar and list filters. Users subscribe
+/// from the title's page; requesters are subscribed automatically once their request is in the library.
+/// Exactly one of <see cref="MovieId"/> and <see cref="SeriesId"/> is set.
+/// </summary>
+public class MediaSubscription
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public User? User { get; set; }
+    public int? MovieId { get; set; }
+    public Movie? Movie { get; set; }
+    public int? SeriesId { get; set; }
+    public Series? Series { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
