@@ -8,7 +8,13 @@
   "projects": {
     "web": {
       "projectType": "application",
-      "schematics": {},
+      "schematics": {
+        "@schematics/angular:component": {
+          "style": "scss",
+          "type": "",
+          "addTypeToClassName": false
+        }
+      },
       "root": "",
       "sourceRoot": "src",
       "prefix": "kr",

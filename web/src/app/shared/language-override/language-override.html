@@ -1,0 +1,10 @@
+<label class="label">Languages</label>
+<label class="flex items-center gap-2 text-sm">
+  <input type="checkbox" class="accent-accent-500" [checked]="value() === null" (change)="toggleDefault($any($event.target).checked)" />
+  Use the default ({{ catalog.describe(catalog.preferred()) }})
+</label>
+@if (value(); as list) {
+  <div class="mt-2"><kr-language-picker [languages]="catalog.all()" [value]="list" (valueChange)="value.set($event)" /></div>
+  @if (list.length === 0) { <p class="hint">No languages selected: releases in any language are accepted.</p> }
+}
+<p class="hint">Only releases with one of these audio languages are downloaded; earlier languages are preferred over better quality.</p>

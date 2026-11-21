@@ -16,13 +16,14 @@ public static class SecurityHeaders
     public const string HstsSettingName = "Krakarr:Hsts";
 
     /// <summary>
-    /// Scripts and styles come only from the app's own files (the Angular build inlines neither; see
-    /// <c>inlineCritical</c> in angular.json). Posters and portraits load from TMDB and TheTVDB.
+    /// Scripts come only from the app's own files (the Angular build inlines none; see <c>inlineCritical</c> in
+    /// angular.json). Styles also allow <c>'unsafe-inline'</c> because Angular injects component styles (each
+    /// component's .scss) as &lt;style&gt; elements at runtime. Posters and portraits load from TMDB and TheTVDB.
     /// </summary>
     public const string DefaultContentSecurityPolicy =
         "default-src 'self'; " +
         "script-src 'self'; " +
-        "style-src 'self'; " +
+        "style-src 'self' 'unsafe-inline'; " +
         "img-src 'self' data: https://image.tmdb.org https://artworks.thetvdb.com; " +
         "font-src 'self'; " +
         "connect-src 'self'; " +

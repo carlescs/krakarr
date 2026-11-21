@@ -1,0 +1,33 @@
+<section class="mb-8">
+  <div class="mb-3 flex items-center gap-3">
+    <h2 class="text-lg font-semibold text-white">{{ title() }}</h2>
+    @if (subtitle()) { <span class="hidden text-sm text-slate-500 sm:inline">{{ subtitle() }}</span> }
+    <div class="flex-1"></div>
+    @if (link(); as l) { <a [routerLink]="l" class="text-sm text-accent-300 hover:text-accent-200">See all →</a> }
+    @if (shown().length > 0) {
+      <div class="hidden gap-1 sm:flex">
+        <button class="btn-ghost btn-sm" (click)="scroll(-1)" aria-label="Scroll left">‹</button>
+        <button class="btn-ghost btn-sm" (click)="scroll(1)" aria-label="Scroll right">›</button>
+      </div>
+    }
+  </div>
+  @if (error()) {
+    <p class="text-sm text-rose-300">{{ error() }}</p>
+  } @else if (loading()) {
+    <div class="flex gap-4 overflow-hidden">
+      @for (i of placeholders; track i) { <div class="aspect-[2/3] w-32 shrink-0 animate-pulse rounded-lg bg-surface-800 sm:w-40"></div> }
+    </div>
+  } @else if (shown().length === 0) {
+    <p class="text-sm text-slate-500">{{ empty() }}</p>
+  } @else {
+    <div #scroller class="-mx-1 -mt-1 flex snap-x gap-3 overflow-x-auto sm:gap-4 px-1 pt-1 pb-2 [scrollbar-width:thin]">
+      @for (d of shown(); track key(d)) {
+        <kr-media-card class="w-32 shrink-0 snap-start sm:w-40" [item]="d" (add)="selected.set($event)" />
+      }
+    </div>
+  }
+</section>
+
+@if (selected(); as d) {
+  <kr-discover-add [item]="d" (closed)="selected.set(null)" (added)="markAdded($event)" (requested)="selected.set(null)" />
+}

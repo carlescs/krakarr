@@ -1,0 +1,8 @@
+@let d = item();
+@if (!staff()) {
+  <kr-request-modal [item]="d" (closed)="closed.emit()" (requested)="requested.emit($event)" />
+} @else if (d.kind === 'movie') {
+  <kr-add-movie-modal [movie]="d.item" (closed)="closed.emit()" (added)="added.emit({ kind: 'movie', item: { ...d.item, movieId: $event.id } })" />
+} @else {
+  <kr-add-series-modal [show]="d.item" (closed)="closed.emit()" (added)="added.emit({ kind: 'series', item: { ...d.item, seriesId: $event.id } })" />
+}

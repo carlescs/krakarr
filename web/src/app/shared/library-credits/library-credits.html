@@ -1,0 +1,5 @@
+@if (error()) {
+  <p class="mb-6 text-sm text-rose-300">{{ error() }}</p>
+} @else {
+  <kr-credits [cast]="cast()" [crew]="crew()" [loading]="loading()" />
+}

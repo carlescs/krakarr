@@ -1,0 +1,87 @@
+<div class="flex h-full">
+  <!-- Sidebar -->
+  <aside class="fixed inset-y-0 left-0 z-40 flex w-64 flex-col pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] lg:w-60 border-r border-surface-800 bg-surface-900/95 backdrop-blur transition-transform lg:translate-x-0"
+         [class.-translate-x-full]="!menuOpen()" [class.max-lg:invisible]="!menuOpen()">
+    <a routerLink="/movies" class="flex items-center gap-2.5 px-5 py-5">
+      <img src="favicon.svg" alt="" class="size-8" />
+      <span class="text-lg font-bold tracking-tight text-white">Krakarr</span>
+    </a>
+    <nav class="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4">
+      @for (item of nav(); track item.path) {
+        @if (item.section) {
+          <div class="px-3 pt-4 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">{{ item.section }}</div>
+        }
+        <a [routerLink]="item.path" routerLinkActive="!bg-surface-700/70 !text-white" (click)="menuOpen.set(false)"
+           class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm lg:py-2 font-medium text-slate-400 transition hover:bg-surface-800 hover:text-slate-100">
+          <svg class="size-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons[item.icon]" />
+          </svg>
+          <span class="flex-1">{{ item.label }}</span>
+          @if (item.path === '/downloads' && activeDownloads() > 0) {
+            <span class="badge bg-accent-500/15 text-accent-300">{{ activeDownloads() }}</span>
+          }
+          @if (item.path === '/requests' && pendingRequests() > 0) {
+            <span class="badge bg-amber-500/15 text-amber-300" title="Waiting for approval">{{ pendingRequests() }}</span>
+          }
+        </a>
+      }
+    </nav>
+    <div class="border-t border-surface-800 px-5 py-3 text-xs text-slate-500">
+      <div class="flex items-center justify-between">
+        <span class="flex items-center gap-1.5">
+          <span class="size-2 rounded-full" [class]="events.connected() ? 'bg-emerald-400' : 'bg-amber-400'"></span>
+          {{ events.connected() ? 'Live' : 'Connecting…' }}
+        </span>
+        @if (auth.isStaff()) { <span>↓ {{ totalDown() | speed }} · ↑ {{ totalUp() | speed }}</span> }
+      </div>
+    </div>
+  </aside>
+  @if (menuOpen()) {
+    <div class="fixed inset-0 z-30 bg-black/50 backdrop-blur-[1px] lg:hidden" (click)="menuOpen.set(false)"></div>
+  }
+
+  <!-- Main -->
+  <div class="flex min-w-0 flex-1 flex-col lg:pl-60">
+    <header class="sticky top-0 z-20 border-b border-surface-800 bg-surface-950/85 pt-[env(safe-area-inset-top)] backdrop-blur">
+      <div class="flex h-14 items-center gap-3 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] lg:px-8">
+        <button class="btn-ghost -ml-2 px-2 lg:hidden" (click)="menuOpen.set(true)" aria-label="Open menu">
+          <svg class="size-6" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor"><path stroke-linecap="round" [attr.d]="icons['menu']" /></svg>
+        </button>
+        <a routerLink="/movies" class="flex min-w-0 items-center gap-2 lg:hidden">
+          <img src="favicon.svg" alt="" class="size-7 shrink-0" />
+          <span class="truncate font-semibold text-white">{{ current()?.label ?? 'Krakarr' }}</span>
+        </a>
+        <div class="flex-1"></div>
+        <kr-notification-bell />
+        <a routerLink="/settings" class="hidden text-sm text-slate-400 hover:text-white sm:inline" title="Your account">{{ auth.status()?.username }}</a>
+        <button class="btn-ghost btn-sm" (click)="logout()" [title]="'Sign out ' + (auth.status()?.username ?? '')">Sign out</button>
+      </div>
+    </header>
+    <main class="flex-1 pt-6 pr-[max(1rem,env(safe-area-inset-right))] pb-tabbar pl-[max(1rem,env(safe-area-inset-left))] lg:px-8 lg:pb-6">
+      <router-outlet />
+    </main>
+  </div>
+
+  <!-- Mobile tab bar -->
+  <nav class="fixed inset-x-0 bottom-0 z-30 border-t border-surface-800 bg-surface-900/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden" aria-label="Primary">
+    <div class="mx-auto grid h-16 max-w-lg grid-cols-5">
+      @for (item of tabs(); track item.path) {
+        <a [routerLink]="item.path" routerLinkActive="!text-accent-300" (click)="menuOpen.set(false)"
+           class="relative flex flex-col items-center justify-center gap-1 text-[11px] font-medium text-slate-400 active:bg-surface-800">
+          <svg class="size-6" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons[item.icon]" />
+          </svg>
+          {{ item.label }}
+          @if (item.path === '/downloads' && activeDownloads() > 0) {
+            <span class="absolute top-1.5 left-1/2 ml-2 min-w-4 rounded-full bg-accent-500 px-1 text-center text-[10px] leading-4 font-semibold text-slate-950">{{ activeDownloads() }}</span>
+          }
+        </a>
+      }
+      <button class="flex flex-col items-center justify-center gap-1 text-[11px] font-medium active:bg-surface-800"
+              [class]="menuOpen() || moreActive() ? 'text-accent-300' : 'text-slate-400'" (click)="menuOpen.set(!menuOpen())" aria-label="More">
+        <svg class="size-6" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor"><path stroke-linecap="round" [attr.d]="icons['menu']" /></svg>
+        More
+      </button>
+    </div>
+  </nav>
+</div>

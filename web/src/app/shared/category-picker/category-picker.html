@@ -1,0 +1,35 @@
+<div class="rounded-lg border border-surface-700">
+  <div class="max-h-56 overflow-y-auto p-2">
+    @for (g of shown(); track g.parent.id) {
+      <label class="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-surface-800">
+        <input type="checkbox" class="accent-accent-500" [checked]="isSelected(g.parent.id)" (change)="toggle(g.parent.id)" />
+        <span class="flex-1 font-medium text-slate-100">{{ g.parent.name }}</span>
+        <span class="font-mono text-xs text-slate-500">{{ g.parent.id }}</span>
+      </label>
+      @for (s of g.subs; track s.id) {
+        <label class="ml-5 flex items-center gap-2 rounded px-2 py-0.5 text-sm hover:bg-surface-800"
+               [class.opacity-50]="isSelected(g.parent.id)" [title]="isSelected(g.parent.id) ? 'Included by ' + g.parent.name : ''">
+          <input type="checkbox" class="accent-accent-500" [checked]="isSelected(s.id)" (change)="toggle(s.id)" />
+          <span class="flex-1 text-slate-300">{{ shortName(s, g.parent) }}</span>
+          <span class="font-mono text-xs text-slate-500">{{ s.id }}</span>
+        </label>
+      }
+    } @empty {
+      <p class="px-2 py-1 text-sm text-slate-500">No categories in this range.</p>
+    }
+  </div>
+  @if (otherCount() > 0) {
+    <button type="button" class="w-full border-t border-surface-700 px-3 py-1.5 text-left text-xs text-slate-400 hover:text-white" (click)="showAll.set(!showAll())">
+      {{ showAll() ? 'Show suggested only' : 'Show all categories (+' + otherCount() + ')' }}
+    </button>
+  }
+</div>
+@if (unknown().length > 0) {
+  <div class="mt-1.5 flex flex-wrap gap-1">
+    @for (id of unknown(); track id) {
+      <span class="badge bg-amber-500/15 text-amber-300" title="Not advertised by this indexer">
+        {{ id }} <button type="button" class="ml-1 hover:text-white" (click)="toggle(id)" aria-label="Remove">✕</button>
+      </span>
+    }
+  </div>
+}

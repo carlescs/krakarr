@@ -282,8 +282,8 @@ follows a title next to the button. Removing a title (or a user) removes its fol
 - **Sessions can be revoked.** Every request re-checks the account, so deleting a user, changing a role or changing a
   password applies at once, and a password change signs out every other session. *Settings → Account → Sign out other
   sessions* does the same without changing the password. Sign-ins also expire 30 days after the password was entered.
-- **Browser hardening headers.** Every response carries a strict `Content-Security-Policy` (scripts and styles only from
-  Krakarr itself, images also from TMDB and TheTVDB), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
+- **Browser hardening headers.** Every response carries a strict `Content-Security-Policy` (scripts only from Krakarr
+  itself, images also from TMDB and TheTVDB), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
   `Referrer-Policy: no-referrer` and a restrictive `Permissions-Policy`.
 
 ## Architecture

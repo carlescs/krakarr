@@ -1,0 +1,32 @@
+<div class="mb-6 flex flex-wrap items-center gap-3">
+  <a routerLink="/discover" class="btn-ghost btn-sm -ml-2">← Discover</a>
+  <h1 class="page-title mr-auto">{{ info()?.title ?? 'Discover' }}</h1>
+  <div class="flex flex-wrap gap-1">
+    @for (l of lists(); track l.id) {
+      <a [routerLink]="['/discover', media(), l.id]" class="btn-sm"
+         [class]="l.id === list() ? 'btn-primary' : 'btn-secondary'">{{ l.title }}</a>
+    }
+  </div>
+</div>
+
+@if (error()) {
+  <div class="card mb-6 border-rose-500/30 px-5 py-4 text-sm text-rose-300">
+    {{ error() }} @if (error()!.includes('TMDB')) { — <a routerLink="/settings" class="underline">open settings</a> }
+  </div>
+}
+
+<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
+  @for (d of items(); track key(d)) {
+    <kr-media-card [item]="d" (add)="selected.set($event)" />
+  }
+</div>
+
+@if (loading()) {
+  <p class="mt-6 text-center text-slate-500">Loading…</p>
+} @else if (page() < totalPages()) {
+  <div class="mt-8 flex justify-center"><button class="btn-secondary px-8" (click)="load(page() + 1)">Load more</button></div>
+}
+
+@if (selected(); as d) {
+  <kr-discover-add [item]="d" (closed)="selected.set(null)" (added)="markAdded($event)" (requested)="selected.set(null)" />
+}
