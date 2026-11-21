@@ -82,12 +82,12 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
         _root.Delete(true);
     }
 
-    private async Task<string> SearchAsync()
+    private async Task<string> SearchAsync(bool upgrade = false)
     {
         using var scope = _services.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<SubtitleService>();
         var target = await service.GetMovieTargetAsync(_movieFileId, TestContext.Current.CancellationToken);
-        return await service.SearchMissingAsync(target!, TestContext.Current.CancellationToken);
+        return await service.SearchMissingAsync(target!, TestContext.Current.CancellationToken, upgrade);
     }
 
     private async Task<List<SubtitleFile>> RowsAsync()
@@ -137,6 +137,41 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
         Assert.Equal(["es-best"], _provider.Downloads); // English already there
         var rows = await RowsAsync();
         Assert.Equal("disk", rows.Single(r => r.Language == "en").Provider);
+    }
+
+    [Fact]
+    public async Task Upgrade_replaces_present_subtitles_only_with_a_better_score()
+    {
+        _provider.Candidates.Add(C("en-ok", "The.Matrix.1999.1080p.BluRay.x264-OTHER"));
+        _provider.Candidates.Add(C("es-best", "The.Matrix.1999.1080p.BluRay.x264-SPARKS", lang: "es"));
+        await SearchAsync();
+        Assert.Equal(["en-ok", "es-best"], _provider.Downloads);
+
+        // Without upgrade, present languages are skipped.
+        _provider.Candidates.Add(C("en-best", "The.Matrix.1999.1080p.BluRay.x264-SPARKS"));
+        Assert.Contains("all subtitles present", await SearchAsync());
+        Assert.Equal(2, _provider.Downloads.Count);
+
+        var summary = await SearchAsync(upgrade: true);
+        Assert.Contains("upgraded en", summary);
+        Assert.Equal(["en-ok", "es-best", "en-best"], _provider.Downloads); // es already had the best score
+        var en = (await RowsAsync()).Single(r => r.Language == "en");
+        Assert.Equal(100, en.Score);
+        Assert.Equal("subtitle en-best", await File.ReadAllTextAsync(en.Path, TestContext.Current.CancellationToken));
+
+        Assert.Contains("no better subtitles found", await SearchAsync(upgrade: true));
+    }
+
+    [Fact]
+    public async Task Upgrade_keeps_subtitles_found_on_disk()
+    {
+        await File.WriteAllTextAsync(Path.ChangeExtension(_moviePath, null) + ".eng.srt", "existing", TestContext.Current.CancellationToken);
+        _provider.Candidates.Add(C("en-best", "The.Matrix.1999.1080p.BluRay.x264-SPARKS"));
+
+        await SearchAsync(upgrade: true);
+
+        Assert.Empty(_provider.Downloads);
+        Assert.Equal("disk", (await RowsAsync()).Single(r => r.Language == "en").Provider);
     }
 
     [Fact]

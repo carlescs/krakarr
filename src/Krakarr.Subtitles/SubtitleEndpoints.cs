@@ -13,7 +13,7 @@ namespace Krakarr.Subtitles;
 public sealed record SubtitleFileDto(int Id, int? MovieFileId, int? EpisodeFileId, string Language, string LanguageName, bool HearingImpaired, bool Forced,
     string FileName, string Provider, int? Score, string? Release, DateTimeOffset DateAdded);
 
-public sealed record SubtitleSearchRequest(int? MovieFileId, int? EpisodeFileId);
+public sealed record SubtitleSearchRequest(int? MovieFileId, int? EpisodeFileId, int? MovieId = null, int? SeriesId = null);
 public sealed record SubtitleDownloadRequest(int? MovieFileId, int? EpisodeFileId, SubtitleCandidate Candidate, int? Score);
 public sealed record ScoredSubtitleDto(SubtitleCandidate Candidate, int Score, IReadOnlyList<string> Matches, IReadOnlyList<string> Rejections, bool Acceptable);
 public sealed record WantedSubtitleDto(string MediaType, int? MovieId, int? SeriesId, int? MovieFileId, int? EpisodeFileId, string Label, IReadOnlyList<string> MissingLanguages);
@@ -83,9 +83,37 @@ public static class SubtitleEndpoints
             (await service.WantedAsync(Math.Clamp(limit ?? 200, 1, 1000), ct)).Select(w => new WantedSubtitleDto(
                 w.Target.MediaType.ToString(), w.Target.MovieId, w.Target.SeriesId, w.Target.MovieFileId, w.Target.EpisodeFileId, w.Target.Label, w.MissingLanguages)));
 
-        // Automatic search for one file, or all wanted files when no id is given.
-        group.MapPost("/search", async (SubtitleSearchRequest req, SubtitleService service, ICommandQueue commands, CancellationToken ct) =>
+        // Automatic search for one file (every wanted language, upgrading existing subtitles), or all wanted files
+        // (missing languages only) when no id is given.
+        group.MapPost("/search", async (SubtitleSearchRequest req, SubtitleService service, KrakarrDbContext db, ICommandQueue commands, CancellationToken ct) =>
         {
+            // A whole movie or series from its detail page: every file, every wanted language.
+            if (req.MovieId is { } movieId)
+            {
+                var fileId = await db.MovieFiles.AsNoTracking().Where(f => f.MovieId == movieId).OrderBy(f => f.Id).Select(f => (int?)f.Id).FirstOrDefaultAsync(ct);
+                if (fileId is null) return Results.NotFound();
+                req = req with { MovieFileId = fileId, MovieId = null };
+            }
+            else if (req.SeriesId is { } seriesId)
+            {
+                var title = await db.Series.AsNoTracking().Where(s => s.Id == seriesId).Select(s => s.Title).FirstOrDefaultAsync(ct);
+                if (title is null) return Results.NotFound();
+                var series = commands.Enqueue($"Subtitles: {title}", async (sp, token) =>
+                {
+                    var svc = sp.GetRequiredService<SubtitleService>();
+                    var scopedDb = sp.GetRequiredService<KrakarrDbContext>();
+                    var ids = await scopedDb.EpisodeFiles.AsNoTracking().Where(f => f.SeriesId == seriesId)
+                        .OrderBy(f => f.SeasonNumber).ThenBy(f => f.Id).Select(f => f.Id).ToListAsync(token);
+                    foreach (var id in ids)
+                    {
+                        if (await svc.GetEpisodeTargetAsync(id, token) is { } t) await svc.SearchMissingAsync(t, token, upgrade: true);
+                        scopedDb.ChangeTracker.Clear();
+                    }
+                    return $"{title}: searched {ids.Count} episode file(s)";
+                });
+                return Results.Accepted(value: series);
+            }
+
             if (req.MovieFileId is null && req.EpisodeFileId is null)
             {
                 var command = commands.Enqueue("Search all missing subtitles", async (sp, token) =>
@@ -104,7 +132,7 @@ public static class SubtitleEndpoints
             {
                 var svc = sp.GetRequiredService<SubtitleService>();
                 var t = await ResolveAsync(svc, req.MovieFileId, req.EpisodeFileId, token) ?? throw new KeyNotFoundException();
-                return await svc.SearchMissingAsync(t, token);
+                return await svc.SearchMissingAsync(t, token, upgrade: true);
             });
             return Results.Accepted(value: single);
         });
