@@ -162,11 +162,13 @@ public static class MovieEndpoints
             }
         });
 
-        group.MapPost("/", async (AddMovieRequest req, MovieService movies, ICommandQueue commands, Krakarr.Data.ISettingsService settings, CancellationToken ct) =>
+        group.MapPost("/", async (AddMovieRequest req, HttpContext http, MovieService movies, KrakarrDbContext db, ICommandQueue commands,
+            Krakarr.Data.ISettingsService settings, CancellationToken ct) =>
         {
             try
             {
                 var movie = await movies.AddAsync(req, ct);
+                await MediaSubscriptions.FollowAsAdderAsync(db, http.User, MediaType.Movie, movie.Id, ct);
                 if (req.SearchForMovie && movie.Monitored)
                 {
                     var id = movie.Id;

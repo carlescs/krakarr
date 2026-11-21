@@ -5,7 +5,7 @@ import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
   IndexerError, IndexerTestResult, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListItem, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
-  UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification,
+  UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber,
 } from './models';
 
 const API = 'api/v1';
@@ -158,6 +158,14 @@ export class Api {
   declineRequest(id: number, reason?: string) { return this.post<MediaRequest>(`requests/${id}/decline`, { reason: reason || null }); }
   deleteRequest(id: number) { return this.delete<void>(`requests/${id}`); }
 
+  // Subscriptions: library titles a user follows (calendar and list "My titles").
+  subscriptions() { return this.get<Subscription[]>('subscriptions'); }
+  subscriptionState(mediaType: MediaType, id: number) { return this.get<SubscriptionState>(`subscriptions/${mediaType}/${id}`); }
+  subscribe(mediaType: MediaType, id: number) { return this.put<void>(`subscriptions/${mediaType}/${id}`, {}); }
+  unsubscribe(mediaType: MediaType, id: number) { return this.delete<void>(`subscriptions/${mediaType}/${id}`); }
+  /** Staff: users who follow at least one title. */
+  subscribers() { return this.get<Subscriber[]>('subscriptions/users'); }
+
   // Series
   seriesList() { return this.get<SeriesListItem[]>('series'); }
   series(id: number) { return this.get<Series>(`series/${id}`); }
@@ -200,8 +208,8 @@ export class Api {
   deleteEpisodeFile(id: number) { return this.delete<void>(`episodefiles/${id}`); }
 
   // Calendar
-  /** Library releases between two ISO dates (inclusive). */
-  calendar(start: string, end: string) { return this.get<CalendarEntry[]>('calendar', { start, end }); }
+  /** Library releases between two ISO dates (inclusive); `user` = 'me' or a user id limits them to that user's titles. */
+  calendar(start: string, end: string, user?: 'me' | number | null) { return this.get<CalendarEntry[]>('calendar', { start, end, user }); }
 
   // Subtitles
   /** Audio languages releases can be filtered by, plus the global wanted ones. */

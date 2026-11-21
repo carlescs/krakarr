@@ -199,7 +199,10 @@ public static class RequestEndpoints
                 }
             }
 
-            // AddAsync already approved matching pending requests in SQL; record who did it on this one.
+            // AddAsync already approved matching pending requests and subscribed their requesters; cover a title that
+            // was in the library already, then record who approved this one.
+            if (await LibraryIdAsync(db, request.MediaType, request.TmdbId, request.TvdbId, ct) is { } libraryId)
+                await MediaSubscriptions.SubscribeAsync(db, [request.RequestedById], request.MediaType, libraryId, ct);
             request.Status = RequestStatus.Approved;
             request.ProcessedById = http.User.GetUserId();
             request.ProcessedAt = time.GetUtcNow();
@@ -245,6 +248,11 @@ public static class RequestEndpoints
         type == MediaType.Movie
             ? db.Movies.AnyAsync(m => m.TmdbId == tmdbId, ct)
             : db.Series.AnyAsync(s => s.TmdbId == tmdbId || (tvdbId != null && s.TvdbId == tvdbId), ct);
+
+    private static Task<int?> LibraryIdAsync(KrakarrDbContext db, MediaType type, int tmdbId, int? tvdbId, CancellationToken ct) =>
+        type == MediaType.Movie
+            ? db.Movies.Where(m => m.TmdbId == tmdbId).Select(m => (int?)m.Id).FirstOrDefaultAsync(ct)
+            : db.Series.Where(s => s.TmdbId == tmdbId || (tvdbId != null && s.TvdbId == tvdbId)).Select(s => (int?)s.Id).FirstOrDefaultAsync(ct);
 
     private static DateOnly Today(TimeProvider time) => DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
 

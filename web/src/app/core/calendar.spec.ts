@@ -79,4 +79,12 @@ describe('feed url', () => {
       apikey: 'k3y', pastDays: '7', futureDays: '60', movies: 'true', series: 'false', unmonitored: 'false', releaseTypes: 'digital,physical',
     });
   });
+
+  it('limits the feed to one user when asked', () => {
+    const url = new URL(feedUrl('https://media.example/', 'k3y', {
+      movies: true, series: true, theatrical: true, digital: true, physical: true, unmonitored: false, pastDays: 7, futureDays: 60,
+    }, 4));
+    expect(url.searchParams.get('userId')).toBe('4');
+    expect(url.searchParams.has('releaseTypes')).toBe(false);
+  });
 });

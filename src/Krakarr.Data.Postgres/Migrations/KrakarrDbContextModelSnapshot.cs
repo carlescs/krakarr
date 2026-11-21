@@ -17,7 +17,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261120214820_MediaRequests";
+    public override string LastMigrationId => "20261121075011_MediaSubscriptions";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -396,6 +396,41 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.HasIndex("Status", "RequestedAt");
 
                 b.ToTable("MediaRequests");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.MediaSubscription", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<int?>("MovieId")
+                    .HasColumnType("integer");
+
+                b.Property<int?>("SeriesId")
+                    .HasColumnType("integer");
+
+                b.Property<int>("UserId")
+                    .HasColumnType("integer");
+
+                b.HasKey("Id");
+
+                b.HasIndex("MovieId");
+
+                b.HasIndex("SeriesId");
+
+                b.HasIndex("UserId", "MovieId")
+                    .IsUnique();
+
+                b.HasIndex("UserId", "SeriesId")
+                    .IsUnique();
+
+                b.ToTable("MediaSubscriptions");
             });
 
         modelBuilder.Entity("Krakarr.Core.Domain.Movie", b =>
@@ -891,6 +926,31 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Navigation("ProcessedBy");
 
                 b.Navigation("RequestedBy");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.MediaSubscription", b =>
+            {
+                b.HasOne("Krakarr.Core.Domain.Movie", "Movie")
+                    .WithMany()
+                    .HasForeignKey("MovieId")
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasOne("Krakarr.Core.Domain.Series", "Series")
+                    .WithMany()
+                    .HasForeignKey("SeriesId")
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasOne("Krakarr.Core.Domain.User", "User")
+                    .WithMany()
+                    .HasForeignKey("UserId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.Navigation("Movie");
+
+                b.Navigation("Series");
+
+                b.Navigation("User");
             });
 
         modelBuilder.Entity("Krakarr.Core.Domain.Movie", b =>

@@ -11,7 +11,10 @@ namespace Krakarr.Host.Tests;
 public sealed class ReleaseNotificationTests : IClassFixture<KrakarrFactory>
 {
     private static readonly DateOnly Today = new(2031, 5, 10);
-    private static readonly NotificationContext User = new(42, UserRole.User);
+    /// <summary>Follows every seeded title except "Not Followed"; set by <see cref="SeedAsync"/>.</summary>
+    private static int _followerId;
+    /// <summary>Follows nothing.</summary>
+    private static int _otherId;
 
     private readonly KrakarrFactory _factory;
 
@@ -48,6 +51,7 @@ public sealed class ReleaseNotificationTests : IClassFixture<KrakarrFactory>
         AddMovie("Only In Cinemas", true, D("US", ReleaseDateType.Theatrical, Today));
         AddMovie("Unmonitored", false, D("US", ReleaseDateType.Digital, Today));
         AddMovie("Spain Today", true, D("US", ReleaseDateType.Digital, Today.AddDays(-60)), D("ES", ReleaseDateType.Digital, Today));
+        var notFollowed = AddMovie("Not Followed", true, D("US", ReleaseDateType.Digital, Today));
 
         var show = new Krakarr.Core.Domain.Series { TmdbId = 900, Title = "Weekly Show", Year = 2031, Path = "/tv/weekly", QualityProfileId = profile };
         show.Episodes.Add(new Episode { SeasonNumber = 1, EpisodeNumber = 1, AirDate = Today.AddDays(-7) });
@@ -59,11 +63,24 @@ public sealed class ReleaseNotificationTests : IClassFixture<KrakarrFactory>
         other.Episodes.Add(new Episode { SeasonNumber = 2, EpisodeNumber = 1, AirDate = Today.AddDays(-1) });
         var unmonitored = new Krakarr.Core.Domain.Series { TmdbId = 902, Title = "Dropped Show", Year = 2031, Path = "/tv/dropped", QualityProfileId = profile, Monitored = false };
         unmonitored.Episodes.Add(new Episode { SeasonNumber = 1, EpisodeNumber = 1, AirDate = Today });
-        db.Series.AddRange(show, other, unmonitored);
+        var notFollowedShow = new Krakarr.Core.Domain.Series { TmdbId = 903, Title = "Not Followed Show", Year = 2031, Path = "/tv/nf", QualityProfileId = profile };
+        notFollowedShow.Episodes.Add(new Episode { SeasonNumber = 1, EpisodeNumber = 1, AirDate = Today });
+        db.Series.AddRange(show, other, unmonitored, notFollowedShow);
+
+        var follower = new User { Username = "release-follower", PasswordHash = "x" };
+        var bystander = new User { Username = "release-bystander", PasswordHash = "x" };
+        db.Users.AddRange(follower, bystander);
+        await db.SaveChangesAsync(ct);
+        (_followerId, _otherId) = (follower.Id, bystander.Id);
+
+        foreach (var id in await db.Movies.Where(m => m.Id != notFollowed.Id).Select(m => m.Id).ToListAsync(ct))
+            db.MediaSubscriptions.Add(new MediaSubscription { UserId = follower.Id, MovieId = id });
+        foreach (var id in await db.Series.Where(x => x.Id != notFollowedShow.Id).Select(x => x.Id).ToListAsync(ct))
+            db.MediaSubscriptions.Add(new MediaSubscription { UserId = follower.Id, SeriesId = id });
         await db.SaveChangesAsync(ct);
     }
 
-    private async Task<IReadOnlyList<Notification>> GetAsync(string? region, DateOnly today)
+    private async Task<IReadOnlyList<Notification>> GetAsync(string? region, DateOnly today, bool follower = true)
     {
         var ct = TestContext.Current.CancellationToken;
         using var scope = _factory.Services.CreateScope();
@@ -73,7 +90,7 @@ public sealed class ReleaseNotificationTests : IClassFixture<KrakarrFactory>
         var metadata = await settings.GetAsync<MetadataSettings>(ct);
         await settings.SaveAsync(metadata with { ReleaseRegion = region }, ct);
         var source = new ReleaseNotificationSource(db, settings, new FixedTime(new DateTimeOffset(today.ToDateTime(new TimeOnly(20, 0)), TimeSpan.Zero)));
-        return await source.GetAsync(User, ct);
+        return await source.GetAsync(new NotificationContext(follower ? _followerId : _otherId, UserRole.User), ct);
     }
 
     [Fact]
@@ -104,6 +121,18 @@ public sealed class ReleaseNotificationTests : IClassFixture<KrakarrFactory>
         var later = await GetAsync(null, Today.AddDays(30));
         Assert.Empty(later);
         await GetAsync(null, Today); // leave the default region for the other test
+    }
+
+    [Fact]
+    public async Task Only_reports_titles_the_user_follows()
+    {
+        Assert.Empty(await GetAsync(null, Today, follower: false));
+
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
+        var source = new ReleaseNotificationSource(db, settings, new FixedTime(new DateTimeOffset(Today.ToDateTime(new TimeOnly(20, 0)), TimeSpan.Zero)));
+        Assert.Empty(await source.GetAsync(new NotificationContext(null, UserRole.Admin), TestContext.Current.CancellationToken)); // the API key
     }
 
     [Fact]

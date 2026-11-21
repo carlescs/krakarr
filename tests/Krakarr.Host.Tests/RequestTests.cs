@@ -182,5 +182,77 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
             new { tmdbId = 2002, qualityProfileId = profile, rootFolderPath = root, searchForMovie = false }, Ct);
         Assert.Equal(HttpStatusCode.Created, added.StatusCode);
         Assert.Contains(other, await ListIdsAsync(carol, "approved"));
+
+        // Both titles are in carol's subscriptions now, so they show in her "My titles".
+        var subscriptions = await carol.GetFromJsonAsync<JsonElement[]>("/api/v1/subscriptions", Ct);
+        var followed = subscriptions!.Where(s => s.GetProperty("mediaType").GetString() == "Movie").Select(s => s.GetProperty("libraryId").GetInt32()).ToArray();
+        Assert.Contains(movieId, followed);
+        Assert.Equal(2, followed.Length);
+
+        // Whoever adds a title follows it; approving someone else's request doesn't.
+        var adminFollows = (await admin.GetFromJsonAsync<JsonElement[]>("/api/v1/subscriptions", Ct))!
+            .Select(x => x.GetProperty("libraryId").GetInt32()).ToArray();
+        var addedId = (await added.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("id").GetInt32();
+        Assert.Contains(addedId, adminFollows);
+        Assert.DoesNotContain(movieId, adminFollows);
+    }
+
+    [Fact]
+    public async Task Users_subscribe_to_library_titles_and_see_them_in_their_calendar()
+    {
+        var dave = await UserAsync("dave");
+        var erin = await UserAsync("erin");
+        var manager = await UserAsync("max", "Manager");
+        int movieId, otherMovieId, seriesId;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+            var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(Ct);
+            var movie = new Movie { TmdbId = 5001, Title = "Followed Movie", Year = 2031, Path = "/m/followed", QualityProfileId = profile,
+                InCinemas = new DateOnly(2031, 2, 3), ReleaseDates = [new("US", ReleaseDateType.Theatrical, new DateOnly(2031, 2, 3))] };
+            var other = new Movie { TmdbId = 5002, Title = "Other Movie", Year = 2031, Path = "/m/other", QualityProfileId = profile,
+                InCinemas = new DateOnly(2031, 2, 4), ReleaseDates = [new("US", ReleaseDateType.Theatrical, new DateOnly(2031, 2, 4))] };
+            var show = new Krakarr.Core.Domain.Series { TmdbId = 5003, Title = "Followed Show", Year = 2031, Path = "/tv/followed", QualityProfileId = profile };
+            show.Episodes.Add(new Episode { SeasonNumber = 1, EpisodeNumber = 1, Title = "Pilot", AirDate = new DateOnly(2031, 2, 5) });
+            db.AddRange(movie, other, show);
+            await db.SaveChangesAsync(Ct);
+            (movieId, otherMovieId, seriesId) = (movie.Id, other.Id, show.Id);
+        }
+
+        Assert.Equal(HttpStatusCode.NoContent, (await dave.PutAsync($"/api/v1/subscriptions/Movie/{movieId}", null, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await dave.PutAsync($"/api/v1/subscriptions/Movie/{movieId}", null, Ct)).StatusCode); // idempotent
+        Assert.Equal(HttpStatusCode.NoContent, (await dave.PutAsync($"/api/v1/subscriptions/Series/{seriesId}", null, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await erin.PutAsync($"/api/v1/subscriptions/Movie/{otherMovieId}", null, Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await dave.PutAsync("/api/v1/subscriptions/Movie/999999", null, Ct)).StatusCode);
+
+        var state = await dave.GetFromJsonAsync<JsonElement>($"/api/v1/subscriptions/Movie/{movieId}", Ct);
+        Assert.True(state.GetProperty("subscribed").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, state.GetProperty("subscribers").ValueKind); // names are for staff
+        var staffState = await manager.GetFromJsonAsync<JsonElement>($"/api/v1/subscriptions/Movie/{movieId}", Ct);
+        Assert.False(staffState.GetProperty("subscribed").GetBoolean());
+        Assert.Equal(["dave"], staffState.GetProperty("subscribers").EnumerateArray().Select(x => x.GetString()));
+
+        // "My titles" calendar: only what the caller follows.
+        const string range = "/api/v1/calendar?start=2031-02-01&end=2031-02-28";
+        var mine = await dave.GetFromJsonAsync<JsonElement[]>(range + "&user=me", Ct);
+        Assert.Equal(["Followed Movie", "Followed Show"], mine!.Select(e => e.GetProperty("title").GetString()));
+        var everything = await dave.GetFromJsonAsync<JsonElement[]>(range, Ct);
+        Assert.Equal(3, everything!.Length);
+
+        // Staff can look at anyone's titles; plain users only at their own.
+        var erinId = (await manager.GetFromJsonAsync<JsonElement[]>("/api/v1/subscriptions/users", Ct))!
+            .Single(u => u.GetProperty("username").GetString() == "erin").GetProperty("id").GetInt32();
+        var erins = await manager.GetFromJsonAsync<JsonElement[]>(range + $"&user={erinId}", Ct);
+        Assert.Equal(["Other Movie"], erins!.Select(e => e.GetProperty("title").GetString()));
+        Assert.Equal(HttpStatusCode.Forbidden, (await dave.GetAsync(range + $"&user={erinId}", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await dave.GetAsync("/api/v1/subscriptions/users", Ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await dave.GetAsync(range + "&user=someone", Ct)).StatusCode);
+
+        // Unsubscribing, and removing a title, drop the subscription.
+        Assert.Equal(HttpStatusCode.NoContent, (await dave.DeleteAsync($"/api/v1/subscriptions/Series/{seriesId}", Ct)).StatusCode);
+        var admin = await AdminAsync();
+        Assert.Equal(HttpStatusCode.NoContent, (await admin.DeleteAsync($"/api/v1/movies/{movieId}", Ct)).StatusCode);
+        Assert.Empty((await dave.GetFromJsonAsync<JsonElement[]>("/api/v1/subscriptions", Ct))!);
+        Assert.Empty((await dave.GetFromJsonAsync<JsonElement[]>(range + "&user=me", Ct))!);
     }
 }
