@@ -50,4 +50,24 @@ describe('AddSeriesModal', () => {
     expect(toasts.items().map(t => t.message)).toEqual(['Already in the library']);
     expect(button(fixture.nativeElement, 'Add series').disabled).toBe(false);
   });
+
+  it('adds the show under an edited title to tell same-named shows apart', async () => {
+    const api = setupTest({
+      api: mockApi({
+        rootFolders: async () => folders,
+        qualityProfiles: async () => [{ id: 4, name: 'Any' }],
+        addSeries: async () => ({ id: 10, title: 'The Office (US)' }),
+      }),
+    });
+    const fixture = TestBed.createComponent(AddSeriesModal);
+    fixture.componentRef.setInput('show', { tmdbId: 2316, title: 'The Office' });
+    await settle(fixture);
+    const input = fixture.nativeElement.querySelector('#add-series-title') as HTMLInputElement;
+    expect(input.value).toBe('The Office');
+    input.value = ' The Office (US) ';
+    input.dispatchEvent(new Event('input'));
+    button(fixture.nativeElement, 'Add series').click();
+    await settle(fixture);
+    expect(api.addSeries).toHaveBeenCalledWith(expect.objectContaining({ tmdbId: 2316, title: 'The Office (US)' }));
+  });
 });

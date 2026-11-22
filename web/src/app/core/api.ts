@@ -232,7 +232,7 @@ export class Api {
   seriesJellyfinLink(id: number) { return this.get<{ url: string } | null>(`series/${id}/jellyfin`); }
   episodes(seriesId: number) { return this.get<Episode[]>(`series/${seriesId}/episodes`); }
   lookupSeries(term: string) { return this.get<SeriesLookup[]>('series/lookup', { term }); }
-  addSeries(req: { tmdbId?: number; tvdbId?: number; qualityProfileId: number; rootFolderPath: string; monitor: MonitorMode; seasonFolder: boolean; searchForMissing: boolean }) {
+  addSeries(req: { tmdbId?: number; tvdbId?: number; qualityProfileId: number; rootFolderPath: string; monitor: MonitorMode; seasonFolder: boolean; searchForMissing: boolean; title?: string }) {
     return this.post<Series>('series', req);
   }
   discoverSeries(list: SeriesDiscoverList, page = 1) { return this.get<DiscoverPage<SeriesLookup>>(`series/discover/${list}`, { page }); }

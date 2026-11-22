@@ -309,4 +309,29 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
         await service.RefreshAsync(loaded, ct);
         Assert.Equal("Test Show (TVDB)", (await db.Series.AsNoTracking().SingleAsync(ct)).Title);
     }
+
+    [Fact]
+    public async Task Add_with_a_custom_title_gets_its_own_folder()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var scope = _services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<SeriesService>();
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        // A different show with the same name already took the folder the metadata title gives.
+        var other = await service.AddAsync(new AddSeriesRequest(9001, null, 1, "/tv"), ct);
+        var takenPath = other.Path;
+        other.TmdbId = 1;
+        other.TvdbId = null;
+        await db.SaveChangesAsync(ct);
+        db.ChangeTracker.Clear();
+
+        var conflict = await Assert.ThrowsAsync<InvalidOperationException>(() => service.AddAsync(new AddSeriesRequest(9001, null, 1, "/tv"), ct));
+        Assert.StartsWith("Another series already uses", conflict.Message);
+
+        var added = await service.AddAsync(new AddSeriesRequest(9001, null, 1, "/tv", Title: "Test Show (US)"), ct);
+        Assert.Equal("Test Show (US)", added.Title);
+        Assert.Equal("Test Show", added.MetadataTitle);
+        Assert.NotEqual(takenPath, added.Path);
+        Assert.Contains("Test Show (US)", added.Path);
+    }
 }

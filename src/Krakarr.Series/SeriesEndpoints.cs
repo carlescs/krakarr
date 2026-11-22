@@ -71,8 +71,6 @@ public sealed record GrabEpisodeReleaseRequest(ReleaseInfo Release);
 
 public static class SeriesEndpoints
 {
-    private const int MaxTitleLength = 200;
-
     public static IEndpointRouteBuilder MapSeriesEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/series").WithTags("Series");
@@ -208,7 +206,7 @@ public static class SeriesEndpoints
             series.Languages = req.Languages is null ? null : MediaLanguages.Clean(req.Languages);
             if (req.Title is { } title)
             {
-                if (title.Trim().Length > MaxTitleLength) return Results.Problem($"Title must be at most {MaxTitleLength} characters", statusCode: 400);
+                if (title.Trim().Length > SeriesService.MaxTitleLength) return Results.Problem($"Title must be at most {SeriesService.MaxTitleLength} characters", statusCode: 400);
                 SeriesService.SetTitle(series, title);
             }
 

@@ -301,6 +301,8 @@ export interface MediaRequestPage { results: MediaRequest[]; page: number; total
 export interface ApproveRequestOptions {
   qualityProfileId: number; rootFolderPath: string; searchNow: boolean;
   monitored?: boolean; minimumAvailability?: MinimumAvailability; monitor?: MonitorMode; seasonFolder?: boolean;
+  /** Series only: title to use instead of the metadata one; blank = the metadata title. */
+  title?: string;
 }
 
 export type NotificationSeverity = 'Info' | 'Warning' | 'Error';

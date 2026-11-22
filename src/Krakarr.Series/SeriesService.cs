@@ -15,9 +15,10 @@ using Microsoft.Extensions.Logging;
 namespace Krakarr.Series;
 
 /// <param name="ExistingPath">Use this existing folder as-is (library import) instead of building one from the naming format.</param>
+/// <param name="Title">Title to use instead of the metadata one, e.g. to tell apart two series with the same name; null or blank = the metadata title.</param>
 public sealed record AddSeriesRequest(
     int? TmdbId, int? TvdbId, int QualityProfileId, string RootFolderPath, MonitorMode Monitor = MonitorMode.All, bool SeasonFolder = true, bool SearchForMissing = true,
-    string? ExistingPath = null, IReadOnlyList<string>? Languages = null);
+    string? ExistingPath = null, IReadOnlyList<string>? Languages = null, string? Title = null);
 
 public sealed class SeriesService(
     KrakarrDbContext db,
@@ -53,6 +54,8 @@ public sealed class SeriesService(
             throw new InvalidOperationException("Quality profile does not exist");
         if (string.IsNullOrWhiteSpace(request.RootFolderPath) && string.IsNullOrWhiteSpace(request.ExistingPath))
             throw new InvalidOperationException("A root folder is required");
+        if (request.Title?.Trim().Length > MaxTitleLength)
+            throw new InvalidOperationException($"Title must be at most {MaxTitleLength} characters");
 
         var info = await metadata.GetSeriesAsync(ids, ct);
         if (await InLibraryAsync(new SeriesIds(info.TmdbId, info.TvdbId), null, ct))
@@ -69,11 +72,12 @@ public sealed class SeriesService(
             Monitored = request.Monitor != MonitorMode.None,
         };
         ApplyInfo(series, info);
+        if (!string.IsNullOrWhiteSpace(request.Title)) SetTitle(series, request.Title);
         var roots = await db.RootFolders.AsNoTracking().Where(r => r.MediaType == MediaType.Series).Select(r => r.Path).ToListAsync(ct);
         series.Path = LibraryPaths.ResolveItemFolder(roots, request.RootFolderPath, request.ExistingPath,
             () => SeriesNaming.BuildSeriesFolder(series, media.SeriesFolderFormat));
         if (await db.Series.AnyAsync(s => s.Path == series.Path, ct))
-            throw new InvalidOperationException($"Another series already uses {series.Path}");
+            throw new InvalidOperationException($"Another series already uses {series.Path}. Give this one a different title, e.g. \"{series.Title} ({series.Year})\".");
 
         foreach (var e in info.Episodes)
         {
@@ -222,6 +226,9 @@ public sealed class SeriesService(
         episode.AirDate = e.AirDate;
         episode.Runtime = e.Runtime;
     }
+
+    /// <summary>Longest title a user can give a series.</summary>
+    public const int MaxTitleLength = 200;
 
     /// <summary>True when the user gave the series a title other than the metadata one.</summary>
     public static bool HasCustomTitle(Core.Domain.Series s) =>

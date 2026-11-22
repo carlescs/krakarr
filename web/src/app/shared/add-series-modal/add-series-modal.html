@@ -5,6 +5,11 @@
   } @else {
     <div class="space-y-4">
       <div>
+        <label class="label" for="add-series-title">Title</label>
+        <input id="add-series-title" class="input" maxlength="200" [(ngModel)]="title" [placeholder]="show().title" />
+        <p class="mt-1 text-xs text-slate-400">Names the series folder. Change it to tell apart shows with the same name, e.g. "{{ show().title }} (US)" or add the year.</p>
+      </div>
+      <div>
         <label class="label">Root folder</label>
         <select class="input" [(ngModel)]="rootFolder">
           @for (f of rootFolders(); track f.id) { <option [value]="f.path">{{ f.path }}</option> }
