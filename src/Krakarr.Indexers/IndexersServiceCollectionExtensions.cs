@@ -12,6 +12,7 @@ public static class IndexersServiceCollectionExtensions
             c.DefaultRequestHeaders.UserAgent.ParseAdd("Krakarr/0.1");
         });
         services.AddScoped<ITorznabClient, TorznabClient>();
+        services.AddScoped<IProwlarrClient, ProwlarrClient>();
         services.AddScoped<IIndexerSearchService, IndexerSearchService>();
         return services;
     }

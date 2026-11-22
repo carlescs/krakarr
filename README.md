@@ -7,7 +7,7 @@
 | Replaces | Krakarr module | Status (milestone 1) |
 |---|---|---|
 | **Radarr** – movie library & automation | `Krakarr.Movies` | ✅ TMDB lookup, library, quality profiles, auto/interactive search, RSS sync, rename + hardlink import |
-| **Prowlarr** – indexer management | `Krakarr.Indexers` | ✅ Torznab/Newznab indexers, capability detection, aggregated search across indexers |
+| **Prowlarr** – indexer management | `Krakarr.Indexers` | ✅ Torznab/Newznab indexers, import from an existing Prowlarr, capability detection, aggregated search across indexers |
 | **qBittorrent** – torrent client | `Krakarr.Downloads` | ✅ Embedded [MonoTorrent](https://github.com/alanmcgovern/monotorrent) engine: magnets, .torrent files, DHT, speed limits, seeding ratio/time limits, fast-resume — *or* drive an existing qBittorrent (tag-scoped) |
 | **Sonarr** – TV series | `Krakarr.Series` | ✅ TMDB or TheTVDB metadata, seasons/episodes, monitoring, season-pack aware search, RSS sync, rename + hardlink import |
 | **Bazarr** – subtitles | `Krakarr.Subtitles` | ✅ OpenSubtitles.com, wanted languages, hash + release scoring, automatic and manual search |
@@ -47,7 +47,8 @@ Then open <http://localhost:8787>:
    anyone else who can reach the instance from claiming it first.
 2. **Settings → Media management:** add a root folder, e.g. `/data/media/movies`.
 3. **Settings → Metadata:** paste a [TMDB API key](https://www.themoviedb.org/settings/api) (v3 key or v4 read token).
-4. **Indexers:** add one or more Torznab/Newznab feeds and press *Test*.
+4. **Indexers:** add one or more Torznab/Newznab feeds and press *Test*, or use *Import from Prowlarr* to add the
+   torrent indexers of an existing Prowlarr (they are searched through Prowlarr's Torznab feeds).
 5. **Movies → Add movie:** search, add, and Krakarr searches, downloads and imports it for you.
 6. **Already have a library?** *Movies → Import library* / *Series → Import library* scans a root folder and matches each
    sub-folder by its name (see [Library import](#library-import)).

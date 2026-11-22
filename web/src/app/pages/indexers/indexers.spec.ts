@@ -56,4 +56,44 @@ describe('IndexersPage', () => {
     await settle(fixture);
     expect(text(el)).toContain('Connection OK. Movie search: yes (q, imdbid) · TV search: no');
   });
+
+  it('imports the chosen indexers from Prowlarr', async () => {
+    const api = setupTest({
+      api: mockApi({
+        indexers: async () => [],
+        languages: async () => ({ all: [], preferred: [] }),
+        prowlarrIndexers: async () => ({
+          success: true,
+          indexers: [
+            { id: 1, name: 'Nyaa', protocol: 'torrent', supported: true, enabled: true, priority: 25 },
+            { id: 2, name: 'Old', protocol: 'torrent', supported: true, enabled: true, priority: 25, existingId: 9 },
+            { id: 3, name: 'NZBgeek', protocol: 'usenet', supported: false, enabled: true, priority: 25 },
+          ],
+        }),
+        importProwlarrIndexers: async () => ({ added: 1, updated: 0 }),
+      }),
+    });
+    const fixture = TestBed.createComponent(IndexersPage);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+
+    button(el, 'Import from Prowlarr').click();
+    await settle(fixture);
+    type(el, 'input[placeholder^="http://prowlarr"]', 'http://prowlarr:9696');
+    const key = el.querySelectorAll<HTMLInputElement>('[role="dialog"] input.input')[1];
+    key.value = 'secret';
+    key.dispatchEvent(new Event('input'));
+    await settle(fixture);
+    button(el, 'Connect').click();
+    await settle(fixture);
+    expect(api.prowlarrIndexers).toHaveBeenCalledWith('http://prowlarr:9696', 'secret');
+    expect(text(el, '[role="dialog"]')).toContain('Already added');
+    expect(text(el, '[role="dialog"]')).toContain('Usenet, not supported');
+    expect(el.querySelector<HTMLInputElement>('input[aria-label="NZBgeek"]')!.disabled).toBe(true);
+
+    button(el, 'Import 1').click();
+    await settle(fixture);
+    expect(api.importProwlarrIndexers).toHaveBeenCalledWith('http://prowlarr:9696', 'secret', [1]);
+    expect(el.querySelector('[role="dialog"]')).toBeNull();
+  });
 });
