@@ -8,10 +8,12 @@ import { Toasts } from '../../core/toast';
 import { MediaLink, MediaLinkPicker, linkFields } from '../../shared/media-link-picker/media-link-picker';
 import { IndexerProgress } from '../../shared/indexer-progress/indexer-progress';
 import { Modal } from '../../shared/modal/modal';
+import { TableSort } from '../../core/table-sort';
+import { SortHeader } from '../../shared/sort-header/sort-header';
 
 @Component({
   selector: 'kr-search',
-  imports: [FormsModule, BytesPipe, AgoPipe, Modal, MediaLinkPicker, IndexerProgress],
+  imports: [FormsModule, BytesPipe, AgoPipe, Modal, MediaLinkPicker, IndexerProgress, SortHeader],
   templateUrl: './search.html',
   styleUrl: './search.scss',
 })
@@ -23,6 +25,14 @@ export class SearchPage {
   protected readonly busy = signal(false);
   protected readonly searched = signal(false);
   protected readonly results = signal<SearchResult[]>([]);
+  protected readonly sort = new TableSort(this.results, {
+    title: r => r.release.title,
+    indexer: r => r.release.indexerName,
+    age: { value: r => r.release.publishDate ? Date.parse(r.release.publishDate) : null, desc: true },
+    size: { value: r => r.release.size, desc: true },
+    peers: { value: r => r.release.seeders, desc: true },
+    quality: r => r.quality,
+  });
   protected readonly indexerSearch = new IndexerSearch();
 
   async search() {

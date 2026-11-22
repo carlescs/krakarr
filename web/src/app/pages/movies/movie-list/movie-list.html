@@ -64,9 +64,9 @@
               <input type="checkbox" class="size-4 accent-accent-500 align-middle" aria-label="Select all"
                      [checked]="selection.all()" [indeterminate]="selection.count() > 0 && !selection.all()" (change)="selection.toggleAll()" />
             </th>
-            <th [attr.aria-sort]="ariaSort('title')"><ng-container *ngTemplateOutlet="sortHeader; context: { key: 'title', label: 'Title' }" /></th>
-            <th class="max-sm:hidden" [attr.aria-sort]="ariaSort('year')"><ng-container *ngTemplateOutlet="sortHeader; context: { key: 'year', label: 'Year' }" /></th>
-            <th [attr.aria-sort]="ariaSort('status')"><ng-container *ngTemplateOutlet="sortHeader; context: { key: 'status', label: 'Status' }" /></th>
+            <th krSort="title" [krSortBy]="sort" [krSortDisabled]="grouping() !== 'none'">Title</th>
+            <th class="max-sm:hidden" krSort="year" [krSortBy]="sort" [krSortDisabled]="grouping() !== 'none'">Year</th>
+            <th krSort="status" [krSortBy]="sort" [krSortDisabled]="grouping() !== 'none'">Status</th>
             <th class="max-md:hidden">Quality</th>
             <th class="max-sm:hidden">Following</th>
           </tr>
@@ -130,17 +130,6 @@
     <div class="h-px" (krNearViewport)="showMore()"></div>
   }
 }
-
-<ng-template #sortHeader let-key="key" let-label="label">
-  @if (grouping() === 'none') {
-    <button type="button" class="inline-flex items-center gap-1 uppercase hover:text-white" (click)="sortBy(key)">
-      {{ label }}
-      @if (sort().key === key) { <span aria-hidden="true">{{ sort().desc ? '↓' : '↑' }}</span> }
-    </button>
-  } @else {
-    {{ label }}
-  }
-</ng-template>
 
 <ng-template #row let-m>
   @let progress = progressOf(m);

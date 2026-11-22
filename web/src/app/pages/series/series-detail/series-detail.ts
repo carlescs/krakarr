@@ -14,6 +14,8 @@ import { Languages } from '../../../core/languages';
 import { LanguageOverride } from '../../../shared/language-override/language-override';
 import { IndexerProgress } from '../../../shared/indexer-progress/indexer-progress';
 import { Modal } from '../../../shared/modal/modal';
+import { TableSort } from '../../../core/table-sort';
+import { SortHeader } from '../../../shared/sort-header/sort-header';
 import { Poster } from '../../../shared/poster/poster';
 import { LibraryCredits } from '../../../shared/library-credits/library-credits';
 import { RelatedTitles } from '../../../shared/related-titles/related-titles';
@@ -30,7 +32,7 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
 
 @Component({
   selector: 'kr-series-detail',
-  imports: [SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, IndexerProgress, BytesPipe, AgoPipe, SubtitleManager],
+  imports: [SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, IndexerProgress, BytesPipe, AgoPipe, SubtitleManager, SortHeader],
   templateUrl: './series-detail.html',
   styleUrl: './series-detail.scss',
 })
@@ -62,6 +64,17 @@ export class SeriesDetailPage implements OnInit {
   protected readonly expanded = signal(new Set<number>());
   protected readonly releaseTarget = signal<ReleaseTarget | null>(null);
   protected readonly releases = signal<EpisodeRelease[]>([]);
+  /** The API returns releases best first. */
+  protected readonly releaseSort = new TableSort(this.releases, {
+    release: r => r.release.title,
+    // Season packs first, then by episode label.
+    episodes: r => (r.seasonPack ? '0 ' : '1 ') + (r.episodes ?? ''),
+    indexer: r => r.release.indexerName,
+    size: { value: r => r.release.size, desc: true },
+    peers: { value: r => r.release.seeders, desc: true },
+    quality: { value: r => r.qualityWeight, desc: true },
+    language: r => this.languages.describe(r.languages),
+  });
   protected readonly indexerSearch = new IndexerSearch();
   protected readonly searching = signal(false);
   protected readonly grabbing = signal<string | null>(null);

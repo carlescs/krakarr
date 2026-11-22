@@ -6,6 +6,8 @@ import { Auth } from '../../../core/auth';
 import { UserAccount, UserRole } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
 import { Modal } from '../../../shared/modal/modal';
+import { TableSort } from '../../../core/table-sort';
+import { SortHeader } from '../../../shared/sort-header/sort-header';
 
 export const ROLE_INFO: Record<UserRole, { label: string; description: string; badge: string }> = {
   Admin: { label: 'Admin', description: 'Everything, including settings, indexers and users.', badge: 'bg-accent-500/15 text-accent-300' },
@@ -18,7 +20,7 @@ interface UserForm { id: number; username: string; role: UserRole; password: str
 /** Admin-only list of accounts with create, edit (role, username, password reset) and delete. */
 @Component({
   selector: 'kr-users-settings',
-  imports: [FormsModule, Modal, DatePipe],
+  imports: [FormsModule, Modal, DatePipe, SortHeader],
   templateUrl: './users.html',
   styleUrl: './users.scss',
 })
@@ -34,6 +36,11 @@ export class UsersSettings implements OnInit {
   protected readonly saving = signal(false);
   protected readonly form = signal<UserForm | null>(null);
   protected readonly confirmDelete = signal<UserAccount | null>(null);
+  protected readonly sort = new TableSort(this.users, {
+    username: u => u.username,
+    role: u => this.roles.indexOf(u.role),
+    created: u => Date.parse(u.createdAt),
+  });
 
   async ngOnInit() { await this.load(); }
 
