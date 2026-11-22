@@ -15,6 +15,8 @@ public sealed class FakeQBittorrent : HttpMessageHandler
     public string WebApiVersion { get; set; } = "2.9.3";
     public string Password { get; set; } = "secret";
     public int ForbidNextRequests { get; set; }
+    /// <summary>When set, requests carrying "Authorization: Bearer {ApiKey}" are accepted without a session.</summary>
+    public string? ApiKey { get; set; }
     private string _sid = "sid-1";
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -44,7 +46,13 @@ public sealed class FakeQBittorrent : HttpMessageHandler
             return new HttpResponseMessage(HttpStatusCode.Forbidden);
         }
 
-        if (cookie != $"SID={_sid}")
+        var bearer = request.Headers.Authorization is { Scheme: "Bearer" } auth ? auth.Parameter : null;
+        if (bearer is not null && bearer != ApiKey)
+        {
+            return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+        }
+
+        if (bearer is null && cookie != $"SID={_sid}")
         {
             return new HttpResponseMessage(HttpStatusCode.Forbidden);
         }

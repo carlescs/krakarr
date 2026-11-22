@@ -23,12 +23,8 @@ public static class SettingsEndpoints
                 ? "Release region must be a two-letter country code (ISO 3166-1), e.g. US or ES"
                 : null);
         MapSection<DownloadClientSettings>(settings, "downloads",
-            merge: (current, incoming) => incoming.QBittorrent.Password == QBittorrentSettings.PasswordMask
-                ? incoming with { QBittorrent = incoming.QBittorrent with { Password = current.QBittorrent.Password } }
-                : incoming,
-            present: s => string.IsNullOrEmpty(s.QBittorrent.Password)
-                ? s
-                : s with { QBittorrent = s.QBittorrent with { Password = QBittorrentSettings.PasswordMask } },
+            merge: (current, incoming) => incoming with { QBittorrent = incoming.QBittorrent.WithSecretsFrom(current.QBittorrent) },
+            present: s => s with { QBittorrent = s.QBittorrent.Masked() },
             validate: s => s.Client != DownloadClientKind.QBittorrent ? null
                 : string.IsNullOrWhiteSpace(s.QBittorrent.Tag) ? "A qBittorrent tag is required so Krakarr only manages its own torrents"
                 : !Uri.TryCreate(s.QBittorrent.Url, UriKind.Absolute, out var u) || (u.Scheme != "http" && u.Scheme != "https") ? "qBittorrent URL must be an absolute http(s) URL"

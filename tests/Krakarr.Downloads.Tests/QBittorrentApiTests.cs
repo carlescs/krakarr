@@ -27,6 +27,27 @@ public class QBittorrentApiTests
     }
 
     [Fact]
+    public async Task Api_key_is_sent_as_bearer_token_without_login()
+    {
+        var fake = new FakeQBittorrent { ApiKey = "qbt_key" };
+        using var api = new QBittorrentApi(Settings with { Username = null, Password = null, ApiKey = "qbt_key" }, fake);
+        await api.LoginAsync(TestContext.Current.CancellationToken);
+        Assert.Equal("v4.6.3", await api.GetVersionAsync(TestContext.Current.CancellationToken));
+        Assert.DoesNotContain(fake.Requests, r => r.Path == "/api/v2/auth/login");
+        Assert.Null(fake.Requests.Single().Cookie);
+    }
+
+    [Fact]
+    public async Task Wrong_api_key_is_reported_without_retrying()
+    {
+        var fake = new FakeQBittorrent { ApiKey = "qbt_key" };
+        using var api = new QBittorrentApi(Settings with { ApiKey = "qbt_wrong" }, fake);
+        var ex = await Assert.ThrowsAsync<QBittorrentException>(() => api.GetVersionAsync(TestContext.Current.CancellationToken));
+        Assert.Contains("API key", ex.Message);
+        Assert.Single(fake.Requests);
+    }
+
+    [Fact]
     public async Task Re_authenticates_once_after_403()
     {
         var fake = new FakeQBittorrent();

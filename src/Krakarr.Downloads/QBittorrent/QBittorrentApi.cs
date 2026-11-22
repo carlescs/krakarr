@@ -68,8 +68,9 @@ public sealed record QbtFile
 }
 
 /// <summary>
-/// Minimal qBittorrent WebUI API v2 client. Handles the SID cookie itself (so it works with any handler),
-/// logs in lazily and re-authenticates once when a call is rejected with 403.
+/// Minimal qBittorrent WebUI API v2 client. With an API key (qBittorrent 5.2+) every request carries it as a bearer
+/// token. Otherwise it handles the SID cookie itself (so it works with any handler), logs in lazily and
+/// re-authenticates once when a call is rejected with 403.
 /// </summary>
 public sealed class QBittorrentApi : IDisposable
 {
@@ -97,12 +98,23 @@ public sealed class QBittorrentApi : IDisposable
         // qBittorrent's CSRF protection compares Referer/Origin with its own host.
         _http.DefaultRequestHeaders.Referrer = uri;
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("Krakarr/0.1");
+        if (settings.UsesApiKey)
+        {
+            _http.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", settings.ApiKey!.Trim());
+        }
     }
 
     public QBittorrentSettings Settings => _settings;
 
+    /// <summary>Opens a cookie session. A no-op with an API key, which authenticates every request on its own.</summary>
     public async Task LoginAsync(CancellationToken ct = default)
     {
+        if (_settings.UsesApiKey)
+        {
+            _loggedIn = true;
+            return;
+        }
+
         await _loginLock.WaitAsync(ct);
         try
         {
@@ -294,6 +306,12 @@ public sealed class QBittorrentApi : IDisposable
             catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
             {
                 throw new QBittorrentException($"qBittorrent at {_http.BaseAddress} timed out", ex);
+            }
+
+            if (_settings.UsesApiKey && response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            {
+                response.Dispose();
+                throw new QBittorrentException("qBittorrent rejected the API key (API keys need qBittorrent 5.2 or later)");
             }
 
             if (response.StatusCode == HttpStatusCode.Forbidden && attempt == 0)

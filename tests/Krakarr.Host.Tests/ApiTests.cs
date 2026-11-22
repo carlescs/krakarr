@@ -136,21 +136,24 @@ public sealed class ApiTests : IClassFixture<KrakarrFactory>
         var settings = new
         {
             client = "QBittorrent",
-            qBittorrent = new { url = "http://qbt:8080", username = "admin", password = "hunter22", tag = "krakarr" },
+            qBittorrent = new { url = "http://qbt:8080", username = "admin", password = "hunter22", apiKey = "qbt_secret", tag = "krakarr" },
         };
         (await client.PutAsJsonAsync("/api/v1/settings/downloads", settings, ct)).EnsureSuccessStatusCode();
 
         var read = await client.GetFromJsonAsync<JsonElement>("/api/v1/settings/downloads", ct);
         Assert.Equal("QBittorrent", read.GetProperty("client").GetString());
         Assert.Equal("********", read.GetProperty("qBittorrent").GetProperty("password").GetString());
+        Assert.Equal("********", read.GetProperty("qBittorrent").GetProperty("apiKey").GetString());
+        Assert.False(read.GetProperty("qBittorrent").TryGetProperty("usesApiKey", out _));
 
         // Saving the masked value back keeps the real password (verified through the stored settings).
-        var masked = new { client = "QBittorrent", qBittorrent = new { url = "http://qbt:8080", username = "admin", password = "********", tag = "krakarr" } };
+        var masked = new { client = "QBittorrent", qBittorrent = new { url = "http://qbt:8080", username = "admin", password = "********", apiKey = "********", tag = "krakarr" } };
         (await client.PutAsJsonAsync("/api/v1/settings/downloads", masked, ct)).EnsureSuccessStatusCode();
         using var scope = _factory.Services.CreateScope();
         var stored = await scope.ServiceProvider.GetRequiredService<Krakarr.Data.ISettingsService>()
             .GetAsync<Krakarr.Core.Configuration.DownloadClientSettings>(ct);
         Assert.Equal("hunter22", stored.QBittorrent.Password);
+        Assert.Equal("qbt_secret", stored.QBittorrent.ApiKey);
 
         var noTag = new { client = "QBittorrent", qBittorrent = new { url = "http://qbt:8080", tag = "" } };
         Assert.Equal(HttpStatusCode.BadRequest, (await client.PutAsJsonAsync("/api/v1/settings/downloads", noTag, ct)).StatusCode);

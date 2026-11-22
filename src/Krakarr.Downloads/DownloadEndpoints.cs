@@ -91,13 +91,13 @@ public static class DownloadEndpoints
             };
         });
 
-        // Test a (possibly unsaved) configuration. A masked password means "use the stored one".
+        // Test a (possibly unsaved) configuration. A masked password or API key means "use the stored one".
         group.MapPost("/client/test", async (DownloadClientSettings input, DownloadClientRouter router, ISettingsService settings, CancellationToken ct) =>
         {
-            if (input.QBittorrent.Password == QBittorrentSettings.PasswordMask)
+            if (input.QBittorrent.Password == QBittorrentSettings.PasswordMask || input.QBittorrent.ApiKey == QBittorrentSettings.PasswordMask)
             {
                 var stored = await settings.GetAsync<DownloadClientSettings>(ct);
-                input = input with { QBittorrent = input.QBittorrent with { Password = stored.QBittorrent.Password } };
+                input = input with { QBittorrent = input.QBittorrent.WithSecretsFrom(stored.QBittorrent) };
             }
 
             return await router.Get(input.Client).TestAsync(input, ct);

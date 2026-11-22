@@ -185,7 +185,7 @@ export interface TelemetryStatus { active: boolean; signals: string[]; endpoint?
 export type DownloadClientKind = 'Embedded' | 'QBittorrent';
 export type SeedLimitAction = 'Remove' | 'Stop';
 export interface QBittorrentSettings {
-  url: string; username?: string; password?: string; tag: string; category?: string; savePath?: string;
+  url: string; username?: string; password?: string; apiKey?: string; tag: string; category?: string; savePath?: string;
   remotePathPrefix?: string; localPathPrefix?: string;
 }
 export interface DownloadClientTestResult { success: boolean; version?: string; message?: string; }
