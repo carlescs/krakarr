@@ -1,0 +1,74 @@
+import { TestBed } from '@angular/core/testing';
+import { describe, expect, it, vi } from 'vitest';
+import { SubtitleFile } from '../../core/models';
+import { button, mockApi, settle, setupTest, text } from '../../../testing/test-setup';
+import { SubtitleList } from './subtitle-list';
+
+const external = { id: 5, language: 'es', languageName: 'Spanish', hearingImpaired: true, forced: false, provider: 'opensubtitles', score: 92,
+  release: 'Alien.1979.1080p.BluRay', fileName: 'Alien.es.hi.srt', dateAdded: new Date().toISOString() } as SubtitleFile;
+const embedded = { id: 0, language: 'en', languageName: 'English', hearingImpaired: false, forced: false, provider: 'embedded',
+  fileName: 'Alien.mkv', dateAdded: new Date().toISOString() } as SubtitleFile;
+
+function setup(wanted: { enabled: boolean; useEmbeddedSubtitles: boolean; languages: string[] }) {
+  return setupTest({
+    api: mockApi({
+      wantedSubtitleLanguages: async () => wanted,
+      subtitleLanguages: async () => [{ code: 'en', name: 'English' }, { code: 'es', name: 'Spanish' }, { code: 'fr', name: 'French' }],
+      deleteSubtitle: async () => undefined,
+    }),
+  });
+}
+
+describe('SubtitleList', () => {
+  it('shows each subtitle in detail and which wanted languages are missing', async () => {
+    setup({ enabled: true, useEmbeddedSubtitles: true, languages: ['en', 'es', 'fr'] });
+    const fixture = TestBed.createComponent(SubtitleList);
+    fixture.componentRef.setInput('files', [embedded, external]);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+
+    const rows = [...el.querySelectorAll('[data-subtitle]')].map(r => text(r as HTMLElement));
+    expect(rows[0]).toContain('Spanish (HI)');
+    expect(rows[0]).toContain('opensubtitles');
+    expect(rows[0]).toContain('92');
+    expect(rows[0]).toContain('Alien.1979.1080p.BluRay');
+    expect(rows[1]).toContain('English');
+    expect(rows[1]).toContain('Embedded');
+    expect([...el.querySelectorAll('[data-missing]')].map(m => text(m as HTMLElement))).toEqual(['French · missing']);
+    expect(el.querySelector('[aria-label="Delete subtitle"]')).toBeNull();
+  });
+
+  it('ignores embedded tracks when they are not used', async () => {
+    setup({ enabled: true, useEmbeddedSubtitles: false, languages: ['en'] });
+    const fixture = TestBed.createComponent(SubtitleList);
+    fixture.componentRef.setInput('files', [embedded]);
+    await settle(fixture);
+    expect(text(fixture.nativeElement, '[data-missing]')).toBe('English · missing');
+  });
+
+  it('hides coverage when subtitles are disabled and shows an empty state', async () => {
+    setup({ enabled: false, useEmbeddedSubtitles: true, languages: ['en'] });
+    const fixture = TestBed.createComponent(SubtitleList);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-coverage]')).toBeNull();
+    expect(text(el)).toContain('No subtitles yet.');
+  });
+
+  it('deletes external subtitles only', async () => {
+    const api = setup({ enabled: true, useEmbeddedSubtitles: true, languages: [] });
+    const fixture = TestBed.createComponent(SubtitleList);
+    fixture.componentRef.setInput('files', [embedded, external]);
+    fixture.componentRef.setInput('deletable', true);
+    const changed = vi.fn();
+    fixture.componentInstance.changed.subscribe(changed);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelectorAll('[aria-label="Delete subtitle"]').length).toBe(1);
+
+    button(el, 'Delete subtitle').click();
+    await settle(fixture);
+    expect(api.deleteSubtitle).toHaveBeenCalledWith(5);
+    expect(changed).toHaveBeenCalled();
+  });
+});

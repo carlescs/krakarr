@@ -8,6 +8,7 @@ import { Modal } from '../../../shared/modal/modal';
 import { CreditsView } from '../../../shared/credits/credits';
 import { ExternalLinks } from '../../../shared/external-links/external-links';
 import { Progress } from '../../../shared/progress/progress';
+import { SubtitleList } from '../../../shared/subtitle-list/subtitle-list';
 
 /**
  * Dialog with everything about one library episode: what the library stores (file, subtitles, status) plus TMDB's
@@ -15,7 +16,7 @@ import { Progress } from '../../../shared/progress/progress';
  */
 @Component({
   selector: 'kr-episode-details',
-  imports: [Modal, CreditsView, ExternalLinks, Progress, DatePipe, BytesPipe],
+  imports: [Modal, CreditsView, ExternalLinks, Progress, SubtitleList, DatePipe, BytesPipe],
   templateUrl: './episode-details.html',
   styleUrl: './episode-details.scss',
 })
@@ -32,6 +33,8 @@ export class EpisodeDetailsDialog {
   readonly search = output<void>();
   readonly interactive = output<void>();
   readonly manageSubtitles = output<void>();
+  /** A subtitle was deleted from the dialog. */
+  readonly subtitlesChanged = output<void>();
 
   protected readonly details = signal<EpisodeDetails | null>(null);
   protected readonly loading = signal(true);

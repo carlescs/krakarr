@@ -21,6 +21,7 @@ import { LibraryCredits } from '../../../shared/library-credits/library-credits'
 import { RelatedTitles } from '../../../shared/related-titles/related-titles';
 import { Progress } from '../../../shared/progress/progress';
 import { SubtitleManager } from '../../../shared/subtitle-manager/subtitle-manager';
+import { SubtitleLanguages } from '../../../core/subtitles';
 import { SubscribeButton } from '../../../shared/subscribe-button/subscribe-button';
 import { ExternalLinks } from '../../../shared/external-links/external-links';
 import { EpisodeDetailsDialog } from '../episode-details/episode-details';
@@ -53,8 +54,34 @@ export class SeriesDetailPage implements OnInit {
   protected readonly subtitleEpisode = signal<Episode | null>(null);
   protected readonly subtitlesByFile = computed(() => {
     const map = new Map<number, SubtitleFile[]>();
-    for (const s of this.subtitles()) if (s.episodeFileId) map.set(s.episodeFileId, [...(map.get(s.episodeFileId) ?? []), s]);
+    for (const s of this.subtitles()) {
+      if (!s.episodeFileId) continue;
+      const list = map.get(s.episodeFileId);
+      if (list) list.push(s); else map.set(s.episodeFileId, [s]);
+    }
     return map;
+  });
+  protected readonly subtitleLanguages = inject(SubtitleLanguages);
+  /** Wanted subtitle languages each downloaded episode is missing, keyed by episode file id. */
+  protected readonly missingSubtitles = computed(() => {
+    const map = new Map<number, string[]>();
+    if (!this.subtitleLanguages.wanted()?.enabled) return map;
+    const byFile = this.subtitlesByFile();
+    for (const e of this.episodes()) {
+      if (!e.episodeFile) continue;
+      const missing = this.subtitleLanguages.missing(byFile.get(e.episodeFile.id) ?? []);
+      if (missing.length > 0) map.set(e.episodeFile.id, missing);
+    }
+    return map;
+  });
+  /** Per season, how many downloaded episodes miss a wanted subtitle language. */
+  protected readonly seasonSubtitleGaps = computed(() => {
+    const missing = this.missingSubtitles();
+    const counts = new Map<number, number>();
+    for (const e of this.episodes()) {
+      if (e.episodeFile && missing.has(e.episodeFile.id)) counts.set(e.seasonNumber, (counts.get(e.seasonNumber) ?? 0) + 1);
+    }
+    return counts;
   });
   /** Episode whose details dialog is open; read from `episodes` so download progress stays live. */
   protected readonly detailEpisodeId = signal<number | null>(null);
@@ -125,6 +152,7 @@ export class SeriesDetailPage implements OnInit {
   ngOnInit() {
     this.api.qualityProfiles().then(p => this.profiles.set(p));
     this.languages.load().catch(() => {});
+    this.subtitleLanguages.load().catch(() => {});
     this.events.seriesUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => { if (e.id === this.id()) this.load(); });
     this.events.historyAdded.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(h => { if (h.seriesId === this.id()) this.loadHistory(); });
     this.events.subtitlesUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(e => { if (e.seriesId === this.id()) this.loadSubtitles(); });
