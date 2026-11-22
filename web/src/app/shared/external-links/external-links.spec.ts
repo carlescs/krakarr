@@ -24,7 +24,7 @@ describe('ExternalLinks', () => {
       { label: 'TMDB', href: 'https://www.themoviedb.org/movie/603', text: 'TMDB' },
       { label: 'IMDb', href: 'https://www.imdb.com/title/tt0133093', text: 'IMDb8.72.1M' },
       { label: 'Rotten Tomatoes', href: 'https://www.rottentomatoes.com/m/matrix', text: '83%' },
-      { label: 'Metacritic', href: 'https://www.metacritic.com/search/The%20Matrix/?category=movie', text: '73Metacritic' },
+      { label: 'Metacritic', href: 'https://www.metacritic.com/search/The%20Matrix/?page=1&category=2', text: '73Metacritic' },
     ]);
   });
 
