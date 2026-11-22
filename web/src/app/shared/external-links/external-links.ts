@@ -40,8 +40,9 @@ export class ExternalLinks {
     return this.ratings()?.rottenTomatoesUrl
       ?? `https://www.rottentomatoes.com/search?search=${encodeURIComponent(this.title())}`;
   });
+  /** Metacritic search for the title. Its search filter takes numeric categories: 2 = movies, 1 = TV shows. */
   protected readonly metacriticUrl = computed(() =>
-    `https://www.metacritic.com/search/${encodeURIComponent(this.title())}/?category=${this.kind() === 'series' ? 'tv' : 'movie'}`);
+    `https://www.metacritic.com/search/${encodeURIComponent(this.title())}/?page=1&category=${this.kind() === 'series' ? 1 : 2}`);
   protected readonly fresh = computed(() => (this.ratings()?.rottenTomatoes ?? 0) >= 60);
   protected readonly metacriticClass = computed(() => {
     const score = this.ratings()?.metacritic ?? 0;
