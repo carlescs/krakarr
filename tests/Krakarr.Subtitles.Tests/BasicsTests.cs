@@ -52,8 +52,9 @@ public class HashAndLanguageTests
     [Fact]
     public void Builds_subtitle_paths()
     {
-        Assert.Equal(Path.Combine("/m", "Movie (2020).en.srt"), SubtitleService.SubtitlePath("/m/Movie (2020).mkv", "en", false, false, ".srt"));
-        Assert.Equal(Path.Combine("/m", "Movie (2020).pt-br.hi.forced.ass"), SubtitleService.SubtitlePath("/m/Movie (2020).mkv", "pt-br", true, true, "ass"));
+        var dir = $"{Path.DirectorySeparatorChar}m";
+        Assert.Equal(Path.Combine(dir, "Movie (2020).en.srt"), SubtitleService.SubtitlePath("/m/Movie (2020).mkv", "en", false, false, ".srt"));
+        Assert.Equal(Path.Combine(dir, "Movie (2020).pt-br.hi.forced.ass"), SubtitleService.SubtitlePath("/m/Movie (2020).mkv", "pt-br", true, true, "ass"));
     }
 }
 
