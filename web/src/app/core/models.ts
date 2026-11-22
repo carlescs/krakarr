@@ -141,6 +141,8 @@ export interface SeasonInfo {
 }
 export interface Series {
   id: number; tmdbId?: number; tvdbId?: number; imdbId?: string; title: string; year: number; overview?: string; posterUrl?: string; fanartUrl?: string;
+  /** Title from the metadata source; differs from `title` when the user edited it. */
+  metadataTitle: string;
   network?: string; runtime: number; status: SeriesStatus; monitored: boolean; seasonFolder: boolean; qualityProfileId: number; path: string;
   added: string; episodeCount: number; episodeFileCount: number; sizeOnDisk: number; nextAiring?: string; downloadingCount: number;
   seasons: SeasonInfo[];

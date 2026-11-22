@@ -86,7 +86,8 @@ public sealed class SubtitleService(
             Video = new VideoInfo
             {
                 MediaType = MediaType.Series,
-                Title = series.Title,
+                // Providers know the series by its metadata title, not by a title the user edited.
+                Title = series.MetadataTitle.Length > 0 ? series.MetadataTitle : series.Title,
                 Year = series.Year,
                 SeasonNumber = episode.SeasonNumber,
                 EpisodeNumber = episode.EpisodeNumber,

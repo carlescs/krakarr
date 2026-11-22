@@ -85,6 +85,7 @@ export class SeriesDetailPage implements OnInit {
   protected readonly organizePreview = signal<OrganizePreview | null>(null);
   protected readonly organizableCount = computed(() => this.organizePreview()?.files.filter(f => !f.problem).length ?? 0);
   protected organizeFolder = true;
+  protected editTitle = '';
   protected editMonitored = true;
   protected editSeasonFolder = true;
   protected editProfileId = 0;
@@ -157,6 +158,7 @@ export class SeriesDetailPage implements OnInit {
       const [s] = await Promise.all([this.api.series(id), this.loadEpisodes(), this.loadHistory(), this.loadSubtitles()]);
       if (id !== this.id()) return; // navigated to another series meanwhile
       this.series.set(s);
+      this.editTitle = s.title;
       this.editMonitored = s.monitored;
       this.editSeasonFolder = s.seasonFolder;
       this.editProfileId = s.qualityProfileId;
@@ -327,7 +329,7 @@ export class SeriesDetailPage implements OnInit {
 
   async saveEdit() {
     try {
-      await this.api.updateSeries(this.id(), this.editMonitored, this.editProfileId, this.editSeasonFolder, this.editLanguages);
+      await this.api.updateSeries(this.id(), this.editMonitored, this.editProfileId, this.editSeasonFolder, this.editLanguages, this.editTitle.trim());
       this.editing.set(false);
       await this.load();
     } catch (e) {

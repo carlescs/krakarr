@@ -275,4 +275,38 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
         Assert.Equal(keptEpisodeId, s01e01.Id); // matched by season/number, not recreated
         Assert.Equal(2, s01e01.TmdbId);
     }
+
+    [Fact]
+    public async Task Refresh_keeps_an_edited_title_and_follows_metadata_otherwise()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var scope = _services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<SeriesService>();
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        var added = await service.AddAsync(new AddSeriesRequest(9001, null, 1, "/tv"), ct);
+        Assert.Equal("Test Show", added.MetadataTitle);
+        Assert.False(SeriesService.HasCustomTitle(added));
+
+        SeriesService.SetTitle(added, "  The Test Show (US)  ");
+        await db.SaveChangesAsync(ct);
+        Assert.Equal("The Test Show (US)", added.Title);
+        Assert.Equal("test show (us)", added.SortTitle);
+
+        db.ChangeTracker.Clear();
+        await service.RefreshAsync((await service.LoadAsync(added.Id, ct))!, ct);
+        var series = await db.Series.AsNoTracking().SingleAsync(ct);
+        Assert.Equal("The Test Show (US)", series.Title); // the edit survives the refresh
+        Assert.Equal("Test Show", series.MetadataTitle);
+
+        // A blank title goes back to the metadata title, which refreshes then follow again.
+        db.ChangeTracker.Clear();
+        var loaded = (await service.LoadAsync(added.Id, ct))!;
+        SeriesService.SetTitle(loaded, " ");
+        await db.SaveChangesAsync(ct);
+        Assert.Equal("Test Show", loaded.Title);
+        Assert.False(SeriesService.HasCustomTitle(loaded));
+        await scope.ServiceProvider.GetRequiredService<ISettingsService>().SaveAsync(new MetadataSettings { SeriesSource = SeriesMetadataSource.Tvdb }, ct);
+        await service.RefreshAsync(loaded, ct);
+        Assert.Equal("Test Show (TVDB)", (await db.Series.AsNoTracking().SingleAsync(ct)).Title);
+    }
 }

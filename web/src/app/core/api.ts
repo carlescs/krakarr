@@ -250,8 +250,9 @@ export class Api {
   /** IMDb, Rotten Tomatoes and Metacritic scores; null (HTTP 204) when no OMDb key is set or they are unavailable. */
   ratings(imdbId: string) { return this.get<TitleRatings | null>(`ratings/${encodeURIComponent(imdbId)}`); }
   /** Replaces the editable fields; `languages` null = use the global default. */
-  updateSeries(id: number, monitored: boolean, qualityProfileId: number, seasonFolder: boolean, languages: string[] | null) {
-    return this.put<void>(`series/${id}`, { monitored, qualityProfileId, seasonFolder, languages });
+  /** `title`: undefined keeps the current title, blank restores the metadata title. */
+  updateSeries(id: number, monitored: boolean, qualityProfileId: number, seasonFolder: boolean, languages: string[] | null, title?: string) {
+    return this.put<void>(`series/${id}`, { monitored, qualityProfileId, seasonFolder, languages, title });
   }
   deleteSeries(id: number, deleteFiles: boolean) { return this.delete<void>(`series/${id}`, { deleteFiles }); }
   monitorSeason(seriesId: number, season: number, monitored: boolean) { return this.put<void>(`series/${seriesId}/seasons/${season}`, { monitored }); }

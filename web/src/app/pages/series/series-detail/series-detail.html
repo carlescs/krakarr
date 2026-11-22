@@ -6,7 +6,7 @@
     <div class="relative flex flex-col gap-5 px-4 py-6 sm:flex-row sm:gap-6 sm:py-8 lg:px-8">
       <kr-poster class="w-32 shrink-0 shadow-2xl sm:w-48" [url]="s.posterUrl" [title]="s.title" />
       <div class="min-w-0 flex-1">
-        <h1 class="text-2xl font-bold tracking-tight text-white sm:text-3xl">{{ s.title }} @if (s.year) { <span class="font-normal text-slate-400">({{ s.year }})</span> }</h1>
+        <h1 class="text-2xl font-bold tracking-tight text-white sm:text-3xl">{{ s.title }} @if (s.year && !s.title.endsWith('(' + s.year + ')')) { <span class="font-normal text-slate-400">({{ s.year }})</span> }</h1>
         <div class="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-400">
           @if (s.network) { <span>{{ s.network }}</span><span>·</span> }
           @if (s.runtime) { <span>{{ s.runtime }} min</span><span>·</span> }
@@ -236,6 +236,19 @@
   @if (editing()) {
     <kr-modal [title]="'Edit ' + s.title" (closed)="editing.set(false)">
       <div class="space-y-4">
+        <div>
+          <label class="label" for="series-title">Title</label>
+          <div class="flex gap-2">
+            <input id="series-title" class="input" maxlength="200" [(ngModel)]="editTitle" [placeholder]="s.metadataTitle" />
+            @if (editTitle.trim() !== s.metadataTitle) {
+              <button type="button" class="btn-ghost shrink-0" (click)="editTitle = s.metadataTitle" title="Use the title from the metadata source">Reset</button>
+            }
+          </div>
+          <p class="mt-1 text-xs text-slate-400">
+            Tells apart series with the same name, e.g. "{{ s.metadataTitle }} ({{ s.year }})" or "{{ s.metadataTitle }} (US)". Used to match releases and to name
+            files; run Organize to rename existing folders. Leave empty to use "{{ s.metadataTitle }}".
+          </p>
+        </div>
         <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="editMonitored" /> Monitored</label>
         <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="editSeasonFolder" /> Use season folders</label>
         <div>

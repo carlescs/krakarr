@@ -194,8 +194,10 @@ public sealed class SeriesService(
     {
         s.TmdbId = info.TmdbId ?? s.TmdbId;
         s.TvdbId = info.TvdbId ?? s.TvdbId;
-        s.Title = info.Title;
-        s.SortTitle = SortTitle(info.Title);
+        // Keep a title the user edited; otherwise follow the metadata source.
+        if (!HasCustomTitle(s)) s.Title = info.Title;
+        s.MetadataTitle = info.Title;
+        s.SortTitle = SortTitle(s.Title);
         s.Year = info.Year;
         s.Overview = info.Overview;
         s.PosterUrl = info.PosterUrl ?? s.PosterUrl;
@@ -219,6 +221,21 @@ public sealed class SeriesService(
         episode.Overview = e.Overview;
         episode.AirDate = e.AirDate;
         episode.Runtime = e.Runtime;
+    }
+
+    /// <summary>True when the user gave the series a title other than the metadata one.</summary>
+    public static bool HasCustomTitle(Core.Domain.Series s) =>
+        s.MetadataTitle.Length > 0 && !string.Equals(s.Title, s.MetadataTitle, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Sets the user's title for the series. A blank title, or the metadata title itself, goes back to the metadata title.
+    /// </summary>
+    public static void SetTitle(Core.Domain.Series s, string title)
+    {
+        var trimmed = title.Trim();
+        if (s.MetadataTitle.Length == 0) s.MetadataTitle = s.Title;
+        s.Title = trimmed.Length == 0 ? s.MetadataTitle : trimmed;
+        s.SortTitle = SortTitle(s.Title);
     }
 
     private static string SortTitle(string title)
