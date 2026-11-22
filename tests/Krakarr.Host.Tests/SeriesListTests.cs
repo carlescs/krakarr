@@ -68,4 +68,41 @@ public sealed class SeriesListTests : IClassFixture<KrakarrFactory>
             .Select(s => $"{s.GetProperty("seasonNumber").GetInt32()}:{s.GetProperty("episodeCount").GetInt32()}/{s.GetProperty("episodeFileCount").GetInt32()}/{s.GetProperty("totalEpisodeCount").GetInt32()}/{s.GetProperty("sizeOnDisk").GetInt64()}");
         Assert.Equal(["0:1/1/1/5", "1:3/2/3/100", "2:0/0/1/0"], seasons);
     }
+
+    [Fact]
+    public async Task Title_can_be_edited_and_reset()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        int id, profile;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+            profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+            var series = new Krakarr.Core.Domain.Series { TmdbId = 79, Title = "Same Name", MetadataTitle = "Same Name", Year = 2011, Path = "/tv/same", QualityProfileId = profile };
+            db.Series.Add(series);
+            await db.SaveChangesAsync(ct);
+            id = series.Id;
+        }
+
+        var client = _factory.CreateClient(new() { HandleCookies = true });
+        var status = await client.GetFromJsonAsync<JsonElement>("/api/v1/auth/status", ct);
+        var url = status.GetProperty("setupRequired").GetBoolean() ? "/api/v1/auth/setup" : "/api/v1/auth/login";
+        (await client.PostAsJsonAsync(url, new { username = "admin", password = "correct-horse", setupToken = KrakarrFactory.TestSetupToken }, ct)).EnsureSuccessStatusCode();
+
+        (await client.PutAsJsonAsync($"/api/v1/series/{id}", new { monitored = true, qualityProfileId = profile, seasonFolder = true, title = "Same Name (2011)" }, ct)).EnsureSuccessStatusCode();
+        var edited = await client.GetFromJsonAsync<JsonElement>($"/api/v1/series/{id}", ct);
+        Assert.Equal("Same Name (2011)", edited.GetProperty("title").GetString());
+        Assert.Equal("Same Name", edited.GetProperty("metadataTitle").GetString());
+
+        // Leaving the title out keeps it.
+        (await client.PutAsJsonAsync($"/api/v1/series/{id}", new { monitored = false, qualityProfileId = profile, seasonFolder = true }, ct)).EnsureSuccessStatusCode();
+        Assert.Equal("Same Name (2011)", (await client.GetFromJsonAsync<JsonElement>($"/api/v1/series/{id}", ct)).GetProperty("title").GetString());
+
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest,
+            (await client.PutAsJsonAsync($"/api/v1/series/{id}", new { monitored = true, qualityProfileId = profile, seasonFolder = true, title = new string('x', 201) }, ct)).StatusCode);
+
+        // A blank title restores the metadata title.
+        (await client.PutAsJsonAsync($"/api/v1/series/{id}", new { monitored = true, qualityProfileId = profile, seasonFolder = true, title = "" }, ct)).EnsureSuccessStatusCode();
+        Assert.Equal("Same Name", (await client.GetFromJsonAsync<JsonElement>($"/api/v1/series/{id}", ct)).GetProperty("title").GetString());
+    }
 }

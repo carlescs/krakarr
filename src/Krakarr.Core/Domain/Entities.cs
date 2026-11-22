@@ -198,7 +198,10 @@ public class Series
     /// <summary>TheTVDB id. Always set when series metadata comes from TheTVDB; otherwise when TMDB knows it. Indexers search and tag TV releases by it.</summary>
     public int? TvdbId { get; set; }
     public string? ImdbId { get; set; }
+    /// <summary>Display title, used for naming and matching. Normally the metadata title, but the user can edit it (e.g. to tell apart two series with the same name).</summary>
     public required string Title { get; set; }
+    /// <summary>Title as the metadata source names the series. When <see cref="Title"/> differs, the user edited it and refreshes keep the edit.</summary>
+    public string MetadataTitle { get; set; } = string.Empty;
     public string SortTitle { get; set; } = string.Empty;
     public int Year { get; set; }
     public string? Overview { get; set; }

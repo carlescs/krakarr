@@ -52,4 +52,40 @@ describe('SeriesDetailPage', () => {
     expect([...page.expanded()]).toEqual([2]);
     expect(page.confirmDelete()).toBe(false);
   });
+
+  it('saves an edited title, trimmed', async () => {
+    const api = {
+      series: vi.fn(async (id: number) => ({ id, title: 'Same Name', metadataTitle: 'Same Name', monitored: true, seasonFolder: true, qualityProfileId: 1, seasons: [] })),
+      episodes: vi.fn(async () => []),
+      qualityProfiles: vi.fn(async () => []),
+      history: vi.fn(async () => ({ items: [] })),
+      subtitleFiles: vi.fn(async () => []),
+      languages: vi.fn(async () => ({ all: [], preferred: [] })),
+      updateSeries: vi.fn(async () => undefined),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: Api, useValue: api },
+        { provide: Auth, useValue: { isStaff: () => true } },
+        { provide: Events, useValue: { downloads: signal([]), seriesUpdated: new Subject(), historyAdded: new Subject(), subtitlesUpdated: new Subject() } },
+        { provide: Toasts, useValue: { error: vi.fn(), show: vi.fn(), success: vi.fn() } },
+        { provide: Router, useValue: { navigateByUrl: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(SeriesDetailPage, { set: { template: '', imports: [] } });
+
+    const fixture = TestBed.createComponent(SeriesDetailPage);
+    const page = fixture.componentInstance as unknown as { editTitle: string; saveEdit(): Promise<void>; toggleSeries(): Promise<void> };
+    fixture.componentRef.setInput('id', 3);
+    await fixture.whenStable();
+    expect(page.editTitle).toBe('Same Name');
+
+    page.editTitle = '  Same Name (US) ';
+    await page.saveEdit();
+    expect(api.updateSeries).toHaveBeenLastCalledWith(3, true, 1, true, null, 'Same Name (US)');
+
+    // Toggling monitoring leaves the title alone.
+    await page.toggleSeries();
+    expect(api.updateSeries).toHaveBeenLastCalledWith(3, false, 1, true, null);
+  });
 });

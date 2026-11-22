@@ -13,8 +13,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Krakarr.Data.Postgres.Migrations;
 
 [DbContext(typeof(KrakarrDbContext))]
-[Migration("20261122084140_EmbeddedSubtitles")]
-partial class _20261122084140_EmbeddedSubtitles
+[Migration("20261122083230_SeriesMetadataTitle")]
+partial class _20261122083230_SeriesMetadataTitle
 {
     /// <inheritdoc />
     protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -197,10 +197,6 @@ partial class _20261122084140_EmbeddedSubtitles
 
                 b.Property<DateTimeOffset>("DateAdded")
                     .HasColumnType("timestamp with time zone");
-
-                b.Property<string>("EmbeddedSubtitles")
-                    .HasMaxLength(512)
-                    .HasColumnType("character varying(512)");
 
                 b.Property<DateTimeOffset?>("LastSubtitleSearch")
                     .HasColumnType("timestamp with time zone");
@@ -591,10 +587,6 @@ partial class _20261122084140_EmbeddedSubtitles
                 b.Property<DateTimeOffset>("DateAdded")
                     .HasColumnType("timestamp with time zone");
 
-                b.Property<string>("EmbeddedSubtitles")
-                    .HasMaxLength(512)
-                    .HasColumnType("character varying(512)");
-
                 b.Property<DateTimeOffset?>("LastSubtitleSearch")
                     .HasColumnType("timestamp with time zone");
 
@@ -733,6 +725,10 @@ partial class _20261122084140_EmbeddedSubtitles
 
                 b.Property<DateTimeOffset?>("LastSearched")
                     .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("MetadataTitle")
+                    .IsRequired()
+                    .HasColumnType("text");
 
                 b.Property<bool>("Monitored")
                     .HasColumnType("boolean");

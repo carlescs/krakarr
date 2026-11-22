@@ -2,10 +2,10 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace Krakarr.Data.Postgres.Migrations;
+namespace Krakarr.Data.Sqlite.Migrations;
 
 /// <inheritdoc />
-public partial class _20261122084140_EmbeddedSubtitles : Migration
+public partial class _20261122085159_EmbeddedSubtitles : Migration
 {
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)
@@ -13,14 +13,14 @@ public partial class _20261122084140_EmbeddedSubtitles : Migration
         migrationBuilder.AddColumn<string>(
             name: "EmbeddedSubtitles",
             table: "MovieFiles",
-            type: "character varying(512)",
+            type: "TEXT",
             maxLength: 512,
             nullable: true);
 
         migrationBuilder.AddColumn<string>(
             name: "EmbeddedSubtitles",
             table: "EpisodeFiles",
-            type: "character varying(512)",
+            type: "TEXT",
             maxLength: 512,
             nullable: true);
     }
