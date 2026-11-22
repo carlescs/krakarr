@@ -1,8 +1,10 @@
 using Krakarr.Core.Metadata;
 using Krakarr.Core.Domain;
+using Krakarr.Core.Events;
 using Krakarr.Core.Jobs;
 using Krakarr.Data;
 using Krakarr.Downloads;
+using Krakarr.Indexers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -321,15 +323,17 @@ public static class MovieEndpoints
             return Results.Accepted(value: command);
         });
 
-        group.MapGet("/{id:int}/releases", async (int id, KrakarrDbContext db, MovieService movies, CancellationToken ct) =>
+        // searchId (optional, client-generated): stream per-indexer progress as EventNames.SearchProgress while the search runs.
+        group.MapGet("/{id:int}/releases", async (int id, string? searchId, KrakarrDbContext db, MovieService movies, IEventHub events, CancellationToken ct) =>
         {
             var movie = await db.Movies.Include(m => m.QualityProfile).FirstOrDefaultAsync(m => m.Id == id, ct);
             if (movie is null) return Results.NotFound();
-            var (decisions, errors) = await movies.SearchAsync(movie, ct);
+            var (decisions, errors, indexers) = await movies.SearchAsync(movie, IndexerSearchProgress.For(events, searchId), ct);
             return Results.Ok(new
             {
                 Releases = decisions.Select(d => new ReleaseDecisionDto(d.Release, d.Quality.Name, d.Quality.Weight, d.Approved, d.Rejections, d.Languages)),
                 Errors = errors,
+                Indexers = indexers,
             });
         });
 

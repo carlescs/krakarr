@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
-  IndexerError, IndexerTestResult, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListItem, MovieLookup, Quality, QualityProfile,
+  IndexerError, IndexerQueryStatus, IndexerTestResult, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListItem, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
   DashboardStats, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult,
 } from './models';
@@ -98,8 +98,9 @@ export class Api {
   deleteIndexer(id: number) { return this.delete<void>(`indexers/${id}`); }
   testIndexer(i: Indexer) { return this.post<IndexerTestResult>('indexers/test', i); }
   indexerCapabilities(i: Indexer) { return this.post<IndexerTestResult>('indexers/capabilities', i); }
-  search(query: string, type: SearchType) {
-    return this.get<{ results: SearchResult[]; errors: IndexerError[] }>('search', { query, type });
+  /** `searchId` tags the live `searchProgress` events (see `IndexerSearch`). */
+  search(query: string, type: SearchType, searchId?: string) {
+    return this.get<{ results: SearchResult[]; errors: IndexerError[]; indexers: IndexerQueryStatus[] }>('search', { query, type, searchId });
   }
 
   // Downloads
@@ -146,7 +147,9 @@ export class Api {
   }
   deleteMovie(id: number, deleteFiles: boolean) { return this.delete<void>(`movies/${id}`, { deleteFiles }); }
   searchMovie(id: number) { return this.post<CommandInfo>(`movies/${id}/search`); }
-  movieReleases(id: number) { return this.get<{ releases: ReleaseDecision[]; errors: IndexerError[] }>(`movies/${id}/releases`); }
+  movieReleases(id: number, searchId?: string) {
+    return this.get<{ releases: ReleaseDecision[]; errors: IndexerError[]; indexers: IndexerQueryStatus[] }>(`movies/${id}/releases`, { searchId });
+  }
   grabMovieRelease(id: number, release: ReleaseInfo) { return this.post<unknown>(`movies/${id}/releases/grab`, { release }); }
   history(movieId?: number, page = 1, pageSize = 50, seriesId?: number) {
     return this.get<{ total: number; items: HistoryItem[] }>('history', { movieId, seriesId, page, pageSize });
@@ -224,8 +227,8 @@ export class Api {
   searchSeries(id: number, seasonNumber?: number, episodeIds?: number[]) {
     return this.post<CommandInfo>(`series/${id}/search`, { seasonNumber: seasonNumber ?? null, episodeIds: episodeIds ?? null });
   }
-  seriesReleases(id: number, season?: number, episodeId?: number) {
-    return this.get<{ releases: EpisodeRelease[]; errors: IndexerError[] }>(`series/${id}/releases`, { season, episodeId });
+  seriesReleases(id: number, season?: number, episodeId?: number, searchId?: string) {
+    return this.get<{ releases: EpisodeRelease[]; errors: IndexerError[]; indexers: IndexerQueryStatus[] }>(`series/${id}/releases`, { season, episodeId, searchId });
   }
   grabSeriesRelease(id: number, release: ReleaseInfo) { return this.post<unknown>(`series/${id}/releases/grab`, { release }); }
   deleteEpisodeFile(id: number) { return this.delete<void>(`episodefiles/${id}`); }

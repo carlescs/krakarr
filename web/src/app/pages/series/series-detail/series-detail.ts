@@ -7,10 +7,12 @@ import { Api, errorMessage } from '../../../core/api';
 import { Auth } from '../../../core/auth';
 import { Events } from '../../../core/events';
 import { AgoPipe, BytesPipe } from '../../../core/format';
-import { Episode, EpisodeRelease, HistoryItem, IndexerError, OrganizePreview, QualityProfile, SeasonInfo, Series, SubtitleFile } from '../../../core/models';
+import { Episode, EpisodeRelease, HistoryItem, OrganizePreview, QualityProfile, SeasonInfo, Series, SubtitleFile } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
+import { IndexerSearch } from '../../../core/indexer-search';
 import { Languages } from '../../../core/languages';
 import { LanguageOverride } from '../../../shared/language-override/language-override';
+import { IndexerProgress } from '../../../shared/indexer-progress/indexer-progress';
 import { Modal } from '../../../shared/modal/modal';
 import { Poster } from '../../../shared/poster/poster';
 import { LibraryCredits } from '../../../shared/library-credits/library-credits';
@@ -28,7 +30,7 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
 
 @Component({
   selector: 'kr-series-detail',
-  imports: [SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, BytesPipe, AgoPipe, SubtitleManager],
+  imports: [SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, IndexerProgress, BytesPipe, AgoPipe, SubtitleManager],
   templateUrl: './series-detail.html',
   styleUrl: './series-detail.scss',
 })
@@ -60,7 +62,7 @@ export class SeriesDetailPage implements OnInit {
   protected readonly expanded = signal(new Set<number>());
   protected readonly releaseTarget = signal<ReleaseTarget | null>(null);
   protected readonly releases = signal<EpisodeRelease[]>([]);
-  protected readonly searchErrors = signal<IndexerError[]>([]);
+  protected readonly indexerSearch = new IndexerSearch();
   protected readonly searching = signal(false);
   protected readonly grabbing = signal<string | null>(null);
   protected readonly editing = signal(false);
@@ -128,7 +130,7 @@ export class SeriesDetailPage implements OnInit {
     this.expandedInitialised = false;
     this.releaseTarget.set(null);
     this.releases.set([]);
-    this.searchErrors.set([]);
+    this.indexerSearch.reset();
     this.searching.set(false);
     this.grabbing.set(null);
     this.editing.set(false);
@@ -287,12 +289,14 @@ export class SeriesDetailPage implements OnInit {
     this.releaseTarget.set(target);
     this.releases.set([]);
     this.searching.set(true);
+    const searchId = this.indexerSearch.start();
     try {
-      const res = await this.api.seriesReleases(id, target.season, target.episodeId);
+      const res = await this.api.seriesReleases(id, target.season, target.episodeId, searchId);
       if (id !== this.id()) return;
       this.releases.set(res.releases);
-      this.searchErrors.set(res.errors);
+      this.indexerSearch.finish(res.indexers);
     } catch (e) {
+      this.indexerSearch.finish();
       this.toasts.error(errorMessage(e));
     } finally {
       this.searching.set(false);

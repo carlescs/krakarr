@@ -132,7 +132,9 @@ public sealed class MovieService(
         db.MovieCollections.Where(c => !db.Movies.Any(m => m.CollectionId == c.Id)).ExecuteDeleteAsync(ct);
 
     /// <summary>Searches all indexers for a movie and evaluates every release.</summary>
-    public async Task<(IReadOnlyList<ReleaseDecision> Decisions, IReadOnlyList<IndexerError> Errors)> SearchAsync(Movie movie, CancellationToken ct = default)
+    /// <param name="progress">Optional per-indexer progress (see <see cref="IIndexerSearchService.SearchAsync"/>).</param>
+    public async Task<(IReadOnlyList<ReleaseDecision> Decisions, IReadOnlyList<IndexerError> Errors, IReadOnlyList<IndexerQueryStatus> Indexers)> SearchAsync(
+        Movie movie, IProgress<IReadOnlyList<IndexerQueryStatus>>? progress = null, CancellationToken ct = default)
     {
         var profile = movie.QualityProfile ?? await db.QualityProfiles.FirstAsync(p => p.Id == movie.QualityProfileId, ct);
         var existing = await ExistingQualityAsync(movie, ct);
@@ -143,13 +145,13 @@ public sealed class MovieService(
             Query = movie.Year > 0 ? $"{movie.Title} {movie.Year}" : movie.Title,
             ImdbId = movie.ImdbId,
             TmdbId = movie.TmdbId,
-        }, ct: ct);
+        }, progress: progress, ct: ct);
 
         movie.LastSearched = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
 
         var languages = (await settings.GetAsync<LanguageSettings>(ct)).For(movie.Languages);
-        return (MovieDecisionEngine.Evaluate(movie, profile, existing, result.Releases, languages), result.Errors);
+        return (MovieDecisionEngine.Evaluate(movie, profile, existing, result.Releases, languages), result.Errors, result.Indexers);
     }
 
     /// <summary>Searches and grabs the best approved release. Returns a human readable outcome.</summary>
@@ -187,7 +189,7 @@ public sealed class MovieService(
             return $"{movie.Title}: not available yet (minimum availability: {AvailabilityLabel(movie.MinimumAvailability)})";
         }
 
-        var (decisions, errors) = await SearchAsync(movie, ct);
+        var (decisions, errors, _) = await SearchAsync(movie, ct: ct);
         var best = decisions.FirstOrDefault(d => d.Approved);
         if (best is null)
         {

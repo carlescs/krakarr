@@ -234,8 +234,10 @@ public sealed class SeriesService(
     // ---- Search & grab -----------------------------------------------------------------------
 
     /// <summary>Searches indexers for a season or a single episode and evaluates every release.</summary>
-    public async Task<(IReadOnlyList<EpisodeDecision> Decisions, IReadOnlyList<IndexerError> Errors)> SearchAsync(
-        Core.Domain.Series series, int? seasonNumber, Episode? episode, bool requireMonitored, CancellationToken ct = default)
+    /// <param name="progress">Optional per-indexer progress (see <see cref="IIndexerSearchService.SearchAsync"/>).</param>
+    public async Task<(IReadOnlyList<EpisodeDecision> Decisions, IReadOnlyList<IndexerError> Errors, IReadOnlyList<IndexerQueryStatus> Indexers)> SearchAsync(
+        Core.Domain.Series series, int? seasonNumber, Episode? episode, bool requireMonitored,
+        IProgress<IReadOnlyList<IndexerQueryStatus>>? progress = null, CancellationToken ct = default)
     {
         var season = episode?.SeasonNumber ?? seasonNumber;
         var result = await indexerSearch.SearchAsync(new SearchCriteria
@@ -247,7 +249,7 @@ public sealed class SeriesService(
             TmdbId = series.TvdbId is null ? series.TmdbId : null,
             Season = season,
             Episode = episode?.EpisodeNumber,
-        }, ct: ct);
+        }, progress: progress, ct: ct);
 
         series.LastSearched = time.GetUtcNow();
         await db.SaveChangesAsync(ct);
@@ -255,7 +257,7 @@ public sealed class SeriesService(
         var scope = new SearchScope(season, episode is null ? null : new HashSet<int> { episode.Id });
         var languages = (await settings.GetAsync<LanguageSettings>(ct)).For(series.Languages);
         var decisions = EpisodeDecisionEngine.Evaluate(series, series.QualityProfile!, series.Episodes, result.Releases, scope, requireMonitored, Today, languages);
-        return (decisions, result.Errors);
+        return (decisions, result.Errors, result.Indexers);
     }
 
     /// <summary>
@@ -309,14 +311,14 @@ public sealed class SeriesService(
             // Single episodes are searched directly; several missing episodes trigger a season search first.
             if (seasonWanted.Count > 1 || episodeIds is null or { Count: 0 })
             {
-                var (decisions, errs) = await SearchAsync(series, season.Key, null, requireMonitored: true, ct);
+                var (decisions, errs, _) = await SearchAsync(series, season.Key, null, requireMonitored: true, ct: ct);
                 errors += errs.Count;
                 await GrabSelectionAsync(series, decisions, covered, grabbed, ct);
             }
 
             foreach (var episode in seasonWanted.Where(e => !covered.Contains(e.Id)).Take(20))
             {
-                var (decisions, errs) = await SearchAsync(series, null, episode, requireMonitored: true, ct);
+                var (decisions, errs, _) = await SearchAsync(series, null, episode, requireMonitored: true, ct: ct);
                 errors += errs.Count;
                 await GrabSelectionAsync(series, decisions, covered, grabbed, ct);
             }

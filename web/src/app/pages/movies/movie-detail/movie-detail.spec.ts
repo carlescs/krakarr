@@ -22,7 +22,7 @@ describe('MovieDetailPage', () => {
       providers: [
         { provide: Api, useValue: api },
         { provide: Auth, useValue: { isStaff: () => true } },
-        { provide: Events, useValue: { downloads: signal([]), movieUpdated: new Subject(), historyAdded: new Subject(), subtitlesUpdated: new Subject() } },
+        { provide: Events, useValue: { downloads: signal([]), movieUpdated: new Subject(), historyAdded: new Subject(), subtitlesUpdated: new Subject(), searchProgress: new Subject() } },
         { provide: Toasts, useValue: { error: vi.fn(), show: vi.fn(), success: vi.fn() } },
         { provide: Router, useValue: { navigateByUrl: vi.fn() } },
       ],

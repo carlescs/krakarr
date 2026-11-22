@@ -1,8 +1,10 @@
 using Krakarr.Core.Domain;
+using Krakarr.Core.Events;
 using Krakarr.Core.Jobs;
 using Krakarr.Core.Metadata;
 using Krakarr.Data;
 using Krakarr.Downloads;
+using Krakarr.Indexers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -373,7 +375,8 @@ public static class SeriesEndpoints
             return Results.Accepted(value: command);
         });
 
-        group.MapGet("/{id:int}/releases", async (int id, int? season, int? episodeId, SeriesService service, CancellationToken ct) =>
+        // searchId (optional, client-generated): stream per-indexer progress as EventNames.SearchProgress while the search runs.
+        group.MapGet("/{id:int}/releases", async (int id, int? season, int? episodeId, string? searchId, SeriesService service, IEventHub events, CancellationToken ct) =>
         {
             var series = await service.LoadAsync(id, ct);
             if (series is null) return Results.NotFound();
@@ -381,12 +384,13 @@ public static class SeriesEndpoints
             if (episodeId is not null && episode is null) return Results.NotFound();
             if (episode is null && season is null) return Results.Problem("Specify a season or an episode", statusCode: 400);
 
-            var (decisions, errors) = await service.SearchAsync(series, season, episode, requireMonitored: false, ct);
+            var (decisions, errors, indexers) = await service.SearchAsync(series, season, episode, requireMonitored: false, IndexerSearchProgress.For(events, searchId), ct);
             return Results.Ok(new
             {
                 Releases = decisions.Select(d => new EpisodeReleaseDto(d.Release, d.Quality.Name, d.Quality.Weight, d.Approved, d.Rejections,
                     d.Episodes.Count > 0 ? SeriesService.Codes(d.Episodes) : null, d.IsSeasonPack, d.Languages)),
                 Errors = errors,
+                Indexers = indexers,
             });
         });
 
