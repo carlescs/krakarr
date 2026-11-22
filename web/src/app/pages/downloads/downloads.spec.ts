@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { Events } from '../../core/events';
 import { TorrentStatus } from '../../core/models';
 import { button, mockApi, settle, setupTest, text, type } from '../../../testing/test-setup';
-import { DownloadsPage, sortTorrents } from './downloads';
+import { DownloadsPage, isFinished, sortTorrents } from './downloads';
 
 const torrent = (t: Partial<TorrentStatus>): TorrentStatus => ({
   id: 1, infoHash: 'h1', name: 'Alien.1979.1080p', state: 'Downloading', progress: 42, size: 1024, downloaded: 0, uploaded: 0, downloadRate: 0, uploadRate: 0,
@@ -35,6 +35,30 @@ describe('DownloadsPage', () => {
     expect(text(el)).toContain('Dark.S01');
     expect(text(el)).not.toContain('Alien.1979.1080p');
     expect(localStorage.getItem('krakarr.downloads.showSeeding')).toBe('true');
+  });
+
+  it('lists finished torrents that stopped seeding on the seeding tab', async () => {
+    const done = torrent({ id: 3, infoHash: 'h3', name: 'Heat.1995', state: 'Completed', progress: 100, client: 'qbittorrent' });
+    const stopped = torrent({ id: 4, infoHash: 'h4', name: 'Ronin.1998', state: 'Paused', progress: 100 });
+    const { fixture, el } = await render({ downloads: async () => [...torrents, done, stopped] });
+    expect(button(el, 'Downloading (1)')).toBeTruthy();
+    expect(text(el)).not.toContain('Heat.1995');
+    expect(text(el)).not.toContain('Ronin.1998');
+
+    button(el, 'Seeding (3)').click();
+    await settle(fixture);
+    expect(text(el)).toContain('Heat.1995');
+    expect(text(el)).toContain('Ronin.1998');
+    expect(text(el)).toContain('Dark.S01');
+  });
+
+  it('only treats complete torrents as finished', () => {
+    expect(isFinished(torrent({ state: 'Seeding', progress: 100 }))).toBe(true);
+    expect(isFinished(torrent({ state: 'Completed', progress: 100 }))).toBe(true);
+    expect(isFinished(torrent({ state: 'Paused', progress: 100 }))).toBe(true);
+    expect(isFinished(torrent({ state: 'Paused', progress: 40 }))).toBe(false);
+    expect(isFinished(torrent({ state: 'Error', progress: 100 }))).toBe(false);
+    expect(isFinished(torrent({ state: 'Downloading', progress: 99 }))).toBe(false);
   });
 
   it('pauses and removes torrents', async () => {
