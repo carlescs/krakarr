@@ -28,6 +28,7 @@ public sealed class SubtitleSearchTask(
     {
         var s = await settings.GetAsync<SubtitleSettings>(cancellationToken);
         if (!s.Enabled || s.Languages.Count == 0 || !service.Providers.Any(p => p.IsConfigured(s))) return;
+        if (service.BackoffUntil(s) is not null) return; // rate limited or out of quota: try again on a later run
 
         // When the wanted languages change, every file becomes due again.
         var signature = string.Join(',', s.Languages.Order(StringComparer.Ordinal));
@@ -58,14 +59,14 @@ public sealed class SubtitleSearchTask(
         var processed = 0;
         foreach (var id in movieFiles)
         {
-            if (processed++ >= BatchSize) break;
+            if (processed++ >= BatchSize || service.BackoffUntil(s) is not null) break;
             if (await service.GetMovieTargetAsync(id, cancellationToken) is { } target)
                 logger.LogInformation("Subtitles: {Result}", await service.SearchMissingAsync(target, cancellationToken));
         }
 
         foreach (var id in episodeFiles)
         {
-            if (processed++ >= BatchSize) break;
+            if (processed++ >= BatchSize || service.BackoffUntil(s) is not null) break;
             if (await service.GetEpisodeTargetAsync(id, cancellationToken) is { } target)
                 logger.LogInformation("Subtitles: {Result}", await service.SearchMissingAsync(target, cancellationToken));
         }

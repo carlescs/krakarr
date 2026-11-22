@@ -1,8 +1,11 @@
+using System.Globalization;
 using System.Net;
 using System.Text;
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Http.Resilience;
+using Polly;
 
 namespace Krakarr.Subtitles.Tests;
 
@@ -12,6 +15,9 @@ public class OpenSubtitlesProviderTests
     {
         public List<(HttpMethod Method, string Url, string? Body, string? Auth, string? ApiKey)> Requests { get; } = [];
         public HttpStatusCode DownloadStatus { get; set; } = HttpStatusCode.OK;
+        public string DownloadErrorBody { get; set; } = """{"message":"You have downloaded your allowed 20 subtitles for 24h"}""";
+        /// <summary>When set, every request is answered with 429 and this Retry-After.</summary>
+        public TimeSpan? RateLimited { get; set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
@@ -19,6 +25,13 @@ public class OpenSubtitlesProviderTests
             var body = request.Content is null ? null : await request.Content.ReadAsStringAsync(ct);
             Requests.Add((request.Method, url, body, request.Headers.Authorization?.Parameter,
                 request.Headers.TryGetValues("Api-Key", out var k) ? k.First() : null));
+
+            if (RateLimited is { } wait)
+            {
+                var limited = new HttpResponseMessage(HttpStatusCode.TooManyRequests) { Content = new StringContent("""{"message":"Throttle limit reached"}""") };
+                limited.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(wait);
+                return limited;
+            }
 
             var path = request.RequestUri.AbsolutePath;
             return path switch
@@ -35,7 +48,7 @@ public class OpenSubtitlesProviderTests
                     """),
                 "/api/v1/login" => Json("""{"token":"jwt-token","base_url":"vip-api.opensubtitles.com","user":{"allowed_downloads":100}}"""),
                 "/api/v1/download" when DownloadStatus != HttpStatusCode.OK =>
-                    new HttpResponseMessage(DownloadStatus) { Content = new StringContent("""{"message":"You have downloaded your allowed 20 subtitles for 24h"}""") },
+                    new HttpResponseMessage(DownloadStatus) { Content = new StringContent(DownloadErrorBody) },
                 "/api/v1/download" => Json("""{"link":"https://dl.example/file/4242","file_name":"matrix.en.srt","remaining":19}"""),
                 "/file/4242" => new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent("1\n00:00:01,000 --> 00:00:02,000\nHello\n"u8.ToArray()) },
                 _ => new HttpResponseMessage(HttpStatusCode.NotFound),
@@ -50,8 +63,79 @@ public class OpenSubtitlesProviderTests
         public HttpClient CreateClient(string name) => new(h, disposeHandler: false);
     }
 
-    private static OpenSubtitlesProvider Provider(FakeApi api) => new(new Factory(api),
-        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["OpenSubtitles:BaseUrl"] = "https://os.test/api/v1/" }).Build());
+    private sealed class Clock : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = DateTimeOffset.Parse("2026-11-22T10:00:00Z", CultureInfo.InvariantCulture);
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    private static OpenSubtitlesProvider Provider(FakeApi api, OpenSubtitlesBackoff? backoff = null, TimeProvider? time = null)
+    {
+        time ??= TimeProvider.System;
+        backoff ??= new OpenSubtitlesBackoff(time);
+        // Same pipeline as SubtitlesModule registers on the named client.
+        var pipeline = new ResiliencePipelineBuilder<HttpResponseMessage>().AddOpenSubtitlesBackoff(backoff, time).Build();
+        return new(new Factory(new ResilienceHandler(pipeline) { InnerHandler = api }),
+            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["OpenSubtitles:BaseUrl"] = "https://os.test/api/v1/" }).Build(),
+            backoff);
+    }
+
+    private static readonly SubtitleQuery MatrixQuery = new() { MediaType = MediaType.Movie, Title = "The Matrix", ImdbId = "tt0133093", Languages = ["en"] };
+    private static readonly SubtitleSettings AnonymousSettings = new() { OpenSubtitles = new OpenSubtitlesSettings { ApiKey = "key123" } };
+
+    [Fact]
+    public async Task Stops_querying_while_rate_limited()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var clock = new Clock();
+        var api = new FakeApi { RateLimited = TimeSpan.FromSeconds(30) };
+        var provider = Provider(api, time: clock);
+
+        var first = await Assert.ThrowsAsync<SubtitleProviderException>(() => provider.SearchAsync(MatrixQuery, AnonymousSettings, ct));
+        Assert.Contains("rate limit", first.Message);
+        Assert.Equal(clock.Now.AddSeconds(30), provider.BackoffUntil);
+
+        // Nothing reaches the API until Retry-After has passed.
+        api.RateLimited = null;
+        var blocked = await Assert.ThrowsAsync<SubtitleRateLimitException>(() => provider.SearchAsync(MatrixQuery, AnonymousSettings, ct));
+        Assert.Equal(clock.Now.AddSeconds(30), blocked.Until);
+        await Assert.ThrowsAsync<SubtitleRateLimitException>(() =>
+            provider.DownloadAsync(new SubtitleCandidate { Provider = "opensubtitles", Payload = "4242", Language = "en" }, AnonymousSettings, ct));
+        Assert.Single(api.Requests);
+
+        clock.Now = clock.Now.AddSeconds(31);
+        Assert.Null(provider.BackoffUntil);
+        Assert.Equal(2, (await provider.SearchAsync(MatrixQuery, AnonymousSettings, ct)).Count);
+        Assert.Equal(2, api.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Stops_downloading_until_the_quota_renews_but_keeps_searching()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var clock = new Clock();
+        var api = new FakeApi
+        {
+            DownloadStatus = HttpStatusCode.NotAcceptable,
+            DownloadErrorBody = """{"requests":21,"remaining":0,"message":"You have downloaded your allowed 20 subtitles for 24h","reset_time_utc":"2026-11-22T14:00:00.000Z"}""",
+        };
+        var provider = Provider(api, time: clock);
+        var candidate = new SubtitleCandidate { Provider = "opensubtitles", Payload = "4242", Language = "en" };
+
+        var first = await Assert.ThrowsAsync<SubtitleProviderException>(() => provider.DownloadAsync(candidate, AnonymousSettings, ct));
+        Assert.Contains("allowed 20 subtitles", first.Message); // the API's message survives the backoff reading the body
+        Assert.Equal(DateTimeOffset.Parse("2026-11-22T14:00:00Z", CultureInfo.InvariantCulture), provider.BackoffUntil);
+
+        api.DownloadStatus = HttpStatusCode.OK;
+        var blocked = await Assert.ThrowsAsync<SubtitleRateLimitException>(() => provider.DownloadAsync(candidate, AnonymousSettings, ct));
+        Assert.Contains("quota", blocked.Message);
+        Assert.Single(api.Requests);
+
+        Assert.Equal(2, (await provider.SearchAsync(MatrixQuery, AnonymousSettings, ct)).Count);
+
+        clock.Now = DateTimeOffset.Parse("2026-11-22T14:00:01Z", CultureInfo.InvariantCulture);
+        Assert.Equal(".srt", (await provider.DownloadAsync(candidate, AnonymousSettings, ct)).Extension);
+    }
 
     private static readonly SubtitleSettings Settings = new()
     {

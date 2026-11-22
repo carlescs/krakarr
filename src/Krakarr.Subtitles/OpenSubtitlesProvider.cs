@@ -11,7 +11,7 @@ using Microsoft.Extensions.Configuration;
 namespace Krakarr.Subtitles;
 
 /// <summary>OpenSubtitles.com REST API (v1). Needs a consumer API key; an account raises the daily download quota.</summary>
-public sealed class OpenSubtitlesProvider(IHttpClientFactory httpClientFactory, IConfiguration configuration) : ISubtitleProvider
+public sealed class OpenSubtitlesProvider(IHttpClientFactory httpClientFactory, IConfiguration configuration, OpenSubtitlesBackoff backoff) : ISubtitleProvider
 {
     public const string ProviderName = "opensubtitles";
     public const string HttpClientName = "opensubtitles";
@@ -21,6 +21,9 @@ public sealed class OpenSubtitlesProvider(IHttpClientFactory httpClientFactory, 
     private static (string User, string Token, string BaseUrl, DateTimeOffset Expires)? _session;
 
     public string Name => ProviderName;
+
+    /// <summary>Automatic searches pause while either requests or downloads are blocked: a search we cannot act on still uses up the request quota.</summary>
+    public DateTimeOffset? BackoffUntil => backoff.DownloadsBlockedUntil;
 
     private string DefaultBaseUrl => (configuration["OpenSubtitles:BaseUrl"] ?? "https://api.opensubtitles.com/api/v1/").TrimEnd('/') + "/";
 
@@ -236,10 +239,11 @@ public sealed class OpenSubtitlesProvider(IHttpClientFactory httpClientFactory, 
         string? message = null;
         try
         {
-            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+            await using var stream = await response.Content.ReadAsBoundedStreamAsync(64 * 1024, ct);
+            using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
             message = Str(doc.RootElement, "message") ?? (doc.RootElement.TryGetProperty("errors", out var e) ? e.ToString() : null);
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or HttpRequestException)
         {
         }
 

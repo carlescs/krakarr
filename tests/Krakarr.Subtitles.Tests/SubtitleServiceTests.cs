@@ -289,6 +289,7 @@ public sealed class SubtitleSearchTaskTests : IAsyncLifetime
     private sealed class CountingProvider : ISubtitleProvider
     {
         public int Searches { get; private set; }
+        public DateTimeOffset? BackoffUntil { get; set; }
         public string Name => "count";
         public bool IsConfigured(SubtitleSettings settings) => true;
         public Task<IReadOnlyList<SubtitleCandidate>> SearchAsync(SubtitleQuery query, SubtitleSettings settings, CancellationToken ct = default)
@@ -353,5 +354,27 @@ public sealed class SubtitleSearchTaskTests : IAsyncLifetime
 
         await RunAsync(new SubtitleSettings { Enabled = true, Languages = ["en", "fr"] });
         Assert.Equal(2, _provider.Searches); // language added → due again
+    }
+
+    [Fact]
+    public async Task Does_not_query_providers_that_asked_to_back_off()
+    {
+        _provider.BackoffUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+        await RunAsync(new SubtitleSettings { Enabled = true, Languages = ["en"] });
+        Assert.Equal(0, _provider.Searches);
+
+        using (var scope = _services.CreateScope())
+        {
+            var service = scope.ServiceProvider.GetRequiredService<SubtitleService>();
+            var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+            var fileId = await db.MovieFiles.Select(f => f.Id).SingleAsync(TestContext.Current.CancellationToken);
+            var result = await service.SearchMissingAsync((await service.GetMovieTargetAsync(fileId, TestContext.Current.CancellationToken))!, TestContext.Current.CancellationToken);
+            Assert.Contains("paused", result);
+            Assert.Null(await db.MovieFiles.Select(f => f.LastSubtitleSearch).SingleAsync(TestContext.Current.CancellationToken)); // still due
+        }
+
+        _provider.BackoffUntil = null;
+        await RunAsync(new SubtitleSettings { Enabled = true, Languages = ["en"] });
+        Assert.Equal(1, _provider.Searches);
     }
 }
