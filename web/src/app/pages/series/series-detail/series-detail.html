@@ -94,7 +94,7 @@
                     </td>
                     <td class="text-slate-400">{{ e.episodeNumber }}</td>
                     <td class="w-full max-w-0">
-                      <div class="truncate" [title]="e.overview ?? ''">{{ e.title || 'TBA' }}</div>
+                      <button class="block max-w-full truncate text-left hover:text-accent-300" [title]="e.overview ?? ''" (click)="detailEpisodeId.set(e.id)" data-episode-title>{{ e.title || 'TBA' }}</button>
                       @if (e.episodeFile; as f) {
                         <div class="flex items-center gap-1.5">
                           @for (s of subtitlesByFile().get(f.id) ?? []; track s.id) {
@@ -225,6 +225,12 @@
         </div>
       }
     </kr-modal>
+  }
+
+  @if (detailEpisode(); as e) {
+    <kr-episode-details [seriesId]="s.id" [episode]="e" [subtitles]="e.episodeFile ? (subtitlesByFile().get(e.episodeFile.id) ?? []) : []"
+                        (closed)="detailEpisodeId.set(null)" (search)="searchEpisode(e)"
+                        (interactive)="fromDetails(e, 'interactive')" (manageSubtitles)="fromDetails(e, 'subtitles')" />
   }
 
   @if (subtitleEpisode(); as e) {

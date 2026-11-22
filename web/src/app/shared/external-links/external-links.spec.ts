@@ -50,4 +50,24 @@ describe('ExternalLinks', () => {
     expect(api.ratings).not.toHaveBeenCalled();
     expect(links(fixture.nativeElement).map(l => l.href)).toEqual(['https://www.themoviedb.org/person/1396', 'https://www.imdb.com/name/nm0000206']);
   });
+
+  it('links an episode to its TMDB, TheTVDB and IMDb pages, with the IMDb score only', async () => {
+    const api = setupTest({ api: mockApi({ ratings: async () => ({ imdb: 9.1, imdbVotes: 1500, rottenTomatoes: 100, metacritic: 80 }) }) });
+    const fixture = TestBed.createComponent(ExternalLinks);
+    fixture.componentRef.setInput('kind', 'episode');
+    fixture.componentRef.setInput('title', 'Pilot');
+    fixture.componentRef.setInput('tmdbId', 1396);
+    fixture.componentRef.setInput('season', 1);
+    fixture.componentRef.setInput('episode', 3);
+    fixture.componentRef.setInput('tvdbId', 349234);
+    fixture.componentRef.setInput('imdbId', 'tt1054724');
+    await settle(fixture);
+
+    expect(api.ratings).toHaveBeenCalledWith('tt1054724');
+    expect(links(fixture.nativeElement)).toEqual([
+      { label: 'TMDB', href: 'https://www.themoviedb.org/tv/1396/season/1/episode/3', text: 'TMDB' },
+      { label: 'TVDB', href: 'https://thetvdb.com/dereferrer/episode/349234', text: 'TVDB' },
+      { label: 'IMDb', href: 'https://www.imdb.com/title/tt1054724', text: 'IMDb9.12K' },
+    ]);
+  });
 });

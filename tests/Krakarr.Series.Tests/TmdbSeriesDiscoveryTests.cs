@@ -34,6 +34,13 @@ public class TmdbSeriesDiscoveryTests
                        {"id":17419,"name":"Bryan Cranston","order":0,"total_episode_count":62,"roles":[{"character":"Walter White"},{"character":"Heisenberg"}]}],
                       "crew":[{"id":66633,"name":"Vince Gilligan","jobs":[{"job":"Director"},{"job":"Gaffer"}]},{"id":5,"name":"Grip Person","jobs":[{"job":"Grip"}]}]}}
                     """),
+                "/3/tv/1396/season/1/episode/3" => Json("""
+                    {"id":62087,"name":"...And the Bag's in the River","overview":"Walt cleans up.","air_date":"2008-02-10","runtime":48,
+                     "still_path":"/still.jpg","vote_average":8.27,"vote_count":120,
+                     "guest_stars":[{"id":2,"name":"Second Guest","character":"Cop","order":1},{"id":1,"name":"First Guest","character":"Krazy-8","order":0,"profile_path":"/g.jpg"}],
+                     "crew":[{"id":10,"name":"Adam Bernstein","job":"Director"},{"id":11,"name":"Vince Gilligan","job":"Writer"},{"id":12,"name":"Grip Person","job":"Grip"}],
+                     "external_ids":{"imdb_id":"tt1054724","tvdb_id":349234}}
+                    """),
                 "/3/tv/1396/similar" => Json("""{"page":1,"total_pages":1,"results":[{"id":60059,"name":"Better Call Saul","first_air_date":"2015-02-08"}]}"""),
                 _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)),
             };
@@ -110,5 +117,34 @@ public class TmdbSeriesDiscoveryTests
     {
         var credits = await Discovery(new FakeTmdb()).CreditsAsync(new SeriesIds(null, 81189), TestContext.Current.CancellationToken);
         Assert.Equal(2, credits.Cast.Count);
+    }
+
+    [Fact]
+    public async Task Episode_details_carry_the_still_score_ids_guest_stars_and_crew()
+    {
+        var fake = new FakeTmdb();
+        var e = await Discovery(fake).EpisodeDetailsAsync(new SeriesIds(null, 81189), 1, 3, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(e);
+        Assert.Equal("/3/tv/1396/season/1/episode/3", fake.Requests[1].AbsolutePath);
+        Assert.Equal(1396, e.ShowTmdbId);
+        Assert.Equal(62087, e.TmdbId);
+        Assert.Equal(349234, e.TvdbId);
+        Assert.Equal("tt1054724", e.ImdbId);
+        Assert.Equal(new DateOnly(2008, 2, 10), e.AirDate);
+        Assert.Equal(48, e.Runtime);
+        Assert.Equal("https://image.tmdb.org/t/p/w780/still.jpg", e.StillUrl);
+        Assert.Equal(8.3, e.Rating);
+        Assert.Equal(["First Guest", "Second Guest"], e.GuestStars.Select(c => c.Name));
+        Assert.Equal("Krazy-8", e.GuestStars[0].Character);
+        Assert.Equal(["Adam Bernstein", "Vince Gilligan"], e.Crew.Select(c => c.Name));
+        Assert.Equal("Writer", e.Crew[1].Jobs);
+    }
+
+    [Fact]
+    public async Task Episode_details_are_null_when_tmdb_has_no_such_episode()
+    {
+        var e = await Discovery(new FakeTmdb()).EpisodeDetailsAsync(new SeriesIds(1396, null), 9, 1, TestContext.Current.CancellationToken);
+        Assert.Null(e);
     }
 }

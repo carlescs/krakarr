@@ -154,8 +154,13 @@ export interface SeriesListItem {
 }
 export interface EpisodeFile { id: number; relativePath: string; size: number; quality: string; releaseGroup?: string; dateAdded: string; }
 export interface Episode {
-  id: number; seasonNumber: number; episodeNumber: number; absoluteNumber?: number; title?: string; overview?: string; airDate?: string;
+  id: number; seasonNumber: number; episodeNumber: number; absoluteNumber?: number; title?: string; overview?: string; airDate?: string; runtime: number;
   monitored: boolean; hasAired: boolean; episodeFile?: EpisodeFile; downloadProgress?: number;
+}
+/** TMDB's page for one library episode: still, score, guest stars and crew. */
+export interface EpisodeDetails {
+  showTmdbId: number; tmdbId?: number; tvdbId?: number; imdbId?: string; title?: string; overview?: string; airDate?: string; runtime: number;
+  stillUrl?: string; rating?: number; voteCount: number; guestStars: CastMember[]; crew: CrewMember[];
 }
 export interface EpisodeRelease {
   release: ReleaseInfo; quality: string; qualityWeight: number; approved: boolean; rejections: string[]; episodes?: string; seasonPack: boolean; languages: string[];

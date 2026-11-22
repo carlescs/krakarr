@@ -6,7 +6,7 @@ import { Auth } from './auth';
 import { readNdjson } from './ndjson';
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
-  IndexerTestResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListItem, MovieLookup, Quality, QualityProfile,
+  IndexerTestResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeDetails, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListItem, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
   DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction,
 } from './models';
@@ -240,6 +240,8 @@ export class Api {
   seriesRecommendations(id: number) { return this.get<SeriesLookup[]>(`series/${id}/recommendations`); }
   similarSeries(id: number) { return this.get<SeriesLookup[]>(`series/${id}/similar`); }
   seriesCredits(id: number) { return this.get<Credits>(`series/${id}/credits`); }
+  /** TMDB details of a library episode; null when TMDB doesn't know it. */
+  episodeDetails(seriesId: number, episodeId: number) { return this.get<EpisodeDetails | null>(`series/${seriesId}/episodes/${episodeId}/details`); }
   /** Any TMDB show, whether or not it is in the library. */
   tmdbSeries(tmdbId: number) { return this.get<SeriesDetails>(`series/tmdb/${tmdbId}`); }
   tmdbSeriesRecommendations(tmdbId: number) { return this.get<SeriesLookup[]>(`series/tmdb/${tmdbId}/recommendations`); }
