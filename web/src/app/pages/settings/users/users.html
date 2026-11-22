@@ -4,9 +4,16 @@
 </div>
 <div class="card overflow-x-auto">
   <table class="table">
-    <thead><tr><th>Username</th><th class="w-32">Role</th><th class="w-40 max-sm:hidden">Created</th><th class="w-28"></th></tr></thead>
+    <thead>
+      <tr>
+        <th krSort="username" [krSortBy]="sort">Username</th>
+        <th class="w-32" krSort="role" [krSortBy]="sort">Role</th>
+        <th class="w-40 max-sm:hidden" krSort="created" [krSortBy]="sort">Created</th>
+        <th class="w-28"></th>
+      </tr>
+    </thead>
     <tbody>
-      @for (u of users(); track u.id) {
+      @for (u of sort.rows(); track u.id) {
         <tr>
           <td class="font-medium text-slate-100">
             {{ u.username }}

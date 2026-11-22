@@ -16,10 +16,11 @@ import { Progress } from '../../../shared/progress/progress';
 import { BulkActions } from '../../../shared/bulk-actions/bulk-actions';
 import { ViewToggle } from '../../../shared/view-toggle/view-toggle';
 import { Selection, ViewMode, storeView, storedView } from '../../../core/selection';
+import { TableSort } from '../../../core/table-sort';
+import { SortHeader } from '../../../shared/sort-header/sort-header';
 
 type Filter = 'all' | 'following' | 'missing' | 'downloading' | 'downloaded' | 'unmonitored';
 type Grouping = 'none' | 'collection';
-type SortKey = 'title' | 'year' | 'status';
 
 const GROUPING_KEY = 'krakarr.movies.groupBy';
 const VIEW_KEY = 'krakarr.movies.view';
@@ -30,7 +31,7 @@ function storedGrouping(): Grouping {
 
 @Component({
   selector: 'kr-movie-list',
-  imports: [RouterLink, FormsModule, NgTemplateOutlet, Poster, Progress, NearViewport, PosterGridSkeleton, MoreMenu, BulkActions, ViewToggle],
+  imports: [RouterLink, FormsModule, NgTemplateOutlet, Poster, Progress, NearViewport, PosterGridSkeleton, MoreMenu, BulkActions, ViewToggle, SortHeader],
   templateUrl: './movie-list.html',
   styleUrl: './movie-list.scss',
 })
@@ -51,7 +52,6 @@ export class MovieListPage {
   protected readonly view = signal<ViewMode>(storedView(VIEW_KEY));
   /** Grid selection mode: cards toggle selection instead of opening the movie. The table always has checkboxes. */
   protected readonly selecting = signal(false);
-  protected readonly sort = signal<{ key: SortKey; desc: boolean }>({ key: 'title', desc: false });
   protected readonly following = this.subscriptions.movieIds;
 
   private readonly collectionNames = computed(() => new Map(this.collections().map(c => [c.id, c.name.toLowerCase()])));
@@ -75,18 +75,15 @@ export class MovieListPage {
   });
 
   /** The filtered list in the chosen sort order (the API sorts by title). Groups keep their own order. */
-  private readonly sorted = computed(() => {
-    const { key, desc } = this.sort();
-    const list = this.filtered();
-    if (key === 'title') return desc ? [...list].reverse() : list;
-    const value = key === 'year' ? (m: MovieListItem) => m.year || 9999 : (m: MovieListItem) => this.statusRank(m);
-    const sign = desc ? -1 : 1;
-    // Array sort is stable: ties keep the title order.
-    return [...list].sort((a, b) => sign * (value(a) - value(b)));
-  });
+  protected readonly sort = new TableSort(this.filtered, {
+    title: 'source',
+    year: m => m.year || null,
+    status: m => this.statusRank(m),
+  }, { key: 'title' });
+  private readonly sorted = this.sort.rows;
 
   /** Cards rendered so far: more are added as the end of the list scrolls into view, and a new filter starts over. */
-  private readonly limit = linkedSignal({ source: () => [this.query(), this.filter(), this.grouping(), this.sort()], computation: () => GRID_CHUNK });
+  private readonly limit = linkedSignal({ source: () => [this.query(), this.filter(), this.grouping(), this.sort.state()], computation: () => GRID_CHUNK });
 
   /** Flat list: the first `limit` movies. */
   protected readonly visible = computed(() => this.sorted().slice(0, this.limit()));
@@ -174,15 +171,6 @@ export class MovieListPage {
     if (!this.selecting()) return;
     event.preventDefault();
     this.selection.toggle(m.id, (event as MouseEvent | KeyboardEvent).shiftKey);
-  }
-
-  protected sortBy(key: SortKey) {
-    this.sort.update(s => ({ key, desc: s.key === key ? !s.desc : false }));
-  }
-
-  protected ariaSort(key: SortKey): 'ascending' | 'descending' | 'none' {
-    const s = this.sort();
-    return s.key !== key || this.grouping() !== 'none' ? 'none' : s.desc ? 'descending' : 'ascending';
   }
 
   protected setGrouping(value: Grouping) {

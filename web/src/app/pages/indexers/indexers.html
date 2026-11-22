@@ -11,9 +11,18 @@
 } @else {
   <div class="card overflow-hidden">
     <table class="table">
-      <thead><tr><th>Name</th><th class="max-sm:hidden">Protocol</th><th class="hidden md:table-cell">URL</th><th class="max-sm:hidden">Priority</th><th>Status</th><th></th></tr></thead>
+      <thead>
+        <tr>
+          <th krSort="name" [krSortBy]="sort">Name</th>
+          <th class="max-sm:hidden" krSort="protocol" [krSortBy]="sort">Protocol</th>
+          <th class="hidden md:table-cell" krSort="url" [krSortBy]="sort">URL</th>
+          <th class="max-sm:hidden" krSort="priority" [krSortBy]="sort">Priority</th>
+          <th krSort="status" [krSortBy]="sort">Status</th>
+          <th></th>
+        </tr>
+      </thead>
       <tbody>
-        @for (i of indexers(); track i.id) {
+        @for (i of sort.rows(); track i.id) {
           <tr>
             <td class="font-medium text-white">
               {{ i.name }}

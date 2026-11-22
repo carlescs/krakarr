@@ -99,9 +99,17 @@
           @if (d.files.length === 0) { <p class="py-6 text-center text-sm text-slate-500">File list not available yet (waiting for metadata).</p> }
           @else {
             <table class="table">
-              <thead><tr><th>Name</th><th>Size</th><th class="w-48">Progress</th><th>Priority</th><th>Availability</th></tr></thead>
+              <thead>
+                <tr>
+                  <th krSort="name" [krSortBy]="fileSort">Name</th>
+                  <th krSort="size" [krSortBy]="fileSort">Size</th>
+                  <th class="w-48" krSort="progress" [krSortBy]="fileSort">Progress</th>
+                  <th krSort="priority" [krSortBy]="fileSort">Priority</th>
+                  <th krSort="availability" [krSortBy]="fileSort">Availability</th>
+                </tr>
+              </thead>
               <tbody>
-                @for (f of d.files; track f.index) {
+                @for (f of fileSort.rows(); track f.index) {
                   <tr [class.opacity-50]="f.priority === 'Skip'">
                     <td class="w-full max-w-0"><div class="truncate font-mono text-xs" [title]="f.path">{{ f.path }}</div></td>
                     <td class="whitespace-nowrap">{{ f.size | bytes }}</td>
@@ -118,9 +126,21 @@
           @if (d.peers.length === 0) { <p class="py-6 text-center text-sm text-slate-500">Not connected to any peers.</p> }
           @else {
             <table class="table">
-              <thead><tr><th>Address</th><th>Client</th><th>Flags</th><th>Connection</th><th class="w-36">Progress</th><th>↓ Speed</th><th>↑ Speed</th><th>Downloaded</th><th>Uploaded</th></tr></thead>
+              <thead>
+                <tr>
+                  <th krSort="address" [krSortBy]="peerSort">Address</th>
+                  <th krSort="client" [krSortBy]="peerSort">Client</th>
+                  <th krSort="flags" [krSortBy]="peerSort">Flags</th>
+                  <th krSort="connection" [krSortBy]="peerSort">Connection</th>
+                  <th class="w-36" krSort="progress" [krSortBy]="peerSort">Progress</th>
+                  <th krSort="down" [krSortBy]="peerSort">↓ Speed</th>
+                  <th krSort="up" [krSortBy]="peerSort">↑ Speed</th>
+                  <th krSort="downloaded" [krSortBy]="peerSort">Downloaded</th>
+                  <th krSort="uploaded" [krSortBy]="peerSort">Uploaded</th>
+                </tr>
+              </thead>
               <tbody>
-                @for (p of d.peers; track p.address) {
+                @for (p of peerSort.rows(); track p.address) {
                   <tr>
                     <td class="whitespace-nowrap font-mono text-xs">{{ p.address }}@if (p.country) { <span class="ml-1 font-sans text-slate-500">{{ p.country }}</span> }</td>
                     <td class="max-w-40 truncate" [title]="p.client ?? ''">{{ p.client ?? '—' }}</td>
@@ -139,9 +159,20 @@
         }
         @case ('trackers') {
           <table class="table">
-            <thead><tr><th>Tracker</th><th>Tier</th><th>Status</th><th>Seeds</th><th>Leechers</th><th>Peers</th><th>Completed</th><th>Next announce</th></tr></thead>
+            <thead>
+              <tr>
+                <th krSort="tracker" [krSortBy]="trackerSort">Tracker</th>
+                <th krSort="tier" [krSortBy]="trackerSort">Tier</th>
+                <th krSort="status" [krSortBy]="trackerSort">Status</th>
+                <th krSort="seeds" [krSortBy]="trackerSort">Seeds</th>
+                <th krSort="leechers" [krSortBy]="trackerSort">Leechers</th>
+                <th krSort="peers" [krSortBy]="trackerSort">Peers</th>
+                <th krSort="completed" [krSortBy]="trackerSort">Completed</th>
+                <th krSort="next" [krSortBy]="trackerSort">Next announce</th>
+              </tr>
+            </thead>
             <tbody>
-              @for (t of d.trackers; track t.url) {
+              @for (t of trackerSort.rows(); track t.url) {
                 <tr>
                   <td class="w-full max-w-0">
                     <div class="truncate font-mono text-xs" [title]="t.url">{{ t.url }}</div>

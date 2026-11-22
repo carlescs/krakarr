@@ -15,6 +15,8 @@ import { Languages } from '../../../core/languages';
 import { LanguageOverride } from '../../../shared/language-override/language-override';
 import { IndexerProgress } from '../../../shared/indexer-progress/indexer-progress';
 import { Modal } from '../../../shared/modal/modal';
+import { TableSort } from '../../../core/table-sort';
+import { SortHeader } from '../../../shared/sort-header/sort-header';
 import { Poster } from '../../../shared/poster/poster';
 import { LibraryCredits } from '../../../shared/library-credits/library-credits';
 import { RelatedTitles } from '../../../shared/related-titles/related-titles';
@@ -25,7 +27,7 @@ import { SubscribeButton } from '../../../shared/subscribe-button/subscribe-butt
 
 @Component({
   selector: 'kr-movie-detail',
-  imports: [SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, Poster, Progress, Modal, IndexerProgress, StateBadge, SubtitleManager, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
+  imports: [SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, Poster, Progress, Modal, IndexerProgress, StateBadge, SubtitleManager, SortHeader, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
   templateUrl: './movie-detail.html',
   styleUrl: './movie-detail.scss',
 })
@@ -43,6 +45,15 @@ export class MovieDetailPage implements OnInit {
   protected readonly history = signal<HistoryItem[]>([]);
   protected readonly profiles = signal<QualityProfile[]>([]);
   protected readonly releases = signal<ReleaseDecision[]>([]);
+  /** The API returns releases best first. */
+  protected readonly releaseSort = new TableSort(this.releases, {
+    release: r => r.release.title,
+    indexer: r => r.release.indexerName,
+    size: { value: r => r.release.size, desc: true },
+    peers: { value: r => r.release.seeders, desc: true },
+    quality: { value: r => r.qualityWeight, desc: true },
+    language: r => this.languages.describe(r.languages),
+  });
   protected readonly indexerSearch = new IndexerSearch();
   protected readonly releasesOpen = signal(false);
   protected readonly searching = signal(false);
