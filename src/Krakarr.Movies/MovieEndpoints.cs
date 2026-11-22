@@ -201,11 +201,11 @@ public static class MovieEndpoints
             return Results.NoContent();
         });
 
-        group.MapDelete("/{id:int}", async (int id, bool? deleteFiles, KrakarrDbContext db, CancellationToken ct) =>
+        group.MapDelete("/{id:int}", async (int id, bool? deleteFiles, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
         {
             var movie = await db.Movies.Include(m => m.MovieFile).FirstOrDefaultAsync(m => m.Id == id, ct);
             if (movie is null) return Results.NotFound();
-            if (await DeleteAsync(db, movie, deleteFiles == true, ct) is { } error)
+            if (await DeleteAsync(db, engine, movie, deleteFiles == true, ct) is { } error)
                 return Results.Problem(error, statusCode: StatusCodes.Status400BadRequest);
             await MovieService.PruneCollectionsAsync(db, ct);
             return Results.NoContent();
@@ -293,7 +293,7 @@ public static class MovieEndpoints
             return Results.Accepted(value: command);
         });
 
-        group.MapPost("/bulk/delete", async (BulkDeleteRequest req, KrakarrDbContext db, CancellationToken ct) =>
+        group.MapPost("/bulk/delete", async (BulkDeleteRequest req, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
         {
             if (BulkLimits.Clean(req.Ids) is not { } ids) return Results.Problem(BulkLimits.InvalidMessage, statusCode: 400);
             var (deleted, errors) = (0, new List<string>());
@@ -304,7 +304,7 @@ public static class MovieEndpoints
                 if (movie is null) continue;
                 try
                 {
-                    if (await DeleteAsync(db, movie, req.DeleteFiles, ct) is { } error) errors.Add(error);
+                    if (await DeleteAsync(db, engine, movie, req.DeleteFiles, ct) is { } error) errors.Add(error);
                     else deleted++;
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -380,8 +380,14 @@ public static class MovieEndpoints
     }
 
     /// <summary>Removes a tracked movie (loaded with its file), and its folder when asked. Returns why not, or null when deleted.</summary>
-    private static async Task<string?> DeleteAsync(KrakarrDbContext db, Movie movie, bool deleteFiles, CancellationToken ct)
+    private static async Task<string?> DeleteAsync(KrakarrDbContext db, ITorrentEngine engine, Movie movie, bool deleteFiles, CancellationToken ct)
     {
+        // Downloads still in progress (or finished but not imported) are useless once the title is gone: remove them
+        // and their data first, so a failure leaves the title in place to retry.
+        var id = movie.Id;
+        if (await LibraryDownloadCleanup.RemovePendingAsync(db, engine, d => d.MovieId == id, ct) is { } downloadError)
+            return $"{movie.Title}: {downloadError}";
+
         if (deleteFiles && Directory.Exists(movie.Path))
         {
             // Only ever delete strictly inside a configured root folder (never a root itself or anything outside).
@@ -400,7 +406,6 @@ public static class MovieEndpoints
             db.MovieFiles.Remove(file);
         }
 
-        var id = movie.Id;
         await db.Downloads.Where(d => d.MovieId == id).ExecuteUpdateAsync(s => s.SetProperty(d => d.MovieId, (int?)null), ct);
         db.Movies.Remove(movie);
         await db.SaveChangesAsync(ct);

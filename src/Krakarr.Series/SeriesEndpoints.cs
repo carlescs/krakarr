@@ -214,11 +214,11 @@ public static class SeriesEndpoints
             return Results.NoContent();
         });
 
-        group.MapDelete("/{id:int}", async (int id, bool? deleteFiles, KrakarrDbContext db, CancellationToken ct) =>
+        group.MapDelete("/{id:int}", async (int id, bool? deleteFiles, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
         {
             var series = await db.Series.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (series is null) return Results.NotFound();
-            return await DeleteAsync(db, series, deleteFiles == true, ct) is { } error
+            return await DeleteAsync(db, engine, series, deleteFiles == true, ct) is { } error
                 ? Results.Problem(error, statusCode: StatusCodes.Status400BadRequest)
                 : Results.NoContent();
         });
@@ -303,7 +303,7 @@ public static class SeriesEndpoints
             return Results.Accepted(value: command);
         });
 
-        group.MapPost("/bulk/delete", async (BulkDeleteRequest req, KrakarrDbContext db, CancellationToken ct) =>
+        group.MapPost("/bulk/delete", async (BulkDeleteRequest req, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
         {
             if (BulkLimits.Clean(req.Ids) is not { } ids) return Results.Problem(BulkLimits.InvalidMessage, statusCode: 400);
             var (deleted, errors) = (0, new List<string>());
@@ -314,7 +314,7 @@ public static class SeriesEndpoints
                 if (series is null) continue;
                 try
                 {
-                    if (await DeleteAsync(db, series, req.DeleteFiles, ct) is { } error) errors.Add(error);
+                    if (await DeleteAsync(db, engine, series, req.DeleteFiles, ct) is { } error) errors.Add(error);
                     else deleted++;
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -453,8 +453,14 @@ public static class SeriesEndpoints
     }
 
     /// <summary>Removes a tracked series, and its folder when asked. Returns why not, or null when deleted.</summary>
-    private static async Task<string?> DeleteAsync(KrakarrDbContext db, Krakarr.Core.Domain.Series series, bool deleteFiles, CancellationToken ct)
+    private static async Task<string?> DeleteAsync(KrakarrDbContext db, ITorrentEngine engine, Krakarr.Core.Domain.Series series, bool deleteFiles, CancellationToken ct)
     {
+        // Downloads still in progress (or finished but not imported) are useless once the title is gone: remove them
+        // and their data first, so a failure leaves the title in place to retry.
+        var id = series.Id;
+        if (await LibraryDownloadCleanup.RemovePendingAsync(db, engine, d => d.SeriesId == id, ct) is { } downloadError)
+            return $"{series.Title}: {downloadError}";
+
         if (deleteFiles && Directory.Exists(series.Path))
         {
             // Only ever delete strictly inside a configured root folder (never a root itself or anything outside).
@@ -467,7 +473,6 @@ public static class SeriesEndpoints
             Directory.Delete(series.Path, recursive: true);
         }
 
-        var id = series.Id;
         await db.Downloads.Where(d => d.SeriesId == id)
             .ExecuteUpdateAsync(s => s.SetProperty(d => d.SeriesId, (int?)null).SetProperty(d => d.EpisodeIds, new List<int>()), ct);
         await db.Episodes.Where(e => e.SeriesId == id).ExecuteUpdateAsync(s => s.SetProperty(e => e.EpisodeFileId, (int?)null), ct);
