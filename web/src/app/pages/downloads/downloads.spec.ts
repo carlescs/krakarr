@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { Events } from '../../core/events';
 import { TorrentStatus } from '../../core/models';
 import { button, mockApi, settle, setupTest, text, type } from '../../../testing/test-setup';
-import { DownloadsPage } from './downloads';
+import { DownloadsPage, sortTorrents } from './downloads';
 
 const torrent = (t: Partial<TorrentStatus>): TorrentStatus => ({
   id: 1, infoHash: 'h1', name: 'Alien.1979.1080p', state: 'Downloading', progress: 42, size: 1024, downloaded: 0, uploaded: 0, downloadRate: 0, uploadRate: 0,
@@ -92,6 +92,36 @@ describe('DownloadsPage', () => {
     button(el, 'Seeding (1)').click();
     await settle(fixture);
     expect(text(el)).toContain('Select all (1)');
+  });
+
+  it('sorts by ETA, soonest first, with unknown ETAs last', async () => {
+    const list = [
+      torrent({ infoHash: 'a', name: 'Slow', etaSeconds: 9000 }),
+      torrent({ infoHash: 'b', name: 'Stalled', etaSeconds: undefined }),
+      torrent({ infoHash: 'c', name: 'Fast', etaSeconds: 60 }),
+      torrent({ infoHash: 'd', name: 'Paused', state: 'Paused', etaSeconds: 30 }),
+    ];
+    const { fixture, el } = await render({ downloads: async () => list });
+    const names = () => [...el.querySelectorAll('input[aria-label^="Select "]:not([aria-label="Select all torrents"])')]
+      .map(i => i.getAttribute('aria-label')!.replace('Select ', ''));
+    expect(names()).toEqual(['Slow', 'Stalled', 'Fast', 'Paused']); // client order (newest first)
+
+    const select = el.querySelector('#downloads-sort') as HTMLSelectElement;
+    select.value = 'eta';
+    select.dispatchEvent(new Event('change'));
+    await settle(fixture);
+    expect(names()).toEqual(['Fast', 'Slow', 'Stalled', 'Paused']);
+    expect(JSON.parse(localStorage.getItem('krakarr.downloads.sort')!)).toEqual({ key: 'eta', desc: false });
+
+    button(el, 'Sort ascending').click();
+    await settle(fixture);
+    expect(names()).toEqual(['Slow', 'Fast', 'Stalled', 'Paused']);
+  });
+
+  it('sorts names naturally and numbers by size', () => {
+    const list = [torrent({ name: 'Show S10', size: 5 }), torrent({ name: 'show S2', size: 50 }), torrent({ name: 'Alpha', size: 1 })];
+    expect(sortTorrents(list, { key: 'name', desc: false }).map(d => d.name)).toEqual(['Alpha', 'show S2', 'Show S10']);
+    expect(sortTorrents(list, { key: 'size', desc: true }).map(d => d.size)).toEqual([50, 5, 1]);
   });
 
   it('adds a magnet link', async () => {

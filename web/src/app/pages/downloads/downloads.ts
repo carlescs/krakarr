@@ -14,6 +14,53 @@ import { StateBadge } from '../../shared/state-badge/state-badge';
 import { TorrentDetailsDialog } from '../../shared/torrent-details/torrent-details';
 
 const SHOW_SEEDING_KEY = 'krakarr.downloads.showSeeding';
+const SORT_KEY = 'krakarr.downloads.sort';
+
+type SortKey = 'added' | 'name' | 'eta' | 'progress' | 'size' | 'downloadRate' | 'uploadRate' | 'ratio';
+interface SortOrder { key: SortKey; desc: boolean; }
+
+/** Sort options with the direction each starts in: soonest ETA and A-Z first, otherwise the biggest/newest. */
+const SORTS: readonly { key: SortKey; label: string; desc: boolean }[] = [
+  { key: 'added', label: 'Added', desc: true },
+  { key: 'name', label: 'Name', desc: false },
+  { key: 'eta', label: 'ETA', desc: false },
+  { key: 'progress', label: 'Progress', desc: true },
+  { key: 'size', label: 'Size', desc: true },
+  { key: 'downloadRate', label: 'Download speed', desc: true },
+  { key: 'uploadRate', label: 'Upload speed', desc: true },
+  { key: 'ratio', label: 'Ratio', desc: true },
+];
+const DEFAULT_SORT: SortOrder = { key: 'added', desc: true };
+
+function readSort(): SortOrder {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SORT_KEY) ?? 'null') as Partial<SortOrder> | null;
+    if (stored && SORTS.some(s => s.key === stored.key)) return { key: stored.key!, desc: !!stored.desc };
+  } catch { /* storage unavailable or malformed */ }
+  return DEFAULT_SORT;
+}
+
+/** The value a torrent sorts by; null (no ETA: not downloading, stalled) always sorts last. */
+function sortValue(d: TorrentStatus, key: SortKey): number | string | null {
+  switch (key) {
+    case 'added': return Date.parse(d.added) || 0;
+    case 'name': return d.name;
+    case 'eta': return d.state === 'Downloading' && d.etaSeconds != null ? d.etaSeconds : null;
+    default: return d[key];
+  }
+}
+
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+export function sortTorrents(list: readonly TorrentStatus[], { key, desc }: SortOrder): TorrentStatus[] {
+  const sign = desc ? -1 : 1;
+  // Array sort is stable: ties keep the client's order (newest first).
+  return [...list].sort((a, b) => {
+    const x = sortValue(a, key), y = sortValue(b, key);
+    if (x === null || y === null) return x === y ? 0 : x === null ? 1 : -1;
+    return sign * (typeof x === 'string' ? collator.compare(x, y as string) : x - (y as number));
+  });
+}
 
 /** The list shows either seeding torrents or everything else; the default is the non-seeding view. */
 function readShowSeeding(): boolean {
@@ -34,9 +81,11 @@ export class DownloadsPage implements OnInit, OnDestroy {
   protected readonly list = computed(() => this.events.downloads());
   protected readonly showSeeding = signal(readShowSeeding());
   protected readonly seedingCount = computed(() => this.list().filter(d => d.state === 'Seeding').length);
+  protected readonly sorts = SORTS;
+  protected readonly sort = signal(readSort());
   protected readonly visible = computed(() => {
     const seeding = this.showSeeding();
-    return this.list().filter(d => (d.state === 'Seeding') === seeding);
+    return sortTorrents(this.list().filter(d => (d.state === 'Seeding') === seeding), this.sort());
   });
   /** Multi-selection for bulk pause/resume/remove; only torrents in the current view (downloading or seeding) count. */
   protected readonly selection = new Selection(this.visible, d => d.infoHash);
@@ -114,6 +163,20 @@ export class DownloadsPage implements OnInit, OnDestroy {
 
   async pause(d: TorrentStatus) { await this.api.pauseDownload(d.infoHash).catch(e => this.toasts.error(errorMessage(e))); }
   async resume(d: TorrentStatus) { await this.api.resumeDownload(d.infoHash).catch(e => this.toasts.error(errorMessage(e))); }
+
+  /** Picking another field starts in its natural direction; the arrow button flips it. */
+  protected setSort(key: SortKey) {
+    this.storeSort({ key, desc: SORTS.find(s => s.key === key)?.desc ?? false });
+  }
+
+  protected flipSort() {
+    this.storeSort({ ...this.sort(), desc: !this.sort().desc });
+  }
+
+  private storeSort(order: SortOrder) {
+    this.sort.set(order);
+    try { localStorage.setItem(SORT_KEY, JSON.stringify(order)); } catch { /* storage unavailable */ }
+  }
 
   protected async bulk(action: BulkDownloadAction) {
     const hashes = this.selection.selected();
