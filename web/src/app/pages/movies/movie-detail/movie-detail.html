@@ -168,9 +168,19 @@
         } @else {
           <div class="overflow-x-auto sm:max-h-[65vh] sm:overflow-auto">
             <table class="table">
-              <thead><tr><th>Release</th><th class="max-sm:hidden">Indexer</th><th class="max-sm:hidden">Size</th><th class="max-sm:hidden">Peers</th><th class="max-sm:hidden">Quality</th><th class="max-sm:hidden">Language</th><th></th></tr></thead>
+              <thead>
+                <tr>
+                  <th krSort="release" [krSortBy]="releaseSort">Release</th>
+                  <th class="max-sm:hidden" krSort="indexer" [krSortBy]="releaseSort">Indexer</th>
+                  <th class="max-sm:hidden" krSort="size" [krSortBy]="releaseSort">Size</th>
+                  <th class="max-sm:hidden" krSort="peers" [krSortBy]="releaseSort">Peers</th>
+                  <th class="max-sm:hidden" krSort="quality" [krSortBy]="releaseSort">Quality</th>
+                  <th class="max-sm:hidden" krSort="language" [krSortBy]="releaseSort">Language</th>
+                  <th></th>
+                </tr>
+              </thead>
               <tbody>
-                @for (r of releases(); track r.release.guid) {
+                @for (r of releaseSort.rows(); track r.release.guid) {
                   <tr [class.opacity-60]="!r.approved">
                     <td class="w-full max-w-0">
                       <div class="break-all sm:truncate sm:break-normal" [title]="r.release.title">{{ r.release.title }}</div>

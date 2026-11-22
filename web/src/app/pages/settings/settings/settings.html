@@ -461,9 +461,18 @@
     <p class="hint mb-3">Tasks run on their own schedule. <span class="font-medium text-slate-300">Run now</span> starts one immediately and counts its next run from now.</p>
     <div class="overflow-x-auto">
       <table class="table">
-        <thead><tr><th>Task</th><th class="max-sm:hidden">Interval</th><th>Last run</th><th class="max-md:hidden">Duration</th><th class="max-sm:hidden">Next run</th><th></th></tr></thead>
+        <thead>
+          <tr>
+            <th krSort="name" [krSortBy]="taskSort">Task</th>
+            <th class="max-sm:hidden" krSort="interval" [krSortBy]="taskSort">Interval</th>
+            <th krSort="lastRun" [krSortBy]="taskSort">Last run</th>
+            <th class="max-md:hidden" krSort="duration" [krSortBy]="taskSort">Duration</th>
+            <th class="max-sm:hidden" krSort="nextRun" [krSortBy]="taskSort">Next run</th>
+            <th></th>
+          </tr>
+        </thead>
         <tbody>
-          @for (t of tasks(); track t.id) {
+          @for (t of taskSort.rows(); track t.id) {
             <tr>
               <td class="text-slate-200">{{ t.name }}</td>
               <td class="whitespace-nowrap text-slate-400 max-sm:hidden">{{ t.intervalSeconds ? 'Every ' + duration(t.intervalSeconds) : 'Disabled' }}</td>

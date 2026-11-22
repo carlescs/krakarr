@@ -10,6 +10,8 @@ import {
 } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
 import { Modal } from '../../../shared/modal/modal';
+import { TableSort } from '../../../core/table-sort';
+import { SortHeader } from '../../../shared/sort-header/sort-header';
 import { LanguagePicker } from '../../../shared/language-picker/language-picker';
 import { Languages } from '../../../core/languages';
 import { Auth } from '../../../core/auth';
@@ -68,7 +70,7 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'jell
 
 @Component({
   selector: 'kr-settings',
-  imports: [LanguagePicker, FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings],
+  imports: [LanguagePicker, FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings, SortHeader],
   templateUrl: './settings.html',
   styleUrl: './settings.scss',
 })
@@ -137,6 +139,13 @@ export class SettingsPage implements OnInit {
   protected browsePath = '/';
   protected rootMediaType: 'Movie' | 'Series' = 'Movie';
   protected readonly tasks = signal<ScheduledTaskInfo[]>([]);
+  protected readonly taskSort = new TableSort(this.tasks, {
+    name: t => t.name,
+    interval: t => t.intervalSeconds,
+    lastRun: { value: t => t.isRunning ? Number.MAX_SAFE_INTEGER : t.lastRun ? Date.parse(t.lastRun) : null, desc: true },
+    duration: { value: t => t.lastDurationSeconds, desc: true },
+    nextRun: t => t.isRunning || !t.nextRun ? null : Date.parse(t.nextRun),
+  });
   /** Tasks whose "Run now" request is in flight, so the button can't be clicked twice. */
   protected readonly starting = signal(new Set<string>());
   /** Ticks so relative times ("in 4m") stay current. */

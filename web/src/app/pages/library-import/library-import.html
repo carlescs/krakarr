@@ -67,9 +67,17 @@
     } @else {
       <div class="card overflow-x-auto">
         <table class="table">
-          <thead><tr><th class="w-8"></th><th class="max-sm:hidden">Folder</th><th class="max-md:hidden">Files</th><th>Match</th><th class="w-12 sm:w-28"></th></tr></thead>
+          <thead>
+            <tr>
+              <th class="w-8"></th>
+              <th class="max-sm:hidden" krSort="folder" [krSortBy]="sort">Folder</th>
+              <th class="max-md:hidden" krSort="files" [krSortBy]="sort">Files</th>
+              <th krSort="match" [krSortBy]="sort">Match</th>
+              <th class="w-12 sm:w-28"></th>
+            </tr>
+          </thead>
           <tbody>
-            @for (r of visible(); track r.path) {
+            @for (r of sort.rows(); track r.path) {
               <tr [class.opacity-60]="!r.match || r.alreadyInLibrary">
                 <td>
                   <input type="checkbox" class="accent-accent-500" [(ngModel)]="r.selected" (ngModelChange)="touch()"

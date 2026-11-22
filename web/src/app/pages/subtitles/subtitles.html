@@ -28,9 +28,16 @@
   } @else {
     <div class="overflow-x-auto">
       <table class="table">
-        <thead><tr><th class="max-sm:hidden">Type</th><th>Title</th><th class="max-sm:hidden">Missing</th><th></th></tr></thead>
+        <thead>
+          <tr>
+            <th class="max-sm:hidden" krSort="type" [krSortBy]="sort">Type</th>
+            <th krSort="title" [krSortBy]="sort">Title</th>
+            <th class="max-sm:hidden" krSort="missing" [krSortBy]="sort">Missing</th>
+            <th></th>
+          </tr>
+        </thead>
         <tbody>
-          @for (w of wanted(); track (w.movieFileId ?? 0) + ':' + (w.episodeFileId ?? 0)) {
+          @for (w of sort.rows(); track (w.movieFileId ?? 0) + ':' + (w.episodeFileId ?? 0)) {
             <tr>
               <td class="max-sm:hidden"><span class="badge" [class]="w.mediaType === 'Movie' ? 'bg-accent-500/15 text-accent-300' : 'bg-violet-500/15 text-violet-300'">{{ w.mediaType === 'Movie' ? 'Movie' : 'Episode' }}</span></td>
               <td class="w-full max-w-0">

@@ -6,6 +6,8 @@ import { Languages } from '../../core/languages';
 import { Toasts } from '../../core/toast';
 import { CategoryPicker } from '../../shared/category-picker/category-picker';
 import { Modal } from '../../shared/modal/modal';
+import { TableSort } from '../../core/table-sort';
+import { SortHeader } from '../../shared/sort-header/sort-header';
 
 const MOVIE_RANGE: [number, number] = [2000, 2999];
 const TV_RANGE: [number, number] = [5000, 5999];
@@ -17,7 +19,7 @@ const blankIndexer = (): Indexer => ({
 
 @Component({
   selector: 'kr-indexers',
-  imports: [FormsModule, Modal, CategoryPicker],
+  imports: [FormsModule, Modal, CategoryPicker, SortHeader],
   templateUrl: './indexers.html',
   styleUrl: './indexers.scss',
 })
@@ -26,6 +28,13 @@ export class IndexersPage implements OnInit {
   private readonly toasts = inject(Toasts);
   protected readonly languages = inject(Languages);
   protected readonly indexers = signal<Indexer[]>([]);
+  protected readonly sort = new TableSort(this.indexers, {
+    name: i => i.name,
+    protocol: i => i.protocol,
+    url: i => i.baseUrl,
+    priority: i => i.priority,
+    status: i => !i.enabled,
+  });
   protected readonly form = signal<Indexer | null>(null);
   protected readonly test = signal<IndexerTestResult | null>(null);
   protected readonly testing = signal(false);

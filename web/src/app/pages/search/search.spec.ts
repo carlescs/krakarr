@@ -50,6 +50,24 @@ describe('SearchPage', () => {
     expect(el.querySelector('[role="dialog"]')).toBeNull();
   });
 
+  it('sorts results by a column', async () => {
+    const small = { ...result, release: { ...result.release, title: 'Alien.1979.720p', guid: 'g2', size: 1024, seeders: 40 } } as SearchResult;
+    setupTest({ api: mockApi({ search: async () => ({ results: [small, result], errors: [], indexers: [] }) }) });
+    const fixture = TestBed.createComponent(SearchPage);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    button(el, 'Search').click();
+    await settle(fixture);
+    const titles = () => [...el.querySelectorAll('tbody tr td:first-child > div:first-child')].map(d => d.textContent);
+    expect(titles()).toEqual(['Alien.1979.720p', 'Alien.1979.1080p.BluRay']);
+
+    // Sizes sort largest first.
+    button(el, 'Size').click();
+    await settle(fixture);
+    expect(titles()).toEqual(['Alien.1979.1080p.BluRay', 'Alien.1979.720p']);
+    expect(el.querySelector('th[aria-sort="descending"]')?.textContent).toContain('Size');
+  });
+
   it('says when nothing was found', async () => {
     setupTest({ api: mockApi({ search: async () => ({ results: [], errors: [], indexers: [] }) }) });
     const fixture = TestBed.createComponent(SearchPage);

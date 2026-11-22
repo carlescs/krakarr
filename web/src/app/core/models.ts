@@ -154,6 +154,9 @@ export interface EpisodeRelease {
   release: ReleaseInfo; quality: string; qualityWeight: number; approved: boolean; rejections: string[]; episodes?: string; seasonPack: boolean; languages: string[];
 }
 
+/** What a bulk action on the downloads page multi-selection does. */
+export type BulkDownloadAction = 'Pause' | 'Resume' | 'Remove';
+
 export interface TorrentStatus {
   id: number; infoHash: string; name: string; state: DownloadState; progress: number; size: number; downloaded: number; uploaded: number;
   downloadRate: number; uploadRate: number; seeds: number; leechers: number; ratio: number; etaSeconds?: number;

@@ -4,11 +4,13 @@ import { Api, errorMessage } from '../../core/api';
 import { Language, ScoredSubtitle, SubtitleFile, SubtitleFileRef } from '../../core/models';
 import { Toasts } from '../../core/toast';
 import { Modal } from '../modal/modal';
+import { TableSort } from '../../core/table-sort';
+import { SortHeader } from '../sort-header/sort-header';
 
 /** Dialog listing a file's subtitles with automatic and interactive search. */
 @Component({
   selector: 'kr-subtitle-manager',
-  imports: [FormsModule, Modal],
+  imports: [FormsModule, Modal, SortHeader],
   templateUrl: './subtitle-manager.html',
   styleUrl: './subtitle-manager.scss',
 })
@@ -23,6 +25,13 @@ export class SubtitleManager implements OnInit {
   private readonly toasts = inject(Toasts);
   protected readonly languages = signal<Language[]>([]);
   protected readonly results = signal<ScoredSubtitle[]>([]);
+  /** The API returns subtitles best first. */
+  protected readonly sort = new TableSort(this.results, {
+    release: r => r.candidate.releaseNames[0] ?? r.candidate.fileName,
+    language: r => this.languageName(r.candidate.language),
+    score: { value: r => r.score, desc: true },
+    downloads: { value: r => r.candidate.downloads, desc: true },
+  });
   protected readonly errors = signal<string[]>([]);
   protected readonly searching = signal(false);
   protected readonly searched = signal(false);

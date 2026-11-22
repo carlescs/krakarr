@@ -7,13 +7,15 @@ import { TorrentDetails } from '../../core/models';
 import { Modal } from '../modal/modal';
 import { Progress } from '../progress/progress';
 import { StateBadge } from '../state-badge/state-badge';
+import { TableSort } from '../../core/table-sort';
+import { SortHeader } from '../sort-header/sort-header';
 
 type Tab = 'overview' | 'files' | 'peers' | 'trackers';
 
 /** Live details of one torrent (works for the built-in engine and qBittorrent). */
 @Component({
   selector: 'kr-torrent-details',
-  imports: [RouterLink, Modal, Progress, StateBadge, BytesPipe, SpeedPipe, DurationPipe, DatePipe, DecimalPipe],
+  imports: [RouterLink, Modal, Progress, StateBadge, SortHeader, BytesPipe, SpeedPipe, DurationPipe, DatePipe, DecimalPipe],
   templateUrl: './torrent-details.html',
   styleUrl: './torrent-details.scss',
 })
@@ -29,6 +31,35 @@ export class TorrentDetailsDialog implements OnInit, OnDestroy {
   protected readonly tab = signal<Tab>('overview');
   protected readonly details = signal<TorrentDetails | null>(null);
   protected readonly error = signal<string | null>(null);
+  // The details refresh while the dialog is open; each list keeps its chosen order across refreshes.
+  protected readonly fileSort = new TableSort(computed(() => this.details()?.files ?? []), {
+    name: f => f.path,
+    size: { value: f => f.size, desc: true },
+    progress: { value: f => f.progress, desc: true },
+    priority: f => f.priority,
+    availability: { value: f => f.availability, desc: true },
+  });
+  protected readonly peerSort = new TableSort(computed(() => this.details()?.peers ?? []), {
+    address: p => p.address,
+    client: p => p.client,
+    flags: p => p.flags || null,
+    connection: p => p.connection,
+    progress: { value: p => p.progress, desc: true },
+    down: { value: p => p.downloadRate, desc: true },
+    up: { value: p => p.uploadRate, desc: true },
+    downloaded: { value: p => p.downloaded, desc: true },
+    uploaded: { value: p => p.uploaded, desc: true },
+  });
+  protected readonly trackerSort = new TableSort(computed(() => this.details()?.trackers ?? []), {
+    tracker: t => t.url,
+    tier: t => t.tier >= 0 ? t.tier : null,
+    status: t => t.status,
+    seeds: { value: t => t.seeds, desc: true },
+    leechers: { value: t => t.leechers, desc: true },
+    peers: { value: t => t.peers, desc: true },
+    completed: { value: t => t.downloaded, desc: true },
+    next: t => t.nextAnnounceSeconds,
+  });
   protected readonly pieceChars = computed(() => (this.details()?.pieces ?? '').split(''));
   private timer?: ReturnType<typeof setInterval>;
 

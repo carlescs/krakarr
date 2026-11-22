@@ -7,10 +7,12 @@ import { Events } from '../../core/events';
 import { Language, SubtitleSettings, WantedSubtitle } from '../../core/models';
 import { Toasts } from '../../core/toast';
 import { SubtitleManager } from '../../shared/subtitle-manager/subtitle-manager';
+import { TableSort } from '../../core/table-sort';
+import { SortHeader } from '../../shared/sort-header/sort-header';
 
 @Component({
   selector: 'kr-subtitles',
-  imports: [RouterLink, SubtitleManager],
+  imports: [RouterLink, SubtitleManager, SortHeader],
   templateUrl: './subtitles.html',
   styleUrl: './subtitles.scss',
 })
@@ -26,6 +28,11 @@ export class SubtitlesPage implements OnInit {
   protected readonly languages = signal<Language[]>([]);
   protected readonly loading = signal(true);
   protected readonly manage = signal<WantedSubtitle | null>(null);
+  protected readonly sort = new TableSort(this.wanted, {
+    type: w => w.mediaType,
+    title: w => w.label,
+    missing: { value: w => w.missingLanguages.length, desc: true },
+  });
   /** Managers can't read settings; for them the server reports a missing provider when they search. */
   protected readonly ready = computed(() => !this.auth.isAdmin() || (!!this.settings()?.enabled && !!this.settings()?.openSubtitles.apiKey));
 

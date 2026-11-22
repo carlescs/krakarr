@@ -60,11 +60,11 @@
               <input type="checkbox" class="size-4 accent-accent-500 align-middle" aria-label="Select all"
                      [checked]="selection.all()" [indeterminate]="selection.count() > 0 && !selection.all()" (change)="selection.toggleAll()" />
             </th>
-            <th [attr.aria-sort]="ariaSort('title')"><ng-container *ngTemplateOutlet="sortHeader; context: { key: 'title', label: 'Title' }" /></th>
-            <th class="max-sm:hidden" [attr.aria-sort]="ariaSort('year')"><ng-container *ngTemplateOutlet="sortHeader; context: { key: 'year', label: 'Year' }" /></th>
-            <th class="max-md:hidden" [attr.aria-sort]="ariaSort('status')"><ng-container *ngTemplateOutlet="sortHeader; context: { key: 'status', label: 'Status' }" /></th>
-            <th [attr.aria-sort]="ariaSort('episodes')"><ng-container *ngTemplateOutlet="sortHeader; context: { key: 'episodes', label: 'Episodes' }" /></th>
-            <th class="max-lg:hidden" [attr.aria-sort]="ariaSort('nextAiring')"><ng-container *ngTemplateOutlet="sortHeader; context: { key: 'nextAiring', label: 'Next airing' }" /></th>
+            <th krSort="title" [krSortBy]="sort">Title</th>
+            <th class="max-sm:hidden" krSort="year" [krSortBy]="sort">Year</th>
+            <th class="max-md:hidden" krSort="status" [krSortBy]="sort">Status</th>
+            <th krSort="episodes" [krSortBy]="sort">Episodes</th>
+            <th class="max-lg:hidden" krSort="nextAiring" [krSortBy]="sort">Next airing</th>
             <th class="max-sm:hidden">Following</th>
           </tr>
         </thead>
@@ -130,10 +130,3 @@
     <div class="h-px" (krNearViewport)="showMore()"></div>
   }
 }
-
-<ng-template #sortHeader let-key="key" let-label="label">
-  <button type="button" class="inline-flex items-center gap-1 uppercase hover:text-white" (click)="sortBy(key)">
-    {{ label }}
-    @if (sort().key === key) { <span aria-hidden="true">{{ sort().desc ? '↓' : '↑' }}</span> }
-  </button>
-</ng-template>

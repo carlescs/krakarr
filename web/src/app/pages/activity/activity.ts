@@ -5,10 +5,12 @@ import { RouterLink } from '@angular/router';
 import { Api } from '../../core/api';
 import { Events } from '../../core/events';
 import { CommandInfo, HistoryItem } from '../../core/models';
+import { TableSort } from '../../core/table-sort';
+import { SortHeader } from '../../shared/sort-header/sort-header';
 
 @Component({
   selector: 'kr-activity',
-  imports: [DatePipe, RouterLink],
+  imports: [DatePipe, RouterLink, SortHeader],
   templateUrl: './activity.html',
   styleUrl: './activity.scss',
 })
@@ -18,6 +20,14 @@ export class ActivityPage implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
   protected readonly history = signal<HistoryItem[]>([]);
   protected readonly commands = signal<CommandInfo[]>([]);
+  /** The API returns history newest first. */
+  protected readonly historySort = new TableSort(this.history, {
+    event: h => h.eventType,
+    release: h => h.sourceTitle,
+    quality: h => h.quality,
+    indexer: h => h.indexer,
+    date: { value: h => Date.parse(h.date), desc: true },
+  });
 
   ngOnInit() {
     this.load();

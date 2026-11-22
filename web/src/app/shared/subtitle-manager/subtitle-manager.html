@@ -28,9 +28,17 @@
   @if (results().length > 0) {
     <div class="overflow-x-auto sm:max-h-[55vh] sm:overflow-auto">
       <table class="table">
-        <thead><tr><th>Release</th><th class="max-sm:hidden">Language</th><th>Score</th><th class="max-sm:hidden">Downloads</th><th></th></tr></thead>
+        <thead>
+          <tr>
+            <th krSort="release" [krSortBy]="sort">Release</th>
+            <th class="max-sm:hidden" krSort="language" [krSortBy]="sort">Language</th>
+            <th krSort="score" [krSortBy]="sort">Score</th>
+            <th class="max-sm:hidden" krSort="downloads" [krSortBy]="sort">Downloads</th>
+            <th></th>
+          </tr>
+        </thead>
         <tbody>
-          @for (r of results(); track r.candidate.provider + r.candidate.payload) {
+          @for (r of sort.rows(); track r.candidate.provider + r.candidate.payload) {
             <tr [class.opacity-60]="!r.acceptable">
               <td class="w-full max-w-0">
                 <div class="break-all sm:truncate sm:break-normal" [title]="r.candidate.releaseNames.join(' | ')">{{ r.candidate.releaseNames[0] ?? r.candidate.fileName }}</div>

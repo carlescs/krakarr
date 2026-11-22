@@ -8,10 +8,14 @@ import { MatchConfidence, MinimumAvailability, MonitorMode, MovieLookup, Quality
 import { Toasts } from '../../core/toast';
 import { Modal } from '../../shared/modal/modal';
 import { Poster } from '../../shared/poster/poster';
+import { TableSort } from '../../core/table-sort';
+import { SortHeader } from '../../shared/sort-header/sort-header';
 
 type Kind = 'movies' | 'series';
 type Filter = 'all' | 'matched' | 'unmatched' | 'existing';
 type Match = { id: number; tvdbId?: number; title: string; year: number; posterUrl?: string; overview?: string };
+
+const CONFIDENCE: MatchConfidence[] = ['None', 'Low', 'Medium', 'High', 'Exact'];
 
 interface Row {
   folderName: string;
@@ -37,7 +41,7 @@ const CONFIDENCE_STYLE: Record<MatchConfidence, string> = {
 /** Import existing movie or series folders from a root folder, matched by folder name. */
 @Component({
   selector: 'kr-library-import',
-  imports: [FormsModule, RouterLink, Poster, Modal],
+  imports: [FormsModule, RouterLink, Poster, Modal, SortHeader],
   templateUrl: './library-import.html',
   styleUrl: './library-import.scss',
 })
@@ -77,6 +81,12 @@ export class LibraryImportPage implements OnInit {
   protected readonly visible = computed(() => {
     this.version();
     return this.rows().filter(r => this.matches(r, this.filter()));
+  });
+  protected readonly sort = new TableSort(this.visible, {
+    folder: r => r.folderName,
+    files: r => r.files,
+    // Unmatched folders go last.
+    match: { value: r => r.match ? CONFIDENCE.indexOf(r.confidence) : null, desc: true },
   });
   protected readonly selectedCount = computed(() => {
     this.version();

@@ -45,4 +45,11 @@ describe('Selection', () => {
     storeView('k', 'table');
     expect(storedView('k')).toBe('table');
   });
+  it('selects by a custom key', () => {
+    const selection = new Selection(signal([{ hash: 'a' }, { hash: 'b' }, { hash: 'c' }]), t => t.hash);
+    selection.toggle('a');
+    selection.toggle('c', true);
+    expect(selection.selected()).toEqual(['a', 'b', 'c']);
+    expect(selection.all()).toBe(true);
+  });
 });

@@ -12,9 +12,19 @@
 @if (results().length > 0) {
   <div class="card overflow-x-auto">
     <table class="table">
-      <thead><tr><th>Title</th><th class="max-md:hidden">Indexer</th><th class="max-sm:hidden">Age</th><th class="max-sm:hidden">Size</th><th class="max-sm:hidden">Peers</th><th class="max-sm:hidden">Quality</th><th></th></tr></thead>
+      <thead>
+        <tr>
+          <th krSort="title" [krSortBy]="sort">Title</th>
+          <th class="max-md:hidden" krSort="indexer" [krSortBy]="sort">Indexer</th>
+          <th class="max-sm:hidden" krSort="age" [krSortBy]="sort">Age</th>
+          <th class="max-sm:hidden" krSort="size" [krSortBy]="sort">Size</th>
+          <th class="max-sm:hidden" krSort="peers" [krSortBy]="sort">Peers</th>
+          <th class="max-sm:hidden" krSort="quality" [krSortBy]="sort">Quality</th>
+          <th></th>
+        </tr>
+      </thead>
       <tbody>
-        @for (r of results(); track r.release.guid) {
+        @for (r of sort.rows(); track r.release.guid) {
           <tr>
             <td class="w-full max-w-0">
               <div class="break-all sm:truncate sm:break-normal" [title]="r.release.title">{{ r.release.title }}</div>

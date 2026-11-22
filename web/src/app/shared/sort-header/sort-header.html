@@ -1,0 +1,9 @@
+<ng-template #label><ng-content /></ng-template>
+@if (disabled()) {
+  <ng-container *ngTemplateOutlet="label" />
+} @else {
+  <button type="button" class="inline-flex items-center gap-1 uppercase tracking-wide hover:text-white" (click)="sort().toggle(key())">
+    <ng-container *ngTemplateOutlet="label" />
+    <span aria-hidden="true" class="inline-block w-2" [class.invisible]="!direction()">{{ direction() ?? '↑' }}</span>
+  </button>
+}
