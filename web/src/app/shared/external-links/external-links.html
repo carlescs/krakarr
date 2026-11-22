@@ -50,7 +50,7 @@
     }
   </a>
 }
-@if (ratings()?.metacritic != null && kind() !== 'person') {
+@if (showMetacritic()) {
   <a class="link-pill" [href]="metacriticUrl()" target="_blank" rel="noopener" aria-label="Metacritic" [title]="'Metascore: ' + ratings()!.metacritic">
     <span class="grid h-4 min-w-5 place-items-center rounded-sm px-0.5 text-[11px] font-bold leading-none" [class]="metacriticClass()">{{ ratings()!.metacritic }}</span>
     <span class="text-xs text-slate-300">Metacritic</span>

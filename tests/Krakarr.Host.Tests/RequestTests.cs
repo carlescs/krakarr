@@ -46,6 +46,7 @@ public sealed class RequestsFactory : KrakarrFactory
         public Task<IReadOnlyList<SeriesLookup>> SimilarAsync(SeriesIds ids, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<IReadOnlyList<SeriesLookup>>> RecommendationsAsync(IReadOnlyList<SeriesIds> shows, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<Credits> CreditsAsync(SeriesIds ids, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<EpisodeDetails?> EpisodeDetailsAsync(SeriesIds ids, int season, int episode, CancellationToken ct = default) => throw new NotSupportedException();
     }
 }
 

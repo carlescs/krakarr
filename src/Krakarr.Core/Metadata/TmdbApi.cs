@@ -9,7 +9,10 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Krakarr.Core.Metadata;
 
-public sealed class MetadataException(string message) : Exception(message);
+public class MetadataException(string message) : Exception(message);
+
+/// <summary>The metadata source has no such title, season or episode (HTTP 404).</summary>
+public sealed class MetadataNotFoundException(string message) : MetadataException(message);
 
 /// <summary>
 /// Shared TMDB v3 transport used by the movie and series clients. Accepts either a v3 API key or a v4 read access token
@@ -63,7 +66,7 @@ public sealed class TmdbApi(IHttpClientFactory httpClientFactory, IConfiguration
         {
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
-                throw new MetadataException("Not found on TMDB");
+                throw new MetadataNotFoundException("Not found on TMDB");
             }
 
             if (!response.IsSuccessStatusCode)

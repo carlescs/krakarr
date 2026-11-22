@@ -54,7 +54,7 @@ public sealed record SeriesListItemDto(
 public sealed record EpisodeFileDto(int Id, string RelativePath, long Size, string Quality, string? ReleaseGroup, DateTimeOffset DateAdded);
 
 public sealed record EpisodeDto(
-    int Id, int SeasonNumber, int EpisodeNumber, int? AbsoluteNumber, string? Title, string? Overview, DateOnly? AirDate,
+    int Id, int SeasonNumber, int EpisodeNumber, int? AbsoluteNumber, string? Title, string? Overview, DateOnly? AirDate, int Runtime,
     bool Monitored, bool HasAired, EpisodeFileDto? EpisodeFile, double? DownloadProgress);
 
 /// <param name="Languages">Wanted audio languages, most preferred first; null = use the global default.</param>
@@ -333,7 +333,7 @@ public static class SeriesEndpoints
             var progress = await EpisodeProgressAsync(db, engine, id, ct);
             var today = Today(time);
             return episodes.Select(e => new EpisodeDto(
-                e.Id, e.SeasonNumber, e.EpisodeNumber, e.AbsoluteNumber, e.Title, e.Overview, e.AirDate, e.Monitored, e.HasAired(today),
+                e.Id, e.SeasonNumber, e.EpisodeNumber, e.AbsoluteNumber, e.Title, e.Overview, e.AirDate, e.Runtime, e.Monitored, e.HasAired(today),
                 e.EpisodeFile is { } f ? new EpisodeFileDto(f.Id, f.RelativePath, f.Size, Qualities.FindById(f.QualityId).Name, f.ReleaseGroup, f.DateAdded) : null,
                 progress.TryGetValue(e.Id, out var p) ? p : null));
         });
