@@ -1,7 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import { HubConnection, HubConnectionBuilder, HubConnectionState, LogLevel } from '@microsoft/signalr';
 import { Subject } from 'rxjs';
-import { CommandInfo, HistoryItem, ScheduledTaskInfo, SearchProgress, TorrentStatus } from './models';
+import { CommandInfo, HistoryItem, ScheduledTaskInfo, TorrentStatus } from './models';
 
 /** Real-time server events over SignalR. */
 @Injectable({ providedIn: 'root' })
@@ -18,8 +18,6 @@ export class Events {
   readonly requestsUpdated = new Subject<void>();
   /** Something a notification source reports may have changed. */
   readonly notificationsUpdated = new Subject<void>();
-  /** Per-indexer progress of an interactive search (staff only). */
-  readonly searchProgress = new Subject<SearchProgress>();
 
   private connection?: HubConnection;
 
@@ -41,7 +39,6 @@ export class Events {
     this.connection.on('taskUpdated', (t: ScheduledTaskInfo) => this.taskUpdated.next(t));
     this.connection.on('requestsUpdated', () => this.requestsUpdated.next());
     this.connection.on('notificationsUpdated', () => this.notificationsUpdated.next());
-    this.connection.on('searchProgress', (p: SearchProgress) => this.searchProgress.next(p));
     this.connection.onreconnecting(() => this.connected.set(false));
     this.connection.onreconnected(() => this.connected.set(true));
     this.connection.onclose(() => this.connected.set(false));

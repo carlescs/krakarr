@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Events;
@@ -132,20 +133,13 @@ public sealed class MovieService(
         db.MovieCollections.Where(c => !db.Movies.Any(m => m.CollectionId == c.Id)).ExecuteDeleteAsync(ct);
 
     /// <summary>Searches all indexers for a movie and evaluates every release.</summary>
-    /// <param name="progress">Optional per-indexer progress (see <see cref="IIndexerSearchService.SearchAsync"/>).</param>
     public async Task<(IReadOnlyList<ReleaseDecision> Decisions, IReadOnlyList<IndexerError> Errors, IReadOnlyList<IndexerQueryStatus> Indexers)> SearchAsync(
-        Movie movie, IProgress<IReadOnlyList<IndexerQueryStatus>>? progress = null, CancellationToken ct = default)
+        Movie movie, CancellationToken ct = default)
     {
         var profile = movie.QualityProfile ?? await db.QualityProfiles.FirstAsync(p => p.Id == movie.QualityProfileId, ct);
         var existing = await ExistingQualityAsync(movie, ct);
 
-        var result = await indexerSearch.SearchAsync(new SearchCriteria
-        {
-            Type = SearchType.Movie,
-            Query = movie.Year > 0 ? $"{movie.Title} {movie.Year}" : movie.Title,
-            ImdbId = movie.ImdbId,
-            TmdbId = movie.TmdbId,
-        }, progress: progress, ct: ct);
+        var result = await indexerSearch.SearchAsync(Criteria(movie), ct: ct);
 
         movie.LastSearched = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
@@ -153,6 +147,31 @@ public sealed class MovieService(
         var languages = (await settings.GetAsync<LanguageSettings>(ct)).For(movie.Languages);
         return (MovieDecisionEngine.Evaluate(movie, profile, existing, result.Releases, languages), result.Errors, result.Indexers);
     }
+
+    /// <summary>Interactive search that hands out evaluated releases as each indexer answers (see <see cref="SearchStream"/>).</summary>
+    public async IAsyncEnumerable<SearchStreamEvent<ReleaseDecisionDto>> SearchStreamAsync(Movie movie, [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var profile = movie.QualityProfile ?? await db.QualityProfiles.FirstAsync(p => p.Id == movie.QualityProfileId, ct);
+        var existing = await ExistingQualityAsync(movie, ct);
+        var languages = (await settings.GetAsync<LanguageSettings>(ct)).For(movie.Languages);
+
+        var run = await indexerSearch.StartAsync(Criteria(movie), ct: ct);
+        movie.LastSearched = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        var events = run.EventsAsync(
+            releases => MovieDecisionEngine.Evaluate(movie, profile, existing, releases, languages).Select(ReleaseDecisionDto.From).ToList(),
+            row => row.Release, ct);
+        await foreach (var e in events) yield return e;
+    }
+
+    private static SearchCriteria Criteria(Movie movie) => new()
+    {
+        Type = SearchType.Movie,
+        Query = movie.Year > 0 ? $"{movie.Title} {movie.Year}" : movie.Title,
+        ImdbId = movie.ImdbId,
+        TmdbId = movie.TmdbId,
+    };
 
     /// <summary>Searches and grabs the best approved release. Returns a human readable outcome.</summary>
     public async Task<string> AutoSearchAsync(int movieId, CancellationToken ct = default)
@@ -189,7 +208,7 @@ public sealed class MovieService(
             return $"{movie.Title}: not available yet (minimum availability: {AvailabilityLabel(movie.MinimumAvailability)})";
         }
 
-        var (decisions, errors, _) = await SearchAsync(movie, ct: ct);
+        var (decisions, errors, _) = await SearchAsync(movie, ct);
         var best = decisions.FirstOrDefault(d => d.Approved);
         if (best is null)
         {

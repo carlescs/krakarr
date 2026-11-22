@@ -9,7 +9,7 @@ import { Events } from '../../../core/events';
 import { AgoPipe, BytesPipe } from '../../../core/format';
 import { Episode, EpisodeRelease, HistoryItem, OrganizePreview, QualityProfile, SeasonInfo, Series, SubtitleFile } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
-import { IndexerSearch } from '../../../core/indexer-search';
+import { ReleaseSearch } from '../../../core/indexer-search';
 import { Languages } from '../../../core/languages';
 import { LanguageOverride } from '../../../shared/language-override/language-override';
 import { IndexerProgress } from '../../../shared/indexer-progress/indexer-progress';
@@ -64,10 +64,10 @@ export class SeriesDetailPage implements OnInit {
   protected readonly profiles = signal<QualityProfile[]>([]);
   protected readonly expanded = signal(new Set<number>());
   protected readonly releaseTarget = signal<ReleaseTarget | null>(null);
-  protected readonly releases = signal<EpisodeRelease[]>([]);
-  protected readonly indexerSearch = new IndexerSearch();
-  /** The API returns releases best first. */
-  protected readonly releaseSort = new TableSort(this.indexerSearch.filter(this.releases), {
+  protected readonly releaseSearch = new ReleaseSearch<EpisodeRelease>();
+  /** Best first, re-ranked as indexers answer. */
+  protected readonly releases = this.releaseSearch.results;
+  protected readonly releaseSort = new TableSort(this.releaseSearch.filtered, {
     release: r => r.release.title,
     // Season packs first, then by episode label.
     episodes: r => (r.seasonPack ? '0 ' : '1 ') + (r.episodes ?? ''),
@@ -77,7 +77,7 @@ export class SeriesDetailPage implements OnInit {
     quality: { value: r => r.qualityWeight, desc: true },
     language: r => this.languages.describe(r.languages),
   });
-  protected readonly searching = signal(false);
+  protected readonly searching = this.releaseSearch.running;
   protected readonly grabbing = signal<string | null>(null);
   protected readonly editing = signal(false);
   protected readonly confirmDelete = signal(false);
@@ -143,9 +143,7 @@ export class SeriesDetailPage implements OnInit {
     this.expanded.set(new Set<number>());
     this.expandedInitialised = false;
     this.releaseTarget.set(null);
-    this.releases.set([]);
-    this.indexerSearch.reset();
-    this.searching.set(false);
+    this.releaseSearch.reset();
     this.grabbing.set(null);
     this.editing.set(false);
     this.confirmDelete.set(false);
@@ -301,20 +299,17 @@ export class SeriesDetailPage implements OnInit {
   async interactive(target: ReleaseTarget) {
     const id = this.id();
     this.releaseTarget.set(target);
-    this.releases.set([]);
-    this.searching.set(true);
-    const searchId = this.indexerSearch.start();
     try {
-      const res = await this.api.seriesReleases(id, target.season, target.episodeId, searchId);
-      if (id !== this.id()) return;
-      this.releases.set(res.releases);
-      this.indexerSearch.finish(res.indexers);
+      await this.releaseSearch.run((onEvent, signal) => this.api.seriesReleasesStream(id, target.season, target.episodeId, onEvent, signal));
     } catch (e) {
-      this.indexerSearch.finish();
       this.toasts.error(errorMessage(e));
-    } finally {
-      this.searching.set(false);
     }
+  }
+
+  /** Closing the dialog stops the search. */
+  protected closeReleases() {
+    this.releaseSearch.cancel();
+    this.releaseTarget.set(null);
   }
 
   async grab(r: EpisodeRelease) {
@@ -322,7 +317,7 @@ export class SeriesDetailPage implements OnInit {
     try {
       await this.api.grabSeriesRelease(this.id(), r.release);
       this.toasts.success(`Grabbed ${r.episodes}`);
-      this.releaseTarget.set(null);
+      this.closeReleases();
     } catch (e) {
       this.toasts.error(errorMessage(e));
     } finally {

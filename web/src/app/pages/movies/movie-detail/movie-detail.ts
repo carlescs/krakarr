@@ -10,7 +10,7 @@ import { AgoPipe, BytesPipe, DurationPipe, SpeedPipe } from '../../../core/forma
 import { AVAILABILITY_OPTIONS, RELEASE_LABELS } from '../../../core/calendar';
 import { HistoryItem, MinimumAvailability, Movie, QualityProfile, ReleaseDateType, ReleaseDecision, SubtitleFile } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
-import { IndexerSearch } from '../../../core/indexer-search';
+import { ReleaseSearch } from '../../../core/indexer-search';
 import { Languages } from '../../../core/languages';
 import { LanguageOverride } from '../../../shared/language-override/language-override';
 import { IndexerProgress } from '../../../shared/indexer-progress/indexer-progress';
@@ -45,10 +45,10 @@ export class MovieDetailPage implements OnInit {
   protected readonly movie = signal<Movie | null>(null);
   protected readonly history = signal<HistoryItem[]>([]);
   protected readonly profiles = signal<QualityProfile[]>([]);
-  protected readonly releases = signal<ReleaseDecision[]>([]);
-  protected readonly indexerSearch = new IndexerSearch();
-  /** The API returns releases best first. */
-  protected readonly releaseSort = new TableSort(this.indexerSearch.filter(this.releases), {
+  protected readonly releaseSearch = new ReleaseSearch<ReleaseDecision>();
+  /** Best first, re-ranked as indexers answer. */
+  protected readonly releases = this.releaseSearch.results;
+  protected readonly releaseSort = new TableSort(this.releaseSearch.filtered, {
     release: r => r.release.title,
     indexer: r => r.release.indexerName,
     size: { value: r => r.release.size, desc: true },
@@ -57,7 +57,7 @@ export class MovieDetailPage implements OnInit {
     language: r => this.languages.describe(r.languages),
   });
   protected readonly releasesOpen = signal(false);
-  protected readonly searching = signal(false);
+  protected readonly searching = this.releaseSearch.running;
   protected readonly grabbing = signal<string | null>(null);
   protected readonly editing = signal(false);
   protected readonly confirmDelete = signal(false);
@@ -114,10 +114,8 @@ export class MovieDetailPage implements OnInit {
     this.movie.set(null);
     this.history.set([]);
     this.subtitles.set([]);
-    this.releases.set([]);
-    this.indexerSearch.reset();
+    this.releaseSearch.reset();
     this.releasesOpen.set(false);
-    this.searching.set(false);
     this.grabbing.set(null);
     this.editing.set(false);
     this.confirmDelete.set(false);
@@ -175,20 +173,17 @@ export class MovieDetailPage implements OnInit {
   async interactiveSearch() {
     const id = this.id();
     this.releasesOpen.set(true);
-    this.releases.set([]);
-    this.searching.set(true);
-    const searchId = this.indexerSearch.start();
     try {
-      const res = await this.api.movieReleases(id, searchId);
-      if (id !== this.id()) return;
-      this.releases.set(res.releases);
-      this.indexerSearch.finish(res.indexers);
+      await this.releaseSearch.run((onEvent, signal) => this.api.movieReleasesStream(id, onEvent, signal));
     } catch (e) {
-      this.indexerSearch.finish();
       this.toasts.error(errorMessage(e));
-    } finally {
-      this.searching.set(false);
     }
+  }
+
+  /** Closing the dialog stops the search. */
+  protected closeReleases() {
+    this.releaseSearch.cancel();
+    this.releasesOpen.set(false);
   }
 
   async grab(r: ReleaseDecision) {
@@ -196,7 +191,7 @@ export class MovieDetailPage implements OnInit {
     try {
       await this.api.grabMovieRelease(this.id(), r.release);
       this.toasts.success('Release sent to the download client');
-      this.releasesOpen.set(false);
+      this.closeReleases();
     } catch (e) {
       this.toasts.error(errorMessage(e));
     } finally {

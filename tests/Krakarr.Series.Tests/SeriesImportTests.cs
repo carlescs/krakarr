@@ -41,8 +41,8 @@ public sealed class SeriesImportTests : IAsyncLifetime
         public Task<IReadOnlyList<SeriesLookup>> SearchAsync(string query, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<SeriesMetadataSource> SourceAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public Task<SeriesInfo> GetSeriesAsync(SeriesIds ids, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<IndexerSearchResult> SearchAsync(SearchCriteria criteria, IReadOnlyCollection<int>? indexerIds = null,
-            IProgress<IReadOnlyList<IndexerQueryStatus>>? progress = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IndexerSearchResult> SearchAsync(SearchCriteria criteria, IReadOnlyCollection<int>? indexerIds = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IndexerSearchRun> StartAsync(SearchCriteria criteria, IReadOnlyCollection<int>? indexerIds = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<Download> GrabAsync(ReleaseInfo release, AddTorrentOptions options, CancellationToken ct = default) => throw new NotSupportedException();
     }
 

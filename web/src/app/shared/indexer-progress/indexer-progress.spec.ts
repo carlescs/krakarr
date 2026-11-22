@@ -48,7 +48,7 @@ describe('IndexerProgress', () => {
     { indexerId: 2, indexerName: 'Broken', state: 'Failed', message: 'x' },
   ];
 
-  it('lets the chips of indexers with results filter once the search finished', async () => {
+  it('lets the chips of indexers with results filter', async () => {
     const { el, component } = await render(withResults, false, new Set([4]));
     const toggled: number[] = [];
     let cleared = 0;
@@ -65,8 +65,9 @@ describe('IndexerProgress', () => {
     expect(cleared).toBe(1);
   });
 
-  it('keeps the chips plain while searching', async () => {
-    expect((await render(withResults, true, new Set())).el.querySelector('button')).toBeNull();
+  it('lets the chips filter while results still stream in', async () => {
+    const { el } = await render([...withResults, { indexerId: 3, indexerName: 'Slow', state: 'Pending' }], true, new Set());
+    expect([...el.querySelectorAll('button[data-state]')].map(b => b.textContent?.trim())).toEqual(['Nyaa 12', 'Other 3']);
   });
 
   it('keeps the chips plain without a filter', async () => {

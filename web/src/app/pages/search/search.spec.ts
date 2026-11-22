@@ -1,7 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
-import { Events } from '../../core/events';
-import { IndexerQueryStatus, SearchResult } from '../../core/models';
+import { IndexerQueryStatus, SearchResult, SearchStreamEvent } from '../../core/models';
 import { button, mockApi, settle, setupTest, text, type } from '../../../testing/test-setup';
 import { SearchPage } from './search';
 
@@ -10,18 +9,26 @@ const result = {
   quality: 'Bluray-1080p',
 } as SearchResult;
 
+type Emit = (e: SearchStreamEvent<SearchResult>) => void;
+
+/** A `searchStream` mock that replays `events` and finishes. */
+function replay(...events: SearchStreamEvent<SearchResult>[]) {
+  return async (_q: string, _t: string, onEvent: Emit) => { for (const e of events) onEvent(e); };
+}
+
+const nyaa: IndexerQueryStatus = { indexerId: 1, indexerName: 'Nyaa', state: 'Done', releases: 1, seconds: 0.4 };
+
 describe('SearchPage', () => {
   it('searches indexers and sends a release to downloads', async () => {
+    const broken: IndexerQueryStatus = { indexerId: 2, indexerName: 'Broken', state: 'Failed', message: 'timeout', seconds: 60 };
     const api = setupTest({
       api: mockApi({
-        search: async () => ({
-          results: [result],
-          errors: [{ indexerId: 2, indexerName: 'Broken', message: 'timeout' }],
-          indexers: [
-            { indexerId: 1, indexerName: 'Nyaa', state: 'Done', releases: 1, seconds: 0.4 },
-            { indexerId: 2, indexerName: 'Broken', state: 'Failed', message: 'timeout', seconds: 60 },
-          ],
-        }),
+        searchStream: replay(
+          { type: 'indexers', indexers: [{ ...nyaa, state: 'Pending' }, { ...broken, state: 'Pending' }] },
+          { type: 'releases', indexer: nyaa, releases: [result] },
+          { type: 'releases', indexer: broken, releases: [] },
+          { type: 'done', indexers: [nyaa, broken], order: ['g1'] },
+        ),
         grabRelease: async () => undefined,
         movies: async () => [],
         seriesList: async () => [],
@@ -35,7 +42,7 @@ describe('SearchPage', () => {
     await settle(fixture);
     button(el, 'Search').click();
     await settle(fixture);
-    expect(api.search).toHaveBeenCalledWith('alien', 'Movie', expect.any(String));
+    expect(api.searchStream).toHaveBeenCalledWith('alien', 'Movie', expect.any(Function), expect.any(AbortSignal));
     expect(text(el)).toContain('2 indexers queried · 1 failed');
     expect(text(el)).toContain('Broken: timeout');
     expect(text(el)).toContain('Alien.1979.1080p.BluRay');
@@ -52,7 +59,15 @@ describe('SearchPage', () => {
 
   it('sorts results by a column', async () => {
     const small = { ...result, release: { ...result.release, title: 'Alien.1979.720p', guid: 'g2', size: 1024, seeders: 40 } } as SearchResult;
-    setupTest({ api: mockApi({ search: async () => ({ results: [small, result], errors: [], indexers: [] }) }) });
+    setupTest({
+      api: mockApi({
+        searchStream: replay(
+          { type: 'indexers', indexers: [{ ...nyaa, state: 'Pending' }] },
+          { type: 'releases', indexer: nyaa, releases: [small, result] },
+          { type: 'done', indexers: [nyaa], order: ['g2', 'g1'] },
+        ),
+      }),
+    });
     const fixture = TestBed.createComponent(SearchPage);
     await settle(fixture);
     const el = fixture.nativeElement as HTMLElement;
@@ -69,7 +84,7 @@ describe('SearchPage', () => {
   });
 
   it('says when nothing was found', async () => {
-    setupTest({ api: mockApi({ search: async () => ({ results: [], errors: [], indexers: [] }) }) });
+    setupTest({ api: mockApi({ searchStream: replay({ type: 'indexers', indexers: [] }, { type: 'done', indexers: [], order: [] }) }) });
     const fixture = TestBed.createComponent(SearchPage);
     await settle(fixture);
     button(fixture.nativeElement, 'Search').click();
@@ -77,42 +92,47 @@ describe('SearchPage', () => {
     expect(text(fixture.nativeElement)).toContain('No results.');
   });
 
-  it('shows which indexers are done, still searching and failed while the search runs', async () => {
-    let respond!: (v: unknown) => void;
-    const api = setupTest({ api: mockApi({ search: () => new Promise(r => (respond = r)) }) });
+  it('shows results and indexer progress while the search runs', async () => {
+    let emit!: Emit;
+    let finish!: () => void;
+    const api = setupTest({
+      api: mockApi({ searchStream: (_q: string, _t: string, onEvent: Emit) => new Promise<void>(r => { emit = onEvent; finish = r; }) }),
+    });
     const fixture = TestBed.createComponent(SearchPage);
     await settle(fixture);
     const el = fixture.nativeElement as HTMLElement;
     button(el, 'Search').click();
     await settle(fixture);
+    expect(api.searchStream).toHaveBeenCalled();
     expect(text(el, '[data-summary]')).toBe('Searching indexers…');
 
-    const searchId = api.search.mock.calls[0][2] as string;
-    const events = TestBed.inject(Events);
     const pending: IndexerQueryStatus[] = [
       { indexerId: 1, indexerName: 'Nyaa', state: 'Pending' },
       { indexerId: 2, indexerName: 'Broken', state: 'Pending' },
       { indexerId: 3, indexerName: 'Slow', state: 'Pending' },
     ];
-    const done: IndexerQueryStatus[] = [
-      { indexerId: 1, indexerName: 'Nyaa', state: 'Done', releases: 4 },
-      { indexerId: 2, indexerName: 'Broken', state: 'Failed', message: '401 Unauthorized' },
-      pending[2],
-    ];
-    events.searchProgress.next({ searchId, indexers: done });
-    // An older snapshot arriving late doesn't undo finished indexers; other searches are ignored.
-    events.searchProgress.next({ searchId, indexers: pending });
-    events.searchProgress.next({ searchId: 'other', indexers: pending.map(p => ({ ...p, state: 'Done' as const })) });
+    emit({ type: 'indexers', indexers: pending });
+    emit({ type: 'releases', indexer: { ...pending[0], state: 'Done', releases: 1 }, releases: [result] });
+    emit({ type: 'releases', indexer: { ...pending[1], state: 'Failed', message: '401 Unauthorized' }, releases: [] });
     await settle(fixture);
 
     expect(text(el, '[data-summary]')).toBe('Searching indexers… 2 of 3 done');
     expect([...el.querySelectorAll('[data-state]')].map(c => c.getAttribute('data-state'))).toEqual(['Done', 'Failed', 'Pending']);
     expect(text(el)).toContain('Waiting for Slow');
     expect(text(el, '[data-error]')).toBe('Broken: 401 Unauthorized');
+    // Rows are already there, and grabbable, before the search ends.
+    expect(text(el)).toContain('Alien.1979.1080p.BluRay');
+    expect(text(el)).not.toContain('No results.');
 
-    respond({ results: [], errors: [], indexers: [done[0], done[1], { indexerId: 3, indexerName: 'Slow', state: 'Done', releases: 0 }] });
+    // The slow indexer has the same release from a preferred indexer: it takes the row's place.
+    const better = { ...result, release: { ...result.release, guid: 'g9', indexerName: 'Slow', seeders: 99 } } as SearchResult;
+    emit({ type: 'releases', indexer: { ...pending[2], state: 'Done', releases: 1 }, releases: [better], replaced: ['g1'] });
+    emit({ type: 'done', indexers: [{ ...pending[0], state: 'Done' }, { ...pending[1], state: 'Failed', message: '401 Unauthorized' }, { ...pending[2], state: 'Done' }], order: ['g9'] });
+    finish();
     await settle(fixture);
     expect(text(el, '[data-summary]')).toBe('3 indexers queried · 1 failed');
     expect(text(el)).not.toContain('Waiting for');
+    expect(el.querySelectorAll('tbody tr').length).toBe(1);
+    expect(text(el, 'tbody')).toContain('Slow');
   });
 });

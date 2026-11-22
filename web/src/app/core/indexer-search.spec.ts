@@ -1,37 +1,94 @@
+import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { signal } from '@angular/core';
 import { describe, expect, it } from 'vitest';
-import { setupTest } from '../../testing/test-setup';
-import { IndexerSearch, mergeStatuses } from './indexer-search';
+import { ReleaseSearch } from './indexer-search';
+import { ReleaseInfo, SearchStreamEvent } from './models';
 
-describe('mergeStatuses', () => {
-  it('takes newer states but never moves a finished indexer back to pending', () => {
-    const merged = mergeStatuses(
-      [{ indexerId: 1, indexerName: 'A', state: 'Done', releases: 3 }, { indexerId: 2, indexerName: 'B', state: 'Pending' }],
-      [{ indexerId: 1, indexerName: 'A', state: 'Pending' }, { indexerId: 2, indexerName: 'B', state: 'Failed', message: 'x' }, { indexerId: 3, indexerName: 'C', state: 'Pending' }],
-    );
-    expect(merged.map(s => s.state)).toEqual(['Done', 'Failed', 'Pending']);
-    expect(merged[0].releases).toBe(3);
-  });
+interface Row { release: ReleaseInfo; approved: boolean; qualityWeight: number }
+
+const row = (guid: string, qualityWeight: number, approved = true, seeders = 0, indexerId = 1): Row => ({
+  release: { title: guid, guid, size: 1, seeders, categories: [], indexerId, indexerName: 'X', indexerPriority: 25 },
+  approved, qualityWeight,
 });
 
-describe('IndexerSearch filter', () => {
-  it('keeps the rows of the selected indexers, all of them when none is selected, and resets on a new search', () => {
-    setupTest();
-    const search = TestBed.runInInjectionContext(() => new IndexerSearch());
-    const rows = signal([1, 2, 1, 3].map((indexerId, i) => ({ id: i, release: { indexerId } })));
-    const filtered = search.filter(rows);
-    expect(filtered().length).toBe(4);
+@Component({ selector: 'kr-host', template: '' })
+class Host { readonly search = new ReleaseSearch<Row>(); }
+
+function create() {
+  TestBed.configureTestingModule({});
+  const fixture = TestBed.createComponent(Host);
+  return { fixture, search: fixture.componentInstance.search };
+}
+
+describe('ReleaseSearch', () => {
+  it('ranks rows as they arrive, replaces duplicates and applies the final ranking', async () => {
+    const { search } = create();
+    let emit!: (e: SearchStreamEvent<Row>) => void;
+    let finish!: () => void;
+    const running = search.run(onEvent => new Promise<void>(r => { emit = onEvent; finish = r; }));
+    expect(search.running()).toBe(true);
+
+    emit({ type: 'indexers', indexers: [{ indexerId: 1, indexerName: 'A', state: 'Pending' }, { indexerId: 2, indexerName: 'B', state: 'Pending' }] });
+    emit({ type: 'releases', indexer: { indexerId: 1, indexerName: 'A', state: 'Done', releases: 3 }, releases: [row('low', 1), row('rejected', 9, false), row('high', 5)] });
+    expect(search.results().map(r => r.release.guid)).toEqual(['high', 'low', 'rejected']);
+    expect(search.indexers().map(s => s.state)).toEqual(['Done', 'Pending']);
+
+    emit({ type: 'releases', indexer: { indexerId: 2, indexerName: 'B', state: 'Done', releases: 1 }, releases: [row('low2', 1, true, 50)], replaced: ['low'] });
+    expect(search.results().map(r => r.release.guid)).toEqual(['high', 'low2', 'rejected']);
+
+    emit({ type: 'done', indexers: [], order: ['low2', 'high', 'rejected'] });
+    finish();
+    await running;
+    expect(search.results().map(r => r.release.guid)).toEqual(['low2', 'high', 'rejected']);
+    expect(search.running()).toBe(false);
+  });
+
+  it('cancelling aborts the request, ignores late events and does not reject', async () => {
+    const { search } = create();
+    let emit!: (e: SearchStreamEvent<Row>) => void;
+    let signal!: AbortSignal;
+    const running = search.run((onEvent, s) => new Promise<void>((_, reject) => {
+      emit = onEvent;
+      signal = s;
+      s.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+    }));
+    search.cancel();
+    await expect(running).resolves.toBeUndefined();
+    expect(signal.aborted).toBe(true);
+    emit({ type: 'releases', releases: [row('late', 1)] });
+    expect(search.results()).toEqual([]);
+    expect(search.running()).toBe(false);
+  });
+
+  it('a new search cancels the previous one', async () => {
+    const { search } = create();
+    let first!: AbortSignal;
+    void search.run((_, s) => { first = s; return new Promise<void>(() => {}); });
+    void search.run(() => new Promise<void>(() => {}));
+    expect(first.aborted).toBe(true);
+    expect(search.running()).toBe(true);
+  });
+
+  it('destroying the owner cancels the search', () => {
+    const { fixture, search } = create();
+    let signal!: AbortSignal;
+    void search.run((_, s) => { signal = s; return new Promise<void>(() => {}); });
+    fixture.destroy();
+    expect(signal.aborted).toBe(true);
+  });
+
+  it('filters the rows by the selected indexers and clears the filter on a new search', async () => {
+    const { search } = create();
+    await search.run(async onEvent => onEvent({ type: 'releases', releases: [row('a', 3, true, 0, 1), row('b', 2, true, 0, 2), row('c', 1, true, 0, 3)] }));
+    expect(search.filtered().map(r => r.release.guid)).toEqual(['a', 'b', 'c']);
 
     search.toggle(1);
-    expect(filtered().map(r => r.id)).toEqual([0, 2]);
     search.toggle(3);
-    expect(filtered().map(r => r.id)).toEqual([0, 2, 3]);
+    expect(search.filtered().map(r => r.release.guid)).toEqual(['a', 'c']);
     search.toggle(1);
-    expect(filtered().map(r => r.id)).toEqual([3]);
+    expect(search.filtered().map(r => r.release.guid)).toEqual(['c']);
 
-    search.start();
+    await search.run(async () => {});
     expect(search.selected().size).toBe(0);
-    expect(filtered().length).toBe(4);
   });
 });

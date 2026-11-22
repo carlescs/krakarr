@@ -18,9 +18,9 @@ export class IndexerProgress {
   readonly toggled = output<number>();
   readonly cleared = output<void>();
 
-  /** Chips filter only once the search finished, and only when more than one indexer returned results. */
+  /** Chips filter (also while results still stream in) once more than one indexer returned results. */
   protected readonly filterable = computed(() =>
-    this.selected() !== null && !this.searching() && this.indexers().filter(s => (s.releases ?? 0) > 0).length > 1);
+    this.selected() !== null && this.indexers().filter(s => (s.releases ?? 0) > 0).length > 1);
 
   protected readonly finished = computed(() => this.indexers().filter(s => s.state !== 'Pending').length);
   protected readonly failed = computed(() => this.indexers().filter(s => s.state === 'Failed'));
