@@ -40,13 +40,22 @@ export class AddSeriesModal implements OnInit {
   protected monitor: MonitorMode = 'All';
   protected seasonFolder = true;
   protected searchNow = true;
+  /** Title to add the show under; blank = the metadata title. */
+  protected title = '';
 
   async ngOnInit() {
+    this.title = this.show().title;
     const [folders, profiles] = await Promise.all([this.api.rootFolders(), this.api.qualityProfiles()]);
     this.rootFolders.set(folders.filter(f => f.mediaType === 'Series'));
     this.profiles.set(profiles);
     this.rootFolder = this.rootFolders()[0]?.path ?? '';
     this.profileId = profiles[0]?.id ?? 0;
+  }
+
+  /** The typed title when it differs from the metadata one, so the server only stores real edits. */
+  private customTitle(): string | undefined {
+    const t = this.title.trim();
+    return t && t !== this.show().title ? t : undefined;
   }
 
   async add() {
@@ -56,7 +65,7 @@ export class AddSeriesModal implements OnInit {
       if (request) {
         const approved = await this.api.approveRequest(request.id, {
           qualityProfileId: this.profileId, rootFolderPath: this.rootFolder, monitor: this.monitor, seasonFolder: this.seasonFolder,
-          searchNow: this.searchNow,
+          searchNow: this.searchNow, title: this.customTitle(),
         });
         this.toasts.success(`Approved ${approved.title}`);
         this.approved.emit(approved);
@@ -65,7 +74,7 @@ export class AddSeriesModal implements OnInit {
       const show = this.show();
       const created = await this.api.addSeries({
         tmdbId: show.tmdbId, tvdbId: show.tvdbId, qualityProfileId: this.profileId, rootFolderPath: this.rootFolder, monitor: this.monitor,
-        seasonFolder: this.seasonFolder, searchForMissing: this.searchNow,
+        seasonFolder: this.seasonFolder, searchForMissing: this.searchNow, title: this.customTitle(),
       });
       this.toasts.success(`Added ${created.title}`);
       this.added.emit(created);

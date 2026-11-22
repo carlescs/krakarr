@@ -141,6 +141,8 @@ export interface SeasonInfo {
 }
 export interface Series {
   id: number; tmdbId?: number; tvdbId?: number; imdbId?: string; title: string; year: number; overview?: string; posterUrl?: string; fanartUrl?: string;
+  /** Title from the metadata source; differs from `title` when the user edited it. */
+  metadataTitle: string;
   network?: string; runtime: number; status: SeriesStatus; monitored: boolean; seasonFolder: boolean; qualityProfileId: number; path: string;
   added: string; episodeCount: number; episodeFileCount: number; sizeOnDisk: number; nextAiring?: string; downloadingCount: number;
   seasons: SeasonInfo[];
@@ -299,6 +301,8 @@ export interface MediaRequestPage { results: MediaRequest[]; page: number; total
 export interface ApproveRequestOptions {
   qualityProfileId: number; rootFolderPath: string; searchNow: boolean;
   monitored?: boolean; minimumAvailability?: MinimumAvailability; monitor?: MonitorMode; seasonFolder?: boolean;
+  /** Series only: title to use instead of the metadata one; blank = the metadata title. */
+  title?: string;
 }
 
 export type NotificationSeverity = 'Info' | 'Warning' | 'Error';
