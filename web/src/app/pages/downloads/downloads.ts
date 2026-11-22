@@ -66,7 +66,15 @@ export function clientLabel(kind: DownloadClientKind | DownloadClientName): stri
   return kind === 'QBittorrent' || kind === 'qbittorrent' ? 'qBittorrent' : 'Built-in';
 }
 
-/** The list shows either seeding torrents or everything else; the default is the non-seeding view. */
+/**
+ * Finished torrents go on the Seeding tab, whether they are still uploading or stopped: qBittorrent keeps completed
+ * downloads seeding, and reports them as completed (pausedUP/stoppedUP) once stopped.
+ */
+export function isFinished(d: TorrentStatus): boolean {
+  return d.state === 'Seeding' || d.state === 'Completed' || (d.state === 'Paused' && d.progress >= 100);
+}
+
+/** The list shows either finished (seeding) torrents or everything else; the default is the downloading view. */
 function readShowSeeding(): boolean {
   try { return localStorage.getItem(SHOW_SEEDING_KEY) === 'true'; } catch { return false; }
 }
@@ -84,12 +92,12 @@ export class DownloadsPage implements OnInit, OnDestroy {
 
   protected readonly list = computed(() => this.events.downloads());
   protected readonly showSeeding = signal(readShowSeeding());
-  protected readonly seedingCount = computed(() => this.list().filter(d => d.state === 'Seeding').length);
+  protected readonly seedingCount = computed(() => this.list().filter(isFinished).length);
   protected readonly sorts = SORTS;
   protected readonly sort = signal(readSort());
   protected readonly visible = computed(() => {
     const seeding = this.showSeeding();
-    return sortTorrents(this.list().filter(d => (d.state === 'Seeding') === seeding), this.sort());
+    return sortTorrents(this.list().filter(d => isFinished(d) === seeding), this.sort());
   });
   /** Multi-selection for bulk pause/resume/remove; only torrents in the current view (downloading or seeding) count. */
   protected readonly selection = new Selection(this.visible, d => d.infoHash);
