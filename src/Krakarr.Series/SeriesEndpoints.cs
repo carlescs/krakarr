@@ -1,5 +1,4 @@
 using Krakarr.Core.Domain;
-using Krakarr.Core.Events;
 using Krakarr.Core.Jobs;
 using Krakarr.Core.Metadata;
 using Krakarr.Data;
@@ -60,7 +59,11 @@ public sealed record EpisodeDto(
 public sealed record UpdateSeriesRequest(bool Monitored, int QualityProfileId, bool SeasonFolder, IReadOnlyList<string>? Languages = null);
 public sealed record MonitorRequest(bool Monitored);
 public sealed record SeriesSearchRequest(int? SeasonNumber, IReadOnlyList<int>? EpisodeIds);
-public sealed record EpisodeReleaseDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections, string? Episodes, bool SeasonPack, IReadOnlyList<string> Languages);
+public sealed record EpisodeReleaseDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections, string? Episodes, bool SeasonPack, IReadOnlyList<string> Languages)
+{
+    public static EpisodeReleaseDto From(EpisodeDecision d) => new(d.Release, d.Quality.Name, d.Quality.Weight, d.Approved, d.Rejections,
+        d.Episodes.Count > 0 ? SeriesService.Codes(d.Episodes) : null, d.IsSeasonPack, d.Languages);
+}
 public sealed record GrabEpisodeReleaseRequest(ReleaseInfo Release);
 
 public static class SeriesEndpoints
@@ -375,8 +378,8 @@ public static class SeriesEndpoints
             return Results.Accepted(value: command);
         });
 
-        // searchId (optional, client-generated): stream per-indexer progress as EventNames.SearchProgress while the search runs.
-        group.MapGet("/{id:int}/releases", async (int id, int? season, int? episodeId, string? searchId, SeriesService service, IEventHub events, CancellationToken ct) =>
+        // With "Accept: application/x-ndjson" the releases stream in as each indexer answers (SearchStream).
+        group.MapGet("/{id:int}/releases", async (int id, int? season, int? episodeId, HttpRequest request, SeriesService service, CancellationToken ct) =>
         {
             var series = await service.LoadAsync(id, ct);
             if (series is null) return Results.NotFound();
@@ -384,11 +387,12 @@ public static class SeriesEndpoints
             if (episodeId is not null && episode is null) return Results.NotFound();
             if (episode is null && season is null) return Results.Problem("Specify a season or an episode", statusCode: 400);
 
-            var (decisions, errors, indexers) = await service.SearchAsync(series, season, episode, requireMonitored: false, IndexerSearchProgress.For(events, searchId), ct);
+            if (SearchStream.Requested(request)) return SearchStream.Result(service.SearchStreamAsync(series, season, episode, ct));
+
+            var (decisions, errors, indexers) = await service.SearchAsync(series, season, episode, requireMonitored: false, ct);
             return Results.Ok(new
             {
-                Releases = decisions.Select(d => new EpisodeReleaseDto(d.Release, d.Quality.Name, d.Quality.Weight, d.Approved, d.Rejections,
-                    d.Episodes.Count > 0 ? SeriesService.Codes(d.Episodes) : null, d.IsSeasonPack, d.Languages)),
+                Releases = decisions.Select(EpisodeReleaseDto.From),
                 Errors = errors,
                 Indexers = indexers,
             });

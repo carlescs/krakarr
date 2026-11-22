@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Events;
@@ -234,22 +235,11 @@ public sealed class SeriesService(
     // ---- Search & grab -----------------------------------------------------------------------
 
     /// <summary>Searches indexers for a season or a single episode and evaluates every release.</summary>
-    /// <param name="progress">Optional per-indexer progress (see <see cref="IIndexerSearchService.SearchAsync"/>).</param>
     public async Task<(IReadOnlyList<EpisodeDecision> Decisions, IReadOnlyList<IndexerError> Errors, IReadOnlyList<IndexerQueryStatus> Indexers)> SearchAsync(
-        Core.Domain.Series series, int? seasonNumber, Episode? episode, bool requireMonitored,
-        IProgress<IReadOnlyList<IndexerQueryStatus>>? progress = null, CancellationToken ct = default)
+        Core.Domain.Series series, int? seasonNumber, Episode? episode, bool requireMonitored, CancellationToken ct = default)
     {
         var season = episode?.SeasonNumber ?? seasonNumber;
-        var result = await indexerSearch.SearchAsync(new SearchCriteria
-        {
-            Type = SearchType.Tv,
-            Query = SeriesNaming.BaseTitle(series.Title),
-            TvdbId = series.TvdbId,
-            // Only fall back to the TMDB id: indexers that know both prefer it, but TV releases are mostly tagged by TVDB id.
-            TmdbId = series.TvdbId is null ? series.TmdbId : null,
-            Season = season,
-            Episode = episode?.EpisodeNumber,
-        }, progress: progress, ct: ct);
+        var result = await indexerSearch.SearchAsync(Criteria(series, season, episode), ct: ct);
 
         series.LastSearched = time.GetUtcNow();
         await db.SaveChangesAsync(ct);
@@ -259,6 +249,36 @@ public sealed class SeriesService(
         var decisions = EpisodeDecisionEngine.Evaluate(series, series.QualityProfile!, series.Episodes, result.Releases, scope, requireMonitored, Today, languages);
         return (decisions, result.Errors, result.Indexers);
     }
+
+    /// <summary>Interactive search for a season or an episode that hands out evaluated releases as each indexer answers (see <see cref="SearchStream"/>).</summary>
+    public async IAsyncEnumerable<SearchStreamEvent<EpisodeReleaseDto>> SearchStreamAsync(
+        Core.Domain.Series series, int? seasonNumber, Episode? episode, [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var season = episode?.SeasonNumber ?? seasonNumber;
+        var scope = new SearchScope(season, episode is null ? null : new HashSet<int> { episode.Id });
+        var languages = (await settings.GetAsync<LanguageSettings>(ct)).For(series.Languages);
+
+        var run = await indexerSearch.StartAsync(Criteria(series, season, episode), ct: ct);
+        series.LastSearched = time.GetUtcNow();
+        await db.SaveChangesAsync(ct);
+
+        var events = run.EventsAsync(
+            releases => EpisodeDecisionEngine.Evaluate(series, series.QualityProfile!, series.Episodes, releases, scope, requireMonitored: false, Today, languages)
+                .Select(EpisodeReleaseDto.From).ToList(),
+            row => row.Release, ct);
+        await foreach (var e in events) yield return e;
+    }
+
+    private static SearchCriteria Criteria(Core.Domain.Series series, int? season, Episode? episode) => new()
+    {
+        Type = SearchType.Tv,
+        Query = SeriesNaming.BaseTitle(series.Title),
+        TvdbId = series.TvdbId,
+        // Only fall back to the TMDB id: indexers that know both prefer it, but TV releases are mostly tagged by TVDB id.
+        TmdbId = series.TvdbId is null ? series.TmdbId : null,
+        Season = season,
+        Episode = episode?.EpisodeNumber,
+    };
 
     /// <summary>
     /// Automatic search: for each season with wanted episodes, search the season (packs and single episodes),
@@ -311,14 +331,14 @@ public sealed class SeriesService(
             // Single episodes are searched directly; several missing episodes trigger a season search first.
             if (seasonWanted.Count > 1 || episodeIds is null or { Count: 0 })
             {
-                var (decisions, errs, _) = await SearchAsync(series, season.Key, null, requireMonitored: true, ct: ct);
+                var (decisions, errs, _) = await SearchAsync(series, season.Key, null, requireMonitored: true, ct);
                 errors += errs.Count;
                 await GrabSelectionAsync(series, decisions, covered, grabbed, ct);
             }
 
             foreach (var episode in seasonWanted.Where(e => !covered.Contains(e.Id)).Take(20))
             {
-                var (decisions, errs, _) = await SearchAsync(series, null, episode, requireMonitored: true, ct: ct);
+                var (decisions, errs, _) = await SearchAsync(series, null, episode, requireMonitored: true, ct);
                 errors += errs.Count;
                 await GrabSelectionAsync(series, decisions, covered, grabbed, ct);
             }

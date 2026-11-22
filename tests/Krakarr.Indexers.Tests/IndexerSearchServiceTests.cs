@@ -10,30 +10,30 @@ namespace Krakarr.Indexers.Tests;
 public sealed class IndexerSearchServiceTests : IAsyncLifetime
 {
     private readonly SqliteConnection _connection = new("Data Source=:memory:");
+    private readonly FakeTorznab _torznab = new();
     private ServiceProvider _services = null!;
 
-    /// <summary>"Good" returns one release, "Broken" throws, anything else times out (cancelled).</summary>
+    /// <summary>"Good" returns one release, "Broken" throws, "Slow" times out (cancelled) once <see cref="Gate"/> opens.</summary>
     private sealed class FakeTorznab : ITorznabClient
     {
-        public Task<IReadOnlyList<ReleaseInfo>> SearchAsync(Indexer indexer, SearchCriteria criteria, CancellationToken ct = default) => indexer.Name switch
+        public TaskCompletionSource Gate { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<IReadOnlyList<ReleaseInfo>> SearchAsync(Indexer indexer, SearchCriteria criteria, CancellationToken ct = default)
         {
-            "Good" => Task.FromResult<IReadOnlyList<ReleaseInfo>>(
-                [new ReleaseInfo { Title = "Movie.2024.1080p", Guid = "g1", IndexerId = indexer.Id, IndexerName = indexer.Name }]),
-            "Broken" => throw new IndexerException("401 Unauthorized"),
-            _ => throw new TaskCanceledException(),
-        };
+            switch (indexer.Name)
+            {
+                case "Good":
+                    return [new ReleaseInfo { Title = "Movie.2024.1080p", Guid = "g1", IndexerId = indexer.Id, IndexerName = indexer.Name }];
+                case "Broken":
+                    throw new IndexerException("401 Unauthorized");
+                default:
+                    await Gate.Task;
+                    throw new TaskCanceledException();
+            }
+        }
 
         public Task<IndexerCapabilities> GetCapabilitiesAsync(Indexer indexer, bool forceRefresh = false, CancellationToken ct = default) =>
             throw new NotSupportedException();
-    }
-
-    private sealed class Collect : IProgress<IReadOnlyList<IndexerQueryStatus>>
-    {
-        public List<IReadOnlyList<IndexerQueryStatus>> Reports { get; } = [];
-        public void Report(IReadOnlyList<IndexerQueryStatus> value)
-        {
-            lock (Reports) Reports.Add(value);
-        }
     }
 
     public async ValueTask InitializeAsync()
@@ -59,42 +59,61 @@ public sealed class IndexerSearchServiceTests : IAsyncLifetime
         await _connection.DisposeAsync();
     }
 
+    private IndexerSearchService Service(IServiceScope scope) =>
+        new(scope.ServiceProvider.GetRequiredService<KrakarrDbContext>(), _torznab, NullLogger<IndexerSearchService>.Instance);
+
+    private static readonly SearchCriteria Criteria = new() { Type = SearchType.Movie, Query = "movie" };
+
     [Fact]
-    public async Task Reports_each_indexer_status_as_it_finishes()
+    public async Task Hands_out_each_indexer_result_without_waiting_for_the_slow_ones()
     {
         using var scope = _services.CreateScope();
-        var service = new IndexerSearchService(scope.ServiceProvider.GetRequiredService<KrakarrDbContext>(), new FakeTorznab(), NullLogger<IndexerSearchService>.Instance);
-        var progress = new Collect();
+        var ct = TestContext.Current.CancellationToken;
+        var run = await Service(scope).StartAsync(Criteria, ct: ct);
 
-        var result = await service.SearchAsync(new SearchCriteria { Type = SearchType.Movie, Query = "movie" }, progress: progress,
-            ct: TestContext.Current.CancellationToken);
+        // The disabled indexer is never queried.
+        Assert.Equal(["Broken", "Good", "Slow"], run.Indexers.Select(s => s.IndexerName).Order());
+        Assert.All(run.Indexers, s => Assert.Equal(IndexerQueryState.Pending, s.State));
 
-        // First all pending, then one report per finished indexer; the disabled one is never queried.
-        Assert.Equal(4, progress.Reports.Count);
-        Assert.All(progress.Reports[0], s => Assert.Equal(IndexerQueryState.Pending, s.State));
-        Assert.Equal(["Broken", "Good", "Slow"], progress.Reports[0].Select(s => s.IndexerName).Order());
-        Assert.All(progress.Reports.Skip(1), r => Assert.Equal(3, r.Count));
+        await using var results = run.Results.GetAsyncEnumerator(ct);
+        var early = new List<IndexerQueryResult>();
+        for (var i = 0; i < 2; i++)
+        {
+            Assert.True(await results.MoveNextAsync());
+            early.Add(results.Current);
+        }
+
+        // "Slow" is still blocked, yet both others have been handed out.
+        var good = Assert.Single(early, r => r.Status.IndexerName == "Good");
+        Assert.Equal(IndexerQueryState.Done, good.Status.State);
+        Assert.Equal(1, good.Status.Releases);
+        Assert.Single(good.Releases);
+        var broken = Assert.Single(early, r => r.Status.IndexerName == "Broken");
+        Assert.Equal(IndexerQueryState.Failed, broken.Status.State);
+        Assert.Equal("401 Unauthorized", broken.Status.Message);
+        Assert.Empty(broken.Releases);
+
+        _torznab.Gate.SetResult();
+        Assert.True(await results.MoveNextAsync());
+        Assert.Equal("Slow", results.Current.Status.IndexerName);
+        Assert.Contains("Timed out", results.Current.Status.Message);
+        Assert.False(await results.MoveNextAsync());
+    }
+
+    [Fact]
+    public async Task Search_waits_for_every_indexer_and_reports_their_statuses()
+    {
+        using var scope = _services.CreateScope();
+        _torznab.Gate.SetResult();
+        var result = await Service(scope).SearchAsync(Criteria, ct: TestContext.Current.CancellationToken);
 
         var byName = result.Indexers.ToDictionary(s => s.IndexerName);
         Assert.Equal(3, byName.Count);
         Assert.Equal(IndexerQueryState.Done, byName["Good"].State);
-        Assert.Equal(1, byName["Good"].Releases);
         Assert.Equal(IndexerQueryState.Failed, byName["Broken"].State);
-        Assert.Equal("401 Unauthorized", byName["Broken"].Message);
         Assert.Equal(IndexerQueryState.Failed, byName["Slow"].State);
-        Assert.Contains("Timed out", byName["Slow"].Message);
         Assert.All(result.Indexers, s => Assert.NotNull(s.Seconds));
-
         Assert.Single(result.Releases);
         Assert.Equal(["Broken", "Slow"], result.Errors.Select(e => e.IndexerName).Order());
-    }
-
-    [Fact]
-    public async Task Search_without_progress_still_returns_statuses()
-    {
-        using var scope = _services.CreateScope();
-        var service = new IndexerSearchService(scope.ServiceProvider.GetRequiredService<KrakarrDbContext>(), new FakeTorznab(), NullLogger<IndexerSearchService>.Instance);
-        var result = await service.SearchAsync(new SearchCriteria { Type = SearchType.Movie, Query = "movie" }, ct: TestContext.Current.CancellationToken);
-        Assert.Equal(3, result.Indexers.Count);
     }
 }

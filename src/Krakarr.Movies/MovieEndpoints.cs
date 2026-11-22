@@ -1,6 +1,5 @@
 using Krakarr.Core.Metadata;
 using Krakarr.Core.Domain;
-using Krakarr.Core.Events;
 using Krakarr.Core.Jobs;
 using Krakarr.Data;
 using Krakarr.Downloads;
@@ -65,7 +64,10 @@ public sealed record MovieCollectionDto(int Id, int TmdbId, string Name, string?
 /// <param name="Languages">Wanted audio languages, most preferred first; null = use the global default.</param>
 public sealed record UpdateMovieRequest(bool Monitored, int QualityProfileId, MinimumAvailability? MinimumAvailability = null, IReadOnlyList<string>? Languages = null);
 
-public sealed record ReleaseDecisionDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections, IReadOnlyList<string> Languages);
+public sealed record ReleaseDecisionDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections, IReadOnlyList<string> Languages)
+{
+    public static ReleaseDecisionDto From(ReleaseDecision d) => new(d.Release, d.Quality.Name, d.Quality.Weight, d.Approved, d.Rejections, d.Languages);
+}
 
 public sealed record GrabMovieReleaseRequest(ReleaseInfo Release);
 
@@ -323,15 +325,17 @@ public static class MovieEndpoints
             return Results.Accepted(value: command);
         });
 
-        // searchId (optional, client-generated): stream per-indexer progress as EventNames.SearchProgress while the search runs.
-        group.MapGet("/{id:int}/releases", async (int id, string? searchId, KrakarrDbContext db, MovieService movies, IEventHub events, CancellationToken ct) =>
+        // With "Accept: application/x-ndjson" the releases stream in as each indexer answers (SearchStream).
+        group.MapGet("/{id:int}/releases", async (int id, HttpRequest request, KrakarrDbContext db, MovieService movies, CancellationToken ct) =>
         {
             var movie = await db.Movies.Include(m => m.QualityProfile).FirstOrDefaultAsync(m => m.Id == id, ct);
             if (movie is null) return Results.NotFound();
-            var (decisions, errors, indexers) = await movies.SearchAsync(movie, IndexerSearchProgress.For(events, searchId), ct);
+            if (SearchStream.Requested(request)) return SearchStream.Result(movies.SearchStreamAsync(movie, ct));
+
+            var (decisions, errors, indexers) = await movies.SearchAsync(movie, ct);
             return Results.Ok(new
             {
-                Releases = decisions.Select(d => new ReleaseDecisionDto(d.Release, d.Quality.Name, d.Quality.Weight, d.Approved, d.Rejections, d.Languages)),
+                Releases = decisions.Select(ReleaseDecisionDto.From),
                 Errors = errors,
                 Indexers = indexers,
             });

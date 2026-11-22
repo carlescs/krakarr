@@ -1,9 +1,12 @@
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
-import { Injectable, inject } from '@angular/core';
+import { Injectable, Injector, inject } from '@angular/core';
+import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
+import { Auth } from './auth';
+import { readNdjson } from './ndjson';
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
-  IndexerError, IndexerQueryStatus, IndexerTestResult, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListItem, MovieLookup, Quality, QualityProfile,
+  IndexerTestResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, Episode, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListItem, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
   DashboardStats, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction,
 } from './models';
@@ -40,12 +43,38 @@ type SettingsMap = {
 @Injectable({ providedIn: 'root' })
 export class Api {
   private readonly http = inject(HttpClient);
+  private readonly injector = inject(Injector);
 
-  private get<T>(url: string, params?: Record<string, string | number | boolean | null | undefined>) {
+  private static params(params?: Record<string, string | number | boolean | null | undefined>) {
     let p = new HttpParams();
     // Skip null too: `String(null)` would send "null", which the API can't bind to an int? (400).
     for (const [k, v] of Object.entries(params ?? {})) if (v != null && v !== '') p = p.set(k, String(v));
-    return firstValueFrom(this.http.get<T>(`${API}/${url}`, { params: p }));
+    return p;
+  }
+
+  private get<T>(url: string, params?: Record<string, string | number | boolean | null | undefined>) {
+    return firstValueFrom(this.http.get<T>(`${API}/${url}`, { params: Api.params(params) }));
+  }
+
+  /**
+   * GETs a streamed (newline-delimited JSON) response, calling `onEvent` per line as it arrives. Uses `fetch`, as
+   * HttpClient only hands out the body at the end; failures throw an `HttpErrorResponse` (see `errorMessage`) and a
+   * 401 sends the user to the login page, like the HTTP interceptor.
+   */
+  private async stream<T>(url: string, params: Record<string, string | number | boolean | null | undefined>,
+    onEvent: (e: T) => void, signal: AbortSignal): Promise<void> {
+    const query = Api.params(params).toString();
+    const target = `${API}/${url}${query ? `?${query}` : ''}`;
+    const res = await fetch(target, { headers: { Accept: 'application/x-ndjson' }, credentials: 'same-origin', signal });
+    if (!res.ok || !res.body) {
+      const error = await res.json().catch(() => null);
+      if (res.status === 401) {
+        this.injector.get(Auth).markLoggedOut();
+        this.injector.get(Router).navigateByUrl('/login');
+      }
+      throw new HttpErrorResponse({ status: res.status, statusText: res.statusText, error, url: target });
+    }
+    await readNdjson(res.body, onEvent);
   }
   private post<T>(url: string, body: unknown = {}) { return firstValueFrom(this.http.post<T>(`${API}/${url}`, body)); }
   private put<T>(url: string, body: unknown) { return firstValueFrom(this.http.put<T>(`${API}/${url}`, body)); }
@@ -98,9 +127,9 @@ export class Api {
   deleteIndexer(id: number) { return this.delete<void>(`indexers/${id}`); }
   testIndexer(i: Indexer) { return this.post<IndexerTestResult>('indexers/test', i); }
   indexerCapabilities(i: Indexer) { return this.post<IndexerTestResult>('indexers/capabilities', i); }
-  /** `searchId` tags the live `searchProgress` events (see `IndexerSearch`). */
-  search(query: string, type: SearchType, searchId?: string) {
-    return this.get<{ results: SearchResult[]; errors: IndexerError[]; indexers: IndexerQueryStatus[] }>('search', { query, type, searchId });
+  /** Streamed: results arrive as each indexer answers (see `ReleaseSearch`). */
+  searchStream(query: string, type: SearchType, onEvent: (e: SearchStreamEvent<SearchResult>) => void, signal: AbortSignal) {
+    return this.stream('search', { query, type }, onEvent, signal);
   }
 
   // Downloads
@@ -150,8 +179,9 @@ export class Api {
   }
   deleteMovie(id: number, deleteFiles: boolean) { return this.delete<void>(`movies/${id}`, { deleteFiles }); }
   searchMovie(id: number) { return this.post<CommandInfo>(`movies/${id}/search`); }
-  movieReleases(id: number, searchId?: string) {
-    return this.get<{ releases: ReleaseDecision[]; errors: IndexerError[]; indexers: IndexerQueryStatus[] }>(`movies/${id}/releases`, { searchId });
+  /** Interactive search, streamed (see `ReleaseSearch`). */
+  movieReleasesStream(id: number, onEvent: (e: SearchStreamEvent<ReleaseDecision>) => void, signal: AbortSignal) {
+    return this.stream(`movies/${id}/releases`, {}, onEvent, signal);
   }
   grabMovieRelease(id: number, release: ReleaseInfo) { return this.post<unknown>(`movies/${id}/releases/grab`, { release }); }
   history(movieId?: number, page = 1, pageSize = 50, seriesId?: number) {
@@ -230,8 +260,10 @@ export class Api {
   searchSeries(id: number, seasonNumber?: number, episodeIds?: number[]) {
     return this.post<CommandInfo>(`series/${id}/search`, { seasonNumber: seasonNumber ?? null, episodeIds: episodeIds ?? null });
   }
-  seriesReleases(id: number, season?: number, episodeId?: number, searchId?: string) {
-    return this.get<{ releases: EpisodeRelease[]; errors: IndexerError[]; indexers: IndexerQueryStatus[] }>(`series/${id}/releases`, { season, episodeId, searchId });
+  /** Interactive search for a season or an episode, streamed (see `ReleaseSearch`). */
+  seriesReleasesStream(id: number, season: number | undefined, episodeId: number | undefined,
+    onEvent: (e: SearchStreamEvent<EpisodeRelease>) => void, signal: AbortSignal) {
+    return this.stream(`series/${id}/releases`, { season, episodeId }, onEvent, signal);
   }
   grabSeriesRelease(id: number, release: ReleaseInfo) { return this.post<unknown>(`series/${id}/releases/grab`, { release }); }
   deleteEpisodeFile(id: number) { return this.delete<void>(`episodefiles/${id}`); }

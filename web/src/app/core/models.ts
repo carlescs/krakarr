@@ -41,8 +41,15 @@ export type IndexerQueryState = 'Pending' | 'Done' | 'Failed';
 export interface IndexerQueryStatus {
   indexerId: number; indexerName: string; state: IndexerQueryState; releases?: number | null; message?: string | null; seconds?: number | null;
 }
-/** Live per-indexer progress of the search tagged `searchId`. */
-export interface SearchProgress { searchId: string; indexers: IndexerQueryStatus[]; }
+/**
+ * One line of a streamed interactive search: first `indexers` (all pending), then `releases` each time an indexer
+ * answers (its new rows, replacing the rows whose release guids are in `replaced`), and last `done` with the final
+ * statuses and every row's release guid in rank order.
+ */
+export interface SearchStreamEvent<T> {
+  type: 'indexers' | 'releases' | 'done';
+  indexers?: IndexerQueryStatus[] | null; indexer?: IndexerQueryStatus | null; releases?: T[] | null; replaced?: string[] | null; order?: string[] | null;
+}
 
 export interface ReleaseInfo {
   title: string; guid: string; downloadUrl?: string; magnetUrl?: string; infoHash?: string; infoUrl?: string;

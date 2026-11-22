@@ -1,5 +1,4 @@
 using Krakarr.Core.Domain;
-using Krakarr.Core.Events;
 using Krakarr.Data;
 using Krakarr.Media.Parsing;
 using Microsoft.AspNetCore.Builder;
@@ -95,13 +94,13 @@ public static class IndexerEndpoints
             }
         });
 
-        // Manual search across indexers (Prowlarr-style).
+        // Manual search across indexers (Prowlarr-style). With "Accept: application/x-ndjson" the results stream in as each indexer answers (SearchStream).
         app.MapGet("/api/v1/search", async (
-            string? query, SearchType? type, string? imdbId, int? tmdbId, int? tvdbId, int? season, int? episode, string? indexerIds, string? searchId,
-            IIndexerSearchService search, IEventHub events, CancellationToken ct) =>
+            string? query, SearchType? type, string? imdbId, int? tmdbId, int? tvdbId, int? season, int? episode, string? indexerIds,
+            HttpRequest request, IIndexerSearchService search, CancellationToken ct) =>
         {
             var ids = indexerIds?.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToList();
-            var result = await search.SearchAsync(new SearchCriteria
+            var criteria = new SearchCriteria
             {
                 Type = type ?? SearchType.Generic,
                 Query = query,
@@ -110,24 +109,36 @@ public static class IndexerEndpoints
                 TvdbId = tvdbId,
                 Season = season,
                 Episode = episode,
-            }, ids, IndexerSearchProgress.For(events, searchId), ct);
+            };
 
-            return new
+            if (SearchStream.Requested(request))
             {
-                Results = result.Releases
-                    .Select(r =>
-                    {
-                        var parsed = ReleaseParser.Parse(r.Title);
-                        return new SearchResultDto(r, parsed.Quality.Name, parsed.Title, parsed.Year);
-                    })
-                    .OrderByDescending(r => r.Release.Seeders ?? 0),
+                var run = await search.StartAsync(criteria, ids, ct);
+                return SearchStream.Result(run.EventsAsync(ToSearchResults, r => r.Release, ct));
+            }
+
+            var result = await search.SearchAsync(criteria, ids, ct);
+            return Results.Ok(new
+            {
+                Results = ToSearchResults(result.Releases),
                 result.Errors,
                 result.Indexers,
-            };
+            });
         }).WithTags("Search");
 
         return app;
     }
+
+    /// <summary>Parsed search results, most seeders first.</summary>
+    private static IReadOnlyList<SearchResultDto> ToSearchResults(IReadOnlyList<ReleaseInfo> releases) =>
+        releases
+            .Select(r =>
+            {
+                var parsed = ReleaseParser.Parse(r.Title);
+                return new SearchResultDto(r, parsed.Quality.Name, parsed.Title, parsed.Year);
+            })
+            .OrderByDescending(r => r.Release.Seeders ?? 0)
+            .ToList();
 
     private static string? NormalizeLanguage(string? code) => string.IsNullOrWhiteSpace(code) ? null : MediaLanguages.Normalize(code);
 
