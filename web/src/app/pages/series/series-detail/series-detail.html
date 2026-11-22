@@ -168,7 +168,8 @@
   <!-- Interactive search -->
   @if (releaseTarget(); as target) {
     <kr-modal [title]="'Interactive search · ' + target.label" width="max-w-6xl" (closed)="releaseTarget.set(null)">
-      <kr-indexer-progress [indexers]="indexerSearch.indexers()" [searching]="searching()" />
+      <kr-indexer-progress [indexers]="indexerSearch.indexers()" [searching]="searching()" [selected]="indexerSearch.selected()"
+        (toggled)="indexerSearch.toggle($event)" (cleared)="indexerSearch.clearFilter()" />
       @if (!searching()) {
         @if (releases().length === 0) {
           <p class="py-10 text-center text-slate-400">No results.</p>

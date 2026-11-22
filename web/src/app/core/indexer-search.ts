@@ -1,4 +1,4 @@
-import { DestroyRef, inject, signal } from '@angular/core';
+import { DestroyRef, Signal, computed, inject, signal } from '@angular/core';
 import { Events } from './events';
 import { IndexerQueryStatus } from './models';
 
@@ -27,10 +27,15 @@ export function mergeStatuses(current: IndexerQueryStatus[], incoming: IndexerQu
  *   const searchId = this.indexerSearch.start();
  *   const res = await this.api.movieReleases(id, searchId);
  *   this.indexerSearch.finish(res.indexers);
+ *
+ * It also holds the indexer filter of the results: clicking indexer chips in `kr-indexer-progress` selects them, and
+ * `filter(source)` keeps the rows from the selected indexers (all of them when none is selected).
  */
 export class IndexerSearch {
   /** Every indexer in the current (or last) search; empty until the server reports. */
   readonly indexers = signal<IndexerQueryStatus[]>([]);
+  /** Indexers whose results are shown; empty shows every indexer. */
+  readonly selected = signal<ReadonlySet<number>>(new Set());
   private current: string | null = null;
 
   constructor() {
@@ -44,6 +49,7 @@ export class IndexerSearch {
   start(): string {
     this.current = newSearchId();
     this.indexers.set([]);
+    this.selected.set(new Set());
     return this.current;
   }
 
@@ -56,5 +62,28 @@ export class IndexerSearch {
   reset() {
     this.current = null;
     this.indexers.set([]);
+    this.selected.set(new Set());
+  }
+
+  /** Adds an indexer to the filter, or removes it if it was already there. */
+  toggle(indexerId: number) {
+    this.selected.update(old => {
+      const next = new Set(old);
+      if (!next.delete(indexerId)) next.add(indexerId);
+      return next;
+    });
+  }
+
+  clearFilter() {
+    this.selected.set(new Set());
+  }
+
+  /** The rows of `source` from the selected indexers, or all of them when no indexer is selected. */
+  filter<T extends { release: { indexerId: number } }>(source: Signal<readonly T[]>): Signal<readonly T[]> {
+    return computed(() => {
+      const list = source();
+      const selected = this.selected();
+      return selected.size === 0 ? list : list.filter(r => selected.has(r.release.indexerId));
+    });
   }
 }

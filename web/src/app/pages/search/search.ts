@@ -25,7 +25,8 @@ export class SearchPage {
   protected readonly busy = signal(false);
   protected readonly searched = signal(false);
   protected readonly results = signal<SearchResult[]>([]);
-  protected readonly sort = new TableSort(this.results, {
+  protected readonly indexerSearch = new IndexerSearch();
+  protected readonly sort = new TableSort(this.indexerSearch.filter(this.results), {
     title: r => r.release.title,
     indexer: r => r.release.indexerName,
     age: { value: r => r.release.publishDate ? Date.parse(r.release.publishDate) : null, desc: true },
@@ -33,7 +34,6 @@ export class SearchPage {
     peers: { value: r => r.release.seeders, desc: true },
     quality: r => r.quality,
   });
-  protected readonly indexerSearch = new IndexerSearch();
 
   async search() {
     this.busy.set(true);

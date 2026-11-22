@@ -46,8 +46,9 @@ export class MovieDetailPage implements OnInit {
   protected readonly history = signal<HistoryItem[]>([]);
   protected readonly profiles = signal<QualityProfile[]>([]);
   protected readonly releases = signal<ReleaseDecision[]>([]);
+  protected readonly indexerSearch = new IndexerSearch();
   /** The API returns releases best first. */
-  protected readonly releaseSort = new TableSort(this.releases, {
+  protected readonly releaseSort = new TableSort(this.indexerSearch.filter(this.releases), {
     release: r => r.release.title,
     indexer: r => r.release.indexerName,
     size: { value: r => r.release.size, desc: true },
@@ -55,7 +56,6 @@ export class MovieDetailPage implements OnInit {
     quality: { value: r => r.qualityWeight, desc: true },
     language: r => this.languages.describe(r.languages),
   });
-  protected readonly indexerSearch = new IndexerSearch();
   protected readonly releasesOpen = signal(false);
   protected readonly searching = signal(false);
   protected readonly grabbing = signal<string | null>(null);

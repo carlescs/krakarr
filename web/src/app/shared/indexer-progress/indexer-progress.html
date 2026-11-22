@@ -3,13 +3,29 @@
   @if (indexers().length > 0) {
     <ul class="flex flex-wrap gap-1.5" [class.justify-center]="searching()" aria-label="Indexers">
       @for (s of indexers(); track s.indexerId) {
-        <li class="badge" [class]="chipClass(s)" [title]="chipTitle(s)" [attr.data-state]="s.state">
-          <span>{{ s.indexerName }}</span>
-          @switch (s.state) {
-            @case ('Done') { <span class="opacity-80"> {{ s.releases ?? 0 }}</span> }
-            @case ('Failed') { <span aria-label="failed">✕</span> }
-            @default { <span aria-label="searching">…</span> }
+        <li class="contents">
+          @if (canFilter(s)) {
+            <button type="button" class="badge" [class]="chipClass(s)" [title]="chipTitle(s)" [attr.data-state]="s.state"
+              [attr.aria-pressed]="isSelected(s)" (click)="toggled.emit(s.indexerId)">
+              <span>{{ s.indexerName }}</span><span class="opacity-80"> {{ s.releases ?? 0 }}</span>
+            </button>
+          } @else {
+            <span class="badge" [class]="chipClass(s)" [title]="chipTitle(s)" [attr.data-state]="s.state">
+              <span>{{ s.indexerName }}</span>
+              @switch (s.state) {
+                @case ('Done') { <span class="opacity-80"> {{ s.releases ?? 0 }}</span> }
+                @case ('Failed') { <span aria-label="failed">✕</span> }
+                @default { <span aria-label="searching">…</span> }
+              }
+            </span>
           }
+        </li>
+      }
+      @if (filterable() && selected()?.size) {
+        <li class="contents">
+          <button type="button" class="badge cursor-pointer bg-surface-700 text-slate-300 hover:text-white" (click)="cleared.emit()" data-clear-filter>
+            Show all
+          </button>
         </li>
       }
     </ul>

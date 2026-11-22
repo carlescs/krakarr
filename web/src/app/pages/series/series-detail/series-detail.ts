@@ -65,8 +65,9 @@ export class SeriesDetailPage implements OnInit {
   protected readonly expanded = signal(new Set<number>());
   protected readonly releaseTarget = signal<ReleaseTarget | null>(null);
   protected readonly releases = signal<EpisodeRelease[]>([]);
+  protected readonly indexerSearch = new IndexerSearch();
   /** The API returns releases best first. */
-  protected readonly releaseSort = new TableSort(this.releases, {
+  protected readonly releaseSort = new TableSort(this.indexerSearch.filter(this.releases), {
     release: r => r.release.title,
     // Season packs first, then by episode label.
     episodes: r => (r.seasonPack ? '0 ' : '1 ') + (r.episodes ?? ''),
@@ -76,7 +77,6 @@ export class SeriesDetailPage implements OnInit {
     quality: { value: r => r.qualityWeight, desc: true },
     language: r => this.languages.describe(r.languages),
   });
-  protected readonly indexerSearch = new IndexerSearch();
   protected readonly searching = signal(false);
   protected readonly grabbing = signal<string | null>(null);
   protected readonly editing = signal(false);
