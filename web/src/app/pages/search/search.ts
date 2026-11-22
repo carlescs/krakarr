@@ -2,7 +2,7 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../../core/api';
 import { AgoPipe, BytesPipe } from '../../core/format';
-import { IndexerSearch } from '../../core/indexer-search';
+import { ReleaseSearch } from '../../core/indexer-search';
 import { SearchResult, SearchType } from '../../core/models';
 import { Toasts } from '../../core/toast';
 import { MediaLink, MediaLinkPicker, linkFields } from '../../shared/media-link-picker/media-link-picker';
@@ -22,9 +22,11 @@ export class SearchPage {
   private readonly toasts = inject(Toasts);
   protected query = '';
   protected type: SearchType = 'Generic';
-  protected readonly busy = signal(false);
   protected readonly searched = signal(false);
-  protected readonly results = signal<SearchResult[]>([]);
+  /** Most seeders first, also while indexers are still answering. */
+  protected readonly releaseSearch = new ReleaseSearch<SearchResult>((a, b) => (b.release.seeders ?? 0) - (a.release.seeders ?? 0));
+  protected readonly results = this.releaseSearch.results;
+  protected readonly busy = this.releaseSearch.running;
   protected readonly sort = new TableSort(this.results, {
     title: r => r.release.title,
     indexer: r => r.release.indexerName,
@@ -33,21 +35,13 @@ export class SearchPage {
     peers: { value: r => r.release.seeders, desc: true },
     quality: r => r.quality,
   });
-  protected readonly indexerSearch = new IndexerSearch();
 
   async search() {
-    this.busy.set(true);
     this.searched.set(true);
-    const searchId = this.indexerSearch.start();
     try {
-      const res = await this.api.search(this.query, this.type, searchId);
-      this.results.set(res.results);
-      this.indexerSearch.finish(res.indexers);
+      await this.releaseSearch.run((onEvent, signal) => this.api.searchStream(this.query, this.type, onEvent, signal));
     } catch (e) {
-      this.indexerSearch.finish();
       this.toasts.error(errorMessage(e));
-    } finally {
-      this.busy.set(false);
     }
   }
 

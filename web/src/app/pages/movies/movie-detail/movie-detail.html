@@ -160,55 +160,53 @@
 
   <!-- Interactive search -->
   @if (releasesOpen()) {
-    <kr-modal title="Interactive search" width="max-w-6xl" (closed)="releasesOpen.set(false)">
-      <kr-indexer-progress [indexers]="indexerSearch.indexers()" [searching]="searching()" />
-      @if (!searching()) {
-        @if (releases().length === 0) {
-          <p class="py-10 text-center text-slate-400">No results.</p>
-        } @else {
-          <div class="overflow-x-auto sm:max-h-[65vh] sm:overflow-auto">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th krSort="release" [krSortBy]="releaseSort">Release</th>
-                  <th class="max-sm:hidden" krSort="indexer" [krSortBy]="releaseSort">Indexer</th>
-                  <th class="max-sm:hidden" krSort="size" [krSortBy]="releaseSort">Size</th>
-                  <th class="max-sm:hidden" krSort="peers" [krSortBy]="releaseSort">Peers</th>
-                  <th class="max-sm:hidden" krSort="quality" [krSortBy]="releaseSort">Quality</th>
-                  <th class="max-sm:hidden" krSort="language" [krSortBy]="releaseSort">Language</th>
-                  <th></th>
+    <kr-modal title="Interactive search" width="max-w-6xl" (closed)="closeReleases()">
+      <kr-indexer-progress [indexers]="releaseSearch.indexers()" [searching]="searching()" />
+      @if (releases().length === 0) {
+        @if (!searching()) { <p class="py-10 text-center text-slate-400">No results.</p> }
+      } @else {
+        <div class="overflow-x-auto sm:max-h-[65vh] sm:overflow-auto">
+          <table class="table">
+            <thead>
+              <tr>
+                <th krSort="release" [krSortBy]="releaseSort">Release</th>
+                <th class="max-sm:hidden" krSort="indexer" [krSortBy]="releaseSort">Indexer</th>
+                <th class="max-sm:hidden" krSort="size" [krSortBy]="releaseSort">Size</th>
+                <th class="max-sm:hidden" krSort="peers" [krSortBy]="releaseSort">Peers</th>
+                <th class="max-sm:hidden" krSort="quality" [krSortBy]="releaseSort">Quality</th>
+                <th class="max-sm:hidden" krSort="language" [krSortBy]="releaseSort">Language</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (r of releaseSort.rows(); track r.release.guid) {
+                <tr [class.opacity-60]="!r.approved">
+                  <td class="w-full max-w-0">
+                    <div class="break-all sm:truncate sm:break-normal" [title]="r.release.title">{{ r.release.title }}</div>
+                    <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400 sm:hidden">
+                      <span class="badge bg-surface-700 text-slate-200">{{ r.quality }}</span>
+                      <span class="badge bg-surface-700 text-slate-300">{{ languages.describe(r.languages) }}</span>
+                      <span>{{ r.release.size | bytes }}</span>
+                      <span><span class="text-emerald-400">{{ r.release.seeders ?? '?' }}</span> / {{ r.release.peers ?? '?' }}</span>
+                      <span>{{ r.release.indexerName }}</span>
+                    </div>
+                    @if (!r.approved) { <div class="text-xs text-rose-300">{{ r.rejections.join(' · ') }}</div> }
+                  </td>
+                  <td class="text-slate-400 max-sm:hidden">{{ r.release.indexerName }}</td>
+                  <td class="whitespace-nowrap max-sm:hidden">{{ r.release.size | bytes }}</td>
+                  <td class="whitespace-nowrap max-sm:hidden"><span class="text-emerald-400">{{ r.release.seeders ?? '?' }}</span> / {{ r.release.peers ?? '?' }}</td>
+                  <td class="max-sm:hidden"><span class="badge bg-surface-700 text-slate-200">{{ r.quality }}</span></td>
+                  <td class="whitespace-nowrap text-slate-300 max-sm:hidden">{{ languages.describe(r.languages) }}</td>
+                  <td class="text-right">
+                    <button class="btn-sm" [class]="r.approved ? 'btn-primary' : 'btn-secondary'" (click)="grab(r)" [disabled]="grabbing() === r.release.guid">
+                      {{ grabbing() === r.release.guid ? '…' : 'Grab' }}
+                    </button>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                @for (r of releaseSort.rows(); track r.release.guid) {
-                  <tr [class.opacity-60]="!r.approved">
-                    <td class="w-full max-w-0">
-                      <div class="break-all sm:truncate sm:break-normal" [title]="r.release.title">{{ r.release.title }}</div>
-                      <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400 sm:hidden">
-                        <span class="badge bg-surface-700 text-slate-200">{{ r.quality }}</span>
-                        <span class="badge bg-surface-700 text-slate-300">{{ languages.describe(r.languages) }}</span>
-                        <span>{{ r.release.size | bytes }}</span>
-                        <span><span class="text-emerald-400">{{ r.release.seeders ?? '?' }}</span> / {{ r.release.peers ?? '?' }}</span>
-                        <span>{{ r.release.indexerName }}</span>
-                      </div>
-                      @if (!r.approved) { <div class="text-xs text-rose-300">{{ r.rejections.join(' · ') }}</div> }
-                    </td>
-                    <td class="text-slate-400 max-sm:hidden">{{ r.release.indexerName }}</td>
-                    <td class="whitespace-nowrap max-sm:hidden">{{ r.release.size | bytes }}</td>
-                    <td class="whitespace-nowrap max-sm:hidden"><span class="text-emerald-400">{{ r.release.seeders ?? '?' }}</span> / {{ r.release.peers ?? '?' }}</td>
-                    <td class="max-sm:hidden"><span class="badge bg-surface-700 text-slate-200">{{ r.quality }}</span></td>
-                    <td class="whitespace-nowrap text-slate-300 max-sm:hidden">{{ languages.describe(r.languages) }}</td>
-                    <td class="text-right">
-                      <button class="btn-sm" [class]="r.approved ? 'btn-primary' : 'btn-secondary'" (click)="grab(r)" [disabled]="grabbing() === r.release.guid">
-                        {{ grabbing() === r.release.guid ? '…' : 'Grab' }}
-                      </button>
-                    </td>
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
-        }
+              }
+            </tbody>
+          </table>
+        </div>
       }
     </kr-modal>
   }

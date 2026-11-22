@@ -25,6 +25,4 @@ public static class EventNames
     public const string RequestsUpdated = "requestsUpdated";
     /// <summary>What a notification source reports may have changed; clients refetch the notifications. No payload.</summary>
     public const string NotificationsUpdated = "notificationsUpdated";
-    /// <summary>Per-indexer progress of an interactive search: <c>{ searchId, indexers }</c>, keyed by the id the client passed. Staff only.</summary>
-    public const string SearchProgress = "searchProgress";
 }

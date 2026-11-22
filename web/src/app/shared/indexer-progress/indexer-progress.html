@@ -1,7 +1,7 @@
-<div class="mb-3 space-y-2" [class.py-6]="searching()">
-  <p class="text-sm" [class]="searching() ? 'text-center text-slate-400' : 'text-slate-400'" data-summary>{{ summary() }}</p>
+<div class="mb-3 space-y-2">
+  <p class="text-sm text-slate-400" data-summary>{{ summary() }}</p>
   @if (indexers().length > 0) {
-    <ul class="flex flex-wrap gap-1.5" [class.justify-center]="searching()" aria-label="Indexers">
+    <ul class="flex flex-wrap gap-1.5" aria-label="Indexers">
       @for (s of indexers(); track s.indexerId) {
         <li class="badge" [class]="chipClass(s)" [title]="chipTitle(s)" [attr.data-state]="s.state">
           <span>{{ s.indexerName }}</span>
@@ -15,7 +15,7 @@
     </ul>
   }
   @if (searching() && pending().length > 0 && finished() > 0) {
-    <p class="text-center text-xs text-slate-500">Waiting for {{ pending().length === 1 ? pending()[0].indexerName : pending().length + ' indexers' }}</p>
+    <p class="text-xs text-slate-500">Waiting for {{ pending().length === 1 ? pending()[0].indexerName : pending().length + ' indexers' }}</p>
   }
   @for (s of failed(); track s.indexerId) {
     <p class="rounded bg-amber-500/10 px-3 py-2 text-xs text-amber-300" data-error>{{ s.indexerName }}: {{ s.message }}</p>

@@ -7,7 +7,7 @@
   <button class="btn-primary" [disabled]="busy()">{{ busy() ? 'Searching…' : 'Search' }}</button>
 </form>
 @if (searched()) {
-  <kr-indexer-progress [indexers]="indexerSearch.indexers()" [searching]="busy()" />
+  <kr-indexer-progress [indexers]="releaseSearch.indexers()" [searching]="busy()" />
 }
 @if (results().length > 0) {
   <div class="card overflow-x-auto">

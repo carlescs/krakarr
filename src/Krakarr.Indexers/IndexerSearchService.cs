@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Threading.Channels;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Telemetry;
 using Krakarr.Data;
@@ -22,13 +23,24 @@ public enum IndexerQueryState { Pending, Done, Failed }
 /// <param name="Seconds">How long the query took, once finished.</param>
 public sealed record IndexerQueryStatus(int IndexerId, string IndexerName, IndexerQueryState State, int? Releases = null, string? Message = null, double? Seconds = null);
 
+/// <summary>One indexer's finished query: its final status and the releases it returned (empty when it failed).</summary>
+public sealed record IndexerQueryResult(IndexerQueryStatus Status, IReadOnlyList<ReleaseInfo> Releases);
+
+/// <summary>A search in flight.</summary>
+/// <param name="Indexers">Every indexer being queried, all pending.</param>
+/// <param name="Results">One item per indexer as soon as its query finishes (successfully or not), in completion order.</param>
+public sealed record IndexerSearchRun(IReadOnlyList<IndexerQueryStatus> Indexers, IAsyncEnumerable<IndexerQueryResult> Results);
+
 public interface IIndexerSearchService
 {
-    /// <summary>Queries the enabled indexers in parallel.</summary>
-    /// <param name="progress">Optional: receives a snapshot of every indexer's status first with all of them pending, then each time one finishes.
-    /// Reports can come from several threads at once, so they may arrive out of order.</param>
-    Task<IndexerSearchResult> SearchAsync(SearchCriteria criteria, IReadOnlyCollection<int>? indexerIds = null,
-        IProgress<IReadOnlyList<IndexerQueryStatus>>? progress = null, CancellationToken ct = default);
+    /// <summary>Queries the enabled indexers in parallel and waits for all of them.</summary>
+    Task<IndexerSearchResult> SearchAsync(SearchCriteria criteria, IReadOnlyCollection<int>? indexerIds = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Starts querying the enabled indexers in parallel and returns at once, so callers can show results as each indexer answers.
+    /// Releases are not de-duplicated across indexers (see <see cref="ReleaseMerger"/>).
+    /// </summary>
+    Task<IndexerSearchRun> StartAsync(SearchCriteria criteria, IReadOnlyCollection<int>? indexerIds = null, CancellationToken ct = default);
 }
 
 /// <summary>Fans a search out across all enabled indexers and merges the results.</summary>
@@ -36,8 +48,26 @@ public sealed class IndexerSearchService(KrakarrDbContext db, ITorznabClient cli
 {
     private static readonly TimeSpan QueryTimeout = TimeSpan.FromSeconds(60);
 
-    public async Task<IndexerSearchResult> SearchAsync(SearchCriteria criteria, IReadOnlyCollection<int>? indexerIds = null,
-        IProgress<IReadOnlyList<IndexerQueryStatus>>? progress = null, CancellationToken ct = default)
+    public async Task<IndexerSearchResult> SearchAsync(SearchCriteria criteria, IReadOnlyCollection<int>? indexerIds = null, CancellationToken ct = default)
+    {
+        var run = await StartAsync(criteria, indexerIds, ct);
+        var finished = new Dictionary<int, IndexerQueryStatus>();
+        var merger = new ReleaseMerger();
+        await foreach (var result in run.Results.WithCancellation(ct))
+        {
+            finished[result.Status.IndexerId] = result.Status;
+            merger.Add(result.Releases);
+        }
+
+        var statuses = run.Indexers.Select(s => finished.GetValueOrDefault(s.IndexerId, s)).ToList();
+        var errors = statuses
+            .Where(s => s.State == IndexerQueryState.Failed)
+            .Select(s => new IndexerError(s.IndexerId, s.IndexerName, s.Message ?? "Unknown error"))
+            .ToList();
+        return new IndexerSearchResult(merger.Releases.ToList(), errors, statuses);
+    }
+
+    public async Task<IndexerSearchRun> StartAsync(SearchCriteria criteria, IReadOnlyCollection<int>? indexerIds = null, CancellationToken ct = default)
     {
         var query = db.Indexers.AsNoTracking().Where(i => i.Enabled);
         if (criteria.Rss)
@@ -50,8 +80,12 @@ public sealed class IndexerSearchService(KrakarrDbContext db, ITorznabClient cli
             query = query.Where(i => indexerIds.Contains(i.Id));
         }
 
+        var indexers = await query.ToListAsync(ct);
+
+        // Ends when the last indexer answers, not when this method returns. Started after the query so the
+        // indexer queries below are its children.
         var kind = criteria.Rss ? "rss" : criteria.Type.ToString().ToLowerInvariant();
-        using var activity = KrakarrTelemetry.ActivitySource.StartActivity($"indexer search {kind}");
+        var activity = KrakarrTelemetry.ActivitySource.StartActivity($"indexer search {kind}");
         if (activity is not null)
         {
             activity.SetTag(KrakarrTelemetry.SearchKindTag, kind);
@@ -61,93 +95,79 @@ public sealed class IndexerSearchService(KrakarrDbContext db, ITorznabClient cli
             activity.SetTag("krakarr.search.tvdb_id", criteria.TvdbId);
             activity.SetTag("krakarr.search.season", criteria.Season);
             activity.SetTag("krakarr.search.episode", criteria.Episode);
+            activity.SetTag("krakarr.search.indexers", indexers.Count);
         }
 
-        var indexers = await query.ToListAsync(ct);
-        activity?.SetTag("krakarr.search.indexers", indexers.Count);
-        var errors = new List<IndexerError>();
-        var statuses = indexers.Select(i => new IndexerQueryStatus(i.Id, i.Name, IndexerQueryState.Pending)).ToArray();
-        progress?.Report(statuses.ToArray());
+        // Holds at most one item per indexer.
+        var channel = Channel.CreateUnbounded<IndexerQueryResult>(new UnboundedChannelOptions { SingleReader = true });
+        var tasks = indexers.Select(indexer => QueryAsync(indexer, criteria, kind, channel.Writer, ct)).ToList();
+        _ = CompleteAsync();
 
-        void Finish(int index, IndexerQueryStatus status)
+        return new IndexerSearchRun(
+            indexers.Select(i => new IndexerQueryStatus(i.Id, i.Name, IndexerQueryState.Pending)).ToList(),
+            channel.Reader.ReadAllAsync(ct));
+
+        async Task CompleteAsync()
         {
-            IndexerQueryStatus[] snapshot;
-            lock (statuses)
-            {
-                statuses[index] = status;
-                snapshot = statuses.ToArray();
-            }
-
-            progress?.Report(snapshot);
-        }
-
-        var tasks = indexers.Select(async (indexer, index) =>
-        {
-            using var queryActivity = KrakarrTelemetry.ActivitySource.StartActivity("indexer query", ActivityKind.Client);
-            queryActivity?.SetTag(KrakarrTelemetry.IndexerTag, indexer.Name);
-            queryActivity?.SetTag(KrakarrTelemetry.SearchKindTag, kind);
-            var started = Stopwatch.GetTimestamp();
-            var outcome = KrakarrTelemetry.Success;
             try
             {
-                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                timeout.CancelAfter(QueryTimeout);
-                var releases = await client.SearchAsync(indexer, criteria, timeout.Token);
-                var kept = releases.Where(r => r.Seeders is null || r.Seeders >= indexer.MinimumSeeders).ToList();
-                queryActivity?.SetTag("krakarr.indexer.releases", kept.Count);
-                KrakarrTelemetry.IndexerReleases.Add(kept.Count,
-                    new KeyValuePair<string, object?>(KrakarrTelemetry.IndexerTag, indexer.Name),
-                    new KeyValuePair<string, object?>(KrakarrTelemetry.SearchKindTag, kind));
-                Finish(index, new IndexerQueryStatus(indexer.Id, indexer.Name, IndexerQueryState.Done, kept.Count,
-                    Seconds: Stopwatch.GetElapsedTime(started).TotalSeconds));
-                return kept;
+                await Task.WhenAll(tasks);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
-                outcome = KrakarrTelemetry.Failure;
-                queryActivity.RecordException(ex);
-                // The caller's token isn't cancelled (see the filter), so a cancellation here is a timeout.
-                var message = ex is OperationCanceledException ? $"Timed out after {QueryTimeout.TotalSeconds:0} seconds" : ex.Message;
-                logger.LogWarning("Search on {Indexer} failed: {Message}", indexer.Name, message);
-                lock (errors)
-                {
-                    errors.Add(new IndexerError(indexer.Id, indexer.Name, message));
-                }
-
-                Finish(index, new IndexerQueryStatus(indexer.Id, indexer.Name, IndexerQueryState.Failed,
-                    Message: message, Seconds: Stopwatch.GetElapsedTime(started).TotalSeconds));
-
-                return [];
+                // The caller gave up; its reader sees the cancellation.
             }
             finally
             {
-                KeyValuePair<string, object?>[] tags =
-                [
-                    new(KrakarrTelemetry.IndexerTag, indexer.Name),
-                    new(KrakarrTelemetry.SearchKindTag, kind),
-                    new(KrakarrTelemetry.OutcomeTag, outcome),
-                ];
-                KrakarrTelemetry.IndexerQueries.Add(1, tags);
-                KrakarrTelemetry.IndexerQueryDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, tags);
+                channel.Writer.TryComplete();
+                activity?.Dispose();
             }
-        });
-
-        var all = (await Task.WhenAll(tasks)).SelectMany(r => r);
-
-        // De-duplicate across indexers: same info hash, or same title+size.
-        var deduped = all
-            .GroupBy(r => r.InfoHash ?? $"{r.Title}|{r.Size}", StringComparer.OrdinalIgnoreCase)
-            .Select(g => g.OrderBy(r => r.IndexerPriority).ThenByDescending(r => r.Seeders ?? 0).First())
-            .ToList();
-
-        activity?.SetTag("krakarr.search.releases", deduped.Count);
-        activity?.SetTag("krakarr.search.errors", errors.Count);
-        IndexerQueryStatus[] final;
-        lock (statuses)
-        {
-            final = statuses.ToArray();
         }
+    }
 
-        return new IndexerSearchResult(deduped, errors, final);
+    private async Task QueryAsync(Indexer indexer, SearchCriteria criteria, string kind, ChannelWriter<IndexerQueryResult> results, CancellationToken ct)
+    {
+        await Task.Yield(); // run every indexer's query in parallel, not the first part of each one in turn
+        using var queryActivity = KrakarrTelemetry.ActivitySource.StartActivity("indexer query", ActivityKind.Client);
+        queryActivity?.SetTag(KrakarrTelemetry.IndexerTag, indexer.Name);
+        queryActivity?.SetTag(KrakarrTelemetry.SearchKindTag, kind);
+        var started = Stopwatch.GetTimestamp();
+        var outcome = KrakarrTelemetry.Success;
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(QueryTimeout);
+            var releases = await client.SearchAsync(indexer, criteria, timeout.Token);
+            var kept = releases.Where(r => r.Seeders is null || r.Seeders >= indexer.MinimumSeeders).ToList();
+            queryActivity?.SetTag("krakarr.indexer.releases", kept.Count);
+            KrakarrTelemetry.IndexerReleases.Add(kept.Count,
+                new KeyValuePair<string, object?>(KrakarrTelemetry.IndexerTag, indexer.Name),
+                new KeyValuePair<string, object?>(KrakarrTelemetry.SearchKindTag, kind));
+            results.TryWrite(new IndexerQueryResult(
+                new IndexerQueryStatus(indexer.Id, indexer.Name, IndexerQueryState.Done, kept.Count, Seconds: Stopwatch.GetElapsedTime(started).TotalSeconds),
+                kept));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        {
+            outcome = KrakarrTelemetry.Failure;
+            queryActivity.RecordException(ex);
+            // The caller's token isn't cancelled (see the filter), so a cancellation here is a timeout.
+            var message = ex is OperationCanceledException ? $"Timed out after {QueryTimeout.TotalSeconds:0} seconds" : ex.Message;
+            logger.LogWarning("Search on {Indexer} failed: {Message}", indexer.Name, message);
+            results.TryWrite(new IndexerQueryResult(
+                new IndexerQueryStatus(indexer.Id, indexer.Name, IndexerQueryState.Failed, Message: message, Seconds: Stopwatch.GetElapsedTime(started).TotalSeconds),
+                []));
+        }
+        finally
+        {
+            KeyValuePair<string, object?>[] tags =
+            [
+                new(KrakarrTelemetry.IndexerTag, indexer.Name),
+                new(KrakarrTelemetry.SearchKindTag, kind),
+                new(KrakarrTelemetry.OutcomeTag, outcome),
+            ];
+            KrakarrTelemetry.IndexerQueries.Add(1, tags);
+            KrakarrTelemetry.IndexerQueryDuration.Record(Stopwatch.GetElapsedTime(started).TotalSeconds, tags);
+        }
     }
 }
