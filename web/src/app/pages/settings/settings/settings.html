@@ -279,6 +279,7 @@
           <div><label class="label">Minimum score · episodes</label><input class="input" type="number" min="0" max="100" [(ngModel)]="st.minimumScoreEpisodes" /></div>
         </div>
         <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="st.includeAiTranslated" /> Allow AI / machine translated subtitles</label>
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="st.useEmbeddedSubtitles" /> Count subtitles inside the video file (MKV, MP4) as present</label>
         <p class="hint">Score: 100 for a file-hash match; otherwise title, year or season/episode, source, resolution, release group and codec of the subtitle's release are compared with your file.</p>
       </section>
       <section class="card grid gap-4 p-4 sm:p-5 sm:grid-cols-2">

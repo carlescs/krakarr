@@ -177,6 +177,9 @@ Nothing is moved or renamed.
   AI-translated subtitles unless allowed.
 - Subtitles are saved next to the video as `{video}.{lang}[.hi][.forced].srt`. Existing files named like that are detected.
   When a video is upgraded, its old subtitles are removed and the new file is searched again.
+- Subtitle tracks inside MKV/WebM and MP4/MOV files count as present (forced tracks excepted), so those languages are
+  not downloaded again. Only the container's track headers are read, no ffmpeg needed. Turn it off in
+  **Settings → Subtitles** to download external subtitles anyway.
 - The **Subtitles** page lists files missing languages. Every movie and episode has a subtitle dialog with
   automatic search, manual search (all candidates with score and reasons) and delete.
 

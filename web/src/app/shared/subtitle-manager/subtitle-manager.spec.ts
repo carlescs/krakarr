@@ -51,4 +51,19 @@ describe('SubtitleManager', () => {
     await settle(fixture);
     expect(api.deleteSubtitle).toHaveBeenCalledWith(12);
   });
+
+  it('shows embedded subtitles without a delete button', async () => {
+    setupTest({ api: mockApi({ subtitleLanguages: async () => [] }) });
+    const fixture = TestBed.createComponent(SubtitleManager);
+    fixture.componentRef.setInput('fileRef', { movieFileId: 4 });
+    fixture.componentRef.setInput('files', [
+      { id: 0, languageName: 'English', forced: false, provider: 'embedded', fileName: 'Alien.mkv' } as SubtitleFile,
+      { id: 0, languageName: 'Spanish', forced: true, provider: 'embedded', fileName: 'Alien.mkv' } as SubtitleFile,
+    ]);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(text(el)).toContain('English · embedded');
+    expect(text(el)).toContain('Spanish (forced) · embedded');
+    expect(el.querySelector('[aria-label="Delete subtitle"]')).toBeNull();
+  });
 });

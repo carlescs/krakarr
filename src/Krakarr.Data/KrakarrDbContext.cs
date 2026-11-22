@@ -104,7 +104,11 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
 
         b.Entity<MovieCollection>(e => e.HasIndex(x => x.TmdbId).IsUnique());
 
-        b.Entity<MovieFile>(e => e.HasIndex(x => x.MovieId));
+        b.Entity<MovieFile>(e =>
+        {
+            e.HasIndex(x => x.MovieId);
+            e.Property(x => x.EmbeddedSubtitles).HasMaxLength(512);
+        });
 
         b.Entity<Series>(e =>
         {
@@ -129,6 +133,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
         b.Entity<EpisodeFile>(e =>
         {
             e.HasIndex(x => x.SeriesId);
+            e.Property(x => x.EmbeddedSubtitles).HasMaxLength(512);
             e.HasOne<Series>().WithMany().HasForeignKey(x => x.SeriesId).OnDelete(DeleteBehavior.Cascade);
         });
 

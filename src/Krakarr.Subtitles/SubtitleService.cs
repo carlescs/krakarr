@@ -98,9 +98,14 @@ public sealed class SubtitleService(
 
     // ---- Existing subtitles ------------------------------------------------------------------
 
-    /// <summary>Records subtitle files found next to the video and forgets rows whose file is gone.</summary>
+    /// <summary>
+    /// Records subtitle files found next to the video, forgets rows whose file is gone, and reads the subtitle tracks
+    /// inside the video the first time the file is seen.
+    /// </summary>
     public async Task SyncDiskAsync(SubtitleTarget target, CancellationToken ct = default)
     {
+        await SyncEmbeddedAsync(target, ct);
+
         var rows = await RowsAsync(target, ct);
         foreach (var gone in rows.Where(r => !File.Exists(r.Path)))
         {
@@ -127,15 +132,33 @@ public sealed class SubtitleService(
         await db.SaveChangesAsync(ct);
     }
 
+    private async Task SyncEmbeddedAsync(SubtitleTarget target, CancellationToken ct)
+    {
+        if (await EmbeddedAsync(target, ct) is not null || !File.Exists(target.VideoPath)) return;
+        var embedded = EmbeddedSubtitleList.Format(EmbeddedSubtitleList.FromTracks(EmbeddedSubtitles.Read(target.VideoPath)));
+        if (target.MovieFileId is { } mf)
+            await db.MovieFiles.Where(f => f.Id == mf).ExecuteUpdateAsync(x => x.SetProperty(f => f.EmbeddedSubtitles, embedded), ct);
+        else
+            await db.EpisodeFiles.Where(f => f.Id == target.EpisodeFileId).ExecuteUpdateAsync(x => x.SetProperty(f => f.EmbeddedSubtitles, embedded), ct);
+        if (embedded.Length > 0) logger.LogDebug("Embedded subtitles in {Target}: {Languages}", target.Label, embedded);
+    }
+
+    /// <summary>The stored subtitle tracks inside the video ("" = none, null = not read yet).</summary>
+    private Task<string?> EmbeddedAsync(SubtitleTarget target, CancellationToken ct) =>
+        target.MovieFileId is { } mf
+            ? db.MovieFiles.AsNoTracking().Where(f => f.Id == mf).Select(f => f.EmbeddedSubtitles).FirstOrDefaultAsync(ct)
+            : db.EpisodeFiles.AsNoTracking().Where(f => f.Id == target.EpisodeFileId).Select(f => f.EmbeddedSubtitles).FirstOrDefaultAsync(ct);
+
     private Task<List<SubtitleFile>> RowsAsync(SubtitleTarget target, CancellationToken ct) =>
         target.MovieFileId is { } mf
             ? db.SubtitleFiles.Where(s => s.MovieFileId == mf).ToListAsync(ct)
             : db.SubtitleFiles.Where(s => s.EpisodeFileId == target.EpisodeFileId).ToListAsync(ct);
 
-    /// <summary>Wanted languages without a (non-forced) subtitle.</summary>
+    /// <summary>Wanted languages without a (non-forced) subtitle, external or (when enabled) inside the video.</summary>
     public async Task<IReadOnlyList<string>> MissingLanguagesAsync(SubtitleTarget target, SubtitleSettings s, CancellationToken ct = default)
     {
         var have = (await RowsAsync(target, ct)).Where(r => !r.Forced).Select(r => r.Language).ToHashSet();
+        if (s.UseEmbeddedSubtitles) have.UnionWith(EmbeddedSubtitleList.FullLanguages(await EmbeddedAsync(target, ct)));
         return s.Languages.Where(l => !have.Contains(l)).ToList();
     }
 
@@ -188,7 +211,8 @@ public sealed class SubtitleService(
     /// <summary>
     /// Automatic search: downloads the best acceptable subtitle for each missing wanted language.
     /// With <paramref name="upgrade"/>, languages that already have a subtitle are searched too, and replaced when a
-    /// candidate scores higher than the current one. Subtitles found on disk have no score and are never replaced.
+    /// candidate scores higher than the current one. Subtitles found on disk have no score and are never replaced, and
+    /// languages present only inside the video (see <see cref="SubtitleSettings.UseEmbeddedSubtitles"/>) are not searched.
     /// Returns a short summary for the task log.
     /// </summary>
     public async Task<string> SearchMissingAsync(SubtitleTarget target, CancellationToken ct = default, bool upgrade = false)
@@ -343,7 +367,7 @@ public sealed class SubtitleService(
 
     // ---- Wanted -------------------------------------------------------------------------------
 
-    /// <summary>Library files missing at least one wanted language (based on known subtitle rows).</summary>
+    /// <summary>Library files missing at least one wanted language (based on known subtitle rows and embedded tracks).</summary>
     public async Task<IReadOnlyList<WantedSubtitle>> WantedAsync(int limit, CancellationToken ct = default)
     {
         var s = await settings.GetAsync<SubtitleSettings>(ct);
@@ -354,18 +378,23 @@ public sealed class SubtitleService(
         var movieLangs = subs.Where(x => x.MovieFileId != null).ToLookup(x => x.MovieFileId!.Value, x => x.Language);
         var episodeLangs = subs.Where(x => x.EpisodeFileId != null).ToLookup(x => x.EpisodeFileId!.Value, x => x.Language);
 
+        IEnumerable<string> Embedded(string? value) => s.UseEmbeddedSubtitles ? EmbeddedSubtitleList.FullLanguages(value) : [];
+
         var result = new List<WantedSubtitle>();
-        foreach (var id in await db.MovieFiles.AsNoTracking().OrderBy(f => f.Id).Select(f => f.Id).ToListAsync(ct))
+        foreach (var file in await db.MovieFiles.AsNoTracking().OrderBy(f => f.Id).Select(f => new { f.Id, f.EmbeddedSubtitles }).ToListAsync(ct))
         {
-            var missing = s.Languages.Except(movieLangs[id]).ToList();
+            var id = file.Id;
+            var missing = s.Languages.Except(movieLangs[id]).Except(Embedded(file.EmbeddedSubtitles)).ToList();
             if (missing.Count == 0) continue;
             if (await GetMovieTargetAsync(id, ct) is { } t) result.Add(new WantedSubtitle(t, missing));
             if (result.Count >= limit) return result;
         }
 
-        foreach (var id in await db.EpisodeFiles.AsNoTracking().OrderBy(f => f.SeriesId).ThenBy(f => f.SeasonNumber).ThenBy(f => f.Id).Select(f => f.Id).ToListAsync(ct))
+        foreach (var file in await db.EpisodeFiles.AsNoTracking().OrderBy(f => f.SeriesId).ThenBy(f => f.SeasonNumber).ThenBy(f => f.Id)
+                     .Select(f => new { f.Id, f.EmbeddedSubtitles }).ToListAsync(ct))
         {
-            var missing = s.Languages.Except(episodeLangs[id]).ToList();
+            var id = file.Id;
+            var missing = s.Languages.Except(episodeLangs[id]).Except(Embedded(file.EmbeddedSubtitles)).ToList();
             if (missing.Count == 0) continue;
             if (await GetEpisodeTargetAsync(id, ct) is { } t) result.Add(new WantedSubtitle(t, missing));
             if (result.Count >= limit) break;

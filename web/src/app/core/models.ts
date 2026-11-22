@@ -242,7 +242,7 @@ export interface DirectoryListing { path: string; parent?: string; directories: 
 export type HearingImpairedMode = 'PreferNormal' | 'PreferHearingImpaired' | 'ExcludeHearingImpaired';
 export interface SubtitleSettings {
   enabled: boolean; languages: string[]; hearingImpaired: HearingImpairedMode; minimumScoreMovies: number; minimumScoreEpisodes: number;
-  searchIntervalHours: number; includeAiTranslated: boolean;
+  searchIntervalHours: number; includeAiTranslated: boolean; useEmbeddedSubtitles: boolean;
   openSubtitles: { enabled: boolean; apiKey?: string; username?: string; password?: string };
 }
 export interface Language { code: string; name: string; }
@@ -251,6 +251,7 @@ export interface LanguageSettings { preferred: string[]; }
 export interface LanguageCatalog { all: Language[]; preferred: string[]; }
 export interface SubtitleFile {
   id: number; movieFileId?: number; episodeFileId?: number; language: string; languageName: string; hearingImpaired: boolean; forced: boolean;
+  /** provider 'embedded' = a track inside the video file (id 0, cannot be deleted). */
   fileName: string; provider: string; score?: number; release?: string; dateAdded: string;
 }
 export interface SubtitleCandidate {
