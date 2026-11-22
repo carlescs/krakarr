@@ -192,6 +192,8 @@ public sealed record SubtitleSettings : ISettingsSection
     /// <summary>How often files still missing subtitles are searched again.</summary>
     public int SearchIntervalHours { get; init; } = 24;
     public bool IncludeAiTranslated { get; init; }
+    /// <summary>Count subtitle tracks inside the video file (MKV, MP4) as present, so they are not searched again.</summary>
+    public bool UseEmbeddedSubtitles { get; init; } = true;
     public OpenSubtitlesSettings OpenSubtitles { get; init; } = new();
 }
 

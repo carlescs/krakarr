@@ -166,6 +166,10 @@ public class MovieFile
     public DateTimeOffset DateAdded { get; set; } = DateTimeOffset.UtcNow;
     /// <summary>When subtitles were last searched for this file (null = never).</summary>
     public DateTimeOffset? LastSubtitleSearch { get; set; }
+    /// <summary>
+    /// Subtitle tracks inside the video, as comma-separated "lang[+hi][+forced]" tokens ("" = none, null = not read yet).
+    /// </summary>
+    public string? EmbeddedSubtitles { get; set; }
 }
 
 public enum SeriesStatus
@@ -264,6 +268,10 @@ public class EpisodeFile
     public DateTimeOffset DateAdded { get; set; } = DateTimeOffset.UtcNow;
     /// <summary>When subtitles were last searched for this file (null = never).</summary>
     public DateTimeOffset? LastSubtitleSearch { get; set; }
+    /// <summary>
+    /// Subtitle tracks inside the video, as comma-separated "lang[+hi][+forced]" tokens ("" = none, null = not read yet).
+    /// </summary>
+    public string? EmbeddedSubtitles { get; set; }
 }
 
 /// <summary>An external subtitle file stored next to a movie or episode file.</summary>

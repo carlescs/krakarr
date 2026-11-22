@@ -1,10 +1,16 @@
 <kr-modal [title]="'Subtitles · ' + label()" width="max-w-5xl" (closed)="closed.emit()">
   <div class="mb-4 flex flex-wrap items-center gap-2">
-    @for (s of files(); track s.id) {
-      <span class="badge bg-surface-700 text-slate-200" [title]="(s.release ?? s.fileName) + ' · ' + s.provider + (s.score != null ? ' · score ' + s.score : '')">
-        {{ s.languageName }}{{ s.hearingImpaired ? ' (HI)' : '' }}{{ s.forced ? ' (forced)' : '' }}
-        <button class="ml-1 text-slate-400 hover:text-rose-300" (click)="remove(s)" aria-label="Delete subtitle">✕</button>
-      </span>
+    @for (s of files(); track $index) {
+      @if (s.provider === 'embedded') {
+        <span class="badge bg-surface-700 text-slate-300" [title]="'Inside the video file · ' + s.fileName">
+          {{ s.languageName }}{{ s.hearingImpaired ? ' (HI)' : '' }}{{ s.forced ? ' (forced)' : '' }} · embedded
+        </span>
+      } @else {
+        <span class="badge bg-surface-700 text-slate-200" [title]="(s.release ?? s.fileName) + ' · ' + s.provider + (s.score != null ? ' · score ' + s.score : '')">
+          {{ s.languageName }}{{ s.hearingImpaired ? ' (HI)' : '' }}{{ s.forced ? ' (forced)' : '' }}
+          <button class="ml-1 text-slate-400 hover:text-rose-300" (click)="remove(s)" aria-label="Delete subtitle">✕</button>
+        </span>
+      }
     } @empty {
       <span class="text-sm text-slate-500">No subtitles yet.</span>
     }

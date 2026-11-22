@@ -201,6 +201,84 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
         Assert.Equal(["en", "es"], item.MissingLanguages);
         Assert.Equal("The Matrix (1999)", item.Target.Label);
     }
+
+    /// <summary>A minimal Matroska file with one subtitle track per (language, forced) pair and some padding.</summary>
+    private static byte[] Mkv(params (string Language, bool Forced)[] subtitles)
+    {
+        static byte[] El(uint id, byte[] body)
+        {
+            var idBytes = BitConverter.GetBytes(id).Reverse().SkipWhile(b => b == 0);
+            var size = BitConverter.GetBytes((ulong)body.Length).Reverse().ToArray();
+            size[0] = 0x01;
+            return [.. idBytes, .. size, .. body];
+        }
+
+        var tracks = subtitles.SelectMany(s => El(0xAE,
+        [
+            .. El(0x83, [0x11]), .. El(0x22B59C, System.Text.Encoding.ASCII.GetBytes(s.Language)), .. El(0x55AA, [(byte)(s.Forced ? 1 : 0)]),
+        ])).ToArray();
+        byte[] segment = [.. El(0x1654AE6B, tracks), .. El(0x1F43B675, new byte[300_000])];
+        return [.. El(0x1A45DFA3, []), .. El(0x18538067, segment)];
+    }
+
+    [Fact]
+    public async Task Embedded_subtitles_count_as_present()
+    {
+        await File.WriteAllBytesAsync(_moviePath, Mkv(("eng", false), ("spa", true)));
+        _provider.Candidates.Add(C("en-best", "The.Matrix.1999.1080p.BluRay.x264-SPARKS"));
+        _provider.Candidates.Add(C("es-best", "The.Matrix.1999.1080p.BluRay.x264-SPARKS", lang: "es"));
+
+        // Upgrade too: a language that is only embedded is not searched.
+        await SearchAsync(upgrade: true);
+
+        Assert.Equal(["es-best"], _provider.Downloads); // English is inside the video; forced Spanish does not count
+        Assert.Equal(["es"], _provider.LastQuery!.Languages);
+        using var scope = _services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        Assert.Equal("en,es+forced", (await db.MovieFiles.SingleAsync()).EmbeddedSubtitles);
+        Assert.Empty(await scope.ServiceProvider.GetRequiredService<SubtitleService>().WantedAsync(10));
+    }
+
+    [Fact]
+    public async Task Embedded_subtitles_are_ignored_when_disabled()
+    {
+        await File.WriteAllBytesAsync(_moviePath, Mkv(("eng", false)));
+        using (var scope = _services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<ISettingsService>()
+                .SaveAsync(new SubtitleSettings { Enabled = true, Languages = ["en", "es"], UseEmbeddedSubtitles = false });
+        }
+
+        _provider.Candidates.Add(C("en-best", "The.Matrix.1999.1080p.BluRay.x264-SPARKS"));
+
+        await SearchAsync();
+
+        Assert.Equal(["en-best"], _provider.Downloads);
+    }
+
+    [Theory]
+    [InlineData("eng", "en")]
+    [InlineData("pt-BR", "pt-br")]
+    [InlineData("es-419", "es")]
+    [InlineData("zh-Hant", "zh-tw")]
+    [InlineData("und", null)]
+    [InlineData(null, null)]
+    public void Normalizes_embedded_track_languages(string? tag, string? expected) =>
+        Assert.Equal(expected, EmbeddedSubtitleList.NormalizeLanguage(tag));
+
+    [Fact]
+    public void Embedded_list_round_trips()
+    {
+        var list = EmbeddedSubtitleList.FromTracks(
+        [
+            new("eng", null, null, false, false), new("eng", null, null, false, false), new("spa", null, null, true, false),
+            new("fre", null, null, false, true), new("und", null, null, false, false),
+        ]);
+        var stored = EmbeddedSubtitleList.Format(list);
+        Assert.Equal("en,es+forced,fr+hi", stored);
+        Assert.Equal(list, EmbeddedSubtitleList.Parse(stored));
+        Assert.Equal(["en", "fr"], EmbeddedSubtitleList.FullLanguages(stored));
+    }
 }
 
 public sealed class SubtitleSearchTaskTests : IAsyncLifetime

@@ -56,19 +56,26 @@ public static class SubtitleEndpoints
             return results;
         });
 
-        // Subtitle files for a movie or a whole series.
+        // Subtitle files for a movie or a whole series, plus the subtitle tracks inside the videos (Provider "embedded", Id 0).
         group.MapGet("/files", async (int? movieId, int? seriesId, KrakarrDbContext db, CancellationToken ct) =>
         {
             IQueryable<SubtitleFile> query;
+            List<SubtitleFileDto> embedded;
             if (movieId is { } mid)
             {
                 var fileIds = db.MovieFiles.Where(f => f.MovieId == mid).Select(f => f.Id);
                 query = db.SubtitleFiles.Where(s => s.MovieFileId != null && fileIds.Contains(s.MovieFileId.Value));
+                var files = await db.MovieFiles.AsNoTracking().Where(f => f.MovieId == mid && f.EmbeddedSubtitles != null && f.EmbeddedSubtitles != "")
+                    .Select(f => new { f.Id, f.RelativePath, f.EmbeddedSubtitles, f.DateAdded }).ToListAsync(ct);
+                embedded = files.SelectMany(f => EmbeddedDtos(f.Id, null, f.RelativePath, f.EmbeddedSubtitles, f.DateAdded)).ToList();
             }
             else if (seriesId is { } sid)
             {
                 var fileIds = db.EpisodeFiles.Where(f => f.SeriesId == sid).Select(f => f.Id);
                 query = db.SubtitleFiles.Where(s => s.EpisodeFileId != null && fileIds.Contains(s.EpisodeFileId.Value));
+                var files = await db.EpisodeFiles.AsNoTracking().Where(f => f.SeriesId == sid && f.EmbeddedSubtitles != null && f.EmbeddedSubtitles != "")
+                    .Select(f => new { f.Id, f.RelativePath, f.EmbeddedSubtitles, f.DateAdded }).ToListAsync(ct);
+                embedded = files.SelectMany(f => EmbeddedDtos(null, f.Id, f.RelativePath, f.EmbeddedSubtitles, f.DateAdded)).ToList();
             }
             else
             {
@@ -76,7 +83,7 @@ public static class SubtitleEndpoints
             }
 
             var rows = await query.AsNoTracking().OrderBy(s => s.Language).ToListAsync(ct);
-            return Results.Ok(rows.Select(ToDto));
+            return Results.Ok(rows.Select(ToDto).Concat(embedded).OrderBy(d => d.Language, StringComparer.Ordinal));
         });
 
         group.MapGet("/wanted", async (int? limit, SubtitleService service, CancellationToken ct) =>
@@ -182,6 +189,14 @@ public static class SubtitleEndpoints
         movieFileId is { } mf ? service.GetMovieTargetAsync(mf, ct)
         : episodeFileId is { } ef ? service.GetEpisodeTargetAsync(ef, ct)
         : Task.FromResult<SubtitleTarget?>(null);
+
+    private static IEnumerable<SubtitleFileDto> EmbeddedDtos(int? movieFileId, int? episodeFileId, string relativePath, string? embedded, DateTimeOffset dateAdded) =>
+        EmbeddedSubtitleList.Parse(embedded).Select(e => new SubtitleFileDto(
+            0, movieFileId, episodeFileId, e.Language, Languages.Name(e.Language), e.HearingImpaired, e.Forced,
+            Path.GetFileName(relativePath), EmbeddedProvider, null, null, dateAdded));
+
+    /// <summary>Provider name of subtitle tracks inside the video; they have no row and cannot be deleted.</summary>
+    public const string EmbeddedProvider = "embedded";
 
     private static SubtitleFileDto ToDto(SubtitleFile s) => new(
         s.Id, s.MovieFileId, s.EpisodeFileId, s.Language, Languages.Name(s.Language), s.HearingImpaired, s.Forced,

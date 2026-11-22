@@ -97,8 +97,8 @@
                       <div class="truncate" [title]="e.overview ?? ''">{{ e.title || 'TBA' }}</div>
                       @if (e.episodeFile; as f) {
                         <div class="flex items-center gap-1.5">
-                          @for (s of subtitlesByFile().get(f.id) ?? []; track s.id) {
-                            <span class="badge bg-surface-700 px-1.5 text-[10px] uppercase text-slate-300" [title]="s.languageName + (s.hearingImpaired ? ' (HI)' : '')">{{ s.language }}</span>
+                          @for (s of subtitlesByFile().get(f.id) ?? []; track $index) {
+                            <span class="badge bg-surface-700 px-1.5 text-[10px] uppercase text-slate-300" [title]="s.languageName + (s.hearingImpaired ? ' (HI)' : '') + (s.forced ? ' (forced)' : '') + (s.provider === 'embedded' ? ' · inside the video file' : '')">{{ s.language }}</span>
                           }
                           <span class="truncate font-mono text-xs text-slate-500 max-sm:hidden" [title]="f.relativePath">{{ f.relativePath }}</span>
                         </div>

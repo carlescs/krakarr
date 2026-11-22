@@ -115,8 +115,8 @@
         <span class="text-slate-500">Added</span><span>{{ f.dateAdded | date: 'medium' }}</span>
         <span class="text-slate-500">Subtitles</span>
         <span class="flex flex-wrap items-center gap-1.5">
-          @for (s of subtitles(); track s.id) {
-            <span class="badge bg-surface-700 text-slate-200" [title]="s.provider + (s.score != null ? ' · score ' + s.score : '')">{{ s.languageName }}{{ s.hearingImpaired ? ' (HI)' : '' }}</span>
+          @for (s of subtitles(); track $index) {
+            <span class="badge bg-surface-700 text-slate-200" [title]="(s.provider === 'embedded' ? 'inside the video file' : s.provider) + (s.score != null ? ' · score ' + s.score : '')">{{ s.languageName }}{{ s.hearingImpaired ? ' (HI)' : '' }}{{ s.forced ? ' (forced)' : '' }}{{ s.provider === 'embedded' ? ' · embedded' : '' }}</span>
           } @empty { <span class="text-slate-500">none</span> }
           @if (auth.isStaff()) { <button class="btn-ghost btn-sm" (click)="subtitlesOpen.set(true)">Manage</button> }
         </span>
