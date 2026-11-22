@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Net;
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
-using Krakarr.Core.Events;
 using Krakarr.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,13 +14,13 @@ namespace Krakarr.Downloads;
 
 /// <summary>
 /// Hosts the embedded MonoTorrent engine and keeps its Download rows in sync with it.
-/// The engine only runs while "Built-in" is the selected download client.
+/// The engine runs while "Built-in" is the selected download client or while it still owns downloads.
 /// </summary>
 public sealed class EmbeddedTorrentEngine(
     IServiceScopeFactory scopeFactory,
     KrakarrPaths paths,
     SettingsCache settingsCache,
-    IEventHub eventHub,
+    DownloadStatusFeed statusFeed,
     ILogger<EmbeddedTorrentEngine> logger) : BackgroundService, IDownloadClientImpl
 {
     private readonly ConcurrentDictionary<string, TorrentManager> _managers = new(StringComparer.OrdinalIgnoreCase);
@@ -36,7 +35,14 @@ public sealed class EmbeddedTorrentEngine(
 
     private ClientEngine Engine => _engine ?? throw new InvalidOperationException("Torrent engine is not started");
 
+    /// <summary>How often a running engine checks whether it is still needed (selected or owning downloads).</summary>
+    private const int ActiveCheckTicks = 30;
+
     public DownloadClientKind Kind => DownloadClientKind.Embedded;
+
+    public string Name => DownloadClients.Embedded;
+
+    public bool IsActive => _engine is not null;
 
     public string? LastError { get; private set; }
 
@@ -54,8 +60,9 @@ public sealed class EmbeddedTorrentEngine(
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                if (!await IsSelectedAsync(stoppingToken))
+                if (!await ShouldRunAsync(stoppingToken))
                 {
+                    LastError = null;
                     await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
                     continue;
                 }
@@ -84,7 +91,7 @@ public sealed class EmbeddedTorrentEngine(
         }
     }
 
-    /// <summary>Runs the engine until the host stops or another download client is selected.</summary>
+    /// <summary>Runs the engine until the host stops, or another client is selected and this one owns no downloads.</summary>
     private async Task RunAsync(CancellationToken stoppingToken)
     {
         var tick = 0;
@@ -94,20 +101,21 @@ public sealed class EmbeddedTorrentEngine(
             tick++;
             try
             {
-                if (_settingsDirty)
+                var settingsChanged = _settingsDirty;
+                if (settingsChanged || tick % ActiveCheckTicks == 0)
                 {
                     _settingsDirty = false;
-                    if (!await IsSelectedAsync(stoppingToken))
+                    if (!await ShouldRunAsync(stoppingToken))
                     {
-                        logger.LogInformation("Another download client was selected; stopping the built-in torrent engine");
+                        logger.LogInformation("Another download client is selected and the built-in one has no torrents left; stopping it");
                         return;
                     }
 
-                    await ApplySettingsAsync(stoppingToken);
+                    if (settingsChanged) await ApplySettingsAsync(stoppingToken);
                 }
 
                 var statuses = GetStatuses();
-                await eventHub.PublishAsync(EventNames.DownloadsUpdated, statuses, stoppingToken);
+                await statusFeed.PublishAsync(Kind, statuses, stoppingToken);
 
                 // Persist state every 5 seconds.
                 if (tick % 5 == 0)
@@ -122,11 +130,13 @@ public sealed class EmbeddedTorrentEngine(
         }
     }
 
-    private async Task<bool> IsSelectedAsync(CancellationToken ct)
+    /// <summary>The engine runs while it is the selected client or still owns downloads.</summary>
+    private async Task<bool> ShouldRunAsync(CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var settings = await scope.ServiceProvider.GetRequiredService<ISettingsService>().GetAsync<DownloadClientSettings>(ct);
-        return settings.Client == DownloadClientKind.Embedded;
+        return settings.Client == DownloadClientKind.Embedded
+            || await scope.ServiceProvider.GetRequiredService<KrakarrDbContext>().Downloads.AnyAsync(d => d.Client == DownloadClients.Embedded, ct);
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)
@@ -159,6 +169,7 @@ public sealed class EmbeddedTorrentEngine(
         _uploadBaseline.Clear();
         _downloadBaseline.Clear();
         _ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await statusFeed.PublishAsync(Kind, [], CancellationToken.None);
     }
 
     private async Task StartEngineAsync(CancellationToken ct)
@@ -374,7 +385,7 @@ public sealed class EmbeddedTorrentEngine(
             _rows.TryRemove(infoHash, out var row);
             using var scope = scopeFactory.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-            await db.Downloads.Where(d => d.InfoHash == infoHash).ExecuteDeleteAsync();
+            await db.Downloads.Where(d => d.InfoHash == infoHash && d.Client == DownloadClients.Embedded).ExecuteDeleteAsync();
 
             if (row?.TorrentFilePath is { } file && File.Exists(file))
             {
@@ -444,6 +455,7 @@ public sealed class EmbeddedTorrentEngine(
             Imported = row.Imported,
             ImportMessage = row.ImportMessage,
             ErrorMessage = manager.Error?.Exception?.Message,
+            Client = DownloadClients.Embedded,
         };
     }
 
@@ -535,7 +547,7 @@ public sealed class EmbeddedTorrentEngine(
 
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-        var row = await db.Downloads.FirstOrDefaultAsync(d => d.InfoHash == infoHash);
+        var row = await db.Downloads.FirstOrDefaultAsync(d => d.InfoHash == infoHash && d.Client == DownloadClients.Embedded);
         if (row is not null)
         {
             update(row);

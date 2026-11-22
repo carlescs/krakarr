@@ -7,7 +7,7 @@ import { DownloadsPage, sortTorrents } from './downloads';
 
 const torrent = (t: Partial<TorrentStatus>): TorrentStatus => ({
   id: 1, infoHash: 'h1', name: 'Alien.1979.1080p', state: 'Downloading', progress: 42, size: 1024, downloaded: 0, uploaded: 0, downloadRate: 0, uploadRate: 0,
-  seeds: 3, leechers: 1, ratio: 0, category: 'movies', savePath: '/downloads', added: '2026-01-01T00:00:00Z', imported: false, ...t,
+  seeds: 3, leechers: 1, ratio: 0, category: 'movies', savePath: '/downloads', added: '2026-01-01T00:00:00Z', imported: false, client: 'embedded', ...t,
 });
 const torrents = [torrent({ movieId: 3 }), torrent({ id: 2, infoHash: 'h2', name: 'Dark.S01', state: 'Seeding', progress: 100, seriesId: 4 })];
 
@@ -140,5 +140,25 @@ describe('DownloadsPage', () => {
     const { el } = await render({ downloadClientStatus: async () => ({ kind: 'QBittorrent', tag: 'krakarr', error: 'connection refused' }) });
     expect(text(el)).toContain('qBittorrent · tag krakarr');
     expect(text(el)).toContain('Cannot reach the download client: connection refused');
+  });
+
+  it('labels each torrent with its client when several clients own downloads', async () => {
+    const { el } = await render({
+      downloadClientStatus: async () => ({
+        kind: 'QBittorrent', tag: 'krakarr', connected: true,
+        others: [{ kind: 'Embedded', connected: false, error: 'port in use' }],
+      }),
+      downloads: async () => [torrent({}), torrent({ id: 2, infoHash: 'h2', name: 'Heat.1995', client: 'qbittorrent' })],
+    });
+    expect(text(el)).toContain('New torrents: qBittorrent · tag krakarr');
+    expect(text(el)).toContain('Cannot reach the Built-in download client: port in use');
+    const badges = [...el.querySelectorAll('[title="Download client"]')].map(b => b.textContent?.trim());
+    expect(badges.sort()).toEqual(['Built-in', 'qBittorrent']);
+  });
+
+  it('hides client labels when one client owns everything', async () => {
+    const { el } = await render();
+    expect(el.querySelector('[title="Download client"]')).toBeNull();
+    expect(text(el)).not.toContain('New torrents:');
   });
 });

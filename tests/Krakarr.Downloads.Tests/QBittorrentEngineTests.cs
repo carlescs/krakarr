@@ -47,7 +47,7 @@ public sealed class QBittorrentEngineTests : IAsyncLifetime
             await scope.ServiceProvider.GetRequiredService<ISettingsService>().SaveAsync(_settings);
         }
 
-        _engine = new QBittorrentEngine(_services.GetRequiredService<IServiceScopeFactory>(), new FakeFactory(_fake), new NullEventHub(), NullLogger<QBittorrentEngine>.Instance);
+        _engine = new QBittorrentEngine(_services.GetRequiredService<IServiceScopeFactory>(), new FakeFactory(_fake), new DownloadStatusFeed(new NullEventHub()), NullLogger<QBittorrentEngine>.Instance);
     }
 
     public async ValueTask DisposeAsync()

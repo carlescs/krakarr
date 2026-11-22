@@ -4,7 +4,7 @@ import { RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
 import { Events } from '../../core/events';
 import { BytesPipe, DurationPipe, SpeedPipe } from '../../core/format';
-import { BulkDownloadAction, BulkResult, DownloadClientStatus, TorrentStatus } from '../../core/models';
+import { BulkDownloadAction, BulkResult, DownloadClientKind, DownloadClientName, DownloadClientStatus, TorrentStatus } from '../../core/models';
 import { Selection } from '../../core/selection';
 import { Toasts } from '../../core/toast';
 import { MediaLink, MediaLinkPicker, linkFields } from '../../shared/media-link-picker/media-link-picker';
@@ -62,6 +62,10 @@ export function sortTorrents(list: readonly TorrentStatus[], { key, desc }: Sort
   });
 }
 
+export function clientLabel(kind: DownloadClientKind | DownloadClientName): string {
+  return kind === 'QBittorrent' || kind === 'qbittorrent' ? 'qBittorrent' : 'Built-in';
+}
+
 /** The list shows either seeding torrents or everything else; the default is the non-seeding view. */
 function readShowSeeding(): boolean {
   try { return localStorage.getItem(SHOW_SEEDING_KEY) === 'true'; } catch { return false; }
@@ -96,6 +100,15 @@ export class DownloadsPage implements OnInit, OnDestroy {
   protected readonly totalUp = computed(() => this.list().reduce((s, d) => s + d.uploadRate, 0));
   protected readonly addOpen = signal(false);
   protected readonly client = signal<DownloadClientStatus | null>(null);
+  /** Torrents live in more than one client (e.g. some left seeding after switching): label each row with its client. */
+  protected readonly multiClient = computed(() =>
+    (this.client()?.others?.length ?? 0) > 0 || new Set(this.list().map(d => d.client)).size > 1);
+  protected readonly clientErrors = computed(() => {
+    const c = this.client();
+    if (!c) return [];
+    return [c, ...(c.others ?? [])].filter(x => x.error).map(x => ({ label: clientLabel(x.kind), error: x.error! }));
+  });
+  protected readonly clientLabel = clientLabel;
   private clientTimer?: ReturnType<typeof setInterval>;
   protected readonly busy = signal(false);
   protected readonly removing = signal<TorrentStatus | null>(null);

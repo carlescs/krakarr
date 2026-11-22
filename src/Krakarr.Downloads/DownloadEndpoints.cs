@@ -125,7 +125,8 @@ public static class DownloadEndpoints
             }
         });
 
-        // Which client is active and whether it is reachable.
+        // Which client new torrents go to and whether it is reachable, plus the other clients still running because
+        // they own downloads.
         group.MapGet("/client", async (DownloadClientRouter router, ISettingsService settings, CancellationToken ct) =>
         {
             var s = await settings.GetAsync<DownloadClientSettings>(ct);
@@ -136,6 +137,10 @@ public static class DownloadEndpoints
                 Connected = client.LastError is null,
                 Error = client.LastError,
                 Tag = s.Client == DownloadClientKind.QBittorrent ? s.QBittorrent.Tag : null,
+                Others = router.All
+                    .Where(c => c.Kind != s.Client && c.IsActive)
+                    .Select(c => new { c.Kind, Connected = c.LastError is null, Error = c.LastError })
+                    .ToList(),
             };
         });
 

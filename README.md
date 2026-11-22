@@ -231,7 +231,10 @@ With telemetry off, nothing listens to the instrumentation, so it costs next to 
 - **Seeding** follows Krakarr's seeding settings (ratio/time limit, then remove or stop). With both limits at 0, qBittorrent's own share limits apply.
 - Use **Test** to check the URL, credentials and tag before saving. The password is never sent back to the browser.
 
-Each client keeps its own list of torrents, so switching back and forth never mixes them up.
+Each download stays with the client that added it. Switching only changes where *new* torrents go: torrents
+already in the other client keep downloading, seeding and importing there, and pause, resume and remove are sent to
+the client that owns them. The Downloads page lists both, with a client label on each torrent. A client that isn't
+selected keeps running only while it still has torrents, so the built-in engine stops once its last torrent is removed.
 
 ### Environment variables
 
