@@ -66,6 +66,11 @@
           <button class="flex min-w-0 flex-1 items-center gap-2 self-stretch text-left sm:gap-3" (click)="toggleExpanded(season.seasonNumber)">
             <h2 class="whitespace-nowrap font-semibold text-white">{{ season.seasonNumber === 0 ? 'Specials' : 'Season ' + season.seasonNumber }}</h2>
             <span class="badge" [class]="seasonBadge(season)">{{ season.episodeFileCount }}/{{ season.episodeCount }}</span>
+            @if (seasonSubtitleGaps().get(season.seasonNumber); as gaps) {
+              <span class="badge gap-1 bg-amber-500/10 text-amber-300" [title]="gaps + ' downloaded episode' + (gaps === 1 ? ' is' : 's are') + ' missing a wanted subtitle language'" data-subtitle-gaps>
+                <svg class="size-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons.cc" /></svg>{{ gaps }}
+              </span>
+            }
             @if (season.sizeOnDisk) { <span class="whitespace-nowrap text-xs text-slate-500 max-sm:hidden">{{ season.sizeOnDisk | bytes }}</span> }
             <span class="ml-auto text-slate-500">{{ expanded().has(season.seasonNumber) ? '▾' : '▸' }}</span>
           </button>
@@ -99,6 +104,9 @@
                         <div class="flex items-center gap-1.5">
                           @for (s of subtitlesByFile().get(f.id) ?? []; track $index) {
                             <span class="badge bg-surface-700 px-1.5 text-[10px] uppercase text-slate-300" [title]="s.languageName + (s.hearingImpaired ? ' (HI)' : '') + (s.forced ? ' (forced)' : '') + (s.provider === 'embedded' ? ' · inside the video file' : '')">{{ s.language }}</span>
+                          }
+                          @for (code of missingSubtitles().get(f.id) ?? []; track code) {
+                            <span class="badge border border-dashed border-amber-500/40 px-1.5 text-[10px] uppercase text-amber-300/80" [title]="'No ' + subtitleLanguages.name(code) + ' subtitle yet'" data-missing-subtitle>{{ code }}</span>
                           }
                           <span class="truncate font-mono text-xs text-slate-500 max-sm:hidden" [title]="f.relativePath">{{ f.relativePath }}</span>
                         </div>
@@ -230,7 +238,7 @@
   @if (detailEpisode(); as e) {
     <kr-episode-details [seriesId]="s.id" [episode]="e" [subtitles]="e.episodeFile ? (subtitlesByFile().get(e.episodeFile.id) ?? []) : []"
                         (closed)="detailEpisodeId.set(null)" (search)="searchEpisode(e)"
-                        (interactive)="fromDetails(e, 'interactive')" (manageSubtitles)="fromDetails(e, 'subtitles')" />
+                        (interactive)="fromDetails(e, 'interactive')" (manageSubtitles)="fromDetails(e, 'subtitles')" (subtitlesChanged)="loadSubtitles()" />
   }
 
   @if (subtitleEpisode(); as e) {

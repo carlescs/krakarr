@@ -18,6 +18,8 @@ describe('SeriesDetailPage', () => {
       history: vi.fn(async () => ({ items: [] })),
       subtitleFiles: vi.fn(async () => []),
       languages: vi.fn(async () => ({ all: [], preferred: [] })),
+      wantedSubtitleLanguages: vi.fn(async () => ({ enabled: false, useEmbeddedSubtitles: true, languages: [] })),
+      subtitleLanguages: vi.fn(async () => []),
     };
     TestBed.configureTestingModule({
       providers: [
@@ -61,6 +63,8 @@ describe('SeriesDetailPage', () => {
       history: vi.fn(async () => ({ items: [] })),
       subtitleFiles: vi.fn(async () => []),
       languages: vi.fn(async () => ({ all: [], preferred: [] })),
+      wantedSubtitleLanguages: vi.fn(async () => ({ enabled: false, useEmbeddedSubtitles: true, languages: [] })),
+      subtitleLanguages: vi.fn(async () => []),
       updateSeries: vi.fn(async () => undefined),
     };
     TestBed.configureTestingModule({
@@ -87,5 +91,44 @@ describe('SeriesDetailPage', () => {
     // Toggling monitoring leaves the title alone.
     await page.toggleSeries();
     expect(api.updateSeries).toHaveBeenLastCalledWith(3, false, 1, true, null);
+  });
+
+  it('marks downloaded episodes missing a wanted subtitle language, per season', async () => {
+    const api = {
+      series: vi.fn(async (id: number) => ({ id, title: 'Show', monitored: true, seasonFolder: true, qualityProfileId: 1, seasons: [{ seasonNumber: 1 }] })),
+      episodes: vi.fn(async () => [
+        { id: 1, seriesId: 3, seasonNumber: 1, episodeNumber: 1, episodeFile: { id: 10 } },
+        { id: 2, seriesId: 3, seasonNumber: 1, episodeNumber: 2, episodeFile: { id: 11 } },
+        { id: 3, seriesId: 3, seasonNumber: 1, episodeNumber: 3 },
+      ]),
+      qualityProfiles: vi.fn(async () => []),
+      history: vi.fn(async () => ({ items: [] })),
+      subtitleFiles: vi.fn(async () => [
+        { id: 1, episodeFileId: 10, language: 'en', forced: false, provider: 'opensubtitles' },
+        { id: 2, episodeFileId: 10, language: 'es', forced: false, provider: 'opensubtitles' },
+        { id: 3, episodeFileId: 11, language: 'en', forced: false, provider: 'opensubtitles' },
+      ]),
+      languages: vi.fn(async () => ({ all: [], preferred: [] })),
+      wantedSubtitleLanguages: vi.fn(async () => ({ enabled: true, useEmbeddedSubtitles: true, languages: ['en', 'es'] })),
+      subtitleLanguages: vi.fn(async () => []),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: Api, useValue: api },
+        { provide: Auth, useValue: { isStaff: () => true } },
+        { provide: Events, useValue: { downloads: signal([]), seriesUpdated: new Subject(), historyAdded: new Subject(), subtitlesUpdated: new Subject() } },
+        { provide: Toasts, useValue: { error: vi.fn(), show: vi.fn(), success: vi.fn() } },
+        { provide: Router, useValue: { navigateByUrl: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(SeriesDetailPage, { set: { template: '', imports: [] } });
+
+    const fixture = TestBed.createComponent(SeriesDetailPage);
+    const page = fixture.componentInstance as unknown as { missingSubtitles: () => Map<number, string[]>; seasonSubtitleGaps: () => Map<number, number> };
+    fixture.componentRef.setInput('id', 3);
+    await fixture.whenStable();
+    await new Promise(resolve => setTimeout(resolve));
+    expect([...page.missingSubtitles()]).toEqual([[11, ['es']]]);
+    expect(page.seasonSubtitleGaps().get(1)).toBe(1);
   });
 });

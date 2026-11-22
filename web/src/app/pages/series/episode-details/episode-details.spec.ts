@@ -17,7 +17,10 @@ const details: EpisodeDetails = {
   crew: [{ tmdbId: 10, name: 'Adam Bernstein', jobs: 'Director' }],
 };
 
-function create(api = mockApi({ episodeDetails: async () => details, ratings: async () => null }), role: 'Admin' | 'User' = 'Admin') {
+function create(api = mockApi({
+  episodeDetails: async () => details, ratings: async () => null, subtitleLanguages: async () => [{ code: 'en', name: 'English' }, { code: 'es', name: 'Spanish' }],
+  wantedSubtitleLanguages: async () => ({ enabled: true, useEmbeddedSubtitles: true, languages: ['en', 'es'] }),
+}), role: 'Admin' | 'User' = 'Admin') {
   setupTest({ api, role });
   const fixture = TestBed.createComponent(EpisodeDetailsDialog);
   fixture.componentRef.setInput('seriesId', 5);
@@ -38,7 +41,8 @@ describe('EpisodeDetailsDialog', () => {
     expect(text(root, '[data-overview]')).toBe('Walt cleans up.');
     expect(text(root, '[data-file]')).toContain('Breaking Bad - S01E03.mkv');
     expect(text(root, '[data-file]')).toContain('GRP');
-    expect(text(root, '[data-file]')).toContain('en');
+    expect(text(root, '[data-subtitles]')).toContain('English');
+    expect(text(root, '[data-subtitles]')).toContain('Spanish · missing');
     expect(root.querySelector('a[aria-label="TMDB"]')?.getAttribute('href')).toBe('https://www.themoviedb.org/tv/1396/season/1/episode/3');
     expect(text(root)).toContain('Guest stars');
     expect(text(root)).toContain('Krazy-8');

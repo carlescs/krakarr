@@ -44,7 +44,6 @@
           @if (auth.isStaff()) {
             <button class="btn-primary" (click)="autoSearch()">Automatic search</button>
             <button class="btn-secondary" (click)="interactiveSearch()">Interactive search</button>
-            @if (m.hasFile) { <button class="btn-secondary" (click)="searchSubtitles()">Search subtitles</button> }
             <button class="btn-secondary" (click)="toggleMonitored()">{{ m.monitored ? 'Unmonitor' : 'Monitor' }}</button>
             <button class="btn-ghost" (click)="editing.set(true)">Edit</button>
             <button class="btn-ghost text-rose-300" (click)="confirmDelete.set(true)">Delete</button>
@@ -113,14 +112,19 @@
         <span class="text-slate-500">Quality</span><span>{{ f.quality }}</span>
         <span class="text-slate-500">Group</span><span>{{ f.releaseGroup || '—' }}</span>
         <span class="text-slate-500">Added</span><span>{{ f.dateAdded | date: 'medium' }}</span>
-        <span class="text-slate-500">Subtitles</span>
-        <span class="flex flex-wrap items-center gap-1.5">
-          @for (s of subtitles(); track $index) {
-            <span class="badge bg-surface-700 text-slate-200" [title]="(s.provider === 'embedded' ? 'inside the video file' : s.provider) + (s.score != null ? ' · score ' + s.score : '')">{{ s.languageName }}{{ s.hearingImpaired ? ' (HI)' : '' }}{{ s.forced ? ' (forced)' : '' }}{{ s.provider === 'embedded' ? ' · embedded' : '' }}</span>
-          } @empty { <span class="text-slate-500">none</span> }
-          @if (auth.isStaff()) { <button class="btn-ghost btn-sm" (click)="subtitlesOpen.set(true)">Manage</button> }
-        </span>
       </div>
+    </section>
+
+    <!-- Subtitles -->
+    <section class="card mb-6 p-4 sm:p-5" data-subtitles>
+      <div class="mb-3 flex flex-wrap items-center gap-2">
+        <h2 class="flex-1 text-sm font-semibold uppercase tracking-wide text-slate-400">Subtitles</h2>
+        @if (auth.isStaff()) {
+          <button class="btn-secondary btn-sm" (click)="searchSubtitles()">Automatic search</button>
+          <button class="btn-ghost btn-sm" (click)="subtitlesOpen.set(true)">Interactive search</button>
+        }
+      </div>
+      <kr-subtitle-list [files]="subtitles()" [deletable]="auth.isStaff()" (changed)="loadSubtitles()" />
     </section>
     @if (subtitlesOpen()) {
       <kr-subtitle-manager [fileRef]="{ movieFileId: f.id }" [label]="m.title" [files]="subtitles()"

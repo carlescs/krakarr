@@ -13,6 +13,7 @@ import { Modal } from '../../../shared/modal/modal';
 import { TableSort } from '../../../core/table-sort';
 import { SortHeader } from '../../../shared/sort-header/sort-header';
 import { LanguagePicker } from '../../../shared/language-picker/language-picker';
+import { SubtitleLanguages } from '../../../core/subtitles';
 import { Languages } from '../../../core/languages';
 import { Auth } from '../../../core/auth';
 import { AccountSettings } from '../account/account';
@@ -125,6 +126,7 @@ export class SettingsPage implements OnInit {
   telemetryStatusDelayMs = 1500;
   protected readonly languages = signal<Language[]>([]);
   protected readonly languageCatalog = inject(Languages);
+  private readonly subtitleLanguages = inject(SubtitleLanguages);
   protected wantedLanguages: string[] = [];
   protected readonly subtitleTest = signal<{ success: boolean; message: string } | null>(null);
   protected readonly testingSubtitles = signal(false);
@@ -246,6 +248,7 @@ export class SettingsPage implements OnInit {
   async save<K extends 'media' | 'downloads' | 'automation' | 'metadata' | 'subtitles' | 'jellyfin'>(section: K, value: Parameters<Api['saveSettings']>[1] & object) {
     try {
       await this.api.saveSettings(section, value as never);
+      if (section === 'subtitles') this.subtitleLanguages.load(true).catch(() => {});
       this.toasts.success('Settings saved');
     } catch (e) {
       this.toasts.error(errorMessage(e));

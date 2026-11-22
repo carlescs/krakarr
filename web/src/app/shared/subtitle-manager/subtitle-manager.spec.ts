@@ -14,6 +14,7 @@ describe('SubtitleManager', () => {
     const api = setupTest({
       api: mockApi({
         subtitleLanguages: async () => [{ code: 'es', name: 'Spanish' }],
+        wantedSubtitleLanguages: async () => ({ enabled: true, useEmbeddedSubtitles: true, languages: ['es'] }),
         subtitleCandidates: async () => ({ results: [result], errors: ['Podnapisi timed out'] }),
         downloadSubtitle: async () => undefined,
       }),
@@ -26,6 +27,7 @@ describe('SubtitleManager', () => {
     await settle(fixture);
     const el = fixture.nativeElement as HTMLElement;
     expect(text(el)).toContain('No subtitles yet.');
+    expect(text(el)).toContain('Spanish · missing');
 
     button(el, 'Search providers').click();
     await settle(fixture);
@@ -62,8 +64,8 @@ describe('SubtitleManager', () => {
     ]);
     await settle(fixture);
     const el = fixture.nativeElement as HTMLElement;
-    expect(text(el)).toContain('English · embedded');
-    expect(text(el)).toContain('Spanish (forced) · embedded');
+    const rows = [...el.querySelectorAll('[data-subtitle]')].map(r => text(r as HTMLElement));
+    expect(rows).toEqual(['EnglishEmbeddedAlien.mkv', 'Spanish (forced)EmbeddedAlien.mkv']);
     expect(el.querySelector('[aria-label="Delete subtitle"]')).toBeNull();
   });
 });

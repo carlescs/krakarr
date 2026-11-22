@@ -51,6 +51,7 @@ public static class RoleAccess
         "/api/v1/languages",
         "/api/v1/subtitles/languages",
         "/api/v1/subtitles/files",
+        "/api/v1/subtitles/wanted-languages",
     ];
 
     /// <summary>

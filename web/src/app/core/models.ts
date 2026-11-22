@@ -266,6 +266,8 @@ export interface ScoredSubtitle { candidate: SubtitleCandidate; score: number; m
 export interface WantedSubtitle {
   mediaType: 'Movie' | 'Series'; movieId?: number; seriesId?: number; movieFileId?: number; episodeFileId?: number; label: string; missingLanguages: string[];
 }
+/** The subtitle languages Krakarr looks for (Settings › Subtitles). */
+export interface WantedSubtitleLanguages { enabled: boolean; useEmbeddedSubtitles: boolean; languages: string[]; }
 export interface SubtitleFileRef { movieFileId?: number; episodeFileId?: number; }
 
 export type MatchConfidence = 'None' | 'Low' | 'Medium' | 'High' | 'Exact';

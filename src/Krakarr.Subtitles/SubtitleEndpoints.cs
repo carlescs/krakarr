@@ -16,6 +16,8 @@ public sealed record SubtitleFileDto(int Id, int? MovieFileId, int? EpisodeFileI
 public sealed record SubtitleSearchRequest(int? MovieFileId, int? EpisodeFileId, int? MovieId = null, int? SeriesId = null);
 public sealed record SubtitleDownloadRequest(int? MovieFileId, int? EpisodeFileId, SubtitleCandidate Candidate, int? Score);
 public sealed record ScoredSubtitleDto(SubtitleCandidate Candidate, int Score, IReadOnlyList<string> Matches, IReadOnlyList<string> Rejections, bool Acceptable);
+/// <summary>The subtitle languages Krakarr looks for, so detail pages can show which ones a file is missing.</summary>
+public sealed record WantedSubtitleLanguagesDto(bool Enabled, bool UseEmbeddedSubtitles, IReadOnlyList<string> Languages);
 public sealed record WantedSubtitleDto(string MediaType, int? MovieId, int? SeriesId, int? MovieFileId, int? EpisodeFileId, string Label, IReadOnlyList<string> MissingLanguages);
 
 public static class SubtitleEndpoints
@@ -84,6 +86,12 @@ public static class SubtitleEndpoints
 
             var rows = await query.AsNoTracking().OrderBy(s => s.Language).ToListAsync(ct);
             return Results.Ok(rows.Select(ToDto).Concat(embedded).OrderBy(d => d.Language, StringComparer.Ordinal));
+        });
+
+        group.MapGet("/wanted-languages", async (ISettingsService settings, CancellationToken ct) =>
+        {
+            var s = await settings.GetAsync<SubtitleSettings>(ct);
+            return new WantedSubtitleLanguagesDto(s.Enabled, s.UseEmbeddedSubtitles, s.Languages);
         });
 
         group.MapGet("/wanted", async (int? limit, SubtitleService service, CancellationToken ct) =>
