@@ -12,37 +12,43 @@ export function storeView(key: string, mode: ViewMode) {
   try { localStorage.setItem(key, mode); } catch { /* storage unavailable */ }
 }
 
+type Key = string | number;
+
 /**
- * A multi-selection of library titles. Only titles in `scope` (the filtered list) count as selected, so changing the
- * filter never leaves hidden titles in a bulk action; titles that come back into view are selected again.
+ * A multi-selection of list items (library titles, torrents). Only items in `scope` (the filtered list) count as
+ * selected, so changing the filter never leaves hidden items in a bulk action; items that come back into view are
+ * selected again. Items are identified by `key`, their `id` by default.
  */
-export class Selection {
-  private readonly ids = signal<ReadonlySet<number>>(new Set());
-  /** Last title toggled without Shift: the anchor of a Shift+click range. */
-  private anchor: number | null = null;
+export class Selection<T = { id: number }, K extends Key = number> {
+  private readonly ids = signal<ReadonlySet<K>>(new Set());
+  /** Last item toggled without Shift: the anchor of a Shift+click range. */
+  private anchor: K | null = null;
+  private readonly keys: Signal<K[]>;
 
-  constructor(private readonly scope: Signal<readonly { id: number }[]>) {}
+  constructor(scope: Signal<readonly T[]>, key: (item: T) => K = item => (item as { id: K }).id) {
+    this.keys = computed(() => scope().map(key));
+  }
 
-  /** Selected ids in list order. */
+  /** Selected keys in list order. */
   readonly selected = computed(() => {
     const ids = this.ids();
-    return ids.size === 0 ? [] : this.scope().filter(x => ids.has(x.id)).map(x => x.id);
+    return ids.size === 0 ? [] : this.keys().filter(k => ids.has(k));
   });
   readonly count = computed(() => this.selected().length);
-  readonly all = computed(() => this.scope().length > 0 && this.count() === this.scope().length);
+  readonly all = computed(() => this.keys().length > 0 && this.count() === this.keys().length);
 
-  has(id: number): boolean { return this.ids().has(id); }
+  has(id: K): boolean { return this.ids().has(id); }
 
-  /** Toggles one title; with `range`, sets every title between the last toggled one and this one to its new state. */
-  toggle(id: number, range = false) {
+  /** Toggles one item; with `range`, sets every item between the last toggled one and this one to its new state. */
+  toggle(id: K, range = false) {
     const next = new Set(this.ids());
     const select = !next.has(id);
-    const list = this.scope();
-    const from = range && this.anchor !== null ? list.findIndex(x => x.id === this.anchor) : -1;
-    const to = list.findIndex(x => x.id === id);
+    const keys = this.keys();
+    const from = range && this.anchor !== null ? keys.indexOf(this.anchor) : -1;
+    const to = keys.indexOf(id);
     if (from >= 0 && to >= 0) {
       for (let i = Math.min(from, to); i <= Math.max(from, to); i++) {
-        if (select) next.add(list[i].id); else next.delete(list[i].id);
+        if (select) next.add(keys[i]); else next.delete(keys[i]);
       }
     } else {
       if (select) next.add(id); else next.delete(id);
@@ -51,10 +57,10 @@ export class Selection {
     this.ids.set(next);
   }
 
-  /** Selects every title in scope, or clears the selection when they all are. */
+  /** Selects every item in scope, or clears the selection when they all are. */
   toggleAll() {
     if (this.all()) this.clear();
-    else this.ids.set(new Set(this.scope().map(x => x.id)));
+    else this.ids.set(new Set(this.keys()));
   }
 
   clear() {
