@@ -130,8 +130,12 @@ public sealed partial class SeriesLibraryImport(
     }
 
     /// <summary>Maps files to episodes (best quality first, no episode twice) and stores EpisodeFiles.</summary>
-    public async Task<(List<Episode> Linked, List<string> Problems)> LinkFilesAsync(
-        Core.Domain.Series series, IReadOnlyList<(string Path, long Length)> files, CancellationToken ct)
+    public Task<(List<Episode> Linked, List<string> Problems)> LinkFilesAsync(
+        Core.Domain.Series series, IReadOnlyList<(string Path, long Length)> files, CancellationToken ct) =>
+        LinkFilesAsync(db, series, files, ct);
+
+    public static async Task<(List<Episode> Linked, List<string> Problems)> LinkFilesAsync(
+        KrakarrDbContext db, Core.Domain.Series series, IReadOnlyList<(string Path, long Length)> files, CancellationToken ct)
     {
         var problems = new List<string>();
         var mapped = new List<MappedFile>();
@@ -149,7 +153,7 @@ public sealed partial class SeriesLibraryImport(
             mapped.Add(new MappedFile(file, size, id.Value.Season, id.Value.Episodes, parsed.Quality, parsed.ReleaseGroup));
         }
 
-        var taken = new HashSet<int>();
+        var taken = series.Episodes.Where(e => e.EpisodeFileId is not null).ToHashSet();
         var linked = new List<Episode>();
         foreach (var m in mapped.OrderByDescending(m => m.Quality.Weight).ThenByDescending(m => m.Size))
         {
@@ -161,7 +165,7 @@ public sealed partial class SeriesLibraryImport(
                 continue;
             }
 
-            if (episodes.Any(e => taken.Contains(e!.Id)))
+            if (episodes.Any(e => taken.Contains(e!)))
             {
                 problems.Add($"{relative} (duplicate)");
                 continue;
@@ -182,9 +186,12 @@ public sealed partial class SeriesLibraryImport(
             foreach (var e in episodes)
             {
                 e!.EpisodeFileId = file.Id;
-                taken.Add(e.Id);
+                e.EpisodeFile = file;
+                taken.Add(e);
                 linked.Add(e);
             }
+
+            await Krakarr.Subtitles.SubtitleService.SyncEpisodeFileAsync(db, series.Path, file, ct);
         }
 
         await db.SaveChangesAsync(ct);

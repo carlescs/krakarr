@@ -9,6 +9,7 @@ using Krakarr.Downloads;
 using Krakarr.Indexers;
 using Krakarr.Media.Files;
 using Krakarr.Media.Parsing;
+using Krakarr.Subtitles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -137,55 +138,192 @@ public sealed class SeriesService(
     }
 
     /// <summary>
-    /// Re-reads metadata and episodes from the configured source. New episodes inherit their season's monitoring.
-    /// After switching sources, episodes are matched by the new source's id when known, else by season/episode number.
+    /// Re-reads metadata and episodes from the configured source and rescans the series folder on disk.
+    /// New episodes inherit their season's monitoring. After switching sources, episodes are matched by
+    /// the new source's id when known, else by season/episode number.
     /// </summary>
     public async Task RefreshAsync(Core.Domain.Series series, CancellationToken ct = default)
     {
-        var info = await metadata.GetSeriesAsync(new SeriesIds(series.TmdbId, series.TvdbId), ct);
-        if (await InLibraryAsync(new SeriesIds(info.TmdbId, info.TvdbId), series.Id, ct))
-            throw new MetadataException($"{series.Title}: another series in the library has the same TMDB/TheTVDB id");
-        ApplyInfo(series, info);
-
-        var byTmdb = series.Episodes.Where(e => e.TmdbId is not null).GroupBy(e => e.TmdbId!.Value).ToDictionary(g => g.Key, g => g.First());
-        var byTvdb = series.Episodes.Where(e => e.TvdbId is not null).GroupBy(e => e.TvdbId!.Value).ToDictionary(g => g.Key, g => g.First());
-        var seen = new HashSet<Episode>();
-        foreach (var e in info.Episodes)
+        HashSet<Episode>? seen = null;
+        MetadataException? metadataError = null;
+        try
         {
-            var episode = (e.TmdbId is { } tmdbEp ? byTmdb.GetValueOrDefault(tmdbEp) : null)
-                ?? (e.TvdbId is { } tvdbEp ? byTvdb.GetValueOrDefault(tvdbEp) : null);
-            if (episode is not null && seen.Contains(episode)) episode = null;
-            episode ??= series.Episodes.FirstOrDefault(x => x.SeasonNumber == e.SeasonNumber && x.EpisodeNumber == e.EpisodeNumber && !seen.Contains(x));
-            if (episode is null)
+            var info = await metadata.GetSeriesAsync(new SeriesIds(series.TmdbId, series.TvdbId), ct);
+            if (await InLibraryAsync(new SeriesIds(info.TmdbId, info.TvdbId), series.Id, ct))
+                throw new MetadataException($"{series.Title}: another series in the library has the same TMDB/TheTVDB id");
+            ApplyInfo(series, info);
+
+            var byTmdb = series.Episodes.Where(e => e.TmdbId is not null).GroupBy(e => e.TmdbId!.Value).ToDictionary(g => g.Key, g => g.First());
+            var byTvdb = series.Episodes.Where(e => e.TvdbId is not null).GroupBy(e => e.TvdbId!.Value).ToDictionary(g => g.Key, g => g.First());
+            seen = [];
+            foreach (var e in info.Episodes)
             {
-                var season = series.Seasons.FirstOrDefault(s => s.SeasonNumber == e.SeasonNumber);
-                if (season is null)
+                var episode = (e.TmdbId is { } tmdbEp ? byTmdb.GetValueOrDefault(tmdbEp) : null)
+                    ?? (e.TvdbId is { } tvdbEp ? byTvdb.GetValueOrDefault(tvdbEp) : null);
+                if (episode is not null && seen.Contains(episode)) episode = null;
+                episode ??= series.Episodes.FirstOrDefault(x => x.SeasonNumber == e.SeasonNumber && x.EpisodeNumber == e.EpisodeNumber && !seen.Contains(x));
+                if (episode is null)
                 {
-                    season = new Season { SeasonNumber = e.SeasonNumber, Monitored = series.Monitored && e.SeasonNumber > 0 };
-                    series.Seasons.Add(season);
+                    var season = series.Seasons.FirstOrDefault(s => s.SeasonNumber == e.SeasonNumber);
+                    if (season is null)
+                    {
+                        season = new Season { SeasonNumber = e.SeasonNumber, Monitored = series.Monitored && e.SeasonNumber > 0 };
+                        series.Seasons.Add(season);
+                    }
+
+                    episode = new Episode { Monitored = series.Monitored && season.Monitored && e.SeasonNumber > 0 };
+                    series.Episodes.Add(episode);
                 }
 
-                episode = new Episode { Monitored = series.Monitored && season.Monitored && e.SeasonNumber > 0 };
-                series.Episodes.Add(episode);
+                episode.TmdbId = e.TmdbId ?? episode.TmdbId;
+                episode.TvdbId = e.TvdbId ?? episode.TvdbId;
+                episode.SeasonNumber = e.SeasonNumber;
+                episode.EpisodeNumber = e.EpisodeNumber;
+                Update(episode, e);
+                seen.Add(episode);
             }
 
-            episode.TmdbId = e.TmdbId ?? episode.TmdbId;
-            episode.TvdbId = e.TvdbId ?? episode.TvdbId;
-            episode.SeasonNumber = e.SeasonNumber;
-            episode.EpisodeNumber = e.EpisodeNumber;
-            Update(episode, e);
-            seen.Add(episode);
+            series.LastRefreshed = time.GetUtcNow();
         }
-
-        // Episodes removed upstream are dropped unless we hold a file for them.
-        foreach (var gone in series.Episodes.Where(e => !seen.Contains(e) && e.EpisodeFileId is null).ToList())
+        catch (MetadataException ex)
         {
-            series.Episodes.Remove(gone);
-            db.Episodes.Remove(gone);
+            metadataError = ex;
         }
 
-        series.LastRefreshed = time.GetUtcNow();
+        await RescanDiskCoreAsync(series, seen, ct);
+        if (metadataError is not null) throw metadataError;
+    }
+
+    /// <summary>Syncs the series' episode files and sidecar/embedded subtitles with what is currently in <see cref="Core.Domain.Series.Path"/>.</summary>
+    public Task RescanDiskAsync(Core.Domain.Series series, CancellationToken ct = default) =>
+        RescanDiskCoreAsync(series, seen: null, ct);
+
+    private async Task RescanDiskCoreAsync(Core.Domain.Series series, HashSet<Episode>? seen, CancellationToken ct)
+    {
+        var existingFiles = await db.EpisodeFiles.Where(f => f.SeriesId == series.Id).ToListAsync(ct);
+        var historyEntries = new List<HistoryEntry>();
+        var subtitlesChanged = false;
+        var survivingFiles = new List<EpisodeFile>();
+
+        foreach (var file in existingFiles)
+        {
+            var fullPath = Path.Combine(series.Path, file.RelativePath);
+            if (!File.Exists(fullPath))
+            {
+                foreach (var e in series.Episodes.Where(e => e.EpisodeFileId == file.Id))
+                {
+                    e.EpisodeFileId = null;
+                    e.EpisodeFile = null;
+                }
+
+                db.EpisodeFiles.Remove(file);
+                var deleted = new HistoryEntry
+                {
+                    EventType = HistoryEventType.FileDeleted,
+                    SourceTitle = file.RelativePath,
+                    SeriesId = series.Id,
+                    QualityId = file.QualityId,
+                    Message = "File no longer on disk",
+                };
+                db.History.Add(deleted);
+                historyEntries.Add(deleted);
+                subtitlesChanged = true;
+                continue;
+            }
+
+            if (!series.Episodes.Any(e => e.EpisodeFileId == file.Id))
+            {
+                db.EpisodeFiles.Remove(file);
+                subtitlesChanged = true;
+                continue;
+            }
+
+            var length = new FileInfo(fullPath).Length;
+            if (file.Size != length)
+            {
+                file.Size = length;
+                var parsed = ReleaseParser.Parse(Path.GetFileName(fullPath));
+                if (parsed.Quality != Qualities.Unknown) file.QualityId = parsed.Quality.Id;
+                if (parsed.ReleaseGroup is not null) file.ReleaseGroup = parsed.ReleaseGroup;
+                file.EmbeddedSubtitles = null;
+                file.LastSubtitleSearch = null;
+                subtitlesChanged = true;
+            }
+
+            survivingFiles.Add(file);
+        }
+
+        // A surviving multi-episode file may cover an episode that was just added from metadata.
+        foreach (var file in survivingFiles)
+        {
+            var fullPath = Path.Combine(series.Path, file.RelativePath);
+            if (LibraryImport.SeriesLibraryImport.Identify(series.Path, fullPath) is not { } id) continue;
+            foreach (var epNum in id.Episodes)
+            {
+                var ep = series.Episodes.FirstOrDefault(e => e.SeasonNumber == id.Season && e.EpisodeNumber == epNum);
+                if (ep is not null && ep.EpisodeFileId is null)
+                {
+                    ep.EpisodeFileId = file.Id;
+                    ep.EpisodeFile = file;
+                }
+            }
+        }
+
+        var comparison = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var knownPaths = survivingFiles
+            .Select(f => MediaFolder.Normalize(Path.Combine(series.Path, f.RelativePath)))
+            .ToHashSet(comparison);
+        var untrackedFiles = MediaFolder.VideoFiles(series.Path)
+            .Where(f => !knownPaths.Contains(MediaFolder.Normalize(f.Path)))
+            .ToList();
+
+        if (untrackedFiles.Count > 0)
+        {
+            var (linked, _) = await LibraryImport.SeriesLibraryImport.LinkFilesAsync(db, series, untrackedFiles, ct);
+            if (linked.Count > 0)
+            {
+                var imported = new HistoryEntry
+                {
+                    EventType = HistoryEventType.Imported,
+                    SourceTitle = Path.GetFileName(Path.TrimEndingDirectorySeparator(series.Path)),
+                    SeriesId = series.Id,
+                    Message = $"Imported existing files: {Codes(linked)}",
+                };
+                db.History.Add(imported);
+                historyEntries.Add(imported);
+                subtitlesChanged = true;
+            }
+        }
+
+        foreach (var file in survivingFiles)
+        {
+            if (await SubtitleService.SyncEpisodeFileAsync(db, series.Path, file, ct))
+            {
+                subtitlesChanged = true;
+            }
+        }
+
+        if (seen is not null)
+        {
+            // Episodes removed upstream are dropped unless we hold a file for them on disk.
+            foreach (var gone in series.Episodes.Where(e => !seen.Contains(e) && e.EpisodeFileId is null).ToList())
+            {
+                series.Episodes.Remove(gone);
+                db.Episodes.Remove(gone);
+            }
+        }
+
         await db.SaveChangesAsync(ct);
+        foreach (var entry in historyEntries)
+        {
+            await eventHub.PublishAsync(EventNames.HistoryAdded, entry, ct);
+        }
+
+        if (subtitlesChanged)
+        {
+            await eventHub.PublishAsync(EventNames.SubtitlesUpdated, new { MovieId = (int?)null, SeriesId = (int?)series.Id }, ct);
+        }
+
         await eventHub.PublishAsync(EventNames.SeriesUpdated, new { series.Id }, ct);
     }
 

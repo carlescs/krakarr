@@ -44,4 +44,34 @@ describe('MovieDetailPage', () => {
     expect(page.movie()?.id).toBe(2);
     expect(page.editing()).toBe(false);
   });
+
+  it('triggers a movie refresh via the API', async () => {
+    const api = {
+      movie: vi.fn(async (id: number) => ({ id, title: `Movie ${id}`, monitored: true, qualityProfileId: 1, minimumAvailability: 'Released' })),
+      qualityProfiles: vi.fn(async () => []),
+      history: vi.fn(async () => ({ items: [] })),
+      subtitleFiles: vi.fn(async () => []),
+      languages: vi.fn(async () => ({ all: [], preferred: [] })),
+      refreshMovie: vi.fn(async () => ({ id: 'cmd-1' })),
+    };
+    const toasts = { error: vi.fn(), show: vi.fn(), success: vi.fn() };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: Api, useValue: api },
+        { provide: Auth, useValue: { isStaff: () => true } },
+        { provide: Events, useValue: { downloads: signal([]), movieUpdated: new Subject(), historyAdded: new Subject(), subtitlesUpdated: new Subject() } },
+        { provide: Toasts, useValue: toasts },
+        { provide: Router, useValue: { navigateByUrl: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(MovieDetailPage, { set: { template: '', imports: [] } });
+
+    const fixture = TestBed.createComponent(MovieDetailPage);
+    fixture.componentRef.setInput('id', 7);
+    await fixture.whenStable();
+
+    await fixture.componentInstance.refresh();
+    expect(api.refreshMovie).toHaveBeenCalledWith(7);
+    expect(toasts.show).toHaveBeenCalled();
+  });
 });

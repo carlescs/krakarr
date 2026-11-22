@@ -105,31 +105,77 @@ public sealed class SubtitleService(
     public async Task SyncDiskAsync(SubtitleTarget target, CancellationToken ct = default)
     {
         await SyncEmbeddedAsync(target, ct);
+        await SyncSidecarsAsync(db, target.VideoPath, target.MovieFileId, target.EpisodeFileId, ct);
+        await db.SaveChangesAsync(ct);
+    }
 
-        var rows = await RowsAsync(target, ct);
+    /// <summary>
+    /// Syncs external subtitle files next to a movie file and reads embedded subtitle tracks when not read yet.
+    /// Does not save changes so the caller can batch saves.
+    /// </summary>
+    public static Task<bool> SyncMovieFileAsync(KrakarrDbContext db, string moviePath, MovieFile file, CancellationToken ct = default) =>
+        SyncFileSubtitlesAsync(db, Path.Combine(moviePath, file.RelativePath), file.Id, null,
+            file.EmbeddedSubtitles, v => file.EmbeddedSubtitles = v, ct);
+
+    /// <summary>
+    /// Syncs external subtitle files next to an episode file and reads embedded subtitle tracks when not read yet.
+    /// Does not save changes so the caller can batch saves.
+    /// </summary>
+    public static Task<bool> SyncEpisodeFileAsync(KrakarrDbContext db, string seriesPath, EpisodeFile file, CancellationToken ct = default) =>
+        SyncFileSubtitlesAsync(db, Path.Combine(seriesPath, file.RelativePath), null, file.Id,
+            file.EmbeddedSubtitles, v => file.EmbeddedSubtitles = v, ct);
+
+    private static async Task<bool> SyncFileSubtitlesAsync(
+        KrakarrDbContext db, string videoPath, int? movieFileId, int? episodeFileId,
+        string? currentEmbedded, Action<string> setEmbedded, CancellationToken ct)
+    {
+        var changed = false;
+        if (currentEmbedded is null && File.Exists(videoPath))
+        {
+            setEmbedded(EmbeddedSubtitleList.Format(EmbeddedSubtitleList.FromTracks(EmbeddedSubtitles.Read(videoPath))));
+            changed = true;
+        }
+
+        if (await SyncSidecarsAsync(db, videoPath, movieFileId, episodeFileId, ct))
+        {
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    private static async Task<bool> SyncSidecarsAsync(KrakarrDbContext db, string videoPath, int? movieFileId, int? episodeFileId, CancellationToken ct)
+    {
+        var changed = false;
+        var rows = movieFileId is { } mf
+            ? await db.SubtitleFiles.Where(s => s.MovieFileId == mf).ToListAsync(ct)
+            : await db.SubtitleFiles.Where(s => s.EpisodeFileId == episodeFileId).ToListAsync(ct);
         foreach (var gone in rows.Where(r => !File.Exists(r.Path)))
         {
             db.SubtitleFiles.Remove(gone);
+            changed = true;
         }
 
-        var known = rows.Select(r => r.Path).ToHashSet(StringComparer.Ordinal);
-        var baseName = Path.GetFileNameWithoutExtension(target.VideoPath);
-        foreach (var path in SidecarFiles.SubtitlesFor(target.VideoPath).Where(p => !known.Contains(p)))
+        var comparison = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var known = rows.Select(r => r.Path).ToHashSet(comparison);
+        var baseName = Path.GetFileNameWithoutExtension(videoPath);
+        foreach (var path in SidecarFiles.SubtitlesFor(videoPath).Where(p => !known.Contains(p)))
         {
             if (Languages.FromSidecarName(Path.GetFileName(path), baseName) is not { } info) continue;
             db.SubtitleFiles.Add(new SubtitleFile
             {
-                MovieFileId = target.MovieFileId,
-                EpisodeFileId = target.EpisodeFileId,
+                MovieFileId = movieFileId,
+                EpisodeFileId = episodeFileId,
                 Language = info.Language,
                 HearingImpaired = info.HearingImpaired,
                 Forced = info.Forced,
                 Path = path,
                 Provider = "disk",
             });
+            changed = true;
         }
 
-        await db.SaveChangesAsync(ct);
+        return changed;
     }
 
     private async Task SyncEmbeddedAsync(SubtitleTarget target, CancellationToken ct)

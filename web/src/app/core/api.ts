@@ -182,6 +182,7 @@ export class Api {
     return this.put<void>(`movies/${id}`, { monitored, qualityProfileId, minimumAvailability: minimumAvailability ?? null, languages });
   }
   deleteMovie(id: number, deleteFiles: boolean) { return this.delete<void>(`movies/${id}`, { deleteFiles }); }
+  refreshMovie(id: number) { return this.post<CommandInfo>(`movies/${id}/refresh`); }
   searchMovie(id: number) { return this.post<CommandInfo>(`movies/${id}/search`); }
   /** Interactive search, streamed (see `ReleaseSearch`). */
   movieReleasesStream(id: number, onEvent: (e: SearchStreamEvent<ReleaseDecision>) => void, signal: AbortSignal) {

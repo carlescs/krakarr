@@ -334,4 +334,60 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
         Assert.NotEqual(takenPath, added.Path);
         Assert.Contains("Test Show (US)", added.Path);
     }
+
+    [Fact]
+    public async Task Refresh_rescans_disk_for_added_modified_and_deleted_episode_files()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var scope = _services.CreateScope();
+        var import = scope.ServiceProvider.GetRequiredService<SeriesLibraryImport>();
+        var service = scope.ServiceProvider.GetRequiredService<SeriesService>();
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        var showDir = Path.Combine(_root.FullName, "Test Show (2021)");
+
+        Write(showDir, "Season 01/Test.Show.S01E01E02.1080p.WEB-DL.x264-GRP.en.srt", 10);
+        await import.ImportAsync(new SeriesImportItem(showDir, 9001, null, 1), ct);
+        var seriesId = (await db.Series.SingleAsync(ct)).Id;
+
+        // S01E01 already picked up the .en.srt sidecar on import.
+        var initialE1FileId = (await db.Episodes.SingleAsync(e => e.SeasonNumber == 1 && e.EpisodeNumber == 1, ct)).EpisodeFileId!.Value;
+        Assert.Single(await db.SubtitleFiles.Where(s => s.EpisodeFileId == initialE1FileId).ToListAsync(ct), s => s.Language == "en" && s.Provider == "disk");
+
+        // 1. Add a file for missing S01E04 + sidecar subtitle, delete S01E03's file from disk, and modify S01E01E02 in place.
+        Write(showDir, "Season 01/Test.Show.S01E04.1080p.BluRay.x264-SPARKS.mkv", 3200);
+        Write(showDir, "Season 01/Test.Show.S01E04.1080p.BluRay.x264-SPARKS.es.srt", 40);
+        File.Delete(Path.Combine(showDir, "Season 01/Test.Show.S01E03.1080p.WEB-DL.x264-GRP.mkv"));
+        // Also remove the duplicate S01E02 720p file so only the modified S01E01E02 remains for E01/E02.
+        File.Delete(Path.Combine(showDir, "Season 01/Test.Show.S01E02.720p.HDTV.x264-OLD.mkv"));
+        Write(showDir, "Season 01/Test.Show.S01E01E02.1080p.WEB-DL.x264-GRP.mkv", 4500);
+        File.Delete(Path.Combine(showDir, "Season 01/Test.Show.S01E01E02.1080p.WEB-DL.x264-GRP.en.srt"));
+
+        db.ChangeTracker.Clear();
+        await service.RefreshAsync((await service.LoadAsync(seriesId, ct))!, ct);
+
+        db.ChangeTracker.Clear();
+        var episodes = await db.Episodes.Include(e => e.EpisodeFile)
+            .Where(e => e.SeriesId == seriesId && e.SeasonNumber == 1)
+            .OrderBy(e => e.EpisodeNumber)
+            .ToListAsync(ct);
+
+        // S01E01+E02 kept and updated size to 4500; deleted .en.srt removed from SubtitleFiles.
+        Assert.Equal(4500, episodes[0].EpisodeFile!.Size);
+        Assert.Equal(episodes[0].EpisodeFileId, episodes[1].EpisodeFileId);
+        Assert.Empty(await db.SubtitleFiles.Where(s => s.EpisodeFileId == episodes[0].EpisodeFileId).ToListAsync(ct));
+
+        // S01E03 unlinked and its EpisodeFile removed; FileDeleted recorded in history.
+        Assert.Null(episodes[2].EpisodeFileId);
+        Assert.Null(episodes[2].EpisodeFile);
+        var history = await db.History.Where(h => h.SeriesId == seriesId).ToListAsync(ct);
+        Assert.Contains(history, h => h.EventType == HistoryEventType.FileDeleted && h.SourceTitle.Contains("S01E03"));
+
+        // S01E04 linked to the new BluRay-1080p file, Imported history recorded, and .es.srt synced.
+        Assert.NotNull(episodes[3].EpisodeFile);
+        Assert.Equal(Qualities.Bluray1080.Id, episodes[3].EpisodeFile!.QualityId);
+        Assert.Equal("SPARKS", episodes[3].EpisodeFile!.ReleaseGroup);
+        Assert.Equal(3200, episodes[3].EpisodeFile!.Size);
+        Assert.Contains(history, h => h.EventType == HistoryEventType.Imported && h.Message != null && h.Message.Contains("S01E04"));
+        Assert.Single(await db.SubtitleFiles.Where(s => s.EpisodeFileId == episodes[3].EpisodeFileId).ToListAsync(ct), s => s.Language == "es");
+    }
 }

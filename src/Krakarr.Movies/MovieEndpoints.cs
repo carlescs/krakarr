@@ -269,12 +269,18 @@ public static class MovieEndpoints
             {
                 var scopedDb = sp.GetRequiredService<KrakarrDbContext>();
                 var service = sp.GetRequiredService<MovieService>();
-                var (refreshed, failures) = (0, new List<string>());
+                var (refreshed, failures, skipMetadata) = (0, new List<string>(), false);
                 foreach (var id in ids)
                 {
                     scopedDb.ChangeTracker.Clear(); // RefreshAsync saves; keep only the current movie tracked
-                    var movie = await scopedDb.Movies.FirstOrDefaultAsync(m => m.Id == id, token);
+                    var movie = await scopedDb.Movies.Include(m => m.MovieFile).FirstOrDefaultAsync(m => m.Id == id, token);
                     if (movie is null) continue;
+                    if (skipMetadata)
+                    {
+                        await service.RescanDiskAsync(movie, token);
+                        continue;
+                    }
+
                     try
                     {
                         await service.RefreshAsync(movie, token);
@@ -283,7 +289,7 @@ public static class MovieEndpoints
                     catch (MetadataException ex)
                     {
                         failures.Add($"{movie.Title}: {ex.Message}");
-                        if (failures.Count >= 3 && refreshed == 0) break; // likely a missing API key: don't hammer TMDB
+                        if (failures.Count >= 3 && refreshed == 0) skipMetadata = true; // likely a missing API key: don't hammer TMDB, still rescan disk
                     }
                 }
 
@@ -315,6 +321,25 @@ public static class MovieEndpoints
 
             await MovieService.PruneCollectionsAsync(db, ct);
             return Results.Ok(new BulkResult(deleted, errors));
+        });
+
+        group.MapPost("/{id:int}/refresh", async (int id, KrakarrDbContext db, ICommandQueue commands, CancellationToken ct) =>
+        {
+            var movie = await db.Movies.AsNoTracking().FirstOrDefaultAsync(m => m.Id == id, ct);
+            if (movie is null) return Results.NotFound();
+            var command = commands.Enqueue($"Refresh: {movie.Title}", async (sp, token) =>
+            {
+                var scopedDb = sp.GetRequiredService<KrakarrDbContext>();
+                var service = sp.GetRequiredService<MovieService>();
+                var loaded = await scopedDb.Movies.Include(m => m.MovieFile).FirstOrDefaultAsync(m => m.Id == id, token)
+                    ?? throw new KeyNotFoundException();
+                await service.RefreshAsync(loaded, token);
+                await MovieService.PruneCollectionsAsync(scopedDb, token);
+                return loaded.MovieFile is { } f
+                    ? $"{loaded.Title}: {Qualities.FindById(f.QualityId).Name}"
+                    : $"{loaded.Title}: no video file";
+            });
+            return Results.Accepted(value: command);
         });
 
         group.MapPost("/{id:int}/search", async (int id, KrakarrDbContext db, ICommandQueue commands, CancellationToken ct) =>

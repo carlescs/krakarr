@@ -78,7 +78,7 @@ public sealed class SeriesRssSyncTask(
     }
 }
 
-/// <summary>Refreshes series metadata and episode lists from the configured source (TMDB or TheTVDB) twice a day.</summary>
+/// <summary>Refreshes series metadata and episode lists from the configured source (TMDB or TheTVDB) and rescans series folders twice a day.</summary>
 public sealed class SeriesRefreshTask(KrakarrDbContext db, SeriesService seriesService, ILogger<SeriesRefreshTask> logger) : IScheduledTask
 {
     public string Name => "Refresh series metadata";
@@ -93,6 +93,12 @@ public sealed class SeriesRefreshTask(KrakarrDbContext db, SeriesService seriesS
             db.ChangeTracker.Clear(); // RefreshAsync saves; don't keep every refreshed series (and its episodes) tracked
             var series = await seriesService.LoadAsync(id, cancellationToken);
             if (series is null) continue;
+            if (failures >= 3)
+            {
+                await seriesService.RescanDiskAsync(series, cancellationToken);
+                continue;
+            }
+
             try
             {
                 await seriesService.RefreshAsync(series, cancellationToken);
@@ -101,7 +107,7 @@ public sealed class SeriesRefreshTask(KrakarrDbContext db, SeriesService seriesS
             catch (MetadataException ex)
             {
                 logger.LogWarning("Could not refresh {Title}: {Message}", series.Title, ex.Message);
-                if (++failures >= 3) return; // likely a missing key or the source is down; don't spam
+                failures++; // likely a missing key or the source is down; don't spam metadata source, still rescan disk
             }
         }
     }

@@ -305,7 +305,7 @@ export class SeriesDetailPage implements OnInit {
 
   async refresh() {
     await this.api.refreshSeries(this.id());
-    this.toasts.show('Refreshing metadata…');
+    this.toasts.show('Refreshing metadata and scanning disk…');
   }
 
   async openOrganize() {

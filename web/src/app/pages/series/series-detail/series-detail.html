@@ -41,7 +41,7 @@
           @if (auth.isStaff()) {
             <button class="btn-primary" (click)="searchMissing()">Search missing</button>
             @if (s.episodeFileCount > 0) { <button class="btn-secondary" (click)="searchSubtitles()">Search subtitles</button> }
-            <button class="btn-secondary" (click)="refresh()">Refresh</button>
+            <button class="btn-secondary" (click)="refresh()" title="Refresh metadata and rescan disk">Refresh</button>
             <button class="btn-secondary" (click)="openOrganize()" title="Rename files and folders to match the naming settings">Organize</button>
             <button class="btn-secondary" (click)="toggleSeries()">{{ s.monitored ? 'Unmonitor' : 'Monitor' }}</button>
             <button class="btn-ghost" (click)="editing.set(true)">Edit</button>

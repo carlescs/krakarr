@@ -280,12 +280,18 @@ public static class SeriesEndpoints
             {
                 var scopedDb = sp.GetRequiredService<KrakarrDbContext>();
                 var service = sp.GetRequiredService<SeriesService>();
-                var (refreshed, failures) = (0, new List<string>());
+                var (refreshed, failures, skipMetadata) = (0, new List<string>(), false);
                 foreach (var id in ids)
                 {
                     scopedDb.ChangeTracker.Clear(); // RefreshAsync saves; don't keep every refreshed series (and its episodes) tracked
                     var series = await service.LoadAsync(id, token);
                     if (series is null) continue;
+                    if (skipMetadata)
+                    {
+                        await service.RescanDiskAsync(series, token);
+                        continue;
+                    }
+
                     try
                     {
                         await service.RefreshAsync(series, token);
@@ -294,7 +300,7 @@ public static class SeriesEndpoints
                     catch (MetadataException ex)
                     {
                         failures.Add($"{series.Title}: {ex.Message}");
-                        if (failures.Count >= 3 && refreshed == 0) break; // likely a missing key or the source is down
+                        if (failures.Count >= 3 && refreshed == 0) skipMetadata = true; // likely a missing key or the source is down; still rescan disk
                     }
                 }
 

@@ -168,6 +168,11 @@ export class MovieDetailPage implements OnInit {
     this.toasts.show('Searching subtitles — new ones will appear under Subtitles');
   }
 
+  async refresh() {
+    await this.api.refreshMovie(this.id());
+    this.toasts.show('Refreshing metadata and scanning disk…');
+  }
+
   async interactiveSearch() {
     const id = this.id();
     this.releasesOpen.set(true);

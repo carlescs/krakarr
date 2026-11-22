@@ -56,7 +56,7 @@ public sealed class MovieRssSyncTask(
     }
 }
 
-/// <summary>Refreshes movie metadata from TMDB once a day.</summary>
+/// <summary>Refreshes movie metadata from TMDB and rescans movie folders once a day.</summary>
 public sealed class MovieRefreshTask(KrakarrDbContext db, MovieService movies, ILogger<MovieRefreshTask> logger) : IScheduledTask
 {
     public string Name => "Refresh movie metadata";
@@ -66,11 +66,18 @@ public sealed class MovieRefreshTask(KrakarrDbContext db, MovieService movies, I
     public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
         await MovieService.PruneCollectionsAsync(db, cancellationToken);
+        var skipMetadata = false;
         foreach (var id in await db.Movies.AsNoTracking().Select(m => m.Id).ToListAsync(cancellationToken))
         {
             db.ChangeTracker.Clear(); // RefreshAsync saves; keep only the current movie tracked
-            var movie = await db.Movies.FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
+            var movie = await db.Movies.Include(m => m.MovieFile).FirstOrDefaultAsync(m => m.Id == id, cancellationToken);
             if (movie is null) continue;
+            if (skipMetadata)
+            {
+                await movies.RescanDiskAsync(movie, cancellationToken);
+                continue;
+            }
+
             try
             {
                 await movies.RefreshAsync(movie, cancellationToken);
@@ -78,7 +85,7 @@ public sealed class MovieRefreshTask(KrakarrDbContext db, MovieService movies, I
             catch (MetadataException ex)
             {
                 logger.LogWarning("Could not refresh {Title}: {Message}", movie.Title, ex.Message);
-                return; // likely missing API key; don't spam
+                skipMetadata = true; // likely missing API key; don't spam TMDB, still rescan disk
             }
         }
     }
