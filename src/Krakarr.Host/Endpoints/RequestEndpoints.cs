@@ -14,7 +14,7 @@ public sealed record CreateMediaRequest(MediaType MediaType, int TmdbId);
 
 /// <summary>
 /// Library options chosen when approving. Movies use <see cref="Monitored"/>, <see cref="MinimumAvailability"/> and
-/// <see cref="SearchNow"/>; series use <see cref="Monitor"/>, <see cref="SeasonFolder"/> and <see cref="SearchNow"/>.
+/// <see cref="SearchNow"/>; series use <see cref="Monitor"/>, <see cref="SeasonFolder"/>, <see cref="SearchNow"/> and <see cref="Title"/> (null = the metadata title).
 /// </summary>
 public sealed record ApproveMediaRequest(
     int QualityProfileId,
@@ -23,7 +23,8 @@ public sealed record ApproveMediaRequest(
     MinimumAvailability MinimumAvailability = MinimumAvailability.Released,
     MonitorMode Monitor = MonitorMode.All,
     bool SeasonFolder = true,
-    bool SearchNow = true);
+    bool SearchNow = true,
+    string? Title = null);
 
 public sealed record DeclineMediaRequest(string? Reason);
 
@@ -196,7 +197,7 @@ public static class RequestEndpoints
                     else
                     {
                         var show = await series.AddAsync(new AddSeriesRequest(request.TmdbId, request.TvdbId, req.QualityProfileId, req.RootFolderPath,
-                            req.Monitor, req.SeasonFolder, req.SearchNow), ct);
+                            req.Monitor, req.SeasonFolder, req.SearchNow, Title: req.Title), ct);
                         if (req.SearchNow && req.Monitor != MonitorMode.None)
                         {
                             var seriesId = show.Id;

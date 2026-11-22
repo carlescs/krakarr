@@ -14,6 +14,8 @@ export class CreditsView {
   readonly cast = input<CastMember[]>([]);
   readonly crew = input<CrewMember[]>([]);
   readonly loading = input(false);
+  /** Heading of the cast row ("Guest stars" for an episode). */
+  readonly castTitle = input('Cast');
 
   protected readonly placeholders = [1, 2, 3, 4, 5, 6, 7, 8];
 

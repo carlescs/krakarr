@@ -21,6 +21,8 @@ public sealed record SeriesDto
     public int? TvdbId { get; init; }
     public string? ImdbId { get; init; }
     public required string Title { get; init; }
+    /// <summary>Title from the metadata source; differs from <see cref="Title"/> when the user edited it.</summary>
+    public required string MetadataTitle { get; init; }
     public int Year { get; init; }
     public string? Overview { get; init; }
     public string? PosterUrl { get; init; }
@@ -52,11 +54,12 @@ public sealed record SeriesListItemDto(
 public sealed record EpisodeFileDto(int Id, string RelativePath, long Size, string Quality, string? ReleaseGroup, DateTimeOffset DateAdded);
 
 public sealed record EpisodeDto(
-    int Id, int SeasonNumber, int EpisodeNumber, int? AbsoluteNumber, string? Title, string? Overview, DateOnly? AirDate,
+    int Id, int SeasonNumber, int EpisodeNumber, int? AbsoluteNumber, string? Title, string? Overview, DateOnly? AirDate, int Runtime,
     bool Monitored, bool HasAired, EpisodeFileDto? EpisodeFile, double? DownloadProgress);
 
 /// <param name="Languages">Wanted audio languages, most preferred first; null = use the global default.</param>
-public sealed record UpdateSeriesRequest(bool Monitored, int QualityProfileId, bool SeasonFolder, IReadOnlyList<string>? Languages = null);
+/// <param name="Title">New display title; null keeps the current one, blank restores the metadata title.</param>
+public sealed record UpdateSeriesRequest(bool Monitored, int QualityProfileId, bool SeasonFolder, IReadOnlyList<string>? Languages = null, string? Title = null);
 public sealed record MonitorRequest(bool Monitored);
 public sealed record SeriesSearchRequest(int? SeasonNumber, IReadOnlyList<int>? EpisodeIds);
 public sealed record EpisodeReleaseDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections, string? Episodes, bool SeasonPack, IReadOnlyList<string> Languages)
@@ -201,6 +204,12 @@ public static class SeriesEndpoints
             series.QualityProfileId = req.QualityProfileId;
             series.SeasonFolder = req.SeasonFolder;
             series.Languages = req.Languages is null ? null : MediaLanguages.Clean(req.Languages);
+            if (req.Title is { } title)
+            {
+                if (title.Trim().Length > SeriesService.MaxTitleLength) return Results.Problem($"Title must be at most {SeriesService.MaxTitleLength} characters", statusCode: 400);
+                SeriesService.SetTitle(series, title);
+            }
+
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         });
@@ -324,7 +333,7 @@ public static class SeriesEndpoints
             var progress = await EpisodeProgressAsync(db, engine, id, ct);
             var today = Today(time);
             return episodes.Select(e => new EpisodeDto(
-                e.Id, e.SeasonNumber, e.EpisodeNumber, e.AbsoluteNumber, e.Title, e.Overview, e.AirDate, e.Monitored, e.HasAired(today),
+                e.Id, e.SeasonNumber, e.EpisodeNumber, e.AbsoluteNumber, e.Title, e.Overview, e.AirDate, e.Runtime, e.Monitored, e.HasAired(today),
                 e.EpisodeFile is { } f ? new EpisodeFileDto(f.Id, f.RelativePath, f.Size, Qualities.FindById(f.QualityId).Name, f.ReleaseGroup, f.DateAdded) : null,
                 progress.TryGetValue(e.Id, out var p) ? p : null));
         });
@@ -510,6 +519,7 @@ public static class SeriesEndpoints
             TvdbId = s.TvdbId,
             ImdbId = s.ImdbId,
             Title = s.Title,
+            MetadataTitle = s.MetadataTitle.Length > 0 ? s.MetadataTitle : s.Title,
             Year = s.Year,
             Overview = s.Overview,
             PosterUrl = s.PosterUrl,

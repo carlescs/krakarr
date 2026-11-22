@@ -23,6 +23,7 @@ import { Progress } from '../../../shared/progress/progress';
 import { SubtitleManager } from '../../../shared/subtitle-manager/subtitle-manager';
 import { SubscribeButton } from '../../../shared/subscribe-button/subscribe-button';
 import { ExternalLinks } from '../../../shared/external-links/external-links';
+import { EpisodeDetailsDialog } from '../episode-details/episode-details';
 
 const ICON_SEARCH = 'm21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z';
 const ICON_LIST = 'M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM3.75 12h.007v.008H3.75V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm-.375 5.25h.007v.008H3.75v-.008Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z';
@@ -33,7 +34,7 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
 
 @Component({
   selector: 'kr-series-detail',
-  imports: [ExternalLinks, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, IndexerProgress, BytesPipe, AgoPipe, SubtitleManager, SortHeader],
+  imports: [ExternalLinks, EpisodeDetailsDialog, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, IndexerProgress, BytesPipe, AgoPipe, SubtitleManager, SortHeader],
   templateUrl: './series-detail.html',
   styleUrl: './series-detail.scss',
 })
@@ -55,6 +56,9 @@ export class SeriesDetailPage implements OnInit {
     for (const s of this.subtitles()) if (s.episodeFileId) map.set(s.episodeFileId, [...(map.get(s.episodeFileId) ?? []), s]);
     return map;
   });
+  /** Episode whose details dialog is open; read from `episodes` so download progress stays live. */
+  protected readonly detailEpisodeId = signal<number | null>(null);
+  protected readonly detailEpisode = computed(() => this.episodes().find(e => e.id === this.detailEpisodeId()) ?? null);
   protected readonly series = signal<Series | null>(null);
   /** The series' page on Jellyfin, once an episode is downloaded and Jellyfin is set up. */
   protected readonly jellyfinUrl = signal<string | null>(null);
@@ -85,6 +89,7 @@ export class SeriesDetailPage implements OnInit {
   protected readonly organizePreview = signal<OrganizePreview | null>(null);
   protected readonly organizableCount = computed(() => this.organizePreview()?.files.filter(f => !f.problem).length ?? 0);
   protected organizeFolder = true;
+  protected editTitle = '';
   protected editMonitored = true;
   protected editSeasonFolder = true;
   protected editProfileId = 0;
@@ -140,6 +145,7 @@ export class SeriesDetailPage implements OnInit {
     this.history.set([]);
     this.subtitles.set([]);
     this.subtitleEpisode.set(null);
+    this.detailEpisodeId.set(null);
     this.expanded.set(new Set<number>());
     this.expandedInitialised = false;
     this.releaseTarget.set(null);
@@ -157,6 +163,7 @@ export class SeriesDetailPage implements OnInit {
       const [s] = await Promise.all([this.api.series(id), this.loadEpisodes(), this.loadHistory(), this.loadSubtitles()]);
       if (id !== this.id()) return; // navigated to another series meanwhile
       this.series.set(s);
+      this.editTitle = s.title;
       this.editMonitored = s.monitored;
       this.editSeasonFolder = s.seasonFolder;
       this.editProfileId = s.qualityProfileId;
@@ -261,6 +268,13 @@ export class SeriesDetailPage implements OnInit {
     this.toasts.show(`Searching ${this.code(e)}…`);
   }
 
+  /** Swaps the details dialog for the interactive search or the subtitle manager, so only one dialog is open. */
+  protected fromDetails(e: Episode, action: 'interactive' | 'subtitles') {
+    this.detailEpisodeId.set(null);
+    if (action === 'interactive') this.interactive({ label: this.code(e), episodeId: e.id });
+    else this.subtitleEpisode.set(e);
+  }
+
   async refresh() {
     await this.api.refreshSeries(this.id());
     this.toasts.show('Refreshing metadata…');
@@ -327,7 +341,7 @@ export class SeriesDetailPage implements OnInit {
 
   async saveEdit() {
     try {
-      await this.api.updateSeries(this.id(), this.editMonitored, this.editProfileId, this.editSeasonFolder, this.editLanguages);
+      await this.api.updateSeries(this.id(), this.editMonitored, this.editProfileId, this.editSeasonFolder, this.editLanguages, this.editTitle.trim());
       this.editing.set(false);
       await this.load();
     } catch (e) {

@@ -2,7 +2,8 @@ import { Component, computed, effect, inject, input, signal } from '@angular/cor
 import { Api } from '../../core/api';
 import { TitleRatings } from '../../core/models';
 
-export type ExternalLinkKind = 'movie' | 'series' | 'person';
+/** For an `episode`, `tmdbId` is the show's TMDB id (with `season`/`episode`) and `tvdbId`/`imdbId` are the episode's own. */
+export type ExternalLinkKind = 'movie' | 'series' | 'episode' | 'person';
 
 /** Logo links to a title's (or person's) pages on TMDB, TheTVDB, IMDb and Rotten Tomatoes, with their scores when OMDb is set up. */
 @Component({
@@ -19,16 +20,25 @@ export class ExternalLinks {
   readonly tmdbId = input<number | null | undefined>(null);
   readonly tvdbId = input<number | null | undefined>(null);
   readonly imdbId = input<string | null | undefined>(null);
+  readonly season = input<number | null | undefined>(null);
+  readonly episode = input<number | null | undefined>(null);
 
   protected readonly ratings = signal<TitleRatings | null>(null);
 
   protected readonly tmdbUrl = computed(() => {
     const id = this.tmdbId();
     if (!id) return null;
-    const path = this.kind() === 'series' ? 'tv' : this.kind();
-    return `https://www.themoviedb.org/${path}/${id}`;
+    const kind = this.kind();
+    if (kind === 'episode') {
+      const season = this.season(), episode = this.episode();
+      return season != null && episode != null ? `https://www.themoviedb.org/tv/${id}/season/${season}/episode/${episode}` : null;
+    }
+    return `https://www.themoviedb.org/${kind === 'series' ? 'tv' : kind}/${id}`;
   });
-  protected readonly tvdbUrl = computed(() => this.kind() === 'series' && this.tvdbId() ? `https://thetvdb.com/dereferrer/series/${this.tvdbId()}` : null);
+  protected readonly tvdbUrl = computed(() => {
+    const id = this.tvdbId(), kind = this.kind();
+    return id && (kind === 'series' || kind === 'episode') ? `https://thetvdb.com/dereferrer/${kind}/${id}` : null;
+  });
   protected readonly imdbUrl = computed(() => {
     const id = this.imdbId();
     if (!id) return null;
@@ -36,10 +46,13 @@ export class ExternalLinks {
   });
   /** The exact Rotten Tomatoes page when OMDb knows it, otherwise a search for the title. */
   protected readonly tomatoesUrl = computed(() => {
-    if (this.kind() === 'person' || !this.title()) return null;
+    // Rotten Tomatoes has no episode pages worth searching for.
+    if (this.kind() === 'person' || this.kind() === 'episode' || !this.title()) return null;
     return this.ratings()?.rottenTomatoesUrl
       ?? `https://www.rottentomatoes.com/search?search=${encodeURIComponent(this.title())}`;
   });
+  /** Metacritic only scores movies and seasons, so episodes get no badge. */
+  protected readonly showMetacritic = computed(() => this.ratings()?.metacritic != null && this.kind() !== 'person' && this.kind() !== 'episode');
   /** Metacritic search for the title. Its search filter takes numeric categories: 2 = movies, 1 = TV shows. */
   protected readonly metacriticUrl = computed(() =>
     `https://www.metacritic.com/search/${encodeURIComponent(this.title())}/?page=1&category=${this.kind() === 'series' ? 1 : 2}`);

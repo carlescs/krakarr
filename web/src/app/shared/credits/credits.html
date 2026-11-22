@@ -13,14 +13,14 @@
 }
 @if (loading()) {
   <section class="mb-8">
-    <h2 class="mb-3 text-lg font-semibold text-white">Cast</h2>
+    <h2 class="mb-3 text-lg font-semibold text-white">{{ castTitle() }}</h2>
     <div class="flex gap-3 overflow-hidden">
       @for (i of placeholders; track i) { <div class="aspect-[2/3] w-24 shrink-0 animate-pulse rounded-lg bg-surface-800 sm:w-28"></div> }
     </div>
   </section>
 } @else if (cast().length > 0) {
   <section class="mb-8">
-    <h2 class="mb-3 text-lg font-semibold text-white">Cast</h2>
+    <h2 class="mb-3 text-lg font-semibold text-white">{{ castTitle() }}</h2>
     <div class="-mx-1 flex snap-x gap-3 overflow-x-auto px-1 pt-1 pb-2 [scrollbar-width:thin]">
       @for (c of cast(); track c.tmdbId) {
         <a [routerLink]="['/people', c.tmdbId]" class="group w-24 shrink-0 snap-start sm:w-28">

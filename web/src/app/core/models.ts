@@ -145,6 +145,8 @@ export interface SeasonInfo {
 }
 export interface Series {
   id: number; tmdbId?: number; tvdbId?: number; imdbId?: string; title: string; year: number; overview?: string; posterUrl?: string; fanartUrl?: string;
+  /** Title from the metadata source; differs from `title` when the user edited it. */
+  metadataTitle: string;
   network?: string; runtime: number; status: SeriesStatus; monitored: boolean; seasonFolder: boolean; qualityProfileId: number; path: string;
   added: string; episodeCount: number; episodeFileCount: number; sizeOnDisk: number; nextAiring?: string; downloadingCount: number;
   seasons: SeasonInfo[];
@@ -158,8 +160,13 @@ export interface SeriesListItem {
 }
 export interface EpisodeFile { id: number; relativePath: string; size: number; quality: string; releaseGroup?: string; dateAdded: string; }
 export interface Episode {
-  id: number; seasonNumber: number; episodeNumber: number; absoluteNumber?: number; title?: string; overview?: string; airDate?: string;
+  id: number; seasonNumber: number; episodeNumber: number; absoluteNumber?: number; title?: string; overview?: string; airDate?: string; runtime: number;
   monitored: boolean; hasAired: boolean; episodeFile?: EpisodeFile; downloadProgress?: number;
+}
+/** TMDB's page for one library episode: still, score, guest stars and crew. */
+export interface EpisodeDetails {
+  showTmdbId: number; tmdbId?: number; tvdbId?: number; imdbId?: string; title?: string; overview?: string; airDate?: string; runtime: number;
+  stillUrl?: string; rating?: number; voteCount: number; guestStars: CastMember[]; crew: CrewMember[];
 }
 export interface EpisodeRelease {
   release: ReleaseInfo; quality: string; qualityWeight: number; approved: boolean; rejections: string[]; episodes?: string; seasonPack: boolean; languages: string[];
@@ -303,6 +310,8 @@ export interface MediaRequestPage { results: MediaRequest[]; page: number; total
 export interface ApproveRequestOptions {
   qualityProfileId: number; rootFolderPath: string; searchNow: boolean;
   monitored?: boolean; minimumAvailability?: MinimumAvailability; monitor?: MonitorMode; seasonFolder?: boolean;
+  /** Series only: title to use instead of the metadata one; blank = the metadata title. */
+  title?: string;
 }
 
 export type NotificationSeverity = 'Info' | 'Warning' | 'Error';

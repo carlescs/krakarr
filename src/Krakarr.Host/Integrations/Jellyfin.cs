@@ -158,7 +158,7 @@ public static class JellyfinEndpoints
             var config = await settings.GetAsync<JellyfinSettings>(ct);
             if (!config.IsConfigured) return Results.NoContent();
             var series = await db.Series.AsNoTracking().Where(s => s.Id == id)
-                .Select(s => new { s.Title, s.Year, s.TmdbId, s.TvdbId, s.ImdbId, HasFile = db.EpisodeFiles.Any(f => f.SeriesId == s.Id) })
+                .Select(s => new { Title = s.MetadataTitle != "" ? s.MetadataTitle : s.Title, s.Year, s.TmdbId, s.TvdbId, s.ImdbId, HasFile = db.EpisodeFiles.Any(f => f.SeriesId == s.Id) })
                 .FirstOrDefaultAsync(ct);
             if (series is null) return Results.NotFound();
             if (!series.HasFile) return Results.NoContent();
