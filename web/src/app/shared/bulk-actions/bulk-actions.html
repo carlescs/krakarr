@@ -41,7 +41,7 @@
 
 @if (confirmDelete()) {
   <kr-modal [title]="'Delete ' + count() + ' ' + noun(count())" (closed)="confirmDelete.set(false)">
-    <p class="text-sm text-slate-300">Remove the selected {{ noun(count()) }} from the library?</p>
+    <p class="text-sm text-slate-300">Remove the selected {{ noun(count()) }} from the library? Downloads that haven't been imported yet are removed too, along with their data.</p>
     <label class="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" class="accent-rose-500" [(ngModel)]="deleteFiles" /> Also delete their folders from disk</label>
     <ng-container footer>
       <button type="button" class="btn-ghost" (click)="confirmDelete.set(false)">Cancel</button>

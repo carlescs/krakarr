@@ -82,6 +82,46 @@ public sealed class BulkActionTests(KrakarrFactory factory) : IClassFixture<Krak
     }
 
     [Fact]
+    public async Task Deleting_titles_removes_their_pending_downloads()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var ids = await AddMoviesAsync(70_501, 2, ct);
+        var series = await QueryAsync(async db =>
+        {
+            var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+            var s = new Krakarr.Core.Domain.Series { TvdbId = 70_501, Title = "Bulk show", SortTitle = "bulk show", Path = "/tv/bulk-show", QualityProfileId = profile };
+            db.Series.Add(s);
+            await db.SaveChangesAsync(ct);
+            return s.Id;
+        });
+        Download Row(string hash, bool imported, int? movieId = null, int? seriesId = null) => new()
+        {
+            InfoHash = hash, Name = hash, SavePath = "/downloads", MovieId = movieId, SeriesId = seriesId, Imported = imported,
+            MediaType = movieId is null ? MediaType.Series : MediaType.Movie,
+        };
+        await QueryAsync(db =>
+        {
+            db.Downloads.AddRange(
+                Row("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa7051", imported: false, movieId: ids[0]),
+                Row("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb7051", imported: true, movieId: ids[0]),
+                Row("cccccccccccccccccccccccccccccccccccc7051", imported: false, movieId: ids[1]),
+                Row("dddddddddddddddddddddddddddddddddddd7051", imported: false, seriesId: series));
+            return db.SaveChangesAsync(ct);
+        });
+        var client = await AdminAsync(ct);
+
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/v1/movies/{ids[0]}", ct)).StatusCode);
+        (await client.PostAsJsonAsync("/api/v1/movies/bulk/delete", new { ids = ids[1..], deleteFiles = false }, ct)).EnsureSuccessStatusCode();
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync($"/api/v1/series/{series}", ct)).StatusCode);
+
+        // Only the imported download survives, unlinked from the deleted movie.
+        var left = await QueryAsync(db => db.Downloads.Where(d => d.InfoHash.EndsWith("7051")).Select(d => new { d.InfoHash, d.MovieId }).ToListAsync(ct));
+        var kept = Assert.Single(left);
+        Assert.StartsWith("bbbb", kept.InfoHash);
+        Assert.Null(kept.MovieId);
+    }
+
+    [Fact]
     public async Task Queues_one_search_command_for_the_selection()
     {
         var ct = TestContext.Current.CancellationToken;

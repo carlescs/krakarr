@@ -246,7 +246,7 @@
 
   @if (confirmDelete()) {
     <kr-modal [title]="'Delete ' + m.title" (closed)="confirmDelete.set(false)">
-      <p class="text-sm text-slate-300">Remove this movie from the library?</p>
+      <p class="text-sm text-slate-300">Remove this movie from the library? Downloads that haven't been imported yet are removed too, along with their data.</p>
       <label class="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" class="accent-rose-500" [(ngModel)]="deleteFiles" /> Also delete the movie folder from disk</label>
       <ng-container footer>
         <button class="btn-ghost" (click)="confirmDelete.set(false)">Cancel</button>
