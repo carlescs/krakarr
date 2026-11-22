@@ -31,6 +31,7 @@ export const routes: Routes = [
       { path: 'series/add', loadComponent: () => import('./pages/series/add-series/add-series').then(m => m.AddSeriesPage), title: 'Search series · Krakarr' },
       { path: 'series/tmdb/:tmdbId', loadComponent: () => import('./pages/title-preview/title-preview').then(m => m.TitlePreviewPage), data: { kind: 'series' }, title: 'Series · Krakarr' },
       { path: 'series/:id', loadComponent: () => import('./pages/series/series-detail/series-detail').then(m => m.SeriesDetailPage), title: 'Series · Krakarr' },
+      { path: 'people', loadComponent: () => import('./pages/person-search/person-search').then(m => m.PersonSearchPage), title: 'Search people · Krakarr' },
       { path: 'people/:id', loadComponent: () => import('./pages/person/person').then(m => m.PersonPage), title: 'Person · Krakarr' },
       { path: 'requests', loadComponent: () => import('./pages/requests/requests').then(m => m.RequestsPage), title: 'Requests · Krakarr' },
       { path: 'calendar', loadComponent: () => import('./pages/calendar/calendar').then(m => m.CalendarPage), title: 'Calendar · Krakarr' },

@@ -40,9 +40,19 @@ public sealed record PersonDetails
     public IReadOnlyList<PersonCredit> Credits { get; init; } = [];
 }
 
+public sealed record PersonLookup
+{
+    public int TmdbId { get; init; }
+    public required string Name { get; init; }
+    public string? ProfileUrl { get; init; }
+    public string? KnownForDepartment { get; init; }
+    public IReadOnlyList<string> KnownFor { get; init; } = [];
+}
+
 /// <summary>People (actors, directors…) and their filmography, from TMDB.</summary>
 public interface IPersonMetadata
 {
+    Task<IReadOnlyList<PersonLookup>> SearchAsync(MetadataSettings meta, string query, CancellationToken ct = default);
     Task<PersonDetails> GetPersonAsync(MetadataSettings meta, int tmdbId, CancellationToken ct = default);
 }
 
@@ -53,6 +63,28 @@ public sealed class TmdbPeople(TmdbApi api) : IPersonMetadata
 
     /// <summary>TMDB TV genres for talk shows and news, which flood actors' credits with guest appearances.</summary>
     private static readonly int[] NoiseGenres = [10763, 10767];
+
+    public async Task<IReadOnlyList<PersonLookup>> SearchAsync(MetadataSettings meta, string query, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(query)) return [];
+        var result = await api.GetAsync<TmdbPersonSearchResponse>(meta, $"3/search/person?query={Uri.EscapeDataString(query.Trim())}&include_adult=false", ct);
+        return result.Results
+            .Where(p => p.Id > 0)
+            .Select(p => new PersonLookup
+            {
+                TmdbId = p.Id,
+                Name = Blank(p.Name) ?? $"TMDB {p.Id}",
+                ProfileUrl = TmdbApi.Image(p.ProfilePath, "w185"),
+                KnownForDepartment = Blank(p.KnownForDepartment),
+                KnownFor = p.KnownFor
+                    .Select(k => Blank(k.Title) ?? Blank(k.Name) ?? Blank(k.OriginalTitle) ?? Blank(k.OriginalName))
+                    .Where(t => t is not null)
+                    .Select(t => t!)
+                    .Distinct()
+                    .ToList(),
+            })
+            .ToList();
+    }
 
     public async Task<PersonDetails> GetPersonAsync(MetadataSettings meta, int tmdbId, CancellationToken ct = default)
     {
@@ -117,6 +149,11 @@ public sealed class TmdbPeople(TmdbApi api) : IPersonMetadata
     private static DateOnly? Date(string? s) =>
         DateOnly.TryParseExact(s, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null;
 
+    internal sealed record TmdbPersonSearchResponse
+    {
+        [JsonPropertyName("results")] public List<TmdbPerson> Results { get; init; } = [];
+    }
+
     internal sealed record TmdbPerson
     {
         [JsonPropertyName("id")] public int Id { get; init; }
@@ -128,6 +165,7 @@ public sealed class TmdbPeople(TmdbApi api) : IPersonMetadata
         [JsonPropertyName("profile_path")] public string? ProfilePath { get; init; }
         [JsonPropertyName("known_for_department")] public string? KnownForDepartment { get; init; }
         [JsonPropertyName("imdb_id")] public string? ImdbId { get; init; }
+        [JsonPropertyName("known_for")] public List<TmdbPersonCredit> KnownFor { get; init; } = [];
         [JsonPropertyName("combined_credits")] public TmdbCombinedCredits? CombinedCredits { get; init; }
     }
 

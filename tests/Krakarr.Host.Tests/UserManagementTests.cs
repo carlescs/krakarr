@@ -16,6 +16,7 @@ public sealed class RoleAccessTests
     [InlineData("GET", "/api/v1/series/3/episodes/7/details", UserRole.User)]
     [InlineData("GET", "/api/v1/calendar", UserRole.User)]
     [InlineData("GET", "/api/v1/people/6384", UserRole.User)]
+    [InlineData("GET", "/api/v1/people/lookup", UserRole.User)]
     [InlineData("GET", "/api/v1/movies/tmdb/603", UserRole.User)]
     [InlineData("GET", "/api/v1/series/tmdb/1396/similar", UserRole.User)]
     [InlineData("GET", "/api/v1/qualityprofiles", UserRole.User)]

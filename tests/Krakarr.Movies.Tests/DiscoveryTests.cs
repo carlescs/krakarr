@@ -167,22 +167,50 @@ public class TmdbPeopleTests
         Assert.Equal("Directing", person.Credits.Single(c => c.TmdbId == 5555).Department);
     }
 
+    [Fact]
+    public async Task Search_maps_department_profile_and_known_for_titles()
+    {
+        var fake = new FakeTmdbPeople();
+        var people = new TmdbPeople(new TmdbApi(new Factory(fake), new ConfigurationBuilder().Build()));
+        var results = await people.SearchAsync(new MetadataSettings { TmdbApiKey = "v3key" }, " keanu ", TestContext.Current.CancellationToken);
+
+        var keanu = Assert.Single(results);
+        Assert.Equal(6384, keanu.TmdbId);
+        Assert.Equal("Keanu Reeves", keanu.Name);
+        Assert.Equal("Acting", keanu.KnownForDepartment);
+        Assert.Equal("https://image.tmdb.org/t/p/w185/k.jpg", keanu.ProfileUrl);
+        Assert.Equal(["The Matrix", "John Wick", "Swedish Dicks"], keanu.KnownFor);
+    }
+
     private sealed class FakeTmdbPeople : HttpMessageHandler
     {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
-            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var json = request.RequestUri!.AbsolutePath.Contains("search/person")
+                ? """
+                  {"results":[
+                    {"id":6384,"name":"Keanu Reeves","known_for_department":"Acting","profile_path":"/k.jpg",
+                     "known_for":[
+                       {"id":603,"media_type":"movie","title":"The Matrix"},
+                       {"id":245891,"media_type":"movie","title":"John Wick"},
+                       {"id":245891,"media_type":"movie","title":"John Wick"},
+                       {"id":4321,"media_type":"tv","name":"Swedish Dicks"}]}]}
+                  """
+                : """
+                  {"id":6384,"name":"Keanu Reeves","birthday":"1964-09-02","combined_credits":{
+                    "cast":[
+                      {"id":603,"media_type":"movie","title":"The Matrix","release_date":"1999-03-30","character":"Neo","popularity":80},
+                      {"id":603,"media_type":"movie","title":"The Matrix","release_date":"1999-03-30","character":"Thomas Anderson","popularity":80},
+                      {"id":99,"media_type":"movie","title":"Untitled Project","release_date":"","popularity":1},
+                      {"id":1234,"media_type":"tv","name":"Late Night Talk","first_air_date":"2015-01-01","genre_ids":[10767],"character":"Self"},
+                      {"id":4321,"media_type":"tv","name":"Swedish Dicks","first_air_date":"2016-08-01","genre_ids":[35],"character":"Tex"}],
+                    "crew":[{"id":5555,"media_type":"movie","title":"Man of Tai Chi","release_date":"2013-07-05","department":"Directing","job":"Director"}]}}
+                  """;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent("""
-                    {"id":6384,"name":"Keanu Reeves","birthday":"1964-09-02","combined_credits":{
-                      "cast":[
-                        {"id":603,"media_type":"movie","title":"The Matrix","release_date":"1999-03-30","character":"Neo","popularity":80},
-                        {"id":603,"media_type":"movie","title":"The Matrix","release_date":"1999-03-30","character":"Thomas Anderson","popularity":80},
-                        {"id":99,"media_type":"movie","title":"Untitled Project","release_date":"","popularity":1},
-                        {"id":1234,"media_type":"tv","name":"Late Night Talk","first_air_date":"2015-01-01","genre_ids":[10767],"character":"Self"},
-                        {"id":4321,"media_type":"tv","name":"Swedish Dicks","first_air_date":"2016-08-01","genre_ids":[35],"character":"Tex"}],
-                      "crew":[{"id":5555,"media_type":"movie","title":"Man of Tai Chi","release_date":"2013-07-05","department":"Directing","job":"Director"}]}}
-                    """, Encoding.UTF8, "application/json"),
+                Content = new StringContent(json, Encoding.UTF8, "application/json"),
             });
+        }
     }
 
     private sealed class Factory(HttpMessageHandler handler) : IHttpClientFactory

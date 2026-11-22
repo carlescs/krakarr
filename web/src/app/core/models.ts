@@ -136,6 +136,9 @@ export interface PersonCredit {
   kind: 'movie' | 'series'; tmdbId: number; title: string; year: number; date?: string; overview?: string; posterUrl?: string; rating?: number;
   department: string; role?: string; movieId?: number; seriesId?: number;
 }
+export interface PersonLookup {
+  tmdbId: number; name: string; profileUrl?: string; knownForDepartment?: string; knownFor: string[];
+}
 export interface PersonDetails {
   tmdbId: number; name: string; biography?: string; birthday?: string; deathday?: string; placeOfBirth?: string; profileUrl?: string;
   knownForDepartment?: string; imdbId?: string; credits: PersonCredit[];
