@@ -34,6 +34,10 @@ export interface IndexerCapabilities {
 
 export interface IndexerCategory { id: number; name: string; parentId?: number | null; }
 export interface IndexerTestResult { success: boolean; message?: string; capabilities?: IndexerCapabilities; }
+/** An indexer configured in Prowlarr; `existingId` is the Krakarr indexer it was imported as before. */
+export interface ProwlarrIndexer { id: number; name: string; protocol: string; supported: boolean; enabled: boolean; priority: number; existingId?: number | null; }
+export interface ProwlarrListResult { success: boolean; message?: string | null; indexers: ProwlarrIndexer[]; }
+export interface ProwlarrImportResult { added: number; updated: number; }
 export interface IndexerError { indexerId: number; indexerName: string; message: string; }
 
 export type IndexerQueryState = 'Pending' | 'Done' | 'Failed';

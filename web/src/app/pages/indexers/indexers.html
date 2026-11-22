@@ -1,12 +1,13 @@
 <div class="mb-6 flex flex-wrap items-center gap-3">
   <h1 class="page-title mr-auto">Indexers</h1>
+  <button class="btn-secondary" (click)="openProwlarr()">Import from Prowlarr</button>
   <button class="btn-primary" (click)="edit(null)">+ Add indexer</button>
 </div>
 
 @if (indexers().length === 0) {
   <div class="card px-6 py-12 text-center text-sm text-slate-400">
     <p class="mb-1 text-base font-medium text-white">No indexers yet</p>
-    Add any Torznab or Newznab compatible feed (trackers with Torznab APIs, Jackett feeds, …).
+    Add any Torznab or Newznab compatible feed (trackers with Torznab APIs, Jackett feeds, …), or import the indexers you have in Prowlarr.
   </div>
 } @else {
   <div class="card overflow-hidden">
@@ -113,6 +114,53 @@
       @if (f.id) { <button class="btn-danger mr-auto" (click)="remove(f)">Delete</button> }
       <button class="btn-secondary" (click)="runTest(f)" [disabled]="testing()">{{ testing() ? 'Testing…' : 'Test' }}</button>
       <button class="btn-primary" (click)="save(f)" [disabled]="saving()">Save</button>
+    </ng-container>
+  </kr-modal>
+}
+
+@if (prowlarr(); as p) {
+  <kr-modal title="Import from Prowlarr" width="max-w-2xl" (closed)="prowlarr.set(null)">
+    <div class="grid gap-4 sm:grid-cols-2">
+      <div class="sm:col-span-2">
+        <label class="label">Prowlarr URL</label>
+        <input class="input font-mono" [(ngModel)]="p.url" placeholder="http://prowlarr:9696" />
+      </div>
+      <div class="sm:col-span-2">
+        <label class="label">API key</label>
+        <input class="input font-mono" [(ngModel)]="p.apiKey" autocomplete="off" />
+        <p class="hint">Settings → General in Prowlarr. Each indexer is added as a Torznab feed served by Prowlarr, so Prowlarr must stay reachable.</p>
+      </div>
+    </div>
+    @if (prowlarrError(); as error) {
+      <div class="mt-4 rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-300">{{ error }}</div>
+    }
+    @if (prowlarrIndexers(); as list) {
+      @if (list.length === 0) {
+        <p class="mt-4 text-sm text-slate-400">Prowlarr has no indexers configured.</p>
+      } @else {
+        <ul class="mt-4 max-h-80 divide-y divide-surface-700 overflow-y-auto rounded-lg border border-surface-700">
+          @for (i of list; track i.id) {
+            <li class="flex items-center gap-3 px-3 py-2 text-sm">
+              <input type="checkbox" class="accent-accent-500" [attr.aria-label]="i.name" [disabled]="!i.supported"
+                [checked]="prowlarrSelected().has(i.id)" (change)="toggleProwlarr(i.id, $any($event.target).checked)" />
+              <span class="font-medium text-white" [class.text-slate-500]="!i.supported">{{ i.name }}</span>
+              <span class="flex-1"></span>
+              @if (!i.supported) { <span class="badge bg-slate-500/15 text-slate-400">Usenet, not supported</span> }
+              @else if (i.existingId) { <span class="badge bg-sky-500/15 text-sky-300">Already added</span> }
+              @if (!i.enabled) { <span class="badge bg-slate-500/15 text-slate-400">Disabled</span> }
+            </li>
+          }
+        </ul>
+        <p class="hint">Indexers already added only get their API key refreshed.</p>
+      }
+    }
+    <ng-container footer>
+      <button class="btn-secondary" (click)="connectProwlarr(p)" [disabled]="prowlarrBusy() || !p.url || !p.apiKey">
+        {{ prowlarrBusy() && !prowlarrIndexers() ? 'Connecting…' : prowlarrIndexers() ? 'Reload' : 'Connect' }}
+      </button>
+      <button class="btn-primary" (click)="importProwlarr(p)" [disabled]="prowlarrBusy() || prowlarrSelected().size === 0">
+        Import {{ prowlarrSelected().size }}
+      </button>
     </ng-container>
   </kr-modal>
 }

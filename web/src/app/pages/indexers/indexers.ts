@@ -1,7 +1,7 @@
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../../core/api';
-import { Indexer, IndexerCategory, IndexerTestResult } from '../../core/models';
+import { Indexer, IndexerCategory, IndexerTestResult, ProwlarrIndexer } from '../../core/models';
 import { Languages } from '../../core/languages';
 import { Toasts } from '../../core/toast';
 import { CategoryPicker } from '../../shared/category-picker/category-picker';
@@ -42,6 +42,11 @@ export class IndexersPage implements OnInit {
   protected readonly categories = signal<IndexerCategory[]>([]);
   protected readonly capsError = signal<string | null>(null);
   protected readonly loadingCaps = signal(false);
+  protected readonly prowlarr = signal<{ url: string; apiKey: string } | null>(null);
+  protected readonly prowlarrIndexers = signal<ProwlarrIndexer[] | null>(null);
+  protected readonly prowlarrSelected = signal<ReadonlySet<number>>(new Set());
+  protected readonly prowlarrError = signal<string | null>(null);
+  protected readonly prowlarrBusy = signal(false);
   protected readonly movieRange = MOVIE_RANGE;
   protected readonly tvRange = TV_RANGE;
 
@@ -121,5 +126,54 @@ export class IndexersPage implements OnInit {
     await this.api.deleteIndexer(f.id);
     this.form.set(null);
     await this.load();
+  }
+
+  openProwlarr() {
+    this.prowlarr.set({ url: '', apiKey: '' });
+    this.prowlarrIndexers.set(null);
+    this.prowlarrSelected.set(new Set());
+    this.prowlarrError.set(null);
+  }
+
+  /** Lists Prowlarr's indexers; the supported ones not imported yet start selected. */
+  async connectProwlarr(p: { url: string; apiKey: string }) {
+    this.prowlarrBusy.set(true);
+    this.prowlarrError.set(null);
+    try {
+      const result = await this.api.prowlarrIndexers(p.url, p.apiKey);
+      if (!result.success) {
+        this.prowlarrIndexers.set(null);
+        this.prowlarrError.set(result.message ?? 'Unknown error');
+        return;
+      }
+      this.prowlarrIndexers.set(result.indexers);
+      this.prowlarrSelected.set(new Set(result.indexers.filter(i => i.supported && !i.existingId).map(i => i.id)));
+    } catch (e) {
+      this.prowlarrError.set(errorMessage(e));
+    } finally {
+      this.prowlarrBusy.set(false);
+    }
+  }
+
+  toggleProwlarr(id: number, on: boolean) {
+    const next = new Set(this.prowlarrSelected());
+    if (on) next.add(id); else next.delete(id);
+    this.prowlarrSelected.set(next);
+  }
+
+  async importProwlarr(p: { url: string; apiKey: string }) {
+    this.prowlarrBusy.set(true);
+    try {
+      const result = await this.api.importProwlarrIndexers(p.url, p.apiKey, [...this.prowlarrSelected()]);
+      const parts = [`${result.added} added`];
+      if (result.updated > 0) parts.push(`${result.updated} updated`);
+      this.toasts.success(`Prowlarr import: ${parts.join(', ')}`);
+      this.prowlarr.set(null);
+      await this.load();
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+    } finally {
+      this.prowlarrBusy.set(false);
+    }
   }
 }

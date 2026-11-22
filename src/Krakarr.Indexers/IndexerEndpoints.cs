@@ -10,6 +10,15 @@ namespace Krakarr.Indexers;
 
 public sealed record IndexerTestResult(bool Success, string? Message, IndexerCapabilities? Capabilities);
 
+/// <summary>A Prowlarr indexer as offered for import; <c>ExistingId</c> is set when it was imported before.</summary>
+public sealed record ProwlarrIndexerDto(int Id, string Name, string Protocol, bool Supported, bool Enabled, int Priority, int? ExistingId);
+
+public sealed record ProwlarrListResult(bool Success, string? Message, IReadOnlyList<ProwlarrIndexerDto> Indexers);
+
+public sealed record ProwlarrImportRequest(string Url, string ApiKey, IReadOnlyList<int> IndexerIds);
+
+public sealed record ProwlarrImportResult(int Added, int Updated);
+
 public sealed record SearchResultDto(ReleaseInfo Release, string Quality, string? ParsedTitle, int? ParsedYear);
 
 public static class IndexerEndpoints
@@ -94,6 +103,82 @@ public static class IndexerEndpoints
             }
         });
 
+        // Indexers configured in a Prowlarr instance, to import them as Torznab feeds.
+        group.MapPost("/prowlarr/list", async (ProwlarrConnection input, IProwlarrClient prowlarr, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            if (ValidateProwlarr(input) is { } problem) return problem;
+            try
+            {
+                var indexers = await prowlarr.GetIndexersAsync(input, ct);
+                var existing = await ExistingFeedsAsync(db, ct);
+                return Results.Ok(new ProwlarrListResult(true, null, indexers
+                    .Select(i => new ProwlarrIndexerDto(i.Id, i.Name, i.Protocol, i.Supported, i.Enabled, i.Priority,
+                        existing.TryGetValue(ProwlarrClient.FeedUrl(input.Url, i.Id), out var id) ? id : null))
+                    .ToList()));
+            }
+            catch (Exception ex) when (ex is IndexerException or HttpRequestException or TaskCanceledException)
+            {
+                return Results.Ok(new ProwlarrListResult(false, ex.Message, []));
+            }
+        });
+
+        // Adds the chosen Prowlarr indexers, or refreshes the API key and protocol of ones imported before.
+        group.MapPost("/prowlarr/import", async (ProwlarrImportRequest input, IProwlarrClient prowlarr, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            var connection = new ProwlarrConnection(input.Url, input.ApiKey);
+            if (ValidateProwlarr(connection) is { } problem) return problem;
+
+            IReadOnlyList<ProwlarrIndexer> available;
+            try
+            {
+                available = await prowlarr.GetIndexersAsync(connection, ct);
+            }
+            catch (Exception ex) when (ex is IndexerException or HttpRequestException or TaskCanceledException)
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["url"] = [ex.Message] });
+            }
+
+            var wanted = input.IndexerIds.ToHashSet();
+            var chosen = available.Where(i => wanted.Contains(i.Id) && i.Supported).ToList();
+            var existing = await ExistingFeedsAsync(db, ct);
+            var names = (await db.Indexers.AsNoTracking().Select(i => i.Name).ToListAsync(ct)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            int added = 0, updated = 0;
+            foreach (var p in chosen)
+            {
+                var feedUrl = ProwlarrClient.FeedUrl(connection.Url, p.Id);
+                if (existing.TryGetValue(feedUrl, out var existingId))
+                {
+                    var current = await db.Indexers.FindAsync([existingId], ct);
+                    if (current is null) continue;
+                    current.ApiKey = connection.ApiKey;
+                    current.ApiPath = "/api";
+                    current.Protocol = IndexerProtocol.Torznab;
+                    updated++;
+                    continue;
+                }
+
+                var name = UniqueName(p.Name, names);
+                names.Add(name);
+                db.Indexers.Add(new Indexer
+                {
+                    Name = name,
+                    Protocol = IndexerProtocol.Torznab,
+                    BaseUrl = feedUrl,
+                    ApiPath = "/api",
+                    ApiKey = connection.ApiKey,
+                    MovieCategories = ProwlarrClient.SuggestCategories(p.Categories, 2000, 2999, 2000),
+                    TvCategories = ProwlarrClient.SuggestCategories(p.Categories, 5000, 5999, 5000),
+                    Enabled = p.Enabled,
+                    EnableRss = p.Enabled && p.SupportsRss,
+                    Priority = p.Priority,
+                });
+                added++;
+            }
+
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new ProwlarrImportResult(added, updated));
+        });
+
         // Manual search across indexers (Prowlarr-style). With "Accept: application/x-ndjson" the results stream in as each indexer answers (SearchStream).
         app.MapGet("/api/v1/search", async (
             string? query, SearchType? type, string? imdbId, int? tmdbId, int? tvdbId, int? season, int? episode, string? indexerIds,
@@ -141,6 +226,33 @@ public static class IndexerEndpoints
             .ToList();
 
     private static string? NormalizeLanguage(string? code) => string.IsNullOrWhiteSpace(code) ? null : MediaLanguages.Normalize(code);
+
+    /// <summary>Indexer ids keyed by their feed URL (trailing slash trimmed), to recognise Prowlarr feeds imported before.</summary>
+    private static async Task<Dictionary<string, int>> ExistingFeedsAsync(KrakarrDbContext db, CancellationToken ct)
+    {
+        var rows = await db.Indexers.AsNoTracking().Select(i => new { i.Id, i.BaseUrl }).ToListAsync(ct);
+        var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var row in rows) result.TryAdd(ProwlarrClient.NormalizeUrl(row.BaseUrl), row.Id);
+        return result;
+    }
+
+    /// <summary>The Prowlarr name, or "Name (Prowlarr)", "Name (Prowlarr 2)"… when an indexer already has it.</summary>
+    internal static string UniqueName(string name, IReadOnlySet<string> taken)
+    {
+        if (!taken.Contains(name)) return name;
+        var candidate = $"{name} (Prowlarr)";
+        for (var n = 2; taken.Contains(candidate); n++) candidate = $"{name} (Prowlarr {n})";
+        return candidate;
+    }
+
+    private static IResult? ValidateProwlarr(ProwlarrConnection input)
+    {
+        var errors = new Dictionary<string, string[]>();
+        if (!Uri.TryCreate(input.Url?.Trim(), UriKind.Absolute, out var uri) || (uri.Scheme != "http" && uri.Scheme != "https"))
+            errors["url"] = ["A valid http(s) URL is required"];
+        if (string.IsNullOrWhiteSpace(input.ApiKey)) errors["apiKey"] = ["The Prowlarr API key is required"];
+        return errors.Count > 0 ? Results.ValidationProblem(errors) : null;
+    }
 
     private static IResult? Validate(Indexer input)
     {
