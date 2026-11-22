@@ -1,4 +1,5 @@
 using Krakarr.Core.Domain;
+using Krakarr.Core.Events;
 using Krakarr.Data;
 using Krakarr.Media.Parsing;
 using Microsoft.AspNetCore.Builder;
@@ -96,8 +97,8 @@ public static class IndexerEndpoints
 
         // Manual search across indexers (Prowlarr-style).
         app.MapGet("/api/v1/search", async (
-            string? query, SearchType? type, string? imdbId, int? tmdbId, int? tvdbId, int? season, int? episode, string? indexerIds,
-            IIndexerSearchService search, CancellationToken ct) =>
+            string? query, SearchType? type, string? imdbId, int? tmdbId, int? tvdbId, int? season, int? episode, string? indexerIds, string? searchId,
+            IIndexerSearchService search, IEventHub events, CancellationToken ct) =>
         {
             var ids = indexerIds?.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToList();
             var result = await search.SearchAsync(new SearchCriteria
@@ -109,7 +110,7 @@ public static class IndexerEndpoints
                 TvdbId = tvdbId,
                 Season = season,
                 Episode = episode,
-            }, ids, ct);
+            }, ids, IndexerSearchProgress.For(events, searchId), ct);
 
             return new
             {
@@ -121,6 +122,7 @@ public static class IndexerEndpoints
                     })
                     .OrderByDescending(r => r.Release.Seeders ?? 0),
                 result.Errors,
+                result.Indexers,
             };
         }).WithTags("Search");
 

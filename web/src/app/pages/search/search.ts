@@ -2,14 +2,16 @@ import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../../core/api';
 import { AgoPipe, BytesPipe } from '../../core/format';
-import { IndexerError, SearchResult, SearchType } from '../../core/models';
+import { IndexerSearch } from '../../core/indexer-search';
+import { SearchResult, SearchType } from '../../core/models';
 import { Toasts } from '../../core/toast';
 import { MediaLink, MediaLinkPicker, linkFields } from '../../shared/media-link-picker/media-link-picker';
+import { IndexerProgress } from '../../shared/indexer-progress/indexer-progress';
 import { Modal } from '../../shared/modal/modal';
 
 @Component({
   selector: 'kr-search',
-  imports: [FormsModule, BytesPipe, AgoPipe, Modal, MediaLinkPicker],
+  imports: [FormsModule, BytesPipe, AgoPipe, Modal, MediaLinkPicker, IndexerProgress],
   templateUrl: './search.html',
   styleUrl: './search.scss',
 })
@@ -21,16 +23,18 @@ export class SearchPage {
   protected readonly busy = signal(false);
   protected readonly searched = signal(false);
   protected readonly results = signal<SearchResult[]>([]);
-  protected readonly errors = signal<IndexerError[]>([]);
+  protected readonly indexerSearch = new IndexerSearch();
 
   async search() {
     this.busy.set(true);
+    this.searched.set(true);
+    const searchId = this.indexerSearch.start();
     try {
-      const res = await this.api.search(this.query, this.type);
+      const res = await this.api.search(this.query, this.type, searchId);
       this.results.set(res.results);
-      this.errors.set(res.errors);
-      this.searched.set(true);
+      this.indexerSearch.finish(res.indexers);
     } catch (e) {
+      this.indexerSearch.finish();
       this.toasts.error(errorMessage(e));
     } finally {
       this.busy.set(false);

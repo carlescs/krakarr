@@ -8,10 +8,12 @@ import { Auth } from '../../../core/auth';
 import { Events } from '../../../core/events';
 import { AgoPipe, BytesPipe, DurationPipe, SpeedPipe } from '../../../core/format';
 import { AVAILABILITY_OPTIONS, RELEASE_LABELS } from '../../../core/calendar';
-import { HistoryItem, IndexerError, MinimumAvailability, Movie, QualityProfile, ReleaseDateType, ReleaseDecision, SubtitleFile } from '../../../core/models';
+import { HistoryItem, MinimumAvailability, Movie, QualityProfile, ReleaseDateType, ReleaseDecision, SubtitleFile } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
+import { IndexerSearch } from '../../../core/indexer-search';
 import { Languages } from '../../../core/languages';
 import { LanguageOverride } from '../../../shared/language-override/language-override';
+import { IndexerProgress } from '../../../shared/indexer-progress/indexer-progress';
 import { Modal } from '../../../shared/modal/modal';
 import { Poster } from '../../../shared/poster/poster';
 import { LibraryCredits } from '../../../shared/library-credits/library-credits';
@@ -23,7 +25,7 @@ import { SubscribeButton } from '../../../shared/subscribe-button/subscribe-butt
 
 @Component({
   selector: 'kr-movie-detail',
-  imports: [SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, Poster, Progress, Modal, StateBadge, SubtitleManager, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
+  imports: [SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, Poster, Progress, Modal, IndexerProgress, StateBadge, SubtitleManager, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
   templateUrl: './movie-detail.html',
   styleUrl: './movie-detail.scss',
 })
@@ -41,7 +43,7 @@ export class MovieDetailPage implements OnInit {
   protected readonly history = signal<HistoryItem[]>([]);
   protected readonly profiles = signal<QualityProfile[]>([]);
   protected readonly releases = signal<ReleaseDecision[]>([]);
-  protected readonly searchErrors = signal<IndexerError[]>([]);
+  protected readonly indexerSearch = new IndexerSearch();
   protected readonly releasesOpen = signal(false);
   protected readonly searching = signal(false);
   protected readonly grabbing = signal<string | null>(null);
@@ -101,7 +103,7 @@ export class MovieDetailPage implements OnInit {
     this.history.set([]);
     this.subtitles.set([]);
     this.releases.set([]);
-    this.searchErrors.set([]);
+    this.indexerSearch.reset();
     this.releasesOpen.set(false);
     this.searching.set(false);
     this.grabbing.set(null);
@@ -161,13 +163,16 @@ export class MovieDetailPage implements OnInit {
   async interactiveSearch() {
     const id = this.id();
     this.releasesOpen.set(true);
+    this.releases.set([]);
     this.searching.set(true);
+    const searchId = this.indexerSearch.start();
     try {
-      const res = await this.api.movieReleases(id);
+      const res = await this.api.movieReleases(id, searchId);
       if (id !== this.id()) return;
       this.releases.set(res.releases);
-      this.searchErrors.set(res.errors);
+      this.indexerSearch.finish(res.indexers);
     } catch (e) {
+      this.indexerSearch.finish();
       this.toasts.error(errorMessage(e));
     } finally {
       this.searching.set(false);

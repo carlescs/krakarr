@@ -6,8 +6,8 @@
   </select>
   <button class="btn-primary" [disabled]="busy()">{{ busy() ? 'Searching…' : 'Search' }}</button>
 </form>
-@for (e of errors(); track e.indexerId) {
-  <p class="mb-2 rounded bg-amber-500/10 px-3 py-2 text-xs text-amber-300">{{ e.indexerName }}: {{ e.message }}</p>
+@if (searched()) {
+  <kr-indexer-progress [indexers]="indexerSearch.indexers()" [searching]="busy()" />
 }
 @if (results().length > 0) {
   <div class="card overflow-x-auto">

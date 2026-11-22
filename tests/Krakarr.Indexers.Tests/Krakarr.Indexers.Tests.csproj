@@ -6,6 +6,7 @@
   <ItemGroup>
     <ProjectReference Include="../../src/Krakarr.Indexers/Krakarr.Indexers.csproj" />
     <PackageReference Include="xunit.v3" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

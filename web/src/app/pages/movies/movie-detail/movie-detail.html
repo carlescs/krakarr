@@ -162,12 +162,8 @@
   <!-- Interactive search -->
   @if (releasesOpen()) {
     <kr-modal title="Interactive search" width="max-w-6xl" (closed)="releasesOpen.set(false)">
-      @if (searching()) {
-        <p class="py-10 text-center text-slate-400">Searching indexers…</p>
-      } @else {
-        @for (e of searchErrors(); track e.indexerId) {
-          <p class="mb-2 rounded bg-amber-500/10 px-3 py-2 text-xs text-amber-300">{{ e.indexerName }}: {{ e.message }}</p>
-        }
+      <kr-indexer-progress [indexers]="indexerSearch.indexers()" [searching]="searching()" />
+      @if (!searching()) {
         @if (releases().length === 0) {
           <p class="py-10 text-center text-slate-400">No results.</p>
         } @else {

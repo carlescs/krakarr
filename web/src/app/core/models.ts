@@ -36,6 +36,14 @@ export interface IndexerCategory { id: number; name: string; parentId?: number |
 export interface IndexerTestResult { success: boolean; message?: string; capabilities?: IndexerCapabilities; }
 export interface IndexerError { indexerId: number; indexerName: string; message: string; }
 
+export type IndexerQueryState = 'Pending' | 'Done' | 'Failed';
+/** How one indexer's query in a search stands: `releases` once done, `message` when it failed, `seconds` once finished. */
+export interface IndexerQueryStatus {
+  indexerId: number; indexerName: string; state: IndexerQueryState; releases?: number | null; message?: string | null; seconds?: number | null;
+}
+/** Live per-indexer progress of the search tagged `searchId`. */
+export interface SearchProgress { searchId: string; indexers: IndexerQueryStatus[]; }
+
 export interface ReleaseInfo {
   title: string; guid: string; downloadUrl?: string; magnetUrl?: string; infoHash?: string; infoUrl?: string;
   size: number; seeders?: number; peers?: number; publishDate?: string; imdbId?: number; tmdbId?: number; tvdbId?: number;

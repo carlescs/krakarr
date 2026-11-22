@@ -114,7 +114,8 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
 
     private sealed class Unused : IIndexerSearchService, IDownloadService
     {
-        public Task<IndexerSearchResult> SearchAsync(SearchCriteria criteria, IReadOnlyCollection<int>? indexerIds = null, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<IndexerSearchResult> SearchAsync(SearchCriteria criteria, IReadOnlyCollection<int>? indexerIds = null,
+            IProgress<IReadOnlyList<IndexerQueryStatus>>? progress = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<Download> GrabAsync(ReleaseInfo release, AddTorrentOptions options, CancellationToken ct = default) => throw new NotSupportedException();
     }
 
