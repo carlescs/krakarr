@@ -4,7 +4,8 @@ import { RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
 import { Events } from '../../core/events';
 import { BytesPipe, DurationPipe, SpeedPipe } from '../../core/format';
-import { DownloadClientStatus, TorrentStatus } from '../../core/models';
+import { BulkDownloadAction, BulkResult, DownloadClientStatus, TorrentStatus } from '../../core/models';
+import { Selection } from '../../core/selection';
 import { Toasts } from '../../core/toast';
 import { MediaLink, MediaLinkPicker, linkFields } from '../../shared/media-link-picker/media-link-picker';
 import { Modal } from '../../shared/modal/modal';
@@ -37,6 +38,11 @@ export class DownloadsPage implements OnInit, OnDestroy {
     const seeding = this.showSeeding();
     return this.list().filter(d => (d.state === 'Seeding') === seeding);
   });
+  /** Multi-selection for bulk pause/resume/remove; only torrents in the current view (downloading or seeding) count. */
+  protected readonly selection = new Selection(this.visible, d => d.infoHash);
+  protected readonly bulkBusy = signal(false);
+  protected readonly confirmBulkRemove = signal(false);
+  protected bulkDeleteData = false;
   protected readonly totalDown = computed(() => this.list().reduce((s, d) => s + d.downloadRate, 0));
   protected readonly totalUp = computed(() => this.list().reduce((s, d) => s + d.uploadRate, 0));
   protected readonly addOpen = signal(false);
@@ -102,11 +108,39 @@ export class DownloadsPage implements OnInit, OnDestroy {
 
   protected toggleSeeding(show: boolean) {
     this.showSeeding.set(show);
+    this.selection.clear();
     try { localStorage.setItem(SHOW_SEEDING_KEY, String(show)); } catch { /* storage unavailable */ }
   }
 
   async pause(d: TorrentStatus) { await this.api.pauseDownload(d.infoHash).catch(e => this.toasts.error(errorMessage(e))); }
   async resume(d: TorrentStatus) { await this.api.resumeDownload(d.infoHash).catch(e => this.toasts.error(errorMessage(e))); }
+
+  protected async bulk(action: BulkDownloadAction) {
+    const hashes = this.selection.selected();
+    if (hashes.length === 0 || this.bulkBusy()) return;
+    this.bulkBusy.set(true);
+    try {
+      const result = await this.api.bulkDownloads(hashes, action, action === 'Remove' && this.bulkDeleteData);
+      const verb = action === 'Pause' ? 'Paused' : action === 'Resume' ? 'Resumed' : 'Removed';
+      this.report(`${verb} ${result.affected} torrent${result.affected === 1 ? '' : 's'}`, result);
+      if (action === 'Remove') {
+        this.confirmBulkRemove.set(false);
+        this.bulkDeleteData = false;
+        this.selection.clear();
+      }
+      // Reflect the new states now instead of waiting for the next live update.
+      this.events.downloads.set(await this.api.downloads());
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+    } finally {
+      this.bulkBusy.set(false);
+    }
+  }
+
+  private report(message: string, result: BulkResult) {
+    if (result.errors.length === 0) this.toasts.success(message);
+    else this.toasts.error(`${message}; ${result.errors.length} failed: ${result.errors.slice(0, 3).join(' · ')}`);
+  }
 
   async remove(d: TorrentStatus) {
     try {

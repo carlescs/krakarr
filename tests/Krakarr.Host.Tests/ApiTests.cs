@@ -222,4 +222,29 @@ public sealed class ApiTests : IClassFixture<KrakarrFactory>
         var both = await client.PostAsJsonAsync("/api/v1/downloads/magnet", new { magnet, movieId = 1, seriesId = 1 }, ct);
         Assert.Equal(HttpStatusCode.BadRequest, both.StatusCode);
     }
+
+    [Fact]
+    public async Task Bulk_download_actions_validate_and_skip_unknown_torrents()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = await LoggedInClientAsync();
+
+        var none = await client.PostAsJsonAsync("/api/v1/downloads/bulk", new { hashes = Array.Empty<string>(), action = "Pause" }, ct);
+        Assert.Equal(HttpStatusCode.BadRequest, none.StatusCode);
+
+        var tooMany = Enumerable.Range(0, 5001).Select(i => i.ToString("x40")).ToArray();
+        var big = await client.PostAsJsonAsync("/api/v1/downloads/bulk", new { hashes = tooMany, action = "Resume" }, ct);
+        Assert.Equal(HttpStatusCode.BadRequest, big.StatusCode);
+
+        // Torrents that are already gone count as neither done nor failed.
+        var unknown = new[] { "ffffffffffffffffffffffffffffffffffffffff", "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" };
+        foreach (var action in new[] { "Pause", "Resume", "Remove" })
+        {
+            var res = await client.PostAsJsonAsync("/api/v1/downloads/bulk", new { hashes = unknown, action, deleteData = true }, ct);
+            res.EnsureSuccessStatusCode();
+            var result = await res.Content.ReadFromJsonAsync<JsonElement>(ct);
+            Assert.Equal(0, result.GetProperty("affected").GetInt32());
+            Assert.Equal(0, result.GetProperty("errors").GetArrayLength());
+        }
+    }
 }

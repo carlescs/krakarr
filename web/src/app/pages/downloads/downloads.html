@@ -31,10 +31,34 @@
     @else { Nothing downloading. {{ seedingCount() }} torrent(s) seeding — <button class="underline hover:text-slate-200" (click)="toggleSeeding(true)">show them</button>. }
   </div>
 } @else {
+  <div class="card sticky top-[calc(3.5rem+env(safe-area-inset-top)+0.5rem)] z-10 mb-3 flex flex-wrap items-center gap-2 px-3 py-2"
+       [class.shadow-lg]="selection.count() > 0" role="toolbar" aria-label="Bulk actions">
+    <label class="flex items-center gap-2 text-sm">
+      <input type="checkbox" class="size-4 accent-accent-500" aria-label="Select all torrents"
+             [checked]="selection.all()" [indeterminate]="selection.count() > 0 && !selection.all()" (change)="selection.toggleAll()" />
+      @if (selection.count() > 0) {
+        <span class="font-medium text-white" aria-live="polite">{{ selection.count() }} selected</span>
+      } @else {
+        <span class="text-slate-400">Select all ({{ visible().length }})</span>
+      }
+    </label>
+    @if (selection.count() > 0) {
+      <div class="flex-1"></div>
+      <div class="flex flex-wrap items-center gap-2">
+        <button type="button" class="btn-secondary btn-sm" [disabled]="bulkBusy()" (click)="bulk('Pause')">Pause</button>
+        <button type="button" class="btn-secondary btn-sm" [disabled]="bulkBusy()" (click)="bulk('Resume')">Resume</button>
+        <button type="button" class="btn-secondary btn-sm text-rose-300" [disabled]="bulkBusy()" (click)="confirmBulkRemove.set(true)">Remove…</button>
+        <button type="button" class="btn-ghost btn-sm" (click)="selection.clear()">Clear</button>
+      </div>
+    }
+  </div>
   <div class="space-y-2">
     @for (d of visible(); track d.infoHash) {
-      <div class="card p-3 sm:p-4">
+      @let checked = selection.has(d.infoHash);
+      <div class="card p-3 sm:p-4" [class.ring-1]="checked" [class.ring-accent-500/60]="checked" [class.bg-accent-500/5]="checked">
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5 sm:gap-x-3">
+          <input type="checkbox" class="size-4 shrink-0 accent-accent-500 pointer-coarse:size-5" [attr.aria-label]="'Select ' + d.name" [checked]="checked"
+                 (click)="selection.toggle(d.infoHash, $event.shiftKey)" />
           <kr-state-badge [state]="d.state" />
           <button class="min-w-0 text-left font-medium text-slate-100 break-all hover:text-accent-300 max-sm:order-first max-sm:line-clamp-2 max-sm:basis-full sm:flex-1 sm:truncate" [title]="d.name + ' — show details'" (click)="details.set(d)">{{ d.name }}</button>
           @if (d.movieId) {
@@ -108,6 +132,18 @@
     <ng-container footer>
       <button class="btn-ghost" (click)="removing.set(null)">Cancel</button>
       <button class="btn-danger" (click)="remove(d)">Remove</button>
+    </ng-container>
+  </kr-modal>
+}
+
+@if (confirmBulkRemove()) {
+  <kr-modal [title]="'Remove ' + selection.count() + ' torrent' + (selection.count() === 1 ? '' : 's')" (closed)="confirmBulkRemove.set(false)">
+    <p class="text-sm text-slate-300">Remove the selected torrents from the download client?</p>
+    <label class="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" class="accent-rose-500" [(ngModel)]="bulkDeleteData" /> Also delete downloaded files</label>
+    <p class="hint">Imported library files are hardlinks/copies and are not affected.</p>
+    <ng-container footer>
+      <button type="button" class="btn-ghost" (click)="confirmBulkRemove.set(false)">Cancel</button>
+      <button type="button" class="btn-danger" [disabled]="bulkBusy()" (click)="bulk('Remove')">Remove</button>
     </ng-container>
   </kr-modal>
 }

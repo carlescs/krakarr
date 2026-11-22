@@ -52,6 +52,48 @@ describe('DownloadsPage', () => {
     expect(TestBed.inject(Events).downloads().map(d => d.infoHash)).toEqual(['h2']);
   });
 
+  it('pauses, resumes and removes a selection in bulk', async () => {
+    const extra = torrent({ id: 3, infoHash: 'h3', name: 'Heat.1995', state: 'Paused' });
+    const { api, fixture, el } = await render({
+      downloads: async () => [...torrents, extra],
+      bulkDownloads: async () => ({ affected: 2, errors: [] }),
+    });
+    expect(text(el)).toContain('Select all (2)');
+    (el.querySelector('input[aria-label="Select Alien.1979.1080p"]') as HTMLInputElement).click();
+    (el.querySelector('input[aria-label="Select Heat.1995"]') as HTMLInputElement).click();
+    await settle(fixture);
+    expect(text(el)).toContain('2 selected');
+
+    button(el.querySelector('[role="toolbar"]') as HTMLElement, 'Pause').click();
+    await settle(fixture);
+    expect(api.bulkDownloads).toHaveBeenCalledWith(['h1', 'h3'], 'Pause', false);
+    button(el.querySelector('[role="toolbar"]') as HTMLElement, 'Resume').click();
+    await settle(fixture);
+    expect(api.bulkDownloads).toHaveBeenCalledWith(['h1', 'h3'], 'Resume', false);
+
+    button(el, 'Remove…').click();
+    await settle(fixture);
+    const dialog = el.querySelector('[role="dialog"]') as HTMLElement;
+    expect(text(dialog)).toContain('Remove 2 torrents');
+    (dialog.querySelector('input[type="checkbox"]') as HTMLInputElement).click();
+    await settle(fixture);
+    button(dialog, 'Remove').click();
+    await settle(fixture);
+    expect(api.bulkDownloads).toHaveBeenCalledWith(['h1', 'h3'], 'Remove', true);
+    expect(el.querySelector('[role="dialog"]')).toBeNull();
+    expect(text(el)).toContain('Select all');
+  });
+
+  it('selects all torrents in the current view only', async () => {
+    const { fixture, el } = await render();
+    (el.querySelector('input[aria-label="Select all torrents"]') as HTMLInputElement).click();
+    await settle(fixture);
+    expect(text(el)).toContain('1 selected');
+    button(el, 'Seeding (1)').click();
+    await settle(fixture);
+    expect(text(el)).toContain('Select all (1)');
+  });
+
   it('adds a magnet link', async () => {
     const { api, fixture, el } = await render({ addMagnet: async () => undefined, movies: async () => [], seriesList: async () => [] });
     button(el, '+ Add torrent').click();

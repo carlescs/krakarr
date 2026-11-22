@@ -15,8 +15,16 @@ public sealed record AddMagnetRequest(string Magnet, string? Category, string? S
 
 public sealed record GrabReleaseRequest(ReleaseInfo Release, string? Category, int? MovieId = null, int? SeriesId = null);
 
+public enum BulkDownloadAction { Pause, Resume, Remove }
+
+/// <summary>A pause, resume or remove applied to every selected torrent (downloads page multi-selection).</summary>
+public sealed record BulkDownloadRequest(IReadOnlyList<string> Hashes, BulkDownloadAction Action, bool DeleteData = false);
+
 public static class DownloadEndpoints
 {
+    /// <summary>Most torrents one bulk request may name.</summary>
+    private const int MaxBulkHashes = 5_000;
+
     public static IEndpointRouteBuilder MapDownloadEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/downloads").WithTags("Downloads");
@@ -64,6 +72,46 @@ public static class DownloadEndpoints
         group.MapPost("/{hash}/resume", (string hash, ITorrentEngine engine) => Control(() => engine.ResumeAsync(hash)));
         group.MapDelete("/{hash}", (string hash, bool? deleteData, ITorrentEngine engine) =>
             Control(() => engine.RemoveAsync(hash, deleteData ?? false)));
+
+        group.MapPost("/bulk", async (BulkDownloadRequest req, ITorrentEngine engine) =>
+        {
+            if (req.Hashes is null || req.Hashes.Count is 0 or > MaxBulkHashes)
+            {
+                return Results.Problem($"Select between 1 and {MaxBulkHashes} torrents.", statusCode: 400);
+            }
+
+            if (!Enum.IsDefined(req.Action)) return Results.Problem("Unknown action.", statusCode: 400);
+
+            // Torrents that are already gone (removed elsewhere) are skipped: they count as neither done nor failed.
+            var names = engine.GetStatuses()
+                .DistinctBy(t => t.InfoHash, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(t => t.InfoHash, t => t.Name, StringComparer.OrdinalIgnoreCase);
+            var (affected, errors) = (0, new List<string>());
+            foreach (var hash in req.Hashes.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (!names.TryGetValue(hash, out var name)) continue;
+                try
+                {
+                    await (req.Action switch
+                    {
+                        BulkDownloadAction.Pause => engine.PauseAsync(hash),
+                        BulkDownloadAction.Resume => engine.ResumeAsync(hash),
+                        _ => engine.RemoveAsync(hash, req.DeleteData),
+                    });
+                    affected++;
+                }
+                catch (KeyNotFoundException)
+                {
+                    // Removed while the bulk action ran.
+                }
+                catch (Exception ex) when (ex is QBittorrentException or InvalidOperationException or HttpRequestException or IOException or UnauthorizedAccessException)
+                {
+                    errors.Add($"{name}: {ex.Message}");
+                }
+            }
+
+            return Results.Ok(new BulkResult(affected, errors));
+        });
 
         group.MapGet("/{hash}/details", async (string hash, ITorrentEngine engine, CancellationToken ct) =>
         {
