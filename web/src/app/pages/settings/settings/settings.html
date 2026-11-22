@@ -160,6 +160,11 @@
         </div>
         <div><label class="label">Username</label><input class="input" [(ngModel)]="d.qBittorrent.username" autocomplete="off" /></div>
         <div><label class="label">Password</label><input class="input" type="password" [(ngModel)]="d.qBittorrent.password" autocomplete="new-password" /></div>
+        <div class="sm:col-span-2">
+          <label class="label">API key (optional)</label>
+          <input class="input font-mono" type="password" [(ngModel)]="d.qBittorrent.apiKey" autocomplete="new-password" placeholder="qbt_…" />
+          <p class="hint">qBittorrent 5.2+ (Options → WebUI → API key). When set, it is used instead of the username and password.</p>
+        </div>
         <div>
           <label class="label">Tag</label>
           <input class="input" [(ngModel)]="d.qBittorrent.tag" />

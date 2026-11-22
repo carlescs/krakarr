@@ -72,12 +72,14 @@ public enum DownloadClientKind
 
 public sealed record QBittorrentSettings
 {
-    /// <summary>Placeholder returned instead of the stored password; sending it back keeps the stored value.</summary>
+    /// <summary>Placeholder returned instead of the stored password or API key; sending it back keeps the stored value.</summary>
     public const string PasswordMask = "********";
 
     public string Url { get; init; } = "http://localhost:8080";
     public string? Username { get; init; } = "admin";
     public string? Password { get; init; }
+    /// <summary>WebUI API key (qBittorrent 5.2+). When set it is sent as a bearer token and the username/password login is skipped.</summary>
+    public string? ApiKey { get; init; }
     /// <summary>Every torrent Krakarr adds gets this tag; only torrents with it are listed or controlled.</summary>
     public string Tag { get; init; } = "krakarr";
     /// <summary>Optional category override; empty keeps Krakarr's per-grab category (movies, manual, ...).</summary>
@@ -88,6 +90,24 @@ public sealed record QBittorrentSettings
     public string? RemotePathPrefix { get; init; }
     /// <summary>... and the same location as Krakarr sees it.</summary>
     public string? LocalPathPrefix { get; init; }
+
+    /// <summary>True when an API key is configured, so requests use it instead of the cookie login.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool UsesApiKey => !string.IsNullOrWhiteSpace(ApiKey);
+
+    /// <summary>Replaces masked secrets (<see cref="PasswordMask"/>) with the stored values.</summary>
+    public QBittorrentSettings WithSecretsFrom(QBittorrentSettings stored) => this with
+    {
+        Password = Password == PasswordMask ? stored.Password : Password,
+        ApiKey = ApiKey == PasswordMask ? stored.ApiKey : ApiKey,
+    };
+
+    /// <summary>Copy safe to return to the UI: secrets that are set are replaced by <see cref="PasswordMask"/>.</summary>
+    public QBittorrentSettings Masked() => this with
+    {
+        Password = string.IsNullOrEmpty(Password) ? Password : PasswordMask,
+        ApiKey = string.IsNullOrEmpty(ApiKey) ? ApiKey : PasswordMask,
+    };
 }
 
 public enum SeedLimitAction

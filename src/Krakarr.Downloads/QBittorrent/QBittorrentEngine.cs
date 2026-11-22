@@ -657,7 +657,8 @@ public sealed class QBittorrentEngine(
         try
         {
             var current = _api?.Settings;
-            if (_api is null || current!.Url != settings.Url || current.Username != settings.Username || current.Password != settings.Password)
+            if (_api is null || current!.Url != settings.Url || current.Username != settings.Username || current.Password != settings.Password
+                || current.ApiKey != settings.ApiKey)
             {
                 _api?.Dispose();
                 _api = apiFactory.Create(settings);
