@@ -238,6 +238,13 @@ public sealed class SubtitleService(
         var s = await settings.GetAsync<SubtitleSettings>(ct);
         await SyncDiskAsync(target, ct);
         var missing = await MissingLanguagesAsync(target, s, ct);
+        if (missing.Count > 0 || upgrade)
+        {
+            // Don't query providers that asked us to back off, and leave the file due so it is searched once they allow it.
+            if (BackoffUntil(s) is { } until)
+                return $"{target.Label}: skipped, subtitle providers paused until {until.ToLocalTime():g}";
+        }
+
         await MarkSearchedAsync(target, ct);
 
         // Score to beat per language already present (upgrade only); disk subtitles are left alone.
@@ -273,7 +280,7 @@ public sealed class SubtitleService(
                 catch (SubtitleProviderException ex)
                 {
                     errors.Add($"{choice.Candidate.Provider}: {ex.Message}");
-                    if (ex.Message.Contains("quota", StringComparison.OrdinalIgnoreCase)) break;
+                    if (ex is SubtitleRateLimitException || ex.Message.Contains("quota", StringComparison.OrdinalIgnoreCase)) break;
                 }
             }
         }
@@ -286,6 +293,22 @@ public sealed class SubtitleService(
         if (stillMissing.Count > 0 && parts.Count > 0) summary += $"; still missing {string.Join(", ", stillMissing)}";
         if (errors.Count > 0) summary += $" ({string.Join("; ", errors.Distinct())})";
         return $"{target.Label}: {summary}";
+    }
+
+    /// <summary>
+    /// When every configured provider asked us to back off (rate limit or quota), the earliest time one of them can be
+    /// queried again; null when at least one can be queried now.
+    /// </summary>
+    public DateTimeOffset? BackoffUntil(SubtitleSettings s)
+    {
+        DateTimeOffset? earliest = null;
+        foreach (var provider in Providers.Where(p => p.IsConfigured(s)))
+        {
+            if (provider.BackoffUntil is not { } until) return null;
+            if (earliest is null || until < earliest) earliest = until;
+        }
+
+        return earliest;
     }
 
     /// <summary>Downloads a subtitle and stores it next to the video as "{video}.{lang}[.hi][.forced].{ext}".</summary>
