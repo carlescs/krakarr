@@ -1,0 +1,58 @@
+@if (tmdbUrl(); as url) {
+  <a class="link-pill" [href]="url" target="_blank" rel="noopener" title="The Movie Database" aria-label="TMDB">
+    <svg class="h-4 w-auto" viewBox="0 0 64 20" aria-hidden="true">
+      <defs><linearGradient id="kr-tmdb" x1="0" x2="1"><stop offset="0" stop-color="#90cea1" /><stop offset="0.56" stop-color="#3cbec9" /><stop offset="1" stop-color="#00b3e5" /></linearGradient></defs>
+      <rect width="64" height="20" rx="10" fill="url(#kr-tmdb)" />
+      <text x="32" y="14.5" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12.5" font-weight="900" fill="#0d253f" letter-spacing=".5">TMDB</text>
+    </svg>
+  </a>
+}
+@if (tvdbUrl(); as url) {
+  <a class="link-pill" [href]="url" target="_blank" rel="noopener" title="TheTVDB" aria-label="TVDB">
+    <svg class="h-4 w-auto" viewBox="0 0 58 20" aria-hidden="true">
+      <rect width="58" height="20" rx="4" fill="#1d2028" />
+      <text x="29" y="14.5" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="12.5" font-weight="900" fill="#6cd491" letter-spacing=".5">TVDB</text>
+    </svg>
+  </a>
+}
+@if (imdbUrl(); as url) {
+  <a class="link-pill" [href]="url" target="_blank" rel="noopener" title="IMDb" aria-label="IMDb">
+    <svg class="h-4 w-auto" viewBox="0 0 48 20" aria-hidden="true">
+      <rect width="48" height="20" rx="4" fill="#f5c518" />
+      <text x="24" y="15" text-anchor="middle" font-family="Impact, 'Arial Black', Arial, sans-serif" font-size="14" font-weight="900" fill="#000">IMDb</text>
+    </svg>
+    @if (ratings()?.imdb; as score) {
+      <span class="font-semibold text-white">{{ score.toFixed(1) }}</span>
+      @if (ratings()?.imdbVotes; as v) { <span class="text-xs text-slate-500">{{ votes(v) }}</span> }
+    }
+  </a>
+}
+@if (tomatoesUrl(); as url) {
+  <a class="link-pill" [href]="url" target="_blank" rel="noopener" aria-label="Rotten Tomatoes"
+     [title]="ratings()?.rottenTomatoes != null ? 'Rotten Tomatoes Tomatometer: ' + ratings()!.rottenTomatoes + '%' : 'Rotten Tomatoes'">
+    @if (ratings()?.rottenTomatoes != null && !fresh()) {
+      <!-- Rotten: green splat -->
+      <svg class="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="#0fc755" d="M12 2.5c1 2.3 2.2 3.2 4.1 2.2 1.9-1 3.7.4 2.7 2.4-.8 1.6.3 2.8 2.1 3.1 2 .3 2.2 2.6.3 3.3-1.8.7-2 2.2-.6 3.4 1.6 1.4.4 3.5-1.6 2.9-1.9-.6-3.1.4-3.2 2.3-.1 2.1-2.4 2.5-3.2.6-.8-1.9-2.4-2-3.7-.6-1.4 1.5-3.4.4-2.9-1.6.5-1.9-.6-3-2.5-2.9-2.1.1-2.6-2.2-.8-3.2 1.7-.9 1.8-2.4.3-3.6-1.6-1.3-.5-3.4 1.5-2.9 1.9.5 3-.6 3-2.5 0-2.1 2.4-2.6 3.3-.7z" />
+      </svg>
+    } @else {
+      <!-- Fresh (or no score yet): red tomato -->
+      <svg class="h-4 w-4" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="13.5" r="9" fill="#fa320a" />
+        <path fill="#00912d" d="M12 6.2c-1.2-1.9-3.3-2.6-5.2-2 1.4.4 2.4 1.2 2.9 2.2-1.6-.4-3.2.1-4.2 1.3 1.6-.2 3 .2 4 1 .9-.4 1.7-.6 2.5-.6.8 0 1.6.2 2.5.6 1-.8 2.4-1.2 4-1-1-1.2-2.6-1.7-4.2-1.3.5-1 1.5-1.8 2.9-2.2-1.9-.6-4 .1-5.2 2z" />
+        <ellipse cx="8.5" cy="11.5" rx="2" ry="1.2" fill="#fff" opacity=".35" transform="rotate(-30 8.5 11.5)" />
+      </svg>
+    }
+    @if (ratings()?.rottenTomatoes != null) {
+      <span class="font-semibold text-white">{{ ratings()!.rottenTomatoes }}%</span>
+    } @else {
+      <span class="text-xs text-slate-300">Rotten Tomatoes</span>
+    }
+  </a>
+}
+@if (ratings()?.metacritic != null && kind() !== 'person') {
+  <a class="link-pill" [href]="metacriticUrl()" target="_blank" rel="noopener" aria-label="Metacritic" [title]="'Metascore: ' + ratings()!.metacritic">
+    <span class="grid h-4 min-w-5 place-items-center rounded-sm px-0.5 text-[11px] font-bold leading-none" [class]="metacriticClass()">{{ ratings()!.metacritic }}</span>
+    <span class="text-xs text-slate-300">Metacritic</span>
+  </a>
+}

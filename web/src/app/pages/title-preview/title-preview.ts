@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, numberAttribute, signal, untracked } from '@angular/core';
+import { Component, effect, inject, input, numberAttribute, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { Title } from '@angular/platform-browser';
 import { Router, RouterLink } from '@angular/router';
@@ -9,6 +9,7 @@ import { CreditsView } from '../../shared/credits/credits';
 import { DiscoverAdd } from '../../shared/discover-add/discover-add';
 import { Poster } from '../../shared/poster/poster';
 import { RelatedTitles } from '../../shared/related-titles/related-titles';
+import { ExternalLinks } from '../../shared/external-links/external-links';
 
 type Kind = 'movie' | 'series';
 
@@ -37,7 +38,7 @@ interface Preview {
  */
 @Component({
   selector: 'kr-title-preview',
-  imports: [DatePipe, RouterLink, Poster, CreditsView, RelatedTitles, DiscoverAdd],
+  imports: [ExternalLinks, DatePipe, RouterLink, Poster, CreditsView, RelatedTitles, DiscoverAdd],
   templateUrl: './title-preview.html',
   styleUrl: './title-preview.scss',
 })
@@ -58,7 +59,6 @@ export class TitlePreviewPage {
   protected readonly adding = signal(false);
   /** Pending request for this title, by anyone. */
   protected readonly openRequest = signal<MediaRequest | null>(null);
-  protected readonly tmdbUrl = computed(() => `https://www.themoviedb.org/${this.kind() === 'movie' ? 'movie' : 'tv'}/${this.tmdbId()}`);
 
   constructor() {
     // The component is reused when a related title links to another preview, so reload on every id change.

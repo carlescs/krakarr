@@ -184,7 +184,9 @@ export interface MediaManagementSettings {
   seriesFolderFormat: string; seasonFolderFormat: string; episodeFileFormat: string;
 }
 export type SeriesMetadataSource = 'Tmdb' | 'Tvdb';
-export interface MetadataSettings { tmdbApiKey?: string; seriesSource: SeriesMetadataSource; tvdbApiKey?: string; tvdbPin?: string; language: string; releaseRegion?: string | null; }
+/** Scores from OMDb; each is null when the source has none. */
+export interface TitleRatings { imdb: number | null; imdbVotes: number | null; rottenTomatoes: number | null; metacritic: number | null; rottenTomatoesUrl: string | null; }
+export interface MetadataSettings { tmdbApiKey?: string; seriesSource: SeriesMetadataSource; tvdbApiKey?: string; tvdbPin?: string; omdbApiKey?: string; language: string; releaseRegion?: string | null; }
 export interface JellyfinSettings { url?: string | null; apiKey?: string | null; publicUrl?: string | null; }
 export interface JellyfinTestResult { success: boolean; serverName?: string; version?: string; message?: string; }
 export type OtlpProtocol = 'Grpc' | 'HttpProtobuf';
