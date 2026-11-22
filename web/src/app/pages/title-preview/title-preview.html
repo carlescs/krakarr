@@ -41,6 +41,11 @@
     </div>
   </div>
 
+  <!-- Release dates (movies) -->
+  @if (kind() === 'movie' && p.releases.length > 0) {
+    <kr-movie-releases [releases]="p.releases" [releaseRegion]="p.releaseRegion" />
+  }
+
   <!-- Seasons (series) -->
   @if (p.seasons.length > 0) {
     <section class="mb-8">

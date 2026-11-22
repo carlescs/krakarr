@@ -55,34 +55,12 @@
   </div>
 
   <!-- Release dates -->
-  <section class="card mb-6 p-4 sm:p-5">
-    <div class="mb-3 flex flex-wrap items-center gap-2">
-      <h2 class="flex-1 text-sm font-semibold uppercase tracking-wide text-slate-400">Releases</h2>
-      <span class="badge" [class]="m.isAvailable ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'"
-            [title]="'Minimum availability: ' + availabilityLabel(m.minimumAvailability)">
-        {{ m.isAvailable ? 'Available' : 'Waits for: ' + availabilityLabel(m.minimumAvailability) }}
-      </span>
-    </div>
-    <div class="grid gap-3 sm:grid-cols-3">
-      @for (r of m.releases; track r.type) {
-        <div class="rounded-lg border-l-2 bg-surface-850 px-3 py-2" [class]="releaseBar[r.type]">
-          <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ releaseLabels[r.type] }}</div>
-          @if (r.region ?? r.earliest; as shown) {
-            <div class="mt-0.5 text-sm font-medium text-slate-100">{{ shown.date | date: 'mediumDate' }}
-              <span class="text-xs font-normal text-slate-400">{{ shown.country }}</span>
-            </div>
-            @if (r.region && r.earliest && r.earliest.date < r.region.date) {
-              <div class="text-xs text-slate-500">Earliest: {{ r.earliest.date | date: 'mediumDate' }} ({{ r.earliest.country }})</div>
-            } @else if (!r.region && m.releaseRegion) {
-              <div class="text-xs text-slate-500">Earliest worldwide · no date for {{ m.releaseRegion }}</div>
-            }
-          } @else {
-            <div class="mt-0.5 text-sm text-slate-500">Unknown</div>
-          }
-        </div>
-      }
-    </div>
-  </section>
+  <kr-movie-releases [releases]="m.releases" [releaseRegion]="m.releaseRegion">
+    <span class="badge" [class]="m.isAvailable ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300'"
+          [title]="'Minimum availability: ' + availabilityLabel(m.minimumAvailability)">
+      {{ m.isAvailable ? 'Available' : 'Waits for: ' + availabilityLabel(m.minimumAvailability) }}
+    </span>
+  </kr-movie-releases>
 
   <!-- Active downloads -->
   @if (downloads().length > 0) {

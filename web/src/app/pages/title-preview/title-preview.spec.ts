@@ -7,7 +7,14 @@ import { TitlePreviewPage } from './title-preview';
 
 const movieDetails = (movieId?: number) => ({
   movie: { tmdbId: 329865, title: 'Arrival', year: 2016, runtime: 116, overview: 'Linguist meets aliens.', imdbId: 'tt2543164', movieId },
-  tagline: 'Why are they here?', genres: ['Drama', 'Sci-Fi'], releaseDate: '2016-11-11', cast: [{ tmdbId: 1, name: 'Amy Adams' }], crew: [],
+  tagline: 'Why are they here?', genres: ['Drama', 'Sci-Fi'], releaseDate: '2016-11-11',
+  releaseRegion: 'ES',
+  releases: [
+    { type: 'Theatrical', region: { date: '2016-11-18', country: 'ES' }, earliest: { date: '2016-11-11', country: 'US' } },
+    { type: 'Digital', region: null, earliest: { date: '2017-01-31', country: 'US' } },
+    { type: 'Physical', region: null, earliest: null },
+  ],
+  cast: [{ tmdbId: 1, name: 'Amy Adams' }], crew: [],
 });
 
 async function render(kind: 'movie' | 'series', api: MockApi, role: UserRole = 'Admin') {
@@ -29,6 +36,10 @@ describe('TitlePreviewPage', () => {
     expect(text(el)).toContain('Why are they here?');
     expect(text(el)).toContain('116 min');
     expect(text(el)).toContain('Not in library');
+    expect(text(el)).toContain('Releases');
+    expect(text(el)).toContain('In cinemas');
+    expect(text(el)).toContain('Earliest worldwide · no date for ES');
+    expect(text(el)).toContain('Unknown');
     expect(text(el)).toContain('Amy Adams');
     expect(el.querySelector('a[href="https://www.imdb.com/title/tt2543164"]')).not.toBeNull();
 

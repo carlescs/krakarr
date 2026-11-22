@@ -1,5 +1,6 @@
 using System.Globalization;
 using Krakarr.Core.Configuration;
+using Krakarr.Core.Domain;
 using Krakarr.Core.Metadata;
 using Krakarr.Data;
 using Microsoft.AspNetCore.Builder;
@@ -17,6 +18,9 @@ public sealed record MovieDetails
     public required MovieLookup Movie { get; init; }
     public string? Tagline { get; init; }
     public DateOnly? ReleaseDate { get; init; }
+    /// <summary>Theatrical, digital and physical dates: in the release region and earliest worldwide.</summary>
+    public IReadOnlyList<MovieReleaseDto> Releases { get; init; } = [];
+    public string? ReleaseRegion { get; init; }
     public IReadOnlyList<string> Genres { get; init; } = [];
     public IReadOnlyList<CastMember> Cast { get; init; } = [];
     public IReadOnlyList<CrewMember> Crew { get; init; } = [];
@@ -80,14 +84,18 @@ public sealed class TmdbMovieDiscovery(TmdbApi api, ISettingsService settings, T
     public async Task<MovieDetails> DetailsAsync(int tmdbId, CancellationToken ct = default)
     {
         var meta = await settings.GetAsync<MetadataSettings>(ct);
-        var m = await api.GetAsync<TmdbClient.TmdbMovie>(meta, $"3/movie/{tmdbId.ToString(CultureInfo.InvariantCulture)}?append_to_response=credits", ct);
+        var m = await api.GetAsync<TmdbClient.TmdbMovie>(meta, $"3/movie/{tmdbId.ToString(CultureInfo.InvariantCulture)}?append_to_response=credits,release_dates", ct);
         var lookup = TmdbClient.Map(m) with { Collection = TmdbClient.MapCollection(m.Collection) };
         var credits = TmdbCredits.Map(m.Credits);
+        var releaseDates = TmdbClient.MapReleaseDates(m.ReleaseDates);
+        var region = MovieReleases.NormalizeRegion(meta.ReleaseRegion);
         return new MovieDetails
         {
             Movie = lookup,
             Tagline = string.IsNullOrWhiteSpace(m.Tagline) ? null : m.Tagline,
             ReleaseDate = DateOnly.TryParseExact(m.ReleaseDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null,
+            Releases = MovieEndpoints.ToReleases(releaseDates, region),
+            ReleaseRegion = region,
             Genres = (m.Genres ?? []).Select(g => g.Name).OfType<string>().ToList(),
             Cast = credits.Cast,
             Crew = credits.Crew,

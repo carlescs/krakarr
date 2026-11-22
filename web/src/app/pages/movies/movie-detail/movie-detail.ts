@@ -7,8 +7,8 @@ import { Api, errorMessage } from '../../../core/api';
 import { Auth } from '../../../core/auth';
 import { Events } from '../../../core/events';
 import { AgoPipe, BytesPipe, DurationPipe, SpeedPipe } from '../../../core/format';
-import { AVAILABILITY_OPTIONS, RELEASE_LABELS } from '../../../core/calendar';
-import { HistoryItem, MinimumAvailability, Movie, QualityProfile, ReleaseDateType, ReleaseDecision, SubtitleFile } from '../../../core/models';
+import { AVAILABILITY_OPTIONS } from '../../../core/calendar';
+import { HistoryItem, MinimumAvailability, Movie, QualityProfile, ReleaseDecision, SubtitleFile } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
 import { ReleaseSearch } from '../../../core/indexer-search';
 import { Languages } from '../../../core/languages';
@@ -26,10 +26,11 @@ import { SubtitleManager } from '../../../shared/subtitle-manager/subtitle-manag
 import { SubtitleList } from '../../../shared/subtitle-list/subtitle-list';
 import { SubscribeButton } from '../../../shared/subscribe-button/subscribe-button';
 import { ExternalLinks } from '../../../shared/external-links/external-links';
+import { MovieReleases } from '../../../shared/movie-releases/movie-releases';
 
 @Component({
   selector: 'kr-movie-detail',
-  imports: [ExternalLinks, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, Poster, Progress, Modal, IndexerProgress, StateBadge, SubtitleManager, SubtitleList, SortHeader, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
+  imports: [ExternalLinks, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, MovieReleases, FormsModule, DatePipe, Poster, Progress, Modal, IndexerProgress, StateBadge, SubtitleManager, SubtitleList, SortHeader, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
   templateUrl: './movie-detail.html',
   styleUrl: './movie-detail.scss',
 })
@@ -73,10 +74,6 @@ export class MovieDetailPage implements OnInit {
   protected editLanguages: string[] | null = null;
   protected readonly languages = inject(Languages);
   protected readonly availabilityOptions = AVAILABILITY_OPTIONS;
-  protected readonly releaseLabels = RELEASE_LABELS;
-  protected readonly releaseBar: Record<ReleaseDateType, string> = {
-    Theatrical: 'border-l-amber-400', Digital: 'border-l-violet-400', Physical: 'border-l-pink-400',
-  };
   protected deleteFiles = false;
 
   protected readonly downloads = computed(() => this.events.downloads().filter(d => d.movieId === this.id() && !d.imported));

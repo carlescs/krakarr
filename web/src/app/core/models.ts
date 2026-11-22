@@ -122,7 +122,9 @@ export interface CrewMember { tmdbId: number; name: string; jobs: string; profil
 export interface Credits { cast: CastMember[]; crew: CrewMember[]; }
 /** Any TMDB movie, in the library or not. */
 export interface MovieDetails extends Credits {
-  movie: MovieLookup; tagline?: string; releaseDate?: string; genres: string[];
+  movie: MovieLookup; tagline?: string; releaseDate?: string;
+  releases: MovieRelease[]; releaseRegion?: string | null;
+  genres: string[];
 }
 export interface SeasonSummary { seasonNumber: number; name?: string; episodeCount: number; airDate?: string; posterUrl?: string; }
 /** Any TMDB show, in the library or not. */

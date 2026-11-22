@@ -423,6 +423,11 @@ public static class MovieEndpoints
 
     private static ReleaseDateDto? ToDto(MovieReleaseDate? d) => d is null ? null : new ReleaseDateDto(d.Date, d.Country);
 
+    internal static IReadOnlyList<MovieReleaseDto> ToReleases(IReadOnlyCollection<MovieReleaseDate> dates, string? region) =>
+        MovieReleases.AllTypes
+            .Select(t => new MovieReleaseDto(t, ToDto(MovieReleases.ForRegion(dates, t, region)), ToDto(MovieReleases.Earliest(dates, t))))
+            .ToList();
+
     private static MovieDto ToDto(Movie m, IReadOnlyDictionary<int, double> progress, string? region) => new()
     {
         Id = m.Id,
@@ -439,9 +444,7 @@ public static class MovieEndpoints
         InCinemas = m.InCinemas,
         DigitalRelease = m.DigitalRelease,
         PhysicalRelease = m.PhysicalRelease,
-        Releases = MovieReleases.AllTypes
-            .Select(t => new MovieReleaseDto(t, ToDto(MovieReleases.ForRegion(m.ReleaseDates, t, region)), ToDto(MovieReleases.Earliest(m.ReleaseDates, t))))
-            .ToList(),
+        Releases = ToReleases(m.ReleaseDates, region),
         ReleaseRegion = region,
         MinimumAvailability = m.MinimumAvailability,
         IsAvailable = MovieReleases.IsAvailable(m, MovieService.Today),

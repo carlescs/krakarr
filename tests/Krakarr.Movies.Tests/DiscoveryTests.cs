@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using Krakarr.Core.Configuration;
+using Krakarr.Core.Domain;
 using Krakarr.Core.Metadata;
 using Krakarr.Data;
 using Microsoft.Extensions.Configuration;
@@ -49,6 +50,9 @@ public class TmdbMovieDiscoveryTests
                     """),
                 "/3/movie/603" => Json("""
                     {"id":603,"title":"The Matrix","release_date":"1999-03-30","tagline":"Welcome to the Real World.","genres":[{"name":"Action"},{"name":"Science Fiction"}],
+                     "release_dates":{"results":[
+                       {"iso_3166_1":"US","release_dates":[{"release_date":"1999-03-31T00:00:00.000Z","type":3},{"release_date":"2007-05-22T00:00:00.000Z","type":5}]},
+                       {"iso_3166_1":"ES","release_dates":[{"release_date":"1999-06-23T00:00:00.000Z","type":3}]}]},
                      "credits":{"cast":[{"id":6384,"name":"Keanu Reeves","character":"Neo","order":0,"profile_path":"/k.jpg"},{"id":0,"name":"Nobody","order":1}],
                       "crew":[{"id":9339,"name":"Lilly Wachowski","job":"Director"},{"id":9339,"name":"Lilly Wachowski","job":"Screenplay"},{"id":7,"name":"Best Boy","job":"Best Boy Electric"}]}}
                     """),
@@ -66,10 +70,10 @@ public class TmdbMovieDiscoveryTests
         public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
     }
 
-    private sealed class Settings : ISettingsService
+    private sealed class Settings(string? releaseRegion = null) : ISettingsService
     {
         public Task<T> GetAsync<T>(CancellationToken ct = default) where T : class, ISettingsSection, new() =>
-            Task.FromResult(new MetadataSettings { TmdbApiKey = "v3key" } as T ?? new T());
+            Task.FromResult(new MetadataSettings { TmdbApiKey = "v3key", ReleaseRegion = releaseRegion } as T ?? new T());
         public Task SaveAsync<T>(T value, CancellationToken ct = default) where T : class, ISettingsSection, new() => Task.CompletedTask;
     }
 
@@ -78,8 +82,8 @@ public class TmdbMovieDiscoveryTests
         public override DateTimeOffset GetUtcNow() => new(2026, 11, 20, 12, 0, 0, TimeSpan.Zero);
     }
 
-    private static TmdbMovieDiscovery Discovery(FakeTmdb fake) =>
-        new(new TmdbApi(new Factory(fake), new ConfigurationBuilder().Build()), new Settings(), new FixedTime());
+    private static TmdbMovieDiscovery Discovery(FakeTmdb fake, string? releaseRegion = null) =>
+        new(new TmdbApi(new Factory(fake), new ConfigurationBuilder().Build()), new Settings(releaseRegion), new FixedTime());
 
     [Fact]
     public async Task Reads_a_trending_page_with_ratings()
@@ -113,14 +117,26 @@ public class TmdbMovieDiscoveryTests
     }
 
     [Fact]
-    public async Task Details_include_genres_billed_cast_and_key_crew()
+    public async Task Details_include_genres_billed_cast_key_crew_and_release_dates()
     {
         var fake = new FakeTmdb();
-        var details = await Discovery(fake).DetailsAsync(603, TestContext.Current.CancellationToken);
+        var details = await Discovery(fake, "es").DetailsAsync(603, TestContext.Current.CancellationToken);
 
-        Assert.Contains("append_to_response=credits", fake.Requests[0].Query);
+        Assert.Contains("append_to_response=credits,release_dates", fake.Requests[0].Query);
         Assert.Equal("The Matrix", details.Movie.Title);
         Assert.Equal(new DateOnly(1999, 3, 30), details.ReleaseDate);
+        Assert.Equal("ES", details.ReleaseRegion);
+        Assert.Equal(3, details.Releases.Count);
+        var theatrical = details.Releases.Single(r => r.Type == ReleaseDateType.Theatrical);
+        Assert.Equal(new ReleaseDateDto(new DateOnly(1999, 6, 23), "ES"), theatrical.Region);
+        Assert.Equal(new ReleaseDateDto(new DateOnly(1999, 3, 31), "US"), theatrical.Earliest);
+        var digital = details.Releases.Single(r => r.Type == ReleaseDateType.Digital);
+        Assert.Null(digital.Region);
+        Assert.Null(digital.Earliest);
+        var physical = details.Releases.Single(r => r.Type == ReleaseDateType.Physical);
+        Assert.Null(physical.Region);
+        Assert.Equal(new ReleaseDateDto(new DateOnly(2007, 5, 22), "US"), physical.Earliest);
+
         Assert.Equal(["Action", "Science Fiction"], details.Genres);
         var neo = Assert.Single(details.Cast);
         Assert.Equal("Neo", neo.Character);

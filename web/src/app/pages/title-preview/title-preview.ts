@@ -4,12 +4,13 @@ import { Title } from '@angular/platform-browser';
 import { Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
 import { Auth } from '../../core/auth';
-import { CastMember, CrewMember, DiscoverItem, MediaRequest, MovieDetails, SeasonSummary, SeriesDetails } from '../../core/models';
+import { CastMember, CrewMember, DiscoverItem, MediaRequest, MovieDetails, MovieRelease, SeasonSummary, SeriesDetails } from '../../core/models';
 import { CreditsView } from '../../shared/credits/credits';
 import { DiscoverAdd } from '../../shared/discover-add/discover-add';
 import { Poster } from '../../shared/poster/poster';
 import { RelatedTitles } from '../../shared/related-titles/related-titles';
 import { ExternalLinks } from '../../shared/external-links/external-links';
+import { MovieReleases } from '../../shared/movie-releases/movie-releases';
 
 type Kind = 'movie' | 'series';
 
@@ -27,6 +28,8 @@ interface Preview {
   genres: string[];
   imdbId?: string;
   tvdbId?: number;
+  releases: MovieRelease[];
+  releaseRegion?: string | null;
   cast: CastMember[];
   crew: CrewMember[];
   seasons: SeasonSummary[];
@@ -38,7 +41,7 @@ interface Preview {
  */
 @Component({
   selector: 'kr-title-preview',
-  imports: [ExternalLinks, DatePipe, RouterLink, Poster, CreditsView, RelatedTitles, DiscoverAdd],
+  imports: [ExternalLinks, MovieReleases, DatePipe, RouterLink, Poster, CreditsView, RelatedTitles, DiscoverAdd],
   templateUrl: './title-preview.html',
   styleUrl: './title-preview.scss',
 })
@@ -112,7 +115,9 @@ function fromMovie(d: MovieDetails): Preview {
   if (m.status && m.status !== 'Released') facts.push(m.status);
   return {
     item: { kind: 'movie', item: m }, title: m.title, year: m.year, overview: m.overview, tagline: d.tagline, posterUrl: m.posterUrl,
-    fanartUrl: m.fanartUrl, rating: m.rating, facts, genres: d.genres, imdbId: m.imdbId, cast: d.cast, crew: d.crew, seasons: [],
+    fanartUrl: m.fanartUrl, rating: m.rating, facts, genres: d.genres, imdbId: m.imdbId,
+    releases: d.releases ?? [], releaseRegion: d.releaseRegion,
+    cast: d.cast, crew: d.crew, seasons: [],
   };
 }
 
@@ -125,7 +130,8 @@ function fromSeries(d: SeriesDetails): Preview {
   if (d.episodeCount) facts.push(`${d.episodeCount} episodes`);
   return {
     item: { kind: 'series', item: s }, title: s.title, year: s.year, overview: s.overview, tagline: d.tagline, posterUrl: s.posterUrl,
-    fanartUrl: d.fanartUrl, rating: s.rating, facts, genres: d.genres, imdbId: d.imdbId, tvdbId: s.tvdbId, cast: d.cast, crew: d.crew,
-    seasons: d.seasons,
+    fanartUrl: d.fanartUrl, rating: s.rating, facts, genres: d.genres, imdbId: d.imdbId, tvdbId: s.tvdbId,
+    releases: [],
+    cast: d.cast, crew: d.crew, seasons: d.seasons,
   };
 }
