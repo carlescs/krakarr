@@ -162,7 +162,11 @@ export interface TorrentStatus {
   downloadRate: number; uploadRate: number; seeds: number; leechers: number; ratio: number; etaSeconds?: number;
   category: string; savePath: string; added: string; completedAt?: string; movieId?: number; seriesId?: number; imported: boolean;
   importMessage?: string; errorMessage?: string;
+  /** The client that owns the torrent. */
+  client: DownloadClientName;
 }
+/** `Download.Client` values on the server. */
+export type DownloadClientName = 'embedded' | 'qbittorrent';
 
 export interface HistoryItem {
   id: number; eventType: HistoryEventType; date: string; sourceTitle: string; movieId?: number; seriesId?: number;
@@ -200,7 +204,11 @@ export interface QBittorrentSettings {
   remotePathPrefix?: string; localPathPrefix?: string;
 }
 export interface DownloadClientTestResult { success: boolean; version?: string; message?: string; }
-export interface DownloadClientStatus { kind: DownloadClientKind; connected: boolean; error?: string; tag?: string; }
+/** The client new torrents go to, plus `others`: clients still running because they own downloads. */
+export interface DownloadClientStatus {
+  kind: DownloadClientKind; connected: boolean; error?: string; tag?: string;
+  others?: { kind: DownloadClientKind; connected: boolean; error?: string }[];
+}
 export interface DownloadClientSettings {
   client: DownloadClientKind; qBittorrent: QBittorrentSettings;
   downloadDirectory?: string; listenPort: number; maxDownloadRateKiB: number; maxUploadRateKiB: number; maxConnections: number;

@@ -29,7 +29,7 @@ function torrent(id: number, overrides: Partial<TorrentStatus> = {}): TorrentSta
   return {
     id, infoHash: `h${id}`, name: `Torrent ${id}`, state: 'Downloading', progress: 50, size: 1000, downloaded: 500, uploaded: 0,
     downloadRate: 100, uploadRate: 10, seeds: 1, leechers: 1, ratio: 0, category: 'movies', savePath: '/d', added: '2026-01-01T00:00:00Z',
-    imported: false, ...overrides,
+    imported: false, client: 'embedded', ...overrides,
   };
 }
 

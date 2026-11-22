@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
-using Krakarr.Core.Events;
 using Krakarr.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,12 +18,13 @@ public class QBittorrentApiFactory
 
 /// <summary>
 /// Uses an external qBittorrent as the download client. Every torrent Krakarr adds is tagged with the configured tag,
-/// and only torrents carrying that tag are listed, synchronised or controlled.
+/// and only torrents carrying that tag are listed, synchronised or controlled. It syncs while it is the selected client
+/// or while it still owns downloads.
 /// </summary>
 public sealed class QBittorrentEngine(
     IServiceScopeFactory scopeFactory,
     QBittorrentApiFactory apiFactory,
-    IEventHub eventHub,
+    DownloadStatusFeed statusFeed,
     ILogger<QBittorrentEngine> logger) : BackgroundService, IDownloadClientImpl
 {
     public const string RemovedMessage = "Removed from qBittorrent";
@@ -40,6 +40,10 @@ public sealed class QBittorrentEngine(
 
     public DownloadClientKind Kind => DownloadClientKind.QBittorrent;
 
+    public string Name => DownloadClients.QBittorrent;
+
+    public bool IsActive { get; private set; }
+
     public string? LastError { get; private set; }
 
     // ---- Background sync ----------------------------------------------------------------------
@@ -51,9 +55,15 @@ public sealed class QBittorrentEngine(
             while (!stoppingToken.IsCancellationRequested)
             {
                 var settings = await GetSettingsAsync(stoppingToken);
-                if (settings.Client != DownloadClientKind.QBittorrent)
+                IsActive = settings.Client == DownloadClientKind.QBittorrent || await OwnsDownloadsAsync(stoppingToken);
+                if (!IsActive)
                 {
-                    if (!_statuses.IsEmpty) _statuses = new(StringComparer.OrdinalIgnoreCase);
+                    if (!_statuses.IsEmpty)
+                    {
+                        _statuses = new(StringComparer.OrdinalIgnoreCase);
+                        await statusFeed.PublishAsync(Kind, [], stoppingToken);
+                    }
+
                     LastError = null;
                     await Task.Delay(PollInterval, stoppingToken);
                     continue;
@@ -74,7 +84,7 @@ public sealed class QBittorrentEngine(
                     }
 
                     _statuses = new(StringComparer.OrdinalIgnoreCase);
-                    await eventHub.PublishAsync(EventNames.DownloadsUpdated, Array.Empty<TorrentStatus>(), stoppingToken);
+                    await statusFeed.PublishAsync(Kind, [], stoppingToken);
                 }
 
                 await Task.Delay(PollInterval, stoppingToken);
@@ -83,6 +93,12 @@ public sealed class QBittorrentEngine(
         catch (OperationCanceledException)
         {
         }
+    }
+
+    private async Task<bool> OwnsDownloadsAsync(CancellationToken ct)
+    {
+        using var scope = scopeFactory.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<KrakarrDbContext>().Downloads.AnyAsync(d => d.Client == DownloadClients.QBittorrent, ct);
     }
 
     /// <summary>Pulls the tagged torrents from qBittorrent and reconciles them with the Download table.</summary>
@@ -190,7 +206,7 @@ public sealed class QBittorrentEngine(
             }
 
             _statuses = statuses;
-            await eventHub.PublishAsync(EventNames.DownloadsUpdated, GetStatuses(), ct);
+            await statusFeed.PublishAsync(Kind, GetStatuses(), ct);
         }
         finally
         {
@@ -636,6 +652,7 @@ public sealed class QBittorrentEngine(
         Imported = row.Imported,
         ImportMessage = row.ImportMessage,
         ErrorMessage = row.ErrorMessage,
+        Client = DownloadClients.QBittorrent,
     };
 
     private async Task<(QBittorrentApi Api, QbtTorrent Torrent)> RequireTaggedAsync(string infoHash)

@@ -1,7 +1,9 @@
 <div class="mb-6 flex flex-wrap items-center gap-3">
   <h1 class="page-title">Downloads</h1>
   @if (client(); as c) {
-    <span class="badge bg-surface-700 text-slate-300">{{ c.kind === 'QBittorrent' ? 'qBittorrent · tag ' + c.tag : 'Built-in client' }}</span>
+    <span class="badge bg-surface-700 text-slate-300" [title]="multiClient() ? 'New torrents go to this client' : ''">
+      {{ multiClient() ? 'New torrents: ' : '' }}{{ c.kind === 'QBittorrent' ? 'qBittorrent · tag ' + c.tag : 'Built-in client' }}
+    </span>
   }
   <span class="mr-auto"></span>
   @if (seedingCount() > 0 || showSeeding()) {
@@ -18,9 +20,9 @@
   <button class="btn-primary" (click)="addOpen.set(true)">+ Add torrent</button>
 </div>
 
-@if (client()?.error; as err) {
+@for (e of clientErrors(); track e.label) {
   <div class="card mb-4 border-rose-500/30 px-5 py-3 text-sm text-rose-300">
-    Cannot reach the download client: {{ err }} — check <a routerLink="/settings" class="underline">Settings → Download client</a>.
+    Cannot reach the {{ multiClient() ? e.label + ' ' : '' }}download client: {{ e.error }} — check <a routerLink="/settings" class="underline">Settings → Download client</a>.
   </div>
 }
 
@@ -76,6 +78,7 @@
             <a [routerLink]="['/series', d.seriesId]" class="badge bg-violet-500/15 text-violet-300 hover:bg-violet-500/25">Series</a>
           }
           @if (d.imported) { <span class="badge bg-emerald-500/15 text-emerald-300">Imported</span> }
+          @if (multiClient()) { <span class="badge bg-surface-700 text-slate-300" title="Download client">{{ clientLabel(d.client) }}</span> }
           <span class="badge bg-surface-700 text-slate-300 max-sm:hidden">{{ d.category }}</span>
           <div class="flex gap-1 max-sm:ml-auto">
             @if (d.state === 'Paused' || d.state === 'Completed') {

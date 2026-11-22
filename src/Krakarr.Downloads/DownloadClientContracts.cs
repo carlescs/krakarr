@@ -1,6 +1,9 @@
+using System.Collections.Concurrent;
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
+using Krakarr.Core.Events;
 using Krakarr.Data;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Krakarr.Downloads;
@@ -44,6 +47,8 @@ public sealed record TorrentStatus
     public bool Imported { get; init; }
     public string? ImportMessage { get; init; }
     public string? ErrorMessage { get; init; }
+    /// <summary>Which client owns the torrent (<see cref="DownloadClients"/>).</summary>
+    public string Client { get; init; } = DownloadClients.Embedded;
 }
 
 public sealed record DownloadClientTestResult(bool Success, string? Version, string? Message);
@@ -164,7 +169,10 @@ public static class PieceMap
     }
 }
 
-/// <summary>The download client used by the rest of Krakarr (whichever one is currently selected).</summary>
+/// <summary>
+/// The download clients as seen by the rest of Krakarr: new torrents go to the client selected in settings, and every
+/// other call goes to the client that owns the torrent.
+/// </summary>
 public interface ITorrentEngine
 {
     Task<Download> AddMagnetAsync(string magnetUri, AddTorrentOptions options, CancellationToken ct = default);
@@ -185,18 +193,32 @@ public interface ITorrentEngine
 public interface IDownloadClientImpl : ITorrentEngine
 {
     DownloadClientKind Kind { get; }
+    /// <summary>The <see cref="Download.Client"/> value of the torrents this client owns.</summary>
+    string Name { get; }
+    /// <summary>
+    /// True while the client runs: it is the selected client, or it still owns downloads (for example torrents left
+    /// seeding after switching to another client).
+    /// </summary>
+    bool IsActive { get; }
     /// <summary>Last connection/startup error, or null when healthy.</summary>
     string? LastError { get; }
     Task<DownloadClientTestResult> TestAsync(DownloadClientSettings settings, CancellationToken ct = default);
 }
 
-/// <summary>Routes every call to the download client selected in Settings → Download client.</summary>
+/// <summary>
+/// Adds new torrents to the download client selected in Settings → Download client, and routes every other call to
+/// the client that owns the torrent (<see cref="Download.Client"/>), so switching clients doesn't strand existing
+/// downloads. Statuses are merged from every client.
+/// </summary>
 public sealed class DownloadClientRouter(
     IEnumerable<IDownloadClientImpl> clients,
     SettingsCache settingsCache,
     IServiceScopeFactory scopeFactory) : ITorrentEngine
 {
+    private readonly IDownloadClientImpl[] _all = clients.ToArray();
     private readonly IReadOnlyDictionary<DownloadClientKind, IDownloadClientImpl> _clients = clients.ToDictionary(c => c.Kind);
+
+    public IReadOnlyList<IDownloadClientImpl> All => _all;
 
     public DownloadClientSettings CurrentSettings
     {
@@ -212,18 +234,72 @@ public sealed class DownloadClientRouter(
         }
     }
 
+    /// <summary>The client new torrents are added to.</summary>
     public IDownloadClientImpl Current => Get(CurrentSettings.Client);
 
     public IDownloadClientImpl Get(DownloadClientKind kind) =>
         _clients.TryGetValue(kind, out var client) ? client : throw new InvalidOperationException($"Download client {kind} is not available");
 
+    /// <summary>The client that owns a torrent; the selected client when Krakarr doesn't track it.</summary>
+    public async Task<IDownloadClientImpl> OwnerAsync(string infoHash, CancellationToken ct = default)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        var hash = infoHash.ToLowerInvariant();
+        var name = await db.Downloads.AsNoTracking().Where(d => d.InfoHash == hash).Select(d => d.Client).FirstOrDefaultAsync(ct);
+        return Array.Find(_all, c => c.Name == name) ?? Current;
+    }
+
     public Task<Download> AddMagnetAsync(string magnetUri, AddTorrentOptions options, CancellationToken ct = default) => Current.AddMagnetAsync(magnetUri, options, ct);
     public Task<Download> AddTorrentAsync(byte[] torrentData, AddTorrentOptions options, CancellationToken ct = default) => Current.AddTorrentAsync(torrentData, options, ct);
-    public Task PauseAsync(string infoHash) => Current.PauseAsync(infoHash);
-    public Task ResumeAsync(string infoHash) => Current.ResumeAsync(infoHash);
-    public Task RemoveAsync(string infoHash, bool deleteData) => Current.RemoveAsync(infoHash, deleteData);
-    public IReadOnlyList<TorrentStatus> GetStatuses() => Current.GetStatuses();
-    public Task<IReadOnlyList<(string Path, long Length)>> GetFilesAsync(string infoHash, CancellationToken ct = default) => Current.GetFilesAsync(infoHash, ct);
-    public void MarkImported(string infoHash) => Current.MarkImported(infoHash);
-    public Task<TorrentDetails?> GetDetailsAsync(string infoHash, CancellationToken ct = default) => Current.GetDetailsAsync(infoHash, ct);
+    public async Task PauseAsync(string infoHash) => await (await OwnerAsync(infoHash)).PauseAsync(infoHash);
+    public async Task ResumeAsync(string infoHash) => await (await OwnerAsync(infoHash)).ResumeAsync(infoHash);
+    public async Task RemoveAsync(string infoHash, bool deleteData) => await (await OwnerAsync(infoHash)).RemoveAsync(infoHash, deleteData);
+
+    public IReadOnlyList<TorrentStatus> GetStatuses() => Merge(_all.Select(c => c.GetStatuses()));
+
+    public async Task<IReadOnlyList<(string Path, long Length)>> GetFilesAsync(string infoHash, CancellationToken ct = default) =>
+        await (await OwnerAsync(infoHash, ct)).GetFilesAsync(infoHash, ct);
+
+    // Clients ignore torrents they don't own, so there's no need to look the owner up.
+    public void MarkImported(string infoHash)
+    {
+        foreach (var client in _all) client.MarkImported(infoHash);
+    }
+
+    public async Task<TorrentDetails?> GetDetailsAsync(string infoHash, CancellationToken ct = default) =>
+        await (await OwnerAsync(infoHash, ct)).GetDetailsAsync(infoHash, ct);
+
+    /// <summary>Merges per-client status lists, newest first.</summary>
+    public static IReadOnlyList<TorrentStatus> Merge(IEnumerable<IReadOnlyList<TorrentStatus>> lists)
+    {
+        var merged = new List<TorrentStatus>();
+        foreach (var list in lists) merged.AddRange(list);
+        merged.Sort((a, b) => b.Added.CompareTo(a.Added));
+        return merged;
+    }
+}
+
+/// <summary>
+/// Publishes <see cref="EventNames.DownloadsUpdated"/> with the torrents of every client. Each client reports its own
+/// list here; the event carries the latest list of all of them, so one client's update doesn't hide the others.
+/// </summary>
+public sealed class DownloadStatusFeed(IEventHub eventHub)
+{
+    private readonly ConcurrentDictionary<DownloadClientKind, IReadOnlyList<TorrentStatus>> _latest = new();
+
+    public Task PublishAsync(DownloadClientKind client, IReadOnlyList<TorrentStatus> statuses, CancellationToken ct = default)
+    {
+        if (statuses.Count == 0)
+        {
+            // Nothing to show for this client (stopped or unreachable): skip the event when it had nothing either.
+            if (!_latest.TryRemove(client, out var previous) || previous.Count == 0) return Task.CompletedTask;
+        }
+        else
+        {
+            _latest[client] = statuses;
+        }
+
+        return eventHub.PublishAsync(EventNames.DownloadsUpdated, DownloadClientRouter.Merge(_latest.Values), ct);
+    }
 }
