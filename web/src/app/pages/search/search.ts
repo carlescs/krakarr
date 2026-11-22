@@ -27,7 +27,7 @@ export class SearchPage {
   protected readonly releaseSearch = new ReleaseSearch<SearchResult>((a, b) => (b.release.seeders ?? 0) - (a.release.seeders ?? 0));
   protected readonly results = this.releaseSearch.results;
   protected readonly busy = this.releaseSearch.running;
-  protected readonly sort = new TableSort(this.results, {
+  protected readonly sort = new TableSort(this.releaseSearch.filtered, {
     title: r => r.release.title,
     indexer: r => r.release.indexerName,
     age: { value: r => r.release.publishDate ? Date.parse(r.release.publishDate) : null, desc: true },

@@ -48,7 +48,7 @@ export class MovieDetailPage implements OnInit {
   protected readonly releaseSearch = new ReleaseSearch<ReleaseDecision>();
   /** Best first, re-ranked as indexers answer. */
   protected readonly releases = this.releaseSearch.results;
-  protected readonly releaseSort = new TableSort(this.releases, {
+  protected readonly releaseSort = new TableSort(this.releaseSearch.filtered, {
     release: r => r.release.title,
     indexer: r => r.release.indexerName,
     size: { value: r => r.release.size, desc: true },

@@ -161,9 +161,12 @@
   <!-- Interactive search -->
   @if (releasesOpen()) {
     <kr-modal title="Interactive search" width="max-w-6xl" (closed)="closeReleases()">
-      <kr-indexer-progress [indexers]="releaseSearch.indexers()" [searching]="searching()" />
+      <kr-indexer-progress [indexers]="releaseSearch.indexers()" [searching]="searching()" [selected]="releaseSearch.selected()"
+        (toggled)="releaseSearch.toggle($event)" (cleared)="releaseSearch.clearFilter()" />
       @if (releases().length === 0) {
         @if (!searching()) { <p class="py-10 text-center text-slate-400">No results.</p> }
+      } @else if (releaseSearch.filtered().length === 0) {
+        <p class="py-10 text-center text-slate-400" data-filter-empty>No results left from the selected indexers.</p>
       } @else {
         <div class="overflow-x-auto sm:max-h-[65vh] sm:overflow-auto">
           <table class="table">

@@ -6,8 +6,8 @@ import { ReleaseInfo, SearchStreamEvent } from './models';
 
 interface Row { release: ReleaseInfo; approved: boolean; qualityWeight: number }
 
-const row = (guid: string, qualityWeight: number, approved = true, seeders = 0): Row => ({
-  release: { title: guid, guid, size: 1, seeders, categories: [], indexerId: 1, indexerName: 'X', indexerPriority: 25 },
+const row = (guid: string, qualityWeight: number, approved = true, seeders = 0, indexerId = 1): Row => ({
+  release: { title: guid, guid, size: 1, seeders, categories: [], indexerId, indexerName: 'X', indexerPriority: 25 },
   approved, qualityWeight,
 });
 
@@ -75,5 +75,20 @@ describe('ReleaseSearch', () => {
     void search.run((_, s) => { signal = s; return new Promise<void>(() => {}); });
     fixture.destroy();
     expect(signal.aborted).toBe(true);
+  });
+
+  it('filters the rows by the selected indexers and clears the filter on a new search', async () => {
+    const { search } = create();
+    await search.run(async onEvent => onEvent({ type: 'releases', releases: [row('a', 3, true, 0, 1), row('b', 2, true, 0, 2), row('c', 1, true, 0, 3)] }));
+    expect(search.filtered().map(r => r.release.guid)).toEqual(['a', 'b', 'c']);
+
+    search.toggle(1);
+    search.toggle(3);
+    expect(search.filtered().map(r => r.release.guid)).toEqual(['a', 'c']);
+    search.toggle(1);
+    expect(search.filtered().map(r => r.release.guid)).toEqual(['c']);
+
+    await search.run(async () => {});
+    expect(search.selected().size).toBe(0);
   });
 });

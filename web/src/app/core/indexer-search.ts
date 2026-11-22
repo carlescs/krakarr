@@ -1,4 +1,4 @@
-import { DestroyRef, inject, signal } from '@angular/core';
+import { DestroyRef, Signal, computed, inject, signal } from '@angular/core';
 import { IndexerQueryStatus, ReleaseInfo, SearchStreamEvent } from './models';
 
 /** Starts a streamed search: calls `onEvent` for each line and resolves when the stream ends. */
@@ -17,6 +17,9 @@ export function byApprovalQualitySeeders(a: { approved?: boolean; qualityWeight?
  * indexers have answered, which are still running and which failed, and keeps the rows ranked: by `interimOrder`
  * while results come in, then by the server's ranking once every indexer is done. Create it in a field initializer
  * (it needs an injection context); destroying the component cancels a running search.
+ *
+ * It also holds the indexer filter: clicking indexer chips in `kr-indexer-progress` selects them, and `filtered`
+ * keeps the rows from the selected indexers (all of them when none is selected).
  */
 export class ReleaseSearch<T extends { release: ReleaseInfo }> {
   /** Every indexer in the current (or last) search; empty until the server reports. */
@@ -24,6 +27,14 @@ export class ReleaseSearch<T extends { release: ReleaseInfo }> {
   /** The rows so far, best first. */
   readonly results = signal<T[]>([]);
   readonly running = signal(false);
+  /** Indexers whose results are shown; empty shows every indexer. */
+  readonly selected = signal<ReadonlySet<number>>(new Set());
+  /** `results` from the selected indexers, or all of them when no indexer is selected. */
+  readonly filtered: Signal<T[]> = computed(() => {
+    const rows = this.results();
+    const selected = this.selected();
+    return selected.size === 0 ? rows : rows.filter(r => selected.has(r.release.indexerId));
+  });
   private abort: AbortController | null = null;
 
   constructor(private readonly interimOrder: (a: T, b: T) => number = byApprovalQualitySeeders) {
@@ -37,6 +48,7 @@ export class ReleaseSearch<T extends { release: ReleaseInfo }> {
     this.abort = abort;
     this.indexers.set([]);
     this.results.set([]);
+    this.selected.set(new Set());
     this.running.set(true);
     try {
       await start(e => {
@@ -64,6 +76,20 @@ export class ReleaseSearch<T extends { release: ReleaseInfo }> {
     this.cancel();
     this.indexers.set([]);
     this.results.set([]);
+    this.selected.set(new Set());
+  }
+
+  /** Adds an indexer to the filter, or removes it if it was already there. */
+  toggle(indexerId: number) {
+    this.selected.update(old => {
+      const next = new Set(old);
+      if (!next.delete(indexerId)) next.add(indexerId);
+      return next;
+    });
+  }
+
+  clearFilter() {
+    this.selected.set(new Set());
   }
 
   private apply(e: SearchStreamEvent<T>) {

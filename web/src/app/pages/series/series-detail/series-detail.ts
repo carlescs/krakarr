@@ -67,7 +67,7 @@ export class SeriesDetailPage implements OnInit {
   protected readonly releaseSearch = new ReleaseSearch<EpisodeRelease>();
   /** Best first, re-ranked as indexers answer. */
   protected readonly releases = this.releaseSearch.results;
-  protected readonly releaseSort = new TableSort(this.releases, {
+  protected readonly releaseSort = new TableSort(this.releaseSearch.filtered, {
     release: r => r.release.title,
     // Season packs first, then by episode label.
     episodes: r => (r.seasonPack ? '0 ' : '1 ') + (r.episodes ?? ''),

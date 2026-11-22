@@ -7,9 +7,12 @@
   <button class="btn-primary" [disabled]="busy()">{{ busy() ? 'Searching…' : 'Search' }}</button>
 </form>
 @if (searched()) {
-  <kr-indexer-progress [indexers]="releaseSearch.indexers()" [searching]="busy()" />
+  <kr-indexer-progress [indexers]="releaseSearch.indexers()" [searching]="busy()" [selected]="releaseSearch.selected()"
+        (toggled)="releaseSearch.toggle($event)" (cleared)="releaseSearch.clearFilter()" />
 }
-@if (results().length > 0) {
+@if (results().length > 0 && releaseSearch.filtered().length === 0) {
+  <p class="text-slate-500" data-filter-empty>No results left from the selected indexers.</p>
+} @else if (results().length > 0) {
   <div class="card overflow-x-auto">
     <table class="table">
       <thead>
