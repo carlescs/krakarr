@@ -52,3 +52,6 @@
 
 /* Space for the mobile tab bar plus the home indicator / safe area. */
 @utility pb-tabbar { padding-bottom: calc(4rem + env(safe-area-inset-bottom)); }
+
+/* External site link with its logo (and score) on detail pages. */
+@utility link-pill { @apply inline-flex h-7 items-center gap-1.5 rounded-md bg-surface-800/80 px-1.5 text-sm ring-1 ring-white/10 transition hover:bg-surface-700 hover:ring-white/20; }

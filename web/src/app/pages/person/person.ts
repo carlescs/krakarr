@@ -5,6 +5,7 @@ import { Api, errorMessage } from '../../core/api';
 import { DiscoverItem, PersonCredit, PersonDetails } from '../../core/models';
 import { DiscoverAdd } from '../../shared/discover-add/discover-add';
 import { MediaCard, discoverKey } from '../../shared/media-card/media-card';
+import { ExternalLinks } from '../../shared/external-links/external-links';
 
 type MediaFilter = 'all' | 'movie' | 'series';
 export type CreditOrder = 'newest' | 'oldest' | 'title' | 'rating';
@@ -59,7 +60,7 @@ export function age(birthday: string, until: Date = new Date()): number {
 /** An actor, director or other crew member with their movies and shows. */
 @Component({
   selector: 'kr-person',
-  imports: [DatePipe, MediaCard, DiscoverAdd],
+  imports: [ExternalLinks, DatePipe, MediaCard, DiscoverAdd],
   templateUrl: './person.html',
   styleUrl: './person.scss',
 })

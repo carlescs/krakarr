@@ -327,6 +327,11 @@
         </div>
         <div class="max-w-xs"><label class="label">TheTVDB subscriber PIN (optional)</label><input class="input" [(ngModel)]="m.tvdbPin" /></div>
       }
+      <div>
+        <label class="label">OMDb API key (optional)</label>
+        <input class="input font-mono" type="password" autocomplete="off" [(ngModel)]="m.omdbApiKey" />
+        <p class="hint">Free at omdbapi.com. Shows IMDb, Rotten Tomatoes and Metacritic scores on movie and series pages.</p>
+      </div>
       <div class="grid gap-4 sm:grid-cols-2">
         <div><label class="label">Language</label><input class="input" [(ngModel)]="m.language" placeholder="en-US" /></div>
         <div>

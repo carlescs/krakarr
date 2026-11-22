@@ -42,6 +42,8 @@ public sealed record MetadataSettings : ISettingsSection
     public SeriesMetadataSource SeriesSource { get; init; } = SeriesMetadataSource.Tmdb;
     public string? TvdbApiKey { get; init; }
     public string? TvdbPin { get; init; }
+    /// <summary>OMDb API key (omdbapi.com). Optional: enables IMDb, Rotten Tomatoes and Metacritic scores on detail pages.</summary>
+    public string? OmdbApiKey { get; init; }
     public string Language { get; init; } = "en-US";
     /// <summary>Country (ISO 3166-1 alpha-2) whose movie release dates the calendar prefers; empty = earliest worldwide.</summary>
     public string? ReleaseRegion { get; init; }
