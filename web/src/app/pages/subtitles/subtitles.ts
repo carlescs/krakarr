@@ -34,7 +34,11 @@ export class SubtitlesPage implements OnInit {
     missing: { value: w => w.missingLanguages.length, desc: true },
   });
   /** Managers can't read settings; for them the server reports a missing provider when they search. */
-  protected readonly ready = computed(() => !this.auth.isAdmin() || (!!this.settings()?.enabled && !!this.settings()?.openSubtitles.apiKey));
+  protected readonly ready = computed(() => {
+    if (!this.auth.isAdmin()) return true;
+    const s = this.settings();
+    return !!s?.enabled && ((s.openSubtitles?.enabled !== false && !!s.openSubtitles?.apiKey) || (s.subdl?.enabled !== false && !!s.subdl?.apiKey));
+  });
 
   async ngOnInit() {
     const [s, langs] = await Promise.all([

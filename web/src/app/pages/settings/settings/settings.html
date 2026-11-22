@@ -283,7 +283,10 @@
         <p class="hint">Score: 100 for a file-hash match; otherwise title, year or season/episode, source, resolution, release group and codec of the subtitle's release are compared with your file.</p>
       </section>
       <section class="card grid gap-4 p-4 sm:p-5 sm:grid-cols-2">
-        <h2 class="font-semibold text-white sm:col-span-2">OpenSubtitles.com</h2>
+        <div class="flex items-center justify-between sm:col-span-2">
+          <h2 class="font-semibold text-white">OpenSubtitles.com</h2>
+          <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="st.openSubtitles.enabled" /> Enabled</label>
+        </div>
         <div class="sm:col-span-2">
           <label class="label">API key</label>
           <input class="input font-mono" type="password" autocomplete="off" [(ngModel)]="st.openSubtitles.apiKey" />
@@ -296,7 +299,25 @@
           <div class="rounded-lg px-3 py-2 text-sm sm:col-span-2" [class]="t.success ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'">{{ t.message }}</div>
         }
         <div class="flex justify-end gap-2 sm:col-span-2">
-          <button class="btn-secondary" (click)="testSubtitles(st)" [disabled]="testingSubtitles()">{{ testingSubtitles() ? 'Testing…' : 'Test' }}</button>
+          <button class="btn-secondary" (click)="testSubtitles(st, 'opensubtitles')" [disabled]="testingSubtitles()">{{ testingSubtitles() ? 'Testing…' : 'Test' }}</button>
+          <button class="btn-primary" (click)="save('subtitles', st)">Save</button>
+        </div>
+      </section>
+      <section class="card grid gap-4 p-4 sm:p-5 sm:grid-cols-2">
+        <div class="flex items-center justify-between sm:col-span-2">
+          <h2 class="font-semibold text-white">SubDL.com</h2>
+          <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="st.subdl.enabled" /> Enabled</label>
+        </div>
+        <div class="sm:col-span-2">
+          <label class="label">API key</label>
+          <input class="input font-mono" type="password" autocomplete="off" [(ngModel)]="st.subdl.apiKey" />
+          <p class="hint">Create an API key at subdl.com → Panel → API.</p>
+        </div>
+        @if (subdlTest(); as t) {
+          <div class="rounded-lg px-3 py-2 text-sm sm:col-span-2" [class]="t.success ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'">{{ t.message }}</div>
+        }
+        <div class="flex justify-end gap-2 sm:col-span-2">
+          <button class="btn-secondary" (click)="testSubtitles(st, 'subdl')" [disabled]="testingSubtitles()">{{ testingSubtitles() ? 'Testing…' : 'Test' }}</button>
           <button class="btn-primary" (click)="save('subtitles', st)">Save</button>
         </div>
       </section>

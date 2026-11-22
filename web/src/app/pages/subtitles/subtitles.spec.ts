@@ -51,6 +51,20 @@ describe('SubtitlesPage', () => {
     expect(button(fixture.nativeElement, 'Search all missing').disabled).toBe(true);
   });
 
+  it('is ready when SubDL is configured without OpenSubtitles', async () => {
+    setupTest({
+      api: mockApi({
+        settings: async () => ({ ...settings, openSubtitles: { apiKey: '' }, subdl: { enabled: true, apiKey: 'subdl-key' } }),
+        subtitleLanguages: async () => [{ code: 'es', name: 'Spanish' }],
+        wantedSubtitles: async () => wanted,
+      }),
+    });
+    const fixture = TestBed.createComponent(SubtitlesPage);
+    await settle(fixture);
+    expect(text(fixture.nativeElement)).toContain('Wanted languages: Spanish');
+    expect(button(fixture.nativeElement, 'Search all missing').disabled).toBe(false);
+  });
+
   it('does not read settings as a manager', async () => {
     const api = setupTest({ role: 'Manager', api: mockApi({ subtitleLanguages: async () => [], wantedSubtitles: async () => [] }) });
     const fixture = TestBed.createComponent(SubtitlesPage);

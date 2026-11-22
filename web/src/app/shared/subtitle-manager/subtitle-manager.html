@@ -40,6 +40,7 @@
                 <div class="break-all sm:truncate sm:break-normal" [title]="r.candidate.releaseNames.join(' | ')">{{ r.candidate.releaseNames[0] ?? r.candidate.fileName }}</div>
                 <div class="flex flex-wrap gap-1 text-xs">
                   <span class="badge bg-surface-700 text-slate-200 sm:hidden">{{ languageName(r.candidate.language) }}</span>
+                  <span class="badge bg-violet-500/15 text-violet-300">{{ r.candidate.provider }}</span>
                   @if (r.candidate.hashMatch) { <span class="badge bg-emerald-500/15 text-emerald-300">hash match</span> }
                   @if (r.candidate.hearingImpaired) { <span class="badge bg-surface-700 text-slate-300">HI</span> }
                   @if (r.candidate.trustedUploader) { <span class="badge bg-surface-700 text-slate-300">trusted</span> }

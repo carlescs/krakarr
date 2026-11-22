@@ -177,6 +177,13 @@ public sealed record OpenSubtitlesSettings
     public string? Password { get; init; }
 }
 
+public sealed record SubdlSettings
+{
+    public bool Enabled { get; init; } = true;
+    /// <summary>API key from subdl.com.</summary>
+    public string? ApiKey { get; init; }
+}
+
 public sealed record SubtitleSettings : ISettingsSection
 {
     public const string PasswordMask = "********";
@@ -195,6 +202,7 @@ public sealed record SubtitleSettings : ISettingsSection
     /// <summary>Count subtitle tracks inside the video file (MKV, MP4) as present, so they are not searched again.</summary>
     public bool UseEmbeddedSubtitles { get; init; } = true;
     public OpenSubtitlesSettings OpenSubtitles { get; init; } = new();
+    public SubdlSettings Subdl { get; init; } = new();
 }
 
 /// <summary>Internal bookkeeping: the language set the subtitle search last ran with.</summary>

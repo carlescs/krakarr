@@ -86,7 +86,7 @@ public sealed class OpenSubtitlesProvider(IHttpClientFactory httpClientFactory, 
     {
         var results = new List<SubtitleCandidate>();
         if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array) return results;
-        var byId = ImdbNumber(query.ImdbId) is not null || query.TmdbId is not null;
+        var byId = ImdbNumber(query.ImdbId) is not null || (query.MediaType == MediaType.Movie && query.TmdbId is not null);
 
         foreach (var item in data.EnumerateArray())
         {

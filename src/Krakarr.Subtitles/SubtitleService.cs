@@ -182,7 +182,7 @@ public sealed class SubtitleService(
             Title = target.Video.Title,
             Year = target.Video.Year,
             ImdbId = target.ImdbId,
-            TmdbId = target.MediaType == MediaType.Movie ? target.TmdbId : null,
+            TmdbId = target.TmdbId,
             SeasonNumber = target.Video.SeasonNumber,
             EpisodeNumber = target.Video.EpisodeNumber,
             Languages = languages,

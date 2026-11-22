@@ -14,7 +14,9 @@ public static class SubtitlesModule
         services.AddHttpClient(OpenSubtitlesProvider.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(30))
             .AddResilienceHandler("opensubtitles-backoff", (pipeline, context) => pipeline.AddOpenSubtitlesBackoff(
                 context.ServiceProvider.GetRequiredService<OpenSubtitlesBackoff>(), context.ServiceProvider.GetRequiredService<TimeProvider>()));
+        services.AddHttpClient(SubdlProvider.HttpClientName, c => c.Timeout = TimeSpan.FromSeconds(30));
         services.AddScoped<ISubtitleProvider, OpenSubtitlesProvider>();
+        services.AddScoped<ISubtitleProvider, SubdlProvider>();
         services.AddScoped<SubtitleService>();
         services.AddScheduledTask<SubtitleSearchTask>();
         return services;

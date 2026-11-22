@@ -129,6 +129,7 @@ export class SettingsPage implements OnInit {
   private readonly subtitleLanguages = inject(SubtitleLanguages);
   protected wantedLanguages: string[] = [];
   protected readonly subtitleTest = signal<{ success: boolean; message: string } | null>(null);
+  protected readonly subdlTest = signal<{ success: boolean; message: string } | null>(null);
   protected readonly testingSubtitles = signal(false);
   protected readonly testingClient = signal(false);
   protected readonly selectableQualities = computed(() => this.qualities().filter(q => q.id !== 0));
@@ -180,6 +181,7 @@ export class SettingsPage implements OnInit {
     this.api.telemetryStatus().then(s => this.telemetryStatus.set(s), () => {});
     this.languageCatalog.load().catch(() => {});
     const [subs, langs] = await Promise.all([this.api.settings('subtitles'), this.api.subtitleLanguages()]);
+    if (subs) subs.subdl ??= { enabled: true };
     this.subtitles.set(subs);
     this.languages.set(langs);
   }
@@ -228,14 +230,15 @@ export class SettingsPage implements OnInit {
   protected addLanguage(list: string[], code: string) { return code && !list.includes(code) ? [...list, code] : list; }
   protected removeLanguage(list: string[], code: string) { return list.filter(c => c !== code); }
 
-  async testSubtitles(settings: SubtitleSettings) {
+  async testSubtitles(settings: SubtitleSettings, provider: 'opensubtitles' | 'subdl' = 'opensubtitles') {
     this.testingSubtitles.set(true);
+    const target = provider === 'subdl' ? this.subdlTest : this.subtitleTest;
     try {
       const results = await this.api.testSubtitleProviders(settings);
-      const r = results[0];
-      this.subtitleTest.set(r ? { success: r.success, message: r.message } : { success: false, message: 'No providers' });
+      const r = results.find(x => x.name === provider) ?? results[0];
+      target.set(r ? { success: r.success, message: r.message } : { success: false, message: 'No providers' });
     } catch (e) {
-      this.subtitleTest.set({ success: false, message: errorMessage(e) });
+      target.set({ success: false, message: errorMessage(e) });
     } finally {
       this.testingSubtitles.set(false);
     }

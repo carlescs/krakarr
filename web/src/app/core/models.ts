@@ -253,6 +253,7 @@ export interface SubtitleSettings {
   enabled: boolean; languages: string[]; hearingImpaired: HearingImpairedMode; minimumScoreMovies: number; minimumScoreEpisodes: number;
   searchIntervalHours: number; includeAiTranslated: boolean; useEmbeddedSubtitles: boolean;
   openSubtitles: { enabled: boolean; apiKey?: string; username?: string; password?: string };
+  subdl: { enabled: boolean; apiKey?: string };
 }
 export interface Language { code: string; name: string; }
 /** Wanted audio languages, most preferred first; empty = any language. */

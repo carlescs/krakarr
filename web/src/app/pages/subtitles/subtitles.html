@@ -4,10 +4,10 @@
 </div>
 
 @if (settings(); as s) {
-  @if (!s.enabled || !s.openSubtitles.apiKey) {
+  @if (!ready()) {
     <div class="card mb-6 border-amber-500/30 px-5 py-4 text-sm text-amber-200">
       Automatic subtitles are {{ s.enabled ? 'enabled but no provider is configured' : 'disabled' }}.
-      Configure languages and an OpenSubtitles.com API key in <a routerLink="/settings" class="underline">Settings → Subtitles</a>.
+      Configure languages and a subtitle provider in <a routerLink="/settings" class="underline">Settings → Subtitles</a>.
     </div>
   } @else {
     <p class="mb-4 text-sm text-slate-400">
