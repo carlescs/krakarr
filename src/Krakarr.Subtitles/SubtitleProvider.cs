@@ -63,6 +63,7 @@ public sealed record SubtitleContent(byte[] Data, string Extension);
 public interface ISubtitleProvider
 {
     string Name { get; }
+    string DisplayName => Name;
     bool IsConfigured(SubtitleSettings settings);
     Task<IReadOnlyList<SubtitleCandidate>> SearchAsync(SubtitleQuery query, SubtitleSettings settings, CancellationToken ct = default);
     Task<SubtitleContent> DownloadAsync(SubtitleCandidate candidate, SubtitleSettings settings, CancellationToken ct = default);

@@ -1,16 +1,15 @@
 import { Component, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
-import { SearchIndexer } from '../../core/models';
 import { button, settle, text, type } from '../../../testing/test-setup';
-import { IndexerPicker } from './indexer-picker';
+import { MultiPicker, PickerOption } from './multi-picker';
 
 @Component({
-  imports: [IndexerPicker],
-  template: `<kr-indexer-picker [indexers]="indexers()" [(selected)]="selected" [disabled]="disabled()" />`,
+  imports: [MultiPicker],
+  template: `<kr-multi-picker [options]="options()" [(selected)]="selected" [disabled]="disabled()" plural="indexers" />`,
 })
-class Host {
-  indexers = signal<SearchIndexer[]>([
+class NumericHost {
+  options = signal<PickerOption<number>[]>([
     { id: 1, name: 'Nyaa' },
     { id: 2, name: '1337x' },
     { id: 3, name: 'TorrentLeech' },
@@ -19,9 +18,21 @@ class Host {
   disabled = signal(false);
 }
 
-describe('IndexerPicker', () => {
-  it('selects one or more indexers and resets back to all', async () => {
-    const fixture = TestBed.createComponent(Host);
+@Component({
+  imports: [MultiPicker],
+  template: `<kr-multi-picker [options]="options()" [(selected)]="selected" plural="providers" qualifier="configured" />`,
+})
+class StringHost {
+  options = signal<PickerOption<string>[]>([
+    { id: 'opensubtitles', name: 'OpenSubtitles' },
+    { id: 'subdl', name: 'SubDL' },
+  ]);
+  selected = signal<string[]>([]);
+}
+
+describe('MultiPicker', () => {
+  it('selects one or more options and resets back to all', async () => {
+    const fixture = TestBed.createComponent(NumericHost);
     await settle(fixture);
     const el = fixture.nativeElement as HTMLElement;
     const trigger = el.querySelector('button')!;
@@ -36,20 +47,20 @@ describe('IndexerPicker', () => {
     const checkboxes = () => [...el.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
     expect(checkboxes().length).toBe(3);
 
-    // Selecting one indexer shows its name on the trigger.
+    // Selecting one option shows its name on the trigger.
     checkboxes()[0].click();
     await settle(fixture);
     expect(fixture.componentInstance.selected()).toEqual([1]);
     expect(text(trigger)).toBe('Nyaa');
 
-    // Selecting a second indexer shows the count and lists both in the title.
+    // Selecting a second option shows the count and lists both in the title.
     checkboxes()[2].click();
     await settle(fixture);
     expect(fixture.componentInstance.selected()).toEqual([1, 3]);
     expect(text(trigger)).toBe('2 indexers');
     expect(trigger.title).toBe('Nyaa, TorrentLeech');
 
-    // Resetting clears the selection back to all indexers.
+    // Resetting clears the selection back to all options.
     button(el, 'All indexers').click();
     await settle(fixture);
     expect(fixture.componentInstance.selected()).toEqual([]);
@@ -61,9 +72,29 @@ describe('IndexerPicker', () => {
     expect(el.querySelector('[role="group"]')).toBeNull();
   });
 
-  it('filters long indexer lists inside the popover', async () => {
-    const fixture = TestBed.createComponent(Host);
-    fixture.componentInstance.indexers.set([
+  it('supports string ids and custom labels', async () => {
+    const fixture = TestBed.createComponent(StringHost);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    const trigger = el.querySelector('button')!;
+
+    expect(text(trigger)).toBe('All providers');
+    expect(trigger.title).toBe('All configured providers');
+
+    trigger.click();
+    await settle(fixture);
+    expect(text(el, '[role="group"]')).toContain('All configured (2)');
+
+    const checkboxes = () => [...el.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
+    checkboxes()[1].click();
+    await settle(fixture);
+    expect(fixture.componentInstance.selected()).toEqual(['subdl']);
+    expect(text(trigger)).toBe('SubDL');
+  });
+
+  it('filters long option lists inside the popover', async () => {
+    const fixture = TestBed.createComponent(NumericHost);
+    fixture.componentInstance.options.set([
       { id: 1, name: 'Alpha' }, { id: 2, name: 'Beta' }, { id: 3, name: 'Gamma' }, { id: 4, name: 'Delta' },
       { id: 5, name: 'Epsilon' }, { id: 6, name: 'Zeta' }, { id: 7, name: 'Nyaa' },
     ]);

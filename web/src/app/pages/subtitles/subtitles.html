@@ -1,6 +1,14 @@
 <div class="mb-6 flex flex-wrap items-center gap-3">
   <h1 class="page-title mr-auto">Subtitles</h1>
-  <button class="btn-primary" (click)="searchAll()" [disabled]="!ready() || wanted().length === 0">Search all missing</button>
+  <div class="flex items-center gap-2" [class.max-sm:w-full]="availableProviders().length > 0">
+    @if (availableProviders().length > 0) {
+      <kr-multi-picker class="min-w-0 flex-1 sm:w-48 sm:flex-none"
+                       [options]="availableProviders()" [(selected)]="selectedProviders"
+                       [disabled]="!ready() || wanted().length === 0"
+                       plural="providers" qualifier="configured" />
+    }
+    <button class="btn-primary shrink-0" (click)="searchAll()" [disabled]="!ready() || wanted().length === 0">Search all missing</button>
+  </div>
 </div>
 
 @if (settings(); as s) {

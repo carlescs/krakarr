@@ -13,7 +13,8 @@ namespace Krakarr.Subtitles;
 public sealed record SubtitleFileDto(int Id, int? MovieFileId, int? EpisodeFileId, string Language, string LanguageName, bool HearingImpaired, bool Forced,
     string FileName, string Provider, int? Score, string? Release, DateTimeOffset DateAdded);
 
-public sealed record SubtitleSearchRequest(int? MovieFileId, int? EpisodeFileId, int? MovieId = null, int? SeriesId = null);
+public sealed record SubtitleProviderDto(string Name, string DisplayName, bool Configured);
+public sealed record SubtitleSearchRequest(int? MovieFileId, int? EpisodeFileId, int? MovieId = null, int? SeriesId = null, IReadOnlyList<string>? Providers = null);
 public sealed record SubtitleDownloadRequest(int? MovieFileId, int? EpisodeFileId, SubtitleCandidate Candidate, int? Score);
 public sealed record ScoredSubtitleDto(SubtitleCandidate Candidate, int Score, IReadOnlyList<string> Matches, IReadOnlyList<string> Rejections, bool Acceptable);
 /// <summary>The subtitle languages Krakarr looks for, so detail pages can show which ones a file is missing.</summary>
@@ -31,7 +32,7 @@ public static class SubtitleEndpoints
         group.MapGet("/providers", async (SubtitleService service, ISettingsService settings, CancellationToken ct) =>
         {
             var s = await settings.GetAsync<SubtitleSettings>(ct);
-            return service.Providers.Select(p => new { p.Name, Configured = p.IsConfigured(s) });
+            return service.Providers.Select(p => new SubtitleProviderDto(p.Name, p.DisplayName, p.IsConfigured(s)));
         });
 
         group.MapPost("/providers/test", async (SubtitleSettings input, SubtitleService service, ISettingsService settings, CancellationToken ct) =>
@@ -102,6 +103,45 @@ public static class SubtitleEndpoints
         // (missing languages only) when no id is given.
         group.MapPost("/search", async (SubtitleSearchRequest req, SubtitleService service, KrakarrDbContext db, ICommandQueue commands, CancellationToken ct) =>
         {
+            List<string>? selectedProviders = null;
+            List<string>? selectedDisplayNames = null;
+            if (req.Providers is { Count: > 0 })
+            {
+                var known = service.Providers.ToDictionary(p => p.Name, StringComparer.OrdinalIgnoreCase);
+                var normalized = new List<string>();
+                var displayNames = new List<string>();
+                var unknown = new List<string>();
+                foreach (var raw in req.Providers)
+                {
+                    var name = raw?.Trim();
+                    if (string.IsNullOrEmpty(name)) continue;
+                    if (known.TryGetValue(name, out var provider))
+                    {
+                        if (!normalized.Contains(provider.Name, StringComparer.OrdinalIgnoreCase))
+                        {
+                            normalized.Add(provider.Name);
+                            displayNames.Add(provider.DisplayName);
+                        }
+                    }
+                    else if (!unknown.Contains(name, StringComparer.OrdinalIgnoreCase))
+                    {
+                        unknown.Add(name);
+                    }
+                }
+
+                if (unknown.Count > 0)
+                    return Results.ValidationProblem(new Dictionary<string, string[]>
+                    {
+                        ["providers"] = [$"Unknown subtitle provider(s): {string.Join(", ", unknown)}"],
+                    });
+
+                if (normalized.Count > 0)
+                {
+                    selectedProviders = normalized;
+                    selectedDisplayNames = displayNames;
+                }
+            }
+
             // A whole movie or series from its detail page: every file, every wanted language.
             if (req.MovieId is { } movieId)
             {
@@ -121,7 +161,7 @@ public static class SubtitleEndpoints
                         .OrderBy(f => f.SeasonNumber).ThenBy(f => f.Id).Select(f => f.Id).ToListAsync(token);
                     foreach (var id in ids)
                     {
-                        if (await svc.GetEpisodeTargetAsync(id, token) is { } t) await svc.SearchMissingAsync(t, token, upgrade: true);
+                        if (await svc.GetEpisodeTargetAsync(id, token) is { } t) await svc.SearchMissingAsync(t, token, upgrade: true, providers: selectedProviders);
                         scopedDb.ChangeTracker.Clear();
                     }
                     return $"{title}: searched {ids.Count} episode file(s)";
@@ -131,11 +171,19 @@ public static class SubtitleEndpoints
 
             if (req.MovieFileId is null && req.EpisodeFileId is null)
             {
-                var command = commands.Enqueue("Search all missing subtitles", async (sp, token) =>
+                var commandName = selectedDisplayNames is { Count: > 0 }
+                    ? $"Search all missing subtitles ({string.Join(", ", selectedDisplayNames)})"
+                    : "Search all missing subtitles";
+                var command = commands.Enqueue(commandName, async (sp, token) =>
                 {
                     var svc = sp.GetRequiredService<SubtitleService>();
+                    var scopedDb = sp.GetRequiredService<KrakarrDbContext>();
                     var wanted = await svc.WantedAsync(100, token);
-                    foreach (var w in wanted) await svc.SearchMissingAsync(w.Target, token);
+                    foreach (var w in wanted)
+                    {
+                        await svc.SearchMissingAsync(w.Target, token, providers: selectedProviders);
+                        scopedDb.ChangeTracker.Clear();
+                    }
                     return $"Searched {wanted.Count} file(s)";
                 });
                 return Results.Accepted(value: command);
@@ -147,7 +195,7 @@ public static class SubtitleEndpoints
             {
                 var svc = sp.GetRequiredService<SubtitleService>();
                 var t = await ResolveAsync(svc, req.MovieFileId, req.EpisodeFileId, token) ?? throw new KeyNotFoundException();
-                return await svc.SearchMissingAsync(t, token, upgrade: true);
+                return await svc.SearchMissingAsync(t, token, upgrade: true, providers: selectedProviders);
             });
             return Results.Accepted(value: single);
         });

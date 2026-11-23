@@ -18,6 +18,7 @@ public sealed class SubdlProvider(IHttpClientFactory httpClientFactory, IConfigu
     private const string UserAgent = "Krakarr v0.1.0";
 
     public string Name => ProviderName;
+    public string DisplayName => "SubDL";
 
     private string DefaultBaseUrl => (configuration["Subdl:BaseUrl"] ?? "https://api.subdl.com/api/v1/").TrimEnd('/') + "/";
     private string DefaultDownloadBaseUrl => (configuration["Subdl:DownloadBaseUrl"] ?? "https://dl.subdl.com").TrimEnd('/');

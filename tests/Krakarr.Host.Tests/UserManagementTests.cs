@@ -48,6 +48,7 @@ public sealed class RoleAccessTests
     [InlineData("GET", "/api/v1/search/indexers", UserRole.Manager)]
     [InlineData("GET", "/api/v1/system/commands", UserRole.Manager)]
     [InlineData("GET", "/api/v1/subtitles/wanted", UserRole.Manager)]
+    [InlineData("GET", "/api/v1/subtitles/providers", UserRole.Manager)]
     [InlineData("GET", "/api/v1/rootfolders", UserRole.Manager)]
     [InlineData("GET", "/api/v1/something-new", UserRole.Manager)] // closed to plain users by default
     [InlineData("GET", "/api/v1/requests", UserRole.User)]
@@ -66,6 +67,7 @@ public sealed class RoleAccessTests
     [InlineData("POST", "/api/v1/system/tasks/rss-sync/run", UserRole.Admin)]
     [InlineData("POST", "/api/v1/qualityprofiles", UserRole.Admin)]
     [InlineData("DELETE", "/api/v1/rootfolders/1", UserRole.Admin)]
+    [InlineData("POST", "/api/v1/subtitles/providers/test", UserRole.Admin)]
     public void Required_role(string method, string path, UserRole expected) =>
         Assert.Equal(expected, RoleAccess.RequiredRole(method, path));
 

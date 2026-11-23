@@ -6,7 +6,7 @@ import { Auth } from './auth';
 import { readNdjson } from './ndjson';
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
-  IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, WantedSubtitleLanguages, Episode, EpisodeDetails, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
+  IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, WantedSubtitle, WantedSubtitleLanguages, Episode, EpisodeDetails, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
   DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction,
 } from './models';
@@ -298,6 +298,7 @@ export class Api {
   /** Audio languages releases can be filtered by, plus the global wanted ones. */
   languages() { return this.get<LanguageCatalog>('languages'); }
   subtitleLanguages() { return this.get<Language[]>('subtitles/languages'); }
+  subtitleProviders() { return this.get<SubtitleProvider[]>('subtitles/providers'); }
   testSubtitleProviders(settings: SubtitleSettings) {
     return this.post<{ name: string; success: boolean; message: string }[]>('subtitles/providers/test', settings);
   }
@@ -305,9 +306,10 @@ export class Api {
   wantedSubtitleLanguages() { return this.get<WantedSubtitleLanguages>('subtitles/wanted-languages'); }
   wantedSubtitles() { return this.get<WantedSubtitle[]>('subtitles/wanted'); }
   /** Searches one file, a whole movie or series (every wanted language, upgrading existing ones), or all wanted files when empty. */
-  searchSubtitles(ref: SubtitleFileRef & { movieId?: number; seriesId?: number } = {}) {
+  searchSubtitles(ref: SubtitleFileRef & { movieId?: number; seriesId?: number; providers?: string[] } = {}) {
     return this.post<CommandInfo>('subtitles/search', {
       movieFileId: ref.movieFileId ?? null, episodeFileId: ref.episodeFileId ?? null, movieId: ref.movieId ?? null, seriesId: ref.seriesId ?? null,
+      ...(ref.providers?.length ? { providers: ref.providers } : {}),
     });
   }
   subtitleCandidates(ref: SubtitleFileRef, language?: string) {

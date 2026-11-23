@@ -298,6 +298,7 @@ export interface WantedSubtitle {
 }
 /** The subtitle languages Krakarr looks for (Settings › Subtitles). */
 export interface WantedSubtitleLanguages { enabled: boolean; useEmbeddedSubtitles: boolean; languages: string[]; }
+export interface SubtitleProvider { name: string; displayName: string; configured: boolean; }
 export interface SubtitleFileRef { movieFileId?: number; episodeFileId?: number; }
 
 export type MatchConfidence = 'None' | 'Low' | 'Medium' | 'High' | 'Exact';

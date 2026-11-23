@@ -161,7 +161,7 @@ describe('SearchPage', () => {
     // Open the picker and select one indexer.
     button(el, 'All indexers').click();
     await settle(fixture);
-    const checkboxes = () => [...el.querySelectorAll<HTMLInputElement>('kr-indexer-picker input[type="checkbox"]')];
+    const checkboxes = () => [...el.querySelectorAll<HTMLInputElement>('kr-multi-picker input[type="checkbox"]')];
     checkboxes()[0].click();
     await settle(fixture);
 

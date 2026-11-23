@@ -21,6 +21,7 @@ public sealed class OpenSubtitlesProvider(IHttpClientFactory httpClientFactory, 
     private static (string User, string Token, string BaseUrl, DateTimeOffset Expires)? _session;
 
     public string Name => ProviderName;
+    public string DisplayName => "OpenSubtitles";
 
     /// <summary>Automatic searches pause while either requests or downloads are blocked: a search we cannot act on still uses up the request quota.</summary>
     public DateTimeOffset? BackoffUntil => backoff.DownloadsBlockedUntil;

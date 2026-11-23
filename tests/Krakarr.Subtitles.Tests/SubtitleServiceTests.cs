@@ -279,6 +279,71 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
         Assert.Equal(list, EmbeddedSubtitleList.Parse(stored));
         Assert.Equal(["en", "fr"], EmbeddedSubtitleList.FullLanguages(stored));
     }
+
+    [Fact]
+    public async Task Filters_search_and_backoff_to_selected_providers()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var primary = new NamedFakeProvider("opensubtitles", "OpenSubtitles");
+        var secondary = new NamedFakeProvider("subdl", "SubDL");
+        primary.Candidates.Add(new SubtitleCandidate
+        {
+            Provider = "opensubtitles", Payload = "os-en", Language = "en",
+            ReleaseNames = ["The.Matrix.1999.1080p.BluRay.x264-SPARKS"], MatchedById = true,
+        });
+        secondary.Candidates.Add(new SubtitleCandidate
+        {
+            Provider = "subdl", Payload = "subdl-en", Language = "en",
+            ReleaseNames = ["The.Matrix.1999.1080p.BluRay.x264-SPARKS"], MatchedById = true,
+        });
+
+        using var scope = _services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
+        var service = new SubtitleService(
+            db, [primary, secondary], settings, new NullEventHub(), TimeProvider.System,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<SubtitleService>.Instance);
+        var target = (await service.GetMovieTargetAsync(_movieFileId, ct))!;
+
+        // Primary is backed off; searching only primary skips, while searching only secondary proceeds.
+        primary.BackoffUntil = DateTimeOffset.UtcNow.AddMinutes(5);
+        var skipped = await service.SearchMissingAsync(target, ct, providers: ["opensubtitles"]);
+        Assert.Contains("paused", skipped);
+        Assert.Equal(0, primary.Searches);
+        Assert.Equal(0, secondary.Searches);
+
+        var summary = await service.SearchMissingAsync(target, ct, providers: ["SUBDL"]);
+        Assert.Contains("downloaded en", summary);
+        Assert.Equal(0, primary.Searches);
+        Assert.Equal(1, secondary.Searches);
+        Assert.Equal(["subdl-en"], secondary.Downloads);
+        Assert.Equal("subdl", (await RowsAsync()).Single().Provider);
+    }
+
+    private sealed class NamedFakeProvider(string name, string displayName) : ISubtitleProvider
+    {
+        public List<SubtitleCandidate> Candidates { get; } = [];
+        public List<string> Downloads { get; } = [];
+        public int Searches { get; private set; }
+        public DateTimeOffset? BackoffUntil { get; set; }
+        public string Name => name;
+        public string DisplayName => displayName;
+        public bool IsConfigured(SubtitleSettings settings) => true;
+
+        public Task<IReadOnlyList<SubtitleCandidate>> SearchAsync(SubtitleQuery query, SubtitleSettings settings, CancellationToken ct = default)
+        {
+            Searches++;
+            return Task.FromResult<IReadOnlyList<SubtitleCandidate>>(Candidates.Where(c => query.Languages.Contains(c.Language)).ToList());
+        }
+
+        public Task<SubtitleContent> DownloadAsync(SubtitleCandidate candidate, SubtitleSettings settings, CancellationToken ct = default)
+        {
+            Downloads.Add(candidate.Payload);
+            return Task.FromResult(new SubtitleContent(System.Text.Encoding.UTF8.GetBytes($"subtitle {candidate.Payload}"), ".srt"));
+        }
+
+        public Task<string> TestAsync(SubtitleSettings settings, CancellationToken ct = default) => Task.FromResult("ok");
+    }
 }
 
 public sealed class SubtitleSearchTaskTests : IAsyncLifetime

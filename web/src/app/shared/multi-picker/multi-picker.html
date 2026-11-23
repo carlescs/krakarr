@@ -1,45 +1,45 @@
 <button type="button"
   class="input flex items-center justify-between gap-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
-  [class.border-accent-500/60]="selectedIndexers().length > 0"
+  [class.border-accent-500/60]="selectedOptions().length > 0"
   [disabled]="disabled()"
   [title]="title()"
-  [attr.aria-label]="'Indexers: ' + label()"
+  [attr.aria-label]="ariaName() + ': ' + label()"
   [attr.aria-expanded]="open()"
   aria-haspopup="true"
   (click)="toggleOpen()">
-  <span class="truncate" [class.text-accent-300]="selectedIndexers().length > 0">{{ label() }}</span>
+  <span class="truncate" [class.text-accent-300]="selectedOptions().length > 0">{{ label() }}</span>
   <svg class="size-4 shrink-0 text-slate-400 transition-transform" [class.rotate-180]="open()" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
     <path fill-rule="evenodd" d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
   </svg>
 </button>
 @if (open()) {
-  <div class="card absolute left-0 top-full z-20 mt-1 min-w-full shadow-lg sm:left-auto sm:right-0 sm:w-64" role="group" aria-label="Select indexers">
+  <div class="card absolute left-0 top-full z-20 mt-1 min-w-full shadow-lg sm:left-auto sm:right-0 sm:w-64" role="group" [attr.aria-label]="'Select ' + plural()">
     <div class="flex items-center justify-between gap-2 border-b border-surface-700/80 px-3 py-2 text-xs">
       <span class="text-slate-400">
-        @if (selectedIndexers().length > 0) {
-          {{ selectedIndexers().length }} of {{ indexers().length }} selected
+        @if (selectedOptions().length > 0) {
+          {{ selectedOptions().length }} of {{ options().length }} selected
         } @else {
-          All enabled ({{ indexers().length }})
+          All {{ qualifier() }} ({{ options().length }})
         }
       </span>
-      @if (selectedIndexers().length > 0) {
-        <button type="button" class="font-medium text-accent-300 transition hover:text-white" (click)="clear()">All indexers</button>
+      @if (selectedOptions().length > 0) {
+        <button type="button" class="font-medium text-accent-300 transition hover:text-white" (click)="clear()">{{ allLabel() }}</button>
       }
     </div>
     @if (showFilter()) {
       <div class="border-b border-surface-700/80 p-2">
-        <input type="search" class="input !py-1.5 text-xs" placeholder="Filter indexers…" aria-label="Filter indexers"
+        <input type="search" class="input !py-1.5 text-xs" [placeholder]="'Filter ' + plural() + '…'" [attr.aria-label]="'Filter ' + plural()"
           [value]="filter()" (input)="filter.set($any($event.target).value)" (keydown.enter)="$event.preventDefault()" />
       </div>
     }
     <div class="max-h-60 overflow-y-auto p-1.5">
-      @for (idx of filtered(); track idx.id) {
+      @for (opt of filtered(); track opt.id) {
         <label class="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-slate-200 transition hover:bg-surface-800 pointer-coarse:min-h-10">
-          <input type="checkbox" class="accent-accent-500" [checked]="isSelected(idx.id)" (change)="toggle(idx.id)" />
-          <span class="truncate">{{ idx.name }}</span>
+          <input type="checkbox" class="accent-accent-500" [checked]="isSelected(opt.id)" (change)="toggle(opt.id)" />
+          <span class="truncate">{{ opt.name }}</span>
         </label>
       } @empty {
-        <p class="px-2 py-2 text-xs text-slate-500">No matching indexers.</p>
+        <p class="px-2 py-2 text-xs text-slate-500">No matching {{ plural() }}.</p>
       }
     </div>
   </div>

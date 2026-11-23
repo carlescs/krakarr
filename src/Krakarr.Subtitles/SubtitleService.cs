@@ -210,9 +210,10 @@ public sealed class SubtitleService(
 
     // ---- Search & download -------------------------------------------------------------------
 
-    /// <summary>Queries every configured provider for the given languages; provider failures are reported, not thrown.</summary>
+    /// <summary>Queries configured providers (optionally filtered to <paramref name="providers"/>) for the given languages; provider failures are reported, not thrown.</summary>
     public async Task<(IReadOnlyList<SubtitleCandidate> Candidates, IReadOnlyList<string> Errors)> SearchProvidersAsync(
-        SubtitleTarget target, IReadOnlyList<string> languages, SubtitleSettings s, CancellationToken ct = default)
+        SubtitleTarget target, IReadOnlyList<string> languages, SubtitleSettings s, CancellationToken ct = default,
+        IReadOnlyCollection<string>? providers = null)
     {
         string? hash = null;
         long size = 0;
@@ -238,7 +239,7 @@ public sealed class SubtitleService(
 
         var candidates = new List<SubtitleCandidate>();
         var errors = new List<string>();
-        foreach (var provider in Providers.Where(p => p.IsConfigured(s)))
+        foreach (var provider in ConfiguredProviders(s, providers))
         {
             try
             {
@@ -261,14 +262,15 @@ public sealed class SubtitleService(
     /// languages present only inside the video (see <see cref="SubtitleSettings.UseEmbeddedSubtitles"/>) are not searched.
     /// Returns a short summary for the task log.
     /// </summary>
-    public async Task<string> SearchMissingAsync(SubtitleTarget target, CancellationToken ct = default, bool upgrade = false)
+    public async Task<string> SearchMissingAsync(
+        SubtitleTarget target, CancellationToken ct = default, bool upgrade = false, IReadOnlyCollection<string>? providers = null)
     {
         using var activity = KrakarrTelemetry.ActivitySource.StartActivity("subtitle search");
         activity?.SetTag("krakarr.subtitle.target", target.Label);
         activity?.SetTag("krakarr.subtitle.upgrade", upgrade);
         try
         {
-            var result = await SearchMissingCoreAsync(target, upgrade, ct);
+            var result = await SearchMissingCoreAsync(target, upgrade, providers, ct);
             activity?.SetTag("krakarr.subtitle.result", result);
             return result;
         }
@@ -279,7 +281,8 @@ public sealed class SubtitleService(
         }
     }
 
-    private async Task<string> SearchMissingCoreAsync(SubtitleTarget target, bool upgrade, CancellationToken ct)
+    private async Task<string> SearchMissingCoreAsync(
+        SubtitleTarget target, bool upgrade, IReadOnlyCollection<string>? providers, CancellationToken ct)
     {
         var s = await settings.GetAsync<SubtitleSettings>(ct);
         await SyncDiskAsync(target, ct);
@@ -287,7 +290,7 @@ public sealed class SubtitleService(
         if (missing.Count > 0 || upgrade)
         {
             // Don't query providers that asked us to back off, and leave the file due so it is searched once they allow it.
-            if (BackoffUntil(s) is { } until)
+            if (BackoffUntil(s, providers) is { } until)
                 return $"{target.Label}: skipped, subtitle providers paused until {until.ToLocalTime():g}";
         }
 
@@ -307,7 +310,7 @@ public sealed class SubtitleService(
         var languages = missing.Concat(current.Keys).ToList();
         if (languages.Count == 0) return $"{target.Label}: all subtitles present";
 
-        var (candidates, providerErrors) = await SearchProvidersAsync(target, languages, s, ct);
+        var (candidates, providerErrors) = await SearchProvidersAsync(target, languages, s, ct, providers);
         var errors = providerErrors.ToList();
         var downloaded = new List<string>();
         var upgraded = new List<string>();
@@ -342,19 +345,27 @@ public sealed class SubtitleService(
     }
 
     /// <summary>
-    /// When every configured provider asked us to back off (rate limit or quota), the earliest time one of them can be
-    /// queried again; null when at least one can be queried now.
+    /// When every selected configured provider asked us to back off (rate limit or quota), the earliest time one of
+    /// them can be queried again; null when at least one can be queried now.
     /// </summary>
-    public DateTimeOffset? BackoffUntil(SubtitleSettings s)
+    public DateTimeOffset? BackoffUntil(SubtitleSettings s, IReadOnlyCollection<string>? providers = null)
     {
         DateTimeOffset? earliest = null;
-        foreach (var provider in Providers.Where(p => p.IsConfigured(s)))
+        foreach (var provider in ConfiguredProviders(s, providers))
         {
             if (provider.BackoffUntil is not { } until) return null;
             if (earliest is null || until < earliest) earliest = until;
         }
 
         return earliest;
+    }
+
+    private IEnumerable<ISubtitleProvider> ConfiguredProviders(SubtitleSettings s, IReadOnlyCollection<string>? providers)
+    {
+        var configured = Providers.Where(p => p.IsConfigured(s));
+        if (providers is not { Count: > 0 }) return configured;
+        var allowed = new HashSet<string>(providers, StringComparer.OrdinalIgnoreCase);
+        return configured.Where(p => allowed.Contains(p.Name));
     }
 
     /// <summary>Downloads a subtitle and stores it next to the video as "{video}.{lang}[.hi][.forced].{ext}".</summary>

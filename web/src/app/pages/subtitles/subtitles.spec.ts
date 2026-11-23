@@ -65,11 +65,78 @@ describe('SubtitlesPage', () => {
     expect(button(fixture.nativeElement, 'Search all missing').disabled).toBe(false);
   });
 
-  it('does not read settings as a manager', async () => {
-    const api = setupTest({ role: 'Manager', api: mockApi({ subtitleLanguages: async () => [], wantedSubtitles: async () => [] }) });
+  it('searches all missing using only the selected subtitle providers', async () => {
+    const api = setupTest({
+      api: mockApi({
+        settings: async () => ({ ...settings, subdl: { enabled: true, apiKey: 'subdl-key' } }),
+        subtitleLanguages: async () => [{ code: 'es', name: 'Spanish' }],
+        subtitleProviders: async () => [
+          { name: 'opensubtitles', displayName: 'OpenSubtitles', configured: true },
+          { name: 'subdl', displayName: 'SubDL', configured: true },
+          { name: 'disabled-provider', displayName: 'Disabled', configured: false },
+        ],
+        wantedSubtitles: async () => wanted,
+        searchSubtitles: async () => undefined,
+      }),
+    });
     const fixture = TestBed.createComponent(SubtitlesPage);
     await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+
+    // Only configured providers appear in the picker.
+    button(el, 'All providers').click();
+    await settle(fixture);
+    const checkboxes = () => [...el.querySelectorAll<HTMLInputElement>('kr-multi-picker input[type="checkbox"]')];
+    expect(checkboxes().length).toBe(2);
+
+    // Selecting one provider passes it to searchSubtitles.
+    checkboxes()[1].click();
+    await settle(fixture);
+    button(el, 'Search all missing').click();
+    await settle(fixture);
+    expect(api.searchSubtitles).toHaveBeenLastCalledWith({ providers: ['subdl'] });
+
+    // Selecting a second provider passes both.
+    button(el, 'SubDL').click();
+    await settle(fixture);
+    checkboxes()[0].click();
+    await settle(fixture);
+    button(el, 'Search all missing').click();
+    await settle(fixture);
+    expect(api.searchSubtitles).toHaveBeenLastCalledWith({ providers: ['subdl', 'opensubtitles'] });
+
+    // Clearing the selection falls back to searching all configured providers.
+    button(el, '2 providers').click();
+    await settle(fixture);
+    button(el, 'All providers').click();
+    await settle(fixture);
+    button(el, 'Search all missing').click();
+    await settle(fixture);
+    expect(api.searchSubtitles).toHaveBeenLastCalledWith();
+  });
+
+  it('does not read settings as a manager but can pick subtitle providers', async () => {
+    const api = setupTest({
+      role: 'Manager',
+      api: mockApi({
+        subtitleLanguages: async () => [],
+        subtitleProviders: async () => [{ name: 'subdl', displayName: 'SubDL', configured: true }],
+        wantedSubtitles: async () => wanted,
+        searchSubtitles: async () => undefined,
+      }),
+    });
+    const fixture = TestBed.createComponent(SubtitlesPage);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
     expect(api.settings).not.toHaveBeenCalled();
-    expect(text(fixture.nativeElement)).toContain('Every library file has subtitles');
+    expect(api.subtitleProviders).toHaveBeenCalled();
+
+    button(el, 'All providers').click();
+    await settle(fixture);
+    el.querySelector<HTMLInputElement>('kr-multi-picker input[type="checkbox"]')!.click();
+    await settle(fixture);
+    button(el, 'Search all missing').click();
+    await settle(fixture);
+    expect(api.searchSubtitles).toHaveBeenLastCalledWith({ providers: ['subdl'] });
   });
 });

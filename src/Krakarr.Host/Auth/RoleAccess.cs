@@ -17,16 +17,16 @@ public static class RoleAccess
         "/api/v1/indexers",
         "/api/v1/filesystem",
         "/api/v1/downloads/client",
-        "/api/v1/subtitles/providers",
         "/api/v1/system/status",
         "/api/v1/system/tasks",
     ];
 
-    /// <summary>Readable by managers (they pick them when adding titles), changed only by admins.</summary>
+    /// <summary>Readable by managers (they pick them when adding titles or searching subtitles), changed/tested only by admins.</summary>
     private static readonly string[] AdminWrites =
     [
         "/api/v1/qualityprofiles",
         "/api/v1/rootfolders",
+        "/api/v1/subtitles/providers",
     ];
 
     /// <summary>Open to every signed-in user, any method (sign out, own password, notifications, live events).</summary>

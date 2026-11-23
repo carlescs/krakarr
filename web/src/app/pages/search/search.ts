@@ -6,7 +6,7 @@ import { ReleaseSearch } from '../../core/indexer-search';
 import { SearchIndexer, SearchResult, SearchType } from '../../core/models';
 import { Toasts } from '../../core/toast';
 import { MediaLink, MediaLinkPicker, linkFields } from '../../shared/media-link-picker/media-link-picker';
-import { IndexerPicker } from '../../shared/indexer-picker/indexer-picker';
+import { MultiPicker } from '../../shared/multi-picker/multi-picker';
 import { IndexerProgress } from '../../shared/indexer-progress/indexer-progress';
 import { Modal } from '../../shared/modal/modal';
 import { TableSort } from '../../core/table-sort';
@@ -14,7 +14,7 @@ import { SortHeader } from '../../shared/sort-header/sort-header';
 
 @Component({
   selector: 'kr-search',
-  imports: [FormsModule, BytesPipe, AgoPipe, Modal, MediaLinkPicker, IndexerPicker, IndexerProgress, SortHeader],
+  imports: [FormsModule, BytesPipe, AgoPipe, Modal, MediaLinkPicker, MultiPicker, IndexerProgress, SortHeader],
   templateUrl: './search.html',
   styleUrl: './search.scss',
 })
