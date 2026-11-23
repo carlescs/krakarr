@@ -17,7 +17,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261122085202_EmbeddedSubtitles";
+    public override string LastMigrationId => "20261123150406_NotificationDismissals";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -626,6 +626,36 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("MovieFiles");
             });
 
+        modelBuilder.Entity("Krakarr.Core.Domain.NotificationDismissal", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
+
+                b.Property<int>("Count")
+                    .HasColumnType("integer");
+
+                b.Property<DateTimeOffset?>("DismissedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("NotificationId")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("character varying(100)");
+
+                b.Property<int>("UserId")
+                    .HasColumnType("integer");
+
+                b.HasKey("Id");
+
+                b.HasIndex("UserId", "NotificationId")
+                    .IsUnique();
+
+                b.ToTable("NotificationDismissals");
+            });
+
         modelBuilder.Entity("Krakarr.Core.Domain.QualityProfile", b =>
             {
                 var id = b.Property<int>("Id")
@@ -991,6 +1021,17 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Navigation("MovieFile");
 
                 b.Navigation("QualityProfile");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.NotificationDismissal", b =>
+            {
+                b.HasOne("Krakarr.Core.Domain.User", "User")
+                    .WithMany()
+                    .HasForeignKey("UserId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.Navigation("User");
             });
 
         modelBuilder.Entity("Krakarr.Core.Domain.Season", b =>

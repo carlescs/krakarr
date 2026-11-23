@@ -39,6 +39,6 @@ export class NotificationBell {
   }
 
   protected onDocumentClick(event: MouseEvent) {
-    if (this.open() && !this.host.nativeElement.contains(event.target as Node)) this.open.set(false);
+    if (this.open() && !event.composedPath().includes(this.host.nativeElement)) this.open.set(false);
   }
 }

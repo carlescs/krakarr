@@ -195,6 +195,8 @@ export class Api {
 
   // Notifications (the bell): everything the signed-in user should look at.
   notifications() { return this.get<AppNotification[]>('notifications'); }
+  dismissNotification(id: string) { return this.delete<void>(`notifications/${encodeURIComponent(id)}`); }
+  dismissAllNotifications() { return this.delete<void>('notifications'); }
 
   // Requests: users ask for titles, staff approve (adds them) or decline.
   requests(status?: RequestStatus, page = 1) { return this.get<MediaRequestPage>('requests', { status, page }); }

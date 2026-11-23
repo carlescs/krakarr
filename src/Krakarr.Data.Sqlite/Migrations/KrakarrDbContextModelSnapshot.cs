@@ -15,7 +15,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261122085159_EmbeddedSubtitles";
+    public override string LastMigrationId => "20261123150400_NotificationDismissals";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -600,6 +600,34 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("MovieFiles");
             });
 
+        modelBuilder.Entity("Krakarr.Core.Domain.NotificationDismissal", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<int>("Count")
+                    .HasColumnType("INTEGER");
+
+                b.Property<long?>("DismissedAt")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("NotificationId")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("TEXT");
+
+                b.Property<int>("UserId")
+                    .HasColumnType("INTEGER");
+
+                b.HasKey("Id");
+
+                b.HasIndex("UserId", "NotificationId")
+                    .IsUnique();
+
+                b.ToTable("NotificationDismissals");
+            });
+
         modelBuilder.Entity("Krakarr.Core.Domain.QualityProfile", b =>
             {
                 b.Property<int>("Id")
@@ -953,6 +981,17 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Navigation("MovieFile");
 
                 b.Navigation("QualityProfile");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.NotificationDismissal", b =>
+            {
+                b.HasOne("Krakarr.Core.Domain.User", "User")
+                    .WithMany()
+                    .HasForeignKey("UserId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.Navigation("User");
             });
 
         modelBuilder.Entity("Krakarr.Core.Domain.Season", b =>

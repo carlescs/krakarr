@@ -47,4 +47,22 @@ export class Notifications {
       // Keep the last known state; the bell is not worth an error toast.
     }
   }
+
+  async dismiss(id: string) {
+    this.items.update(items => items.filter(n => n.id !== id));
+    try {
+      await this.api.dismissNotification(id);
+    } catch {
+      await this.refresh();
+    }
+  }
+
+  async dismissAll() {
+    this.items.set([]);
+    try {
+      await this.api.dismissAllNotifications();
+    } catch {
+      await this.refresh();
+    }
+  }
 }

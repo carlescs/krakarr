@@ -429,3 +429,18 @@ public class MediaSubscription
     public Series? Series { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
+
+/// <summary>
+/// A notification the user dismissed from the bell. Hides that <see cref="NotificationId"/> until its source reports
+/// newer activity (a later <c>Date</c>, or a higher <c>Count</c> at the same date).
+/// </summary>
+public class NotificationDismissal
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public User? User { get; set; }
+    public required string NotificationId { get; set; }
+    public int Count { get; set; }
+    public DateTimeOffset? DismissedAt { get; set; }
+}
+

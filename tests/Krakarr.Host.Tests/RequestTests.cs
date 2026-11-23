@@ -281,4 +281,43 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
         Assert.Empty((await dave.GetFromJsonAsync<JsonElement[]>("/api/v1/subscriptions", Ct))!);
         Assert.Empty((await dave.GetFromJsonAsync<JsonElement[]>(range + "&user=me", Ct))!);
     }
+
+    [Fact]
+    public async Task Notifications_can_be_dismissed_and_reappear_on_new_activity()
+    {
+        var frank = await UserAsync("frank");
+        var grace = await UserAsync("grace");
+        var manager = await UserAsync("maya", "Manager");
+
+        var r1 = (await CreateAsync(frank, "Movie", 3001)).GetProperty("id").GetInt32();
+        var r2 = (await CreateAsync(frank, "Movie", 3002)).GetProperty("id").GetInt32();
+        Assert.Equal(2, (await BellAsync(frank, "requests.mine"))!.Value.GetProperty("count").GetInt32());
+
+        // Dismissing hides the notification for that user only, until a newer request arrives.
+        Assert.Equal(HttpStatusCode.NoContent, (await frank.DeleteAsync("/api/v1/notifications/requests.mine", Ct)).StatusCode);
+        Assert.Null(await BellAsync(frank, "requests.mine"));
+        Assert.NotNull(await BellAsync(manager, "requests.pending"));
+
+        var r3 = (await CreateAsync(frank, "Movie", 3003)).GetProperty("id").GetInt32();
+        Assert.Equal(3, (await BellAsync(frank, "requests.mine"))!.Value.GetProperty("count").GetInt32());
+
+        // Dismissing a result notification clears the handled requests so the next decline only counts the new one.
+        Assert.Equal(HttpStatusCode.OK, (await manager.PostAsJsonAsync($"/api/v1/requests/{r1}/decline", new { }, Ct)).StatusCode);
+        Assert.Equal(1, (await BellAsync(frank, "requests.declined"))!.Value.GetProperty("count").GetInt32());
+        Assert.Equal(HttpStatusCode.NoContent, (await frank.DeleteAsync("/api/v1/notifications/requests.declined", Ct)).StatusCode);
+        Assert.Null(await BellAsync(frank, "requests.declined"));
+
+        Assert.Equal(HttpStatusCode.OK, (await manager.PostAsJsonAsync($"/api/v1/requests/{r2}/decline", new { }, Ct)).StatusCode);
+        var declined = (await BellAsync(frank, "requests.declined"))!.Value;
+        Assert.Equal(1, declined.GetProperty("count").GetInt32());
+        Assert.Equal("Movie 3002", declined.GetProperty("message").GetString());
+
+        // Dismiss all clears every notification in the caller's bell without touching other users'.
+        await CreateAsync(grace, "Movie", 3004);
+        Assert.Equal(HttpStatusCode.NoContent, (await frank.DeleteAsync("/api/v1/notifications", Ct)).StatusCode);
+        Assert.Empty((await frank.GetFromJsonAsync<JsonElement[]>("/api/v1/notifications", Ct))!);
+        Assert.NotNull(await BellAsync(grace, "requests.mine"));
+
+        Assert.Equal(HttpStatusCode.NoContent, (await manager.DeleteAsync($"/api/v1/requests/{r3}", Ct)).StatusCode);
+    }
 }

@@ -33,6 +33,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
     public DbSet<HistoryEntry> History => Set<HistoryEntry>();
     public DbSet<MediaRequest> MediaRequests => Set<MediaRequest>();
     public DbSet<MediaSubscription> MediaSubscriptions => Set<MediaSubscription>();
+    public DbSet<NotificationDismissal> NotificationDismissals => Set<NotificationDismissal>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
@@ -186,6 +187,13 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
             e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Movie).WithMany().HasForeignKey(x => x.MovieId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Series).WithMany().HasForeignKey(x => x.SeriesId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<NotificationDismissal>(e =>
+        {
+            e.Property(x => x.NotificationId).HasMaxLength(100);
+            e.HasIndex(x => new { x.UserId, x.NotificationId }).IsUnique();
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

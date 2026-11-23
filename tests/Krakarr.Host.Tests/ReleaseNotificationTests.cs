@@ -142,4 +142,18 @@ public sealed class ReleaseNotificationTests : IClassFixture<KrakarrFactory>
         Assert.Equal("A, B and C", ReleaseNotificationSource.Summarize(["A", "B", "C"], 3));
         Assert.Equal("A, B, C and 2 more", ReleaseNotificationSource.Summarize(["A", "B", "C", "D", "E"], 5));
     }
+
+    [Fact]
+    public void Stays_dismissed_until_date_or_count_increases()
+    {
+        var day = new DateTimeOffset(2031, 5, 10, 0, 0, 0, TimeSpan.Zero);
+        var dismissal = new NotificationDismissal { NotificationId = "releases.movies", Count = 2, DismissedAt = day };
+        Notification Note(int count, DateTimeOffset? date) => new("releases.movies", "movie", "t", null, "/calendar", count, Date: date);
+
+        Assert.True(NotificationEndpoints.IsDismissed(Note(2, day), dismissal));
+        Assert.True(NotificationEndpoints.IsDismissed(Note(1, day), dismissal)); // yesterday's title aged out
+        Assert.True(NotificationEndpoints.IsDismissed(Note(3, day.AddDays(-1)), dismissal));
+        Assert.False(NotificationEndpoints.IsDismissed(Note(3, day), dismissal)); // another title released today
+        Assert.False(NotificationEndpoints.IsDismissed(Note(1, day.AddDays(1)), dismissal)); // a title released tomorrow
+    }
 }
