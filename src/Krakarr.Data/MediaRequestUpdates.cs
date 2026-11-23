@@ -45,12 +45,16 @@ public static class MediaSubscriptions
             ? db.MediaSubscriptions.Where(s => s.MovieId == libraryId)
             : db.MediaSubscriptions.Where(s => s.SeriesId == libraryId);
 
+    /// <summary>The signed-in user's id from their <see cref="ClaimTypes.NameIdentifier"/> claim, or null for API keys.</summary>
+    public static int? GetUserId(ClaimsPrincipal user) =>
+        int.TryParse(user.FindFirstValue(ClaimTypes.NameIdentifier), CultureInfo.InvariantCulture, out var userId) ? userId : null;
+
     /// <summary>
     /// Makes whoever added a title follow it. Does nothing for the API key, which is no user (the user id is the
     /// sign-in's <see cref="ClaimTypes.NameIdentifier"/> claim).
     /// </summary>
     public static Task<int> FollowAsAdderAsync(KrakarrDbContext db, ClaimsPrincipal adder, MediaType type, int libraryId, CancellationToken ct = default) =>
-        int.TryParse(adder.FindFirstValue(ClaimTypes.NameIdentifier), CultureInfo.InvariantCulture, out var userId)
+        GetUserId(adder) is { } userId
             ? SubscribeAsync(db, [userId], type, libraryId, ct)
             : Task.FromResult(0);
 

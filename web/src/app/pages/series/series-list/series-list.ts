@@ -1,91 +1,221 @@
-import { Component, DestroyRef, computed, inject, linkedSignal, signal } from '@angular/core';
+import { ScrollingModule } from '@angular/cdk/scrolling';
 import { DatePipe } from '@angular/common';
+import { Component, DestroyRef, ElementRef, Injector, computed, effect, inject, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { Api, errorMessage } from '../../../core/api';
 import { Auth } from '../../../core/auth';
-import { Library } from '../../../core/library';
+import { Library, SeriesQuery } from '../../../core/library';
+import { SeriesFilter, SeriesListItem, SeriesSortKey } from '../../../core/models';
+import { SEARCH_DEBOUNCE_MS, VirtualRowDataSource } from '../../../core/paged-list';
+import { PagedSelection, ViewMode, storeView, storedView } from '../../../core/selection';
 import { Subscriptions } from '../../../core/subscriptions';
-import { SeriesListItem } from '../../../core/models';
-import { NearViewport } from '../../../shared/near-viewport/near-viewport';
-import { Poster } from '../../../shared/poster/poster';
-import { GRID_CHUNK, POSTER_GRID, PosterGridSkeleton } from '../../../shared/poster-grid/poster-grid';
-import { MoreMenu } from '../../../shared/more-menu/more-menu';
-import { Progress } from '../../../shared/progress/progress';
-import { BulkActions } from '../../../shared/bulk-actions/bulk-actions';
-import { ViewToggle } from '../../../shared/view-toggle/view-toggle';
-import { Selection, ViewMode, storeView, storedView } from '../../../core/selection';
 import { TableSort } from '../../../core/table-sort';
+import { Toasts } from '../../../core/toast';
+import { gridMetrics, observeContainerWidth } from '../../../core/virtual-scroll';
+import { BulkActions } from '../../../shared/bulk-actions/bulk-actions';
+import { MoreMenu } from '../../../shared/more-menu/more-menu';
+import { PosterGridSkeleton } from '../../../shared/poster-grid/poster-grid';
+import { Poster } from '../../../shared/poster/poster';
+import { Progress } from '../../../shared/progress/progress';
 import { SortHeader } from '../../../shared/sort-header/sort-header';
-
-type Filter = 'all' | 'following' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
+import { ViewToggle } from '../../../shared/view-toggle/view-toggle';
 
 const VIEW_KEY = 'krakarr.series.view';
+const TABLE_ROW_HEIGHT = 44;
+
+interface SeriesGridRow {
+  key: number;
+  start: number;
+  count: number;
+  indices: number[];
+}
 
 @Component({
   selector: 'kr-series-list',
-  imports: [RouterLink, FormsModule, DatePipe, Poster, Progress, NearViewport, PosterGridSkeleton, MoreMenu, BulkActions, ViewToggle, SortHeader],
+  host: { class: 'block' },
+  imports: [
+    ScrollingModule,
+    RouterLink,
+    FormsModule,
+    DatePipe,
+    Poster,
+    Progress,
+    PosterGridSkeleton,
+    MoreMenu,
+    BulkActions,
+    ViewToggle,
+    SortHeader,
+  ],
   templateUrl: './series-list.html',
   styleUrl: './series-list.scss',
 })
 export class SeriesListPage {
   protected readonly auth = inject(Auth);
+  private readonly api = inject(Api);
   private readonly cache = inject(Library).series;
   private readonly subscriptions = inject(Subscriptions);
+  private readonly toasts = inject(Toasts);
 
-  protected readonly grid = POSTER_GRID;
-  protected readonly loading = computed(() => this.cache.items() === null);
-  protected readonly series = computed(() => this.cache.items() ?? []);
+  protected readonly loading = this.cache.loading;
+  protected readonly total = this.cache.total;
+  protected readonly libraryTotal = this.cache.libraryTotal;
   protected readonly query = signal('');
-  protected readonly filter = signal<Filter>('all');
+  private readonly committedQuery = signal('');
+  protected readonly filter = signal<SeriesFilter>('all');
   protected readonly view = signal<ViewMode>(storedView(VIEW_KEY));
   /** Grid selection mode: cards toggle selection instead of opening the series. The table always has checkboxes. */
   protected readonly selecting = signal(false);
   protected readonly following = this.subscriptions.seriesIds;
+  protected readonly tableRowHeight = TABLE_ROW_HEIGHT;
 
-  protected readonly filtered = computed(() => {
-    const q = this.query().toLowerCase().trim();
-    const filter = this.filter();
-    const following = filter === 'following' ? this.following() : null;
-    return this.series().filter(s => {
-      if (q && !s.title.toLowerCase().includes(q)) return false;
-      switch (filter) {
-        case 'following': return following!.has(s.id);
-        case 'missing': return s.monitored && s.episodeFileCount < s.episodeCount;
-        case 'continuing': return s.status !== 'Ended';
-        case 'ended': return s.status === 'Ended';
-        case 'unmonitored': return !s.monitored;
-        default: return true;
-      }
-    });
+  /** Sort state shared with `SortHeader`; actual sorting happens on the server. */
+  protected readonly sort = new TableSort<SeriesListItem, SeriesSortKey>(
+    signal<SeriesListItem[]>([]),
+    {
+      title: 'source',
+      year: s => s.year || null,
+      status: s => s.status === 'Ended',
+      episodes: s => this.percent(s),
+      nextAiring: s => (s.nextAiring ? Date.parse(s.nextAiring) : null),
+    },
+    { key: 'title' },
+  );
+
+  private readonly listQuery = computed<SeriesQuery>(() => {
+    const s = this.sort.state();
+    const q = this.committedQuery().trim();
+    return {
+      q: q || undefined,
+      filter: this.filter(),
+      sort: s.key ?? 'title',
+      desc: s.desc || undefined,
+    };
   });
 
-  /** The filtered list in the chosen sort order (the API sorts by title). */
-  protected readonly sort = new TableSort(this.filtered, {
-    title: 'source',
-    year: s => s.year || null,
-    status: s => s.status === 'Ended',
-    episodes: s => this.percent(s),
-    // Titles with no upcoming episode go last.
-    nextAiring: s => s.nextAiring ? Date.parse(s.nextAiring) : null,
-  }, { key: 'title' });
-  protected readonly sorted = this.sort.rows;
+  private readonly containerWidth = signal(0);
+  private readonly viewportWidth = signal(typeof window !== 'undefined' ? window.innerWidth : 1024);
+  protected readonly metrics = computed(() => gridMetrics(this.containerWidth(), this.viewportWidth(), 'series'));
+  protected readonly gridTemplate = computed(() => `repeat(${this.metrics().cols}, minmax(0, 1fr))`);
 
-  /** Items rendered so far: more are added as the end of the list scrolls into view, and a new filter starts over. */
-  private readonly limit = linkedSignal({ source: () => [this.query(), this.filter(), this.sort.state()], computation: () => GRID_CHUNK });
-  protected readonly visible = computed(() => this.sorted().slice(0, this.limit()));
+  private readonly gridRows = computed<SeriesGridRow[]>(() => {
+    const total = this.total();
+    const cols = this.metrics().cols;
+    const count = Math.ceil(total / cols);
+    const rows: SeriesGridRow[] = new Array(count);
+    for (let r = 0; r < count; r++) {
+      const start = r * cols;
+      const len = Math.min(cols, total - start);
+      const indices: number[] = new Array(len);
+      for (let i = 0; i < len; i++) indices[i] = start + i;
+      rows[r] = { key: r, start, count: len, indices };
+    }
+    return rows;
+  });
 
-  protected readonly selection = new Selection(this.sorted);
+  private readonly tableRows = computed<number[]>(() => {
+    const total = this.total();
+    const rows: number[] = new Array(total);
+    for (let i = 0; i < total; i++) rows[i] = i;
+    return rows;
+  });
+
+  protected readonly gridDataSource: VirtualRowDataSource<SeriesGridRow>;
+  protected readonly tableDataSource: VirtualRowDataSource<number>;
+
+  protected readonly selection = new PagedSelection(
+    this.total,
+    () => this.cache.loadedIds(),
+    () => this.cache.allLoaded(),
+    (a, b) => this.cache.idsBetween(a, b),
+    () => this.api.seriesIds(this.cache.currentQuery()),
+    e => this.toasts.error(errorMessage(e)),
+  );
+
   /** The bulk toolbar shows while something is selected in the table, and throughout grid selection mode. */
-  protected readonly showBulk = computed(() => this.view() === 'table' ? this.selection.count() > 0 : this.selecting());
+  protected readonly showBulk = computed(() => (this.view() === 'table' ? this.selection.count() > 0 : this.selecting()));
 
   constructor() {
+    const injector = inject(Injector);
+    const destroyRef = inject(DestroyRef);
+    const host = inject(ElementRef<HTMLElement>);
+    const debounceMs = inject(SEARCH_DEBOUNCE_MS);
+
+    this.gridDataSource = new VirtualRowDataSource(
+      this.gridRows,
+      (rows, start, end) => [rows[start].start, rows[end].start + rows[end].count - 1],
+      (s, e) => this.cache.ensureRange(s, e),
+      injector,
+    );
+    this.tableDataSource = new VirtualRowDataSource(
+      this.tableRows,
+      (_rows, start, end) => [start, end],
+      (s, e) => this.cache.ensureRange(s, e),
+      injector,
+    );
+
     void this.subscriptions.refresh();
-    inject(DestroyRef).onDestroy(this.cache.attach());
+    this.cache.setQuery(untracked(() => this.listQuery()));
+    destroyRef.onDestroy(this.cache.attach());
+    destroyRef.onDestroy(
+      observeContainerWidth(host.nativeElement, (cw, vw) => {
+        this.containerWidth.set(cw);
+        this.viewportWidth.set(vw);
+      }),
+    );
+    destroyRef.onDestroy(() => {
+      this.gridDataSource.destroy();
+      this.tableDataSource.destroy();
+    });
+
+    effect(onCleanup => {
+      const q = this.query();
+      if (debounceMs <= 0 || q.trim() === '') {
+        this.committedQuery.set(q);
+        return;
+      }
+      const timer = setTimeout(() => this.committedQuery.set(q), debounceMs);
+      onCleanup(() => clearTimeout(timer));
+    });
+
+    effect(() => {
+      const next = this.listQuery();
+      const changed = this.cache.setQuery(next);
+      if (changed && typeof window !== 'undefined' && window.scrollY > 0) {
+        window.scrollTo({ top: 0 });
+      }
+    });
+
+    let lastRevision = this.cache.revision();
+    effect(() => {
+      const rev = this.cache.revision();
+      if (rev !== lastRevision) {
+        lastRevision = rev;
+        void untracked(() => this.selection.reconcile());
+      }
+    });
   }
 
-  protected percent(s: SeriesListItem) { return s.episodeCount === 0 ? 0 : (s.episodeFileCount / s.episodeCount) * 100; }
+  protected seriesAt(index: number): SeriesListItem | undefined {
+    return this.cache.at(index);
+  }
 
-  protected showMore() { this.limit.update(n => n + GRID_CHUNK); }
+  protected isRowSelected(index: number): boolean {
+    const s = this.cache.at(index);
+    return s != null && this.selection.has(s.id);
+  }
+
+  protected trackGridRow(_index: number, row: SeriesGridRow): number {
+    return row.key;
+  }
+
+  protected trackIndex(_index: number, item: number): number {
+    return item;
+  }
+
+  protected percent(s: SeriesListItem) {
+    return s.episodeCount === 0 ? 0 : (s.episodeFileCount / s.episodeCount) * 100;
+  }
 
   protected setView(mode: ViewMode) {
     this.view.set(mode);
@@ -103,9 +233,8 @@ export class SeriesListPage {
   protected cardClick(event: Event, s: SeriesListItem) {
     if (!this.selecting()) return;
     event.preventDefault();
-    this.selection.toggle(s.id, (event as MouseEvent | KeyboardEvent).shiftKey);
+    void this.selection.toggle(s.id, (event as MouseEvent | KeyboardEvent).shiftKey);
   }
-
 
   protected progressColor(s: SeriesListItem) {
     return !s.monitored ? 'bg-slate-500' : s.episodeFileCount >= s.episodeCount ? 'bg-emerald-500' : 'bg-rose-500';

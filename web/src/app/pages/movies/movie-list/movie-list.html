@@ -1,5 +1,5 @@
 <div class="mb-6 flex flex-wrap items-center gap-3">
-  <h1 class="page-title mr-auto max-sm:basis-full">Movies <span class="ml-1 text-base font-normal text-slate-500">@if (!loading()) { {{ movies().length }} }</span></h1>
+  <h1 class="page-title mr-auto max-sm:basis-full">Movies <span class="ml-1 text-base font-normal text-slate-500">@if (!loading()) { {{ libraryTotal() }} }</span></h1>
   <input class="input min-w-0 flex-1 max-sm:basis-full sm:w-56 sm:flex-none" placeholder="Filter…" type="search" [ngModel]="query()" (ngModelChange)="query.set($event)" />
   <select class="input min-w-0 max-sm:flex-1 sm:w-40" [ngModel]="filter()" (ngModelChange)="filter.set($event)">
     <option value="all">All</option>
@@ -15,7 +15,7 @@
   </select>
   <div class="flex gap-2">
     <kr-view-toggle [mode]="view()" (modeChange)="setView($event)" />
-    @if (view() === 'grid' && !selecting() && movies().length) {
+    @if (view() === 'grid' && !selecting() && libraryTotal()) {
       <button type="button" class="btn-secondary" (click)="selecting.set(true)">Select</button>
     }
   </div>
@@ -33,7 +33,7 @@
 
 @if (loading()) {
   <kr-poster-grid-skeleton />
-} @else if (movies().length === 0) {
+} @else if (libraryTotal() === 0) {
   <div class="card flex flex-col items-center gap-3 px-6 py-16 text-center">
     <p class="text-lg font-medium text-white">Your movie library is empty</p>
     @if (auth.isStaff()) {
@@ -47,135 +47,167 @@
       <p class="max-w-md text-sm text-slate-400">Nothing here yet. Browse <a routerLink="/discover" class="underline">Discover</a> for ideas.</p>
     }
   </div>
-} @else if (filtered().length === 0) {
+} @else if (total() === 0) {
   <p class="py-12 text-center text-slate-500">
-    {{ filter() === 'following' && !query() ? 'You don't follow any movies yet. Open one and press Follow to see it here and in your calendar.' : 'No movies match the filter.' }}
+    {{ filter() === 'following' && !query() ? 'You don’t follow any movies yet. Open one and press Follow to see it here and in your calendar.' : 'No movies match the filter.' }}
   </p>
 } @else {
   @if (showBulk()) {
-    <kr-bulk-actions mediaType="Movie" [selection]="selection" [total]="filtered().length" [closable]="view() === 'grid'" (closed)="stopSelecting()" />
+    <kr-bulk-actions mediaType="Movie" [selection]="selection" [total]="total()" [closable]="view() === 'grid'" (closed)="stopSelecting()" />
   }
   @if (view() === 'table') {
-    <div class="card overflow-x-auto">
-      <table class="table">
-        <thead>
-          <tr>
-            <th class="w-10">
-              <input type="checkbox" class="size-4 accent-accent-500 align-middle" aria-label="Select all"
-                     [checked]="selection.all()" [indeterminate]="selection.count() > 0 && !selection.all()" (change)="selection.toggleAll()" />
-            </th>
-            <th krSort="title" [krSortBy]="sort" [krSortDisabled]="grouping() !== 'none'">Title</th>
-            <th class="max-sm:hidden" krSort="year" [krSortBy]="sort" [krSortDisabled]="grouping() !== 'none'">Year</th>
-            <th krSort="status" [krSortBy]="sort" [krSortDisabled]="grouping() !== 'none'">Status</th>
-            <th class="max-md:hidden">Quality</th>
-            <th class="max-sm:hidden">Following</th>
-          </tr>
-        </thead>
-        @if (visibleGroups(); as groups) {
-          @for (g of groups; track g.group.key) {
-            <tbody>
-              <tr class="hover:bg-transparent">
+    <div class="card overflow-x-auto pb-10">
+      <cdk-virtual-scroll-viewport scrollWindow [itemSize]="tableRowHeight" [minBufferPx]="600" [maxBufferPx]="1200">
+        <table class="table">
+          <thead>
+            <tr>
+              <th class="w-10">
+                <input type="checkbox" class="size-4 accent-accent-500 align-middle" aria-label="Select all"
+                       [checked]="selection.all()" [indeterminate]="selection.count() > 0 && !selection.all()" (change)="selection.toggleAll()" />
+              </th>
+              <th krSort="title" [krSortBy]="sort" [krSortDisabled]="grouping() !== 'none'">Title</th>
+              <th class="max-sm:hidden" krSort="year" [krSortBy]="sort" [krSortDisabled]="grouping() !== 'none'">Year</th>
+              <th krSort="status" [krSortBy]="sort" [krSortDisabled]="grouping() !== 'none'">Status</th>
+              <th class="max-md:hidden">Quality</th>
+              <th class="max-sm:hidden">Following</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr *cdkVirtualFor="let row of tableDataSource; trackBy: trackRow"
+                class="h-11"
+                [class.hover:bg-transparent]="row.kind === 'header'"
+                [class.bg-accent-500/10]="isRowSelected(row)">
+              @if (row.kind === 'header') {
                 <td colspan="6" class="bg-surface-850/60">
-                  <button type="button" class="flex w-full items-center gap-2 text-left" [attr.aria-expanded]="!collapsed().has(g.group.key)" (click)="toggle(g.group.key)">
-                    <svg class="size-4 shrink-0 text-slate-500 transition-transform" [class.-rotate-90]="collapsed().has(g.group.key)" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <button type="button" class="flex w-full items-center gap-2 text-left" [attr.aria-expanded]="!collapsed().has(row.group.key)" (click)="toggle(row.group.key)">
+                    <svg class="size-4 shrink-0 text-slate-500 transition-transform" [class.-rotate-90]="collapsed().has(row.group.key)" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                       <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.17l3.71-3.94a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" clip-rule="evenodd" />
                     </svg>
-                    <span class="min-w-0 truncate font-semibold text-white">{{ g.group.title }}</span>
-                    <span class="shrink-0 text-xs text-slate-500">{{ g.group.downloaded }} / {{ g.group.movies.length }} downloaded</span>
+                    <span class="min-w-0 truncate font-semibold text-white">{{ row.group.title }}</span>
+                    <span class="shrink-0 text-xs text-slate-500">{{ row.group.downloaded }} / {{ row.group.count }} downloaded</span>
                   </button>
                 </td>
-              </tr>
-              @for (m of g.movies; track m.id) {
-                <ng-container *ngTemplateOutlet="row; context: { $implicit: m }" />
+              } @else {
+                @if (movieAt(row.index); as m) {
+                  @let progress = progressOf(m);
+                  @let checked = selection.has(m.id);
+                  <td>
+                    <input type="checkbox" class="size-4 accent-accent-500 align-middle" [attr.aria-label]="'Select ' + m.title" [checked]="checked"
+                           (click)="selection.toggle(m.id, $event.shiftKey)" />
+                  </td>
+                  <td class="max-w-0 min-w-40 w-full">
+                    <a [routerLink]="['/movies', m.id]" class="block truncate font-medium text-slate-100 hover:text-white">{{ m.title }}</a>
+                  </td>
+                  <td class="whitespace-nowrap text-slate-400 max-sm:hidden">{{ m.year || '—' }}</td>
+                  <td class="whitespace-nowrap">
+                    <span class="inline-flex items-center gap-1.5 text-xs"
+                          [class]="m.hasFile ? 'text-emerald-300' : progress != null ? 'text-accent-300' : !m.monitored ? 'text-slate-400' : 'text-rose-300'">
+                      <span class="size-2 rounded-full" [class]="m.hasFile ? 'bg-emerald-500' : progress != null ? 'bg-accent-500' : !m.monitored ? 'bg-slate-500' : 'bg-rose-500'"></span>
+                      {{ statusLabel(m) }}
+                    </span>
+                  </td>
+                  <td class="whitespace-nowrap text-slate-400 max-md:hidden">{{ m.quality || '—' }}</td>
+                  <td class="text-slate-400 max-sm:hidden">
+                    @if (following().has(m.id)) { <span class="badge bg-accent-500/15 text-accent-300">Following</span> }
+                  </td>
+                } @else {
+                  <td colspan="6"><div class="h-4 w-48 animate-pulse rounded bg-surface-800"></div></td>
+                }
               }
-            </tbody>
-          }
-        } @else {
-          <tbody>
-            @for (m of visible(); track m.id) {
-              <ng-container *ngTemplateOutlet="row; context: { $implicit: m }" />
-            }
+            </tr>
           </tbody>
-        }
-      </table>
+        </table>
+      </cdk-virtual-scroll-viewport>
     </div>
-  } @else if (visibleGroups(); as groups) {
-    @for (g of groups; track g.group.key) {
-      <section class="mb-8">
-        <button type="button" class="mb-3 flex w-full items-center gap-2 border-b border-surface-700 pb-2 text-left"
-                [attr.aria-expanded]="!collapsed().has(g.group.key)" (click)="toggle(g.group.key)">
-          <svg class="size-4 shrink-0 text-slate-500 transition-transform" [class.-rotate-90]="collapsed().has(g.group.key)" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.17l3.71-3.94a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" clip-rule="evenodd" />
-          </svg>
-          <h2 class="min-w-0 truncate text-base font-semibold text-white">{{ g.group.title }}</h2>
-          <span class="shrink-0 text-xs text-slate-500">{{ g.group.downloaded }} / {{ g.group.movies.length }} downloaded</span>
-        </button>
-        @if (g.movies.length) {
-          <div [class]="grid">
-            @for (m of g.movies; track m.id) {
-              <ng-container *ngTemplateOutlet="card; context: { $implicit: m }" />
+  } @else if (groups()) {
+    <cdk-virtual-scroll-viewport scrollWindow [krRowHeights]="groupedGridHeights()" [minBufferPx]="600" [maxBufferPx]="1200">
+      <div *cdkVirtualFor="let row of groupedGridDataSource; trackBy: trackRow" class="w-full">
+        @if (row.kind === 'header') {
+          <section class="flex w-full items-end pb-3" [style.height.px]="row.height">
+            <button type="button" class="flex w-full items-center gap-2 border-b border-surface-700 pb-2 text-left"
+                    [attr.aria-expanded]="!collapsed().has(row.group.key)" (click)="toggle(row.group.key)">
+              <svg class="size-4 shrink-0 text-slate-500 transition-transform" [class.-rotate-90]="collapsed().has(row.group.key)" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.17l3.71-3.94a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" clip-rule="evenodd" />
+              </svg>
+              <h2 class="min-w-0 truncate text-base font-semibold text-white">{{ row.group.title }}</h2>
+              <span class="shrink-0 text-xs text-slate-500">{{ row.group.downloaded }} / {{ row.group.count }} downloaded</span>
+            </button>
+          </section>
+        } @else {
+          <div class="grid w-full gap-x-3 pb-4 sm:gap-x-4"
+               [style.grid-template-columns]="gridTemplate()"
+               [style.height.px]="metrics().rowHeight">
+            @for (index of row.indices; track $index) {
+              @if (movieAt(index); as m) {
+                @let progress = progressOf(m);
+                @let checked = selecting() && selection.has(m.id);
+                <a [routerLink]="selecting() ? null : ['/movies', m.id]" class="group min-w-0 cursor-pointer" (click)="cardClick($event, m)"
+                   (keydown.enter)="cardClick($event, m)" (keydown.space)="cardClick($event, m)" [attr.tabindex]="selecting() ? 0 : null"
+                   [attr.role]="selecting() ? 'checkbox' : null" [attr.aria-checked]="selecting() ? checked : null">
+                  <div class="relative overflow-hidden rounded-lg ring-1 transition group-hover:ring-accent-500" [class]="checked ? 'ring-2 ring-accent-400' : 'ring-surface-700'">
+                    <kr-poster [url]="m.posterUrl" [title]="m.title" />
+                    <div class="absolute inset-x-0 bottom-0 h-1"
+                         [class]="m.hasFile ? 'bg-emerald-500' : !m.monitored ? 'bg-slate-500' : progress != null ? 'bg-accent-500' : 'bg-rose-500'"></div>
+                    @if (progress != null) {
+                      <div class="absolute inset-x-2 bottom-3"><kr-progress [value]="progress" /></div>
+                    }
+                    @if (selecting()) {
+                      <span class="absolute top-1.5 left-1.5 flex size-6 items-center justify-center rounded-full border-2 text-sm font-bold sm:top-2 sm:left-2"
+                            [class]="checked ? 'border-accent-400 bg-accent-500 text-slate-950' : 'border-white/70 bg-black/40 text-transparent'" aria-hidden="true">✓</span>
+                    }
+                  </div>
+                  <div class="mt-1.5 truncate text-xs font-medium sm:mt-2 sm:text-sm text-slate-100 group-hover:text-white">{{ m.title }}</div>
+                  <div class="truncate text-[11px] text-slate-500 sm:text-xs">{{ m.year || '—' }}{{ m.quality ? ' · ' + m.quality : '' }}</div>
+                </a>
+              } @else {
+                <div class="min-w-0" aria-hidden="true">
+                  <div class="aspect-[2/3] w-full animate-pulse rounded-lg bg-surface-800"></div>
+                  <div class="mt-1.5 h-4 w-3/4 animate-pulse rounded bg-surface-800 sm:mt-2"></div>
+                  <div class="mt-1 h-3 w-1/2 animate-pulse rounded bg-surface-800"></div>
+                </div>
+              }
             }
           </div>
         }
-      </section>
-    }
+      </div>
+    </cdk-virtual-scroll-viewport>
   } @else {
-    <div [class]="grid">
-      @for (m of visible(); track m.id) {
-        <ng-container *ngTemplateOutlet="card; context: { $implicit: m }" />
-      }
-    </div>
-  }
-  @if (hasMore()) {
-    <div class="h-px" (krNearViewport)="showMore()"></div>
+    <cdk-virtual-scroll-viewport scrollWindow [itemSize]="metrics().rowHeight" [minBufferPx]="600" [maxBufferPx]="1200">
+      <div *cdkVirtualFor="let row of flatGridDataSource; trackBy: trackRow"
+           class="grid w-full gap-x-3 pb-4 sm:gap-x-4"
+           [style.grid-template-columns]="gridTemplate()"
+           [style.height.px]="metrics().rowHeight">
+        @for (index of row.indices; track $index) {
+          @if (movieAt(index); as m) {
+            @let progress = progressOf(m);
+            @let checked = selecting() && selection.has(m.id);
+            <a [routerLink]="selecting() ? null : ['/movies', m.id]" class="group min-w-0 cursor-pointer" (click)="cardClick($event, m)"
+               (keydown.enter)="cardClick($event, m)" (keydown.space)="cardClick($event, m)" [attr.tabindex]="selecting() ? 0 : null"
+               [attr.role]="selecting() ? 'checkbox' : null" [attr.aria-checked]="selecting() ? checked : null">
+              <div class="relative overflow-hidden rounded-lg ring-1 transition group-hover:ring-accent-500" [class]="checked ? 'ring-2 ring-accent-400' : 'ring-surface-700'">
+                <kr-poster [url]="m.posterUrl" [title]="m.title" />
+                <div class="absolute inset-x-0 bottom-0 h-1"
+                     [class]="m.hasFile ? 'bg-emerald-500' : !m.monitored ? 'bg-slate-500' : progress != null ? 'bg-accent-500' : 'bg-rose-500'"></div>
+                @if (progress != null) {
+                  <div class="absolute inset-x-2 bottom-3"><kr-progress [value]="progress" /></div>
+                }
+                @if (selecting()) {
+                  <span class="absolute top-1.5 left-1.5 flex size-6 items-center justify-center rounded-full border-2 text-sm font-bold sm:top-2 sm:left-2"
+                        [class]="checked ? 'border-accent-400 bg-accent-500 text-slate-950' : 'border-white/70 bg-black/40 text-transparent'" aria-hidden="true">✓</span>
+                }
+              </div>
+              <div class="mt-1.5 truncate text-xs font-medium sm:mt-2 sm:text-sm text-slate-100 group-hover:text-white">{{ m.title }}</div>
+              <div class="truncate text-[11px] text-slate-500 sm:text-xs">{{ m.year || '—' }}{{ m.quality ? ' · ' + m.quality : '' }}</div>
+            </a>
+          } @else {
+            <div class="min-w-0" aria-hidden="true">
+              <div class="aspect-[2/3] w-full animate-pulse rounded-lg bg-surface-800"></div>
+              <div class="mt-1.5 h-4 w-3/4 animate-pulse rounded bg-surface-800 sm:mt-2"></div>
+              <div class="mt-1 h-3 w-1/2 animate-pulse rounded bg-surface-800"></div>
+            </div>
+          }
+        }
+      </div>
+    </cdk-virtual-scroll-viewport>
   }
 }
-
-<ng-template #row let-m>
-  @let progress = progressOf(m);
-  @let checked = selection.has(m.id);
-  <tr [class.bg-accent-500/10]="checked">
-    <td>
-      <input type="checkbox" class="size-4 accent-accent-500 align-middle" [attr.aria-label]="'Select ' + m.title" [checked]="checked"
-             (click)="selection.toggle(m.id, $event.shiftKey)" />
-    </td>
-    <td class="max-w-0 min-w-40 w-full">
-      <a [routerLink]="['/movies', m.id]" class="block truncate font-medium text-slate-100 hover:text-white">{{ m.title }}</a>
-    </td>
-    <td class="whitespace-nowrap text-slate-400 max-sm:hidden">{{ m.year || '—' }}</td>
-    <td class="whitespace-nowrap">
-      <span class="inline-flex items-center gap-1.5 text-xs"
-            [class]="m.hasFile ? 'text-emerald-300' : progress != null ? 'text-accent-300' : !m.monitored ? 'text-slate-400' : 'text-rose-300'">
-        <span class="size-2 rounded-full" [class]="m.hasFile ? 'bg-emerald-500' : progress != null ? 'bg-accent-500' : !m.monitored ? 'bg-slate-500' : 'bg-rose-500'"></span>
-        {{ statusLabel(m) }}
-      </span>
-    </td>
-    <td class="whitespace-nowrap text-slate-400 max-md:hidden">{{ m.quality || '—' }}</td>
-    <td class="text-slate-400 max-sm:hidden">
-      @if (following().has(m.id)) { <span class="badge bg-accent-500/15 text-accent-300">Following</span> }
-    </td>
-  </tr>
-</ng-template>
-
-<ng-template #card let-m>
-  @let progress = progressOf(m);
-  @let checked = selecting() && selection.has(m.id);
-  <a [routerLink]="selecting() ? null : ['/movies', m.id]" class="group cursor-pointer" (click)="cardClick($event, m)"
-     (keydown.enter)="cardClick($event, m)" (keydown.space)="cardClick($event, m)" [attr.tabindex]="selecting() ? 0 : null"
-     [attr.role]="selecting() ? 'checkbox' : null" [attr.aria-checked]="selecting() ? checked : null">
-    <div class="relative overflow-hidden rounded-lg ring-1 transition group-hover:ring-accent-500" [class]="checked ? 'ring-2 ring-accent-400' : 'ring-surface-700'">
-      <kr-poster [url]="m.posterUrl" [title]="m.title" />
-      <div class="absolute inset-x-0 bottom-0 h-1"
-           [class]="m.hasFile ? 'bg-emerald-500' : !m.monitored ? 'bg-slate-500' : progress != null ? 'bg-accent-500' : 'bg-rose-500'"></div>
-      @if (progress != null) {
-        <div class="absolute inset-x-2 bottom-3"><kr-progress [value]="progress" /></div>
-      }
-      @if (selecting()) {
-        <span class="absolute top-1.5 left-1.5 flex size-6 items-center justify-center rounded-full border-2 text-sm font-bold sm:top-2 sm:left-2"
-              [class]="checked ? 'border-accent-400 bg-accent-500 text-slate-950' : 'border-white/70 bg-black/40 text-transparent'" aria-hidden="true">✓</span>
-      }
-    </div>
-    <div class="mt-1.5 truncate text-xs font-medium sm:mt-2 sm:text-sm text-slate-100 group-hover:text-white">{{ m.title }}</div>
-    <div class="truncate text-[11px] text-slate-500 sm:text-xs">{{ m.year || '—' }}{{ m.quality ? ' · ' + m.quality : '' }}</div>
-  </a>
-</ng-template>

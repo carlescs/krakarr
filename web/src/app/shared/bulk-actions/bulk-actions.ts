@@ -4,7 +4,7 @@ import { Api, errorMessage } from '../../core/api';
 import { Auth } from '../../core/auth';
 import { Library } from '../../core/library';
 import { BulkResult, MediaType, QualityProfile } from '../../core/models';
-import { Selection } from '../../core/selection';
+import { SelectionModel } from '../../core/selection';
 import { Subscriptions } from '../../core/subscriptions';
 import { Toasts } from '../../core/toast';
 import { Modal } from '../modal/modal';
@@ -25,7 +25,7 @@ const CONFIRM_SEARCH_ABOVE = 25;
 })
 export class BulkActions {
   readonly mediaType = input.required<MediaType>();
-  readonly selection = input.required<Selection>();
+  readonly selection = input.required<SelectionModel>();
   /** Total titles that "Select all" would select. */
   readonly total = input(0);
   /** Shows a "Done" button that emits `closed` (grid selection mode). */
@@ -122,10 +122,7 @@ export class BulkActions {
   }
 
   private reload() {
-    if (this.mediaType() === 'Movie') {
-      return Promise.all([this.library.movies.reload(), this.library.movieCollections.reload()]);
-    }
-    return this.library.series.reload();
+    return this.mediaType() === 'Movie' ? this.library.movies.reload() : this.library.series.reload();
   }
 
   private async run(action: (ids: number[]) => Promise<void>) {

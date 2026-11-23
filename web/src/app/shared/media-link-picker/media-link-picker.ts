@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, inject, input, model, signal } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, effect, inject, input, model, signal } from '@angular/core';
 import { Api, DownloadLink } from '../../core/api';
 
 /** A library item a manual download can be linked to. */
@@ -36,6 +36,10 @@ export function suggestLinks(items: MediaLink[], releaseName: string, limit = 4)
     .map(x => x.item);
 }
 
+const INITIAL_PAGE_SIZE = 200;
+const SEARCH_PAGE_SIZE = 20;
+const SEARCH_DEBOUNCE_MS = 200;
+
 /** Optional "link this download to a movie or series" field for manual downloads. */
 @Component({
   selector: 'kr-media-link-picker',
@@ -53,20 +57,65 @@ export class MediaLinkPicker implements OnInit {
   protected readonly text = signal('');
   protected readonly loading = signal(true);
   private readonly items = signal<MediaLink[]>([]);
-  protected readonly options = computed(() => this.text().trim()
-    ? filterLinks(this.items(), this.text())
-    : suggestLinks(this.items(), this.hint()));
+  private readonly remoteItems = signal<MediaLink[]>([]);
+  private moviesIncomplete = false;
+  private seriesIncomplete = false;
+  private searchGen = 0;
+  private searchTimer?: ReturnType<typeof setTimeout>;
+
+  protected readonly options = computed(() => {
+    const query = this.text().trim();
+    if (!query) return suggestLinks(this.items(), this.hint());
+    const combined = new Map<string, MediaLink>();
+    for (const item of this.items()) combined.set(`${item.kind}:${item.id}`, item);
+    for (const item of this.remoteItems()) combined.set(`${item.kind}:${item.id}`, item);
+    return filterLinks([...combined.values()], query);
+  });
+
+  constructor() {
+    const destroyRef = inject(DestroyRef);
+    destroyRef.onDestroy(() => clearTimeout(this.searchTimer));
+
+    effect(() => {
+      const q = this.text().trim();
+      clearTimeout(this.searchTimer);
+      if (!q || (!this.moviesIncomplete && !this.seriesIncomplete)) {
+        this.remoteItems.set([]);
+        return;
+      }
+      const gen = ++this.searchGen;
+      this.searchTimer = setTimeout(() => {
+        void this.searchRemote(q, gen);
+      }, SEARCH_DEBOUNCE_MS);
+    });
+  }
 
   async ngOnInit() {
+    const empty = { items: [], page: 1, pageSize: INITIAL_PAGE_SIZE, total: 0, libraryTotal: 0 };
     const [movies, series] = await Promise.all([
-      this.api.movies().catch(() => []),
-      this.api.seriesList().catch(() => []),
+      this.api.movies({ pageSize: INITIAL_PAGE_SIZE }).catch(() => empty),
+      this.api.seriesList({ pageSize: INITIAL_PAGE_SIZE }).catch(() => empty),
     ]);
+    this.moviesIncomplete = movies.total > movies.items.length;
+    this.seriesIncomplete = series.total > series.items.length;
     this.items.set([
-      ...movies.map(m => ({ kind: 'movie' as const, id: m.id, title: m.title, year: m.year })),
-      ...series.map(s => ({ kind: 'series' as const, id: s.id, title: s.title, year: s.year })),
+      ...movies.items.map(m => ({ kind: 'movie' as const, id: m.id, title: m.title, year: m.year })),
+      ...series.items.map(s => ({ kind: 'series' as const, id: s.id, title: s.title, year: s.year })),
     ]);
     this.loading.set(false);
+  }
+
+  private async searchRemote(q: string, gen: number) {
+    const empty = { items: [], page: 1, pageSize: SEARCH_PAGE_SIZE, total: 0, libraryTotal: 0 };
+    const [movies, series] = await Promise.all([
+      this.moviesIncomplete ? this.api.movies({ q, pageSize: SEARCH_PAGE_SIZE }).catch(() => empty) : Promise.resolve(empty),
+      this.seriesIncomplete ? this.api.seriesList({ q, pageSize: SEARCH_PAGE_SIZE }).catch(() => empty) : Promise.resolve(empty),
+    ]);
+    if (gen !== this.searchGen) return;
+    this.remoteItems.set([
+      ...movies.items.map(m => ({ kind: 'movie' as const, id: m.id, title: m.title, year: m.year })),
+      ...series.items.map(s => ({ kind: 'series' as const, id: s.id, title: s.title, year: s.year })),
+    ]);
   }
 
   protected pick(o: MediaLink) {

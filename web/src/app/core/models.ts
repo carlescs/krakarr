@@ -90,6 +90,18 @@ export interface MovieListItem {
   id: number; title: string; year: number; posterUrl?: string | null; monitored: boolean; hasFile: boolean;
   quality?: string | null; downloadProgress?: number | null; collectionId?: number | null;
 }
+/** Summary of one collection section (or "Other movies") matching the current movie list filter. */
+export interface MovieCollectionGroup { key: string; collectionId: number | null; title: string; count: number; downloaded: number; }
+export type MovieFilter = 'all' | 'following' | 'missing' | 'downloading' | 'downloaded' | 'unmonitored';
+export type MovieGrouping = 'none' | 'collection';
+export type MovieSortKey = 'title' | 'year' | 'status';
+export interface MovieListQuery {
+  page?: number; pageSize?: number; q?: string; filter?: MovieFilter; sort?: MovieSortKey; desc?: boolean; groupBy?: MovieGrouping;
+}
+/** One page of the movie library list (GET /movies). */
+export interface MovieListPage {
+  items: MovieListItem[]; page: number; pageSize: number; total: number; libraryTotal: number; groups?: MovieCollectionGroup[] | null;
+}
 /** Outcome of a bulk action: how many titles it applied to, and why it couldn't for the rest. */
 export interface BulkResult { affected: number; errors: string[]; }
 /** A TMDB collection ("The Lord of the Rings Collection") with at least one movie in the library. */
@@ -165,6 +177,15 @@ export interface Series {
 export interface SeriesListItem {
   id: number; title: string; year: number; posterUrl?: string | null; status: SeriesStatus; monitored: boolean;
   episodeCount: number; episodeFileCount: number; nextAiring?: string | null; downloadingCount: number;
+}
+export type SeriesFilter = 'all' | 'following' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
+export type SeriesSortKey = 'title' | 'year' | 'status' | 'episodes' | 'nextAiring';
+export interface SeriesListQuery {
+  page?: number; pageSize?: number; q?: string; filter?: SeriesFilter; sort?: SeriesSortKey; desc?: boolean;
+}
+/** One page of the series library list (GET /series). */
+export interface SeriesListPage {
+  items: SeriesListItem[]; page: number; pageSize: number; total: number; libraryTotal: number;
 }
 export interface EpisodeFile { id: number; relativePath: string; size: number; quality: string; releaseGroup?: string; dateAdded: string; }
 export interface Episode {

@@ -30,8 +30,8 @@ describe('SearchPage', () => {
           { type: 'done', indexers: [nyaa, broken], order: ['g1'] },
         ),
         grabRelease: async () => undefined,
-        movies: async () => [],
-        seriesList: async () => [],
+        movies: async () => ({ items: [], page: 1, pageSize: 200, total: 0, libraryTotal: 0 }),
+        seriesList: async () => ({ items: [], page: 1, pageSize: 200, total: 0, libraryTotal: 0 }),
       }),
     });
     const fixture = TestBed.createComponent(SearchPage);

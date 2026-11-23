@@ -59,6 +59,18 @@ public sealed record MovieDto
 /// <summary>Row of the library grid: only what the movie list shows, so the whole library stays a small payload.</summary>
 public sealed record MovieListItemDto(int Id, string Title, int Year, string? PosterUrl, bool Monitored, bool HasFile, string? Quality, double? DownloadProgress, int? CollectionId);
 
+/// <summary>Summary of one collection section (or "Other movies") matching the current movie list filter.</summary>
+public sealed record MovieCollectionGroupDto(string Key, int? CollectionId, string Title, int Count, int Downloaded);
+
+/// <summary>One page of the movie library list.</summary>
+public sealed record MovieListPageDto(
+    IReadOnlyList<MovieListItemDto> Items,
+    int Page,
+    int PageSize,
+    int Total,
+    int LibraryTotal,
+    IReadOnlyList<MovieCollectionGroupDto>? Groups = null);
+
 public sealed record MovieCollectionDto(int Id, int TmdbId, string Name, string? PosterUrl);
 
 /// <param name="Languages">Wanted audio languages, most preferred first; null = use the global default.</param>
@@ -73,22 +85,68 @@ public sealed record GrabMovieReleaseRequest(ReleaseInfo Release);
 
 public static class MovieEndpoints
 {
+    public const int DefaultPageSize = 60;
+    public const int MaxPageSize = 200;
+
     public static IEndpointRouteBuilder MapMovieEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/movies").WithTags("Movies");
 
-        group.MapGet("/", async (KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
+        group.MapGet("/", async (int? page, int? pageSize, string? q, string? filter, string? sort, bool? desc, string? groupBy,
+            HttpContext http, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
         {
-            // The grid only needs a handful of columns: skip overviews, paths and release dates of the whole library.
-            var rows = await db.Movies.AsNoTracking().OrderBy(m => m.SortTitle)
-                .Select(m => new { m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, m.CollectionId, QualityId = m.MovieFile != null ? m.MovieFile.QualityId : (int?)null })
-                .ToListAsync(ct);
+            var currentPage = Math.Max(1, page ?? 1);
+            var size = Math.Clamp(pageSize ?? DefaultPageSize, 1, MaxPageSize);
             var progress = ActiveProgress(engine);
-            return rows.Select(m => new MovieListItemDto(
-                m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, m.QualityId is not null,
-                m.QualityId is { } q ? Qualities.FindById(q).Name : null,
-                progress.TryGetValue(m.Id, out var p) ? p : null,
-                m.CollectionId));
+            var downloadingIds = progress.Keys.ToList();
+            var userId = MediaSubscriptions.GetUserId(http.User);
+            var grouped = string.Equals(groupBy, "collection", StringComparison.OrdinalIgnoreCase);
+
+            var (filtered, isFiltered) = FilterMovies(db, q, filter, userId, downloadingIds);
+            var total = await filtered.CountAsync(ct);
+            var libraryTotal = isFiltered ? await db.Movies.CountAsync(ct) : total;
+
+            List<MovieCollectionGroupDto>? groups = null;
+            if (grouped)
+            {
+                groups = await LoadGroupsAsync(db, filtered, ct);
+            }
+
+            var skip = (currentPage - 1) * size;
+            IReadOnlyList<MovieListItemDto> items;
+            if (skip >= total)
+            {
+                items = [];
+            }
+            else
+            {
+                // The grid only needs a handful of columns: skip overviews, paths and release dates.
+                var rows = await SortMovies(filtered, sort, desc == true, grouped, downloadingIds)
+                    .Skip(skip).Take(size)
+                    .Select(m => new { m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, m.CollectionId, QualityId = m.MovieFile != null ? m.MovieFile.QualityId : (int?)null })
+                    .ToListAsync(ct);
+                items = rows.Select(m => new MovieListItemDto(
+                    m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, m.QualityId is not null,
+                    m.QualityId is { } qual ? Qualities.FindById(qual).Name : null,
+                    progress.TryGetValue(m.Id, out var p) ? p : null,
+                    m.CollectionId)).ToList();
+            }
+
+            return new MovieListPageDto(items, currentPage, size, total, libraryTotal, groups);
+        });
+
+        // Matching movie ids in display order, for "Select all" and Shift+click range selection across pages.
+        group.MapGet("/ids", async (string? q, string? filter, string? sort, bool? desc, string? groupBy,
+            HttpContext http, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
+        {
+            var downloadingIds = ActiveProgress(engine).Keys.ToList();
+            var userId = MediaSubscriptions.GetUserId(http.User);
+            var grouped = string.Equals(groupBy, "collection", StringComparison.OrdinalIgnoreCase);
+            var (filtered, _) = FilterMovies(db, q, filter, userId, downloadingIds);
+            return await SortMovies(filtered, sort, desc == true, grouped, downloadingIds)
+                .Select(m => m.Id)
+                .Take(BulkLimits.MaxIds)
+                .ToListAsync(ct);
         });
 
         // Collections that have movies in the library, for grouping the movie list.
@@ -442,6 +500,131 @@ public static class MovieEndpoints
             .Where(s => s.MovieId is not null && !s.Imported)
             .GroupBy(s => s.MovieId!.Value)
             .ToDictionary(g => g.Key, g => g.Max(s => s.Progress));
+
+    private static (IQueryable<Movie> Query, bool IsFiltered) FilterMovies(
+        KrakarrDbContext db, string? q, string? filter, int? userId, IReadOnlyCollection<int> downloadingIds)
+    {
+        IQueryable<Movie> query = db.Movies.AsNoTracking();
+        var isFiltered = false;
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var term = q.Trim().ToLowerInvariant();
+            query = query.Where(m => m.Title.ToLower().Contains(term) || (m.Collection != null && m.Collection.Name.ToLower().Contains(term)));
+            isFiltered = true;
+        }
+
+        switch (filter?.ToLowerInvariant())
+        {
+            case "following":
+                isFiltered = true;
+                query = userId is { } uid
+                    ? query.Where(m => db.MediaSubscriptions.Any(s => s.UserId == uid && s.MovieId == m.Id))
+                    : query.Where(_ => false);
+                break;
+            case "missing":
+                isFiltered = true;
+                query = query.Where(m => m.Monitored && m.MovieFileId == null);
+                break;
+            case "downloading":
+                isFiltered = true;
+                query = downloadingIds.Count == 0
+                    ? query.Where(_ => false)
+                    : query.Where(m => downloadingIds.Contains(m.Id));
+                break;
+            case "downloaded":
+                isFiltered = true;
+                query = query.Where(m => m.MovieFileId != null);
+                break;
+            case "unmonitored":
+                isFiltered = true;
+                query = query.Where(m => !m.Monitored);
+                break;
+        }
+
+        return (query, isFiltered);
+    }
+
+    private static IOrderedQueryable<Movie> SortMovies(
+        IQueryable<Movie> query, string? sort, bool desc, bool groupByCollection, IReadOnlyCollection<int> downloadingIds)
+    {
+        if (groupByCollection)
+        {
+            return query
+                .OrderBy(m => m.CollectionId == null ? 1 : 0)
+                .ThenBy(m => m.Collection != null ? m.Collection.SortName : string.Empty)
+                .ThenBy(m => m.CollectionId)
+                .ThenBy(m => m.CollectionId != null ? (m.Year == 0 ? 9999 : m.Year) : 0)
+                .ThenBy(m => m.CollectionId != null ? m.Title : m.SortTitle)
+                .ThenBy(m => m.Id);
+        }
+
+        switch (sort?.ToLowerInvariant())
+        {
+            case "year":
+            {
+                // Unknown years (0) always go last, whatever the sort direction.
+                var byKnown = query.OrderBy(m => m.Year == 0 ? 1 : 0);
+                return (desc ? byKnown.ThenByDescending(m => m.Year) : byKnown.ThenBy(m => m.Year))
+                    .ThenBy(m => m.SortTitle)
+                    .ThenBy(m => m.Id);
+            }
+            case "status":
+            {
+                // Status order: missing (0), unmonitored (1), downloading (2), downloaded (3).
+                if (downloadingIds.Count > 0)
+                {
+                    var byStatus = desc
+                        ? query.OrderByDescending(m => m.MovieFileId != null ? 3 : downloadingIds.Contains(m.Id) ? 2 : !m.Monitored ? 1 : 0)
+                        : query.OrderBy(m => m.MovieFileId != null ? 3 : downloadingIds.Contains(m.Id) ? 2 : !m.Monitored ? 1 : 0);
+                    return byStatus.ThenBy(m => m.SortTitle).ThenBy(m => m.Id);
+                }
+
+                var bySimpleStatus = desc
+                    ? query.OrderByDescending(m => m.MovieFileId != null ? 3 : !m.Monitored ? 1 : 0)
+                    : query.OrderBy(m => m.MovieFileId != null ? 3 : !m.Monitored ? 1 : 0);
+                return bySimpleStatus.ThenBy(m => m.SortTitle).ThenBy(m => m.Id);
+            }
+            default:
+                return desc
+                    ? query.OrderByDescending(m => m.SortTitle).ThenByDescending(m => m.Id)
+                    : query.OrderBy(m => m.SortTitle).ThenBy(m => m.Id);
+        }
+    }
+
+    private static async Task<List<MovieCollectionGroupDto>> LoadGroupsAsync(KrakarrDbContext db, IQueryable<Movie> filtered, CancellationToken ct)
+    {
+        var counts = await filtered
+            .GroupBy(m => m.CollectionId)
+            .Select(g => new { CollectionId = g.Key, Count = g.Count(), Downloaded = g.Count(m => m.MovieFileId != null) })
+            .ToListAsync(ct);
+
+        if (counts.Count == 0) return [];
+
+        var byId = counts.Where(g => g.CollectionId is not null).ToDictionary(g => g.CollectionId!.Value);
+        var result = new List<MovieCollectionGroupDto>(counts.Count);
+        if (byId.Count > 0)
+        {
+            var ids = byId.Keys.ToList();
+            var collections = await db.MovieCollections.AsNoTracking()
+                .Where(c => ids.Contains(c.Id))
+                .OrderBy(c => c.SortName).ThenBy(c => c.Id)
+                .Select(c => new { c.Id, c.Name })
+                .ToListAsync(ct);
+            foreach (var c in collections)
+            {
+                var stats = byId[c.Id];
+                result.Add(new MovieCollectionGroupDto($"c{c.Id}", c.Id, c.Name, stats.Count, stats.Downloaded));
+            }
+        }
+
+        if (counts.FirstOrDefault(g => g.CollectionId is null) is { } other)
+        {
+            result.Add(new MovieCollectionGroupDto("other", null, "Other movies", other.Count, other.Downloaded));
+        }
+
+        return result;
+    }
 
     private static async Task<string?> ReleaseRegionAsync(Krakarr.Data.ISettingsService settings, CancellationToken ct) =>
         MovieReleases.NormalizeRegion((await settings.GetAsync<Krakarr.Core.Configuration.MetadataSettings>(ct)).ReleaseRegion);

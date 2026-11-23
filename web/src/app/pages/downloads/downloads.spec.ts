@@ -149,7 +149,8 @@ describe('DownloadsPage', () => {
   });
 
   it('adds a magnet link', async () => {
-    const { api, fixture, el } = await render({ addMagnet: async () => undefined, movies: async () => [], seriesList: async () => [] });
+    const empty = { items: [], page: 1, pageSize: 200, total: 0, libraryTotal: 0 };
+    const { api, fixture, el } = await render({ addMagnet: async () => undefined, movies: async () => empty, seriesList: async () => empty });
     button(el, '+ Add torrent').click();
     await settle(fixture);
     type(el, 'textarea', 'magnet:?xt=urn:btih:abc&dn=Some.Movie');

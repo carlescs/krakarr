@@ -51,6 +51,14 @@ public sealed record SeriesListItemDto(
     int Id, string Title, int Year, string? PosterUrl, SeriesStatus Status, bool Monitored,
     int EpisodeCount, int EpisodeFileCount, DateOnly? NextAiring, int DownloadingCount);
 
+/// <summary>One page of the series library list.</summary>
+public sealed record SeriesListPageDto(
+    IReadOnlyList<SeriesListItemDto> Items,
+    int Page,
+    int PageSize,
+    int Total,
+    int LibraryTotal);
+
 public sealed record EpisodeFileDto(int Id, string RelativePath, long Size, string Quality, string? ReleaseGroup, DateTimeOffset DateAdded);
 
 public sealed record EpisodeDto(
@@ -71,36 +79,96 @@ public sealed record GrabEpisodeReleaseRequest(ReleaseInfo Release);
 
 public static class SeriesEndpoints
 {
+    public const int DefaultPageSize = 60;
+    public const int MaxPageSize = 200;
+
     public static IEndpointRouteBuilder MapSeriesEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/series").WithTags("Series");
 
-        group.MapGet("/", async (KrakarrDbContext db, ITorrentEngine engine, TimeProvider time, CancellationToken ct) =>
+        group.MapGet("/", async (int? page, int? pageSize, string? q, string? filter, string? sort, bool? desc,
+            HttpContext http, KrakarrDbContext db, ITorrentEngine engine, TimeProvider time, CancellationToken ct) =>
         {
-            // Aggregate the episode counts in SQL (one row per show) rather than reading every episode of the library.
+            var currentPage = Math.Max(1, page ?? 1);
+            var size = Math.Clamp(pageSize ?? DefaultPageSize, 1, MaxPageSize);
             var today = Today(time);
-            var counts = await db.Episodes.AsNoTracking()
-                .Where(e => e.SeasonNumber > 0)
-                .GroupBy(e => e.SeriesId)
-                .Select(g => new
-                {
-                    SeriesId = g.Key,
-                    EpisodeCount = g.Count(e => e.EpisodeFileId != null || (e.Monitored && e.AirDate != null && e.AirDate <= today)),
-                    EpisodeFileCount = g.Count(e => e.EpisodeFileId != null),
-                    NextAiring = g.Where(e => e.AirDate > today).Min(e => e.AirDate),
-                })
-                .ToDictionaryAsync(x => x.SeriesId, ct);
-            var list = await db.Series.AsNoTracking().OrderBy(s => s.SortTitle)
-                .Select(s => new { s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored })
-                .ToListAsync(ct);
-            var downloading = DownloadingBySeries(engine);
-            return list.Select(s =>
+            var userId = MediaSubscriptions.GetUserId(http.User);
+
+            var (filtered, isFiltered) = FilterSeries(db, q, filter, userId, today);
+            var total = await filtered.CountAsync(ct);
+            var libraryTotal = isFiltered ? await db.Series.CountAsync(ct) : total;
+
+            var skip = (currentPage - 1) * size;
+            IReadOnlyList<SeriesListItemDto> items;
+            if (skip >= total)
             {
-                var c = counts.GetValueOrDefault(s.Id);
-                return new SeriesListItemDto(
-                    s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored,
-                    c?.EpisodeCount ?? 0, c?.EpisodeFileCount ?? 0, c?.NextAiring, downloading.GetValueOrDefault(s.Id));
-            });
+                items = [];
+            }
+            else
+            {
+                var downloading = DownloadingBySeries(engine);
+                var sortKey = sort?.ToLowerInvariant();
+                if (sortKey is "episodes" or "nextairing")
+                {
+                    var rows = await SortSeriesByEpisodeStats(filtered, sortKey, desc == true, today)
+                        .Skip(skip).Take(size)
+                        .ToListAsync(ct);
+                    items = rows.Select(s => new SeriesListItemDto(
+                        s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored,
+                        s.EpisodeCount, s.EpisodeFileCount, s.NextAiring, downloading.GetValueOrDefault(s.Id))).ToList();
+                }
+                else
+                {
+                    var list = await SortSeries(filtered, sortKey, desc == true)
+                        .Skip(skip).Take(size)
+                        .Select(s => new { s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored })
+                        .ToListAsync(ct);
+                    var pageIds = list.Select(s => s.Id).ToList();
+                    // Aggregate episode counts in SQL for only the shows on this page.
+                    var counts = pageIds.Count == 0
+                        ? new Dictionary<int, SeriesEpisodeStats>()
+                        : await db.Episodes.AsNoTracking()
+                            .Where(e => e.SeasonNumber > 0 && pageIds.Contains(e.SeriesId))
+                            .GroupBy(e => e.SeriesId)
+                            .Select(g => new SeriesEpisodeStats(
+                                g.Key,
+                                g.Count(e => e.EpisodeFileId != null || (e.Monitored && e.AirDate != null && e.AirDate <= today)),
+                                g.Count(e => e.EpisodeFileId != null),
+                                g.Where(e => e.AirDate > today).Min(e => e.AirDate)))
+                            .ToDictionaryAsync(x => x.SeriesId, ct);
+                    items = list.Select(s =>
+                    {
+                        var c = counts.GetValueOrDefault(s.Id);
+                        return new SeriesListItemDto(
+                            s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored,
+                            c?.EpisodeCount ?? 0, c?.EpisodeFileCount ?? 0, c?.NextAiring, downloading.GetValueOrDefault(s.Id));
+                    }).ToList();
+                }
+            }
+
+            return new SeriesListPageDto(items, currentPage, size, total, libraryTotal);
+        });
+
+        // Matching series ids in display order, for "Select all" and Shift+click range selection across pages.
+        group.MapGet("/ids", async (string? q, string? filter, string? sort, bool? desc,
+            HttpContext http, KrakarrDbContext db, TimeProvider time, CancellationToken ct) =>
+        {
+            var today = Today(time);
+            var userId = MediaSubscriptions.GetUserId(http.User);
+            var (filtered, _) = FilterSeries(db, q, filter, userId, today);
+            var sortKey = sort?.ToLowerInvariant();
+            if (sortKey is "episodes" or "nextairing")
+            {
+                return await SortSeriesByEpisodeStats(filtered, sortKey, desc == true, today)
+                    .Select(s => s.Id)
+                    .Take(BulkLimits.MaxIds)
+                    .ToListAsync(ct);
+            }
+
+            return await SortSeries(filtered, sortKey, desc == true)
+                .Select(s => s.Id)
+                .Take(BulkLimits.MaxIds)
+                .ToListAsync(ct);
         });
 
         // Library import: scan a root folder for existing show folders, then import selected ones in place.
@@ -492,6 +560,114 @@ public static class SeriesEndpoints
     private static Dictionary<int, int> DownloadingBySeries(ITorrentEngine engine) =>
         engine.GetStatuses().Where(s => s.SeriesId is not null && !s.Imported)
             .GroupBy(s => s.SeriesId!.Value).ToDictionary(g => g.Key, g => g.Count());
+
+    private sealed record SeriesEpisodeStats(int SeriesId, int EpisodeCount, int EpisodeFileCount, DateOnly? NextAiring);
+
+    private sealed record SeriesWithEpisodeStats
+    {
+        public int Id { get; init; }
+        public required string Title { get; init; }
+        public required string SortTitle { get; init; }
+        public int Year { get; init; }
+        public string? PosterUrl { get; init; }
+        public SeriesStatus Status { get; init; }
+        public bool Monitored { get; init; }
+        public int EpisodeCount { get; init; }
+        public int EpisodeFileCount { get; init; }
+        public DateOnly? NextAiring { get; init; }
+    }
+
+    private static (IQueryable<Core.Domain.Series> Query, bool IsFiltered) FilterSeries(
+        KrakarrDbContext db, string? q, string? filter, int? userId, DateOnly today)
+    {
+        IQueryable<Core.Domain.Series> query = db.Series.AsNoTracking();
+        var isFiltered = false;
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var term = q.Trim().ToLowerInvariant();
+            query = query.Where(s => s.Title.ToLower().Contains(term));
+            isFiltered = true;
+        }
+
+        switch (filter?.ToLowerInvariant())
+        {
+            case "following":
+                isFiltered = true;
+                query = userId is { } uid
+                    ? query.Where(s => db.MediaSubscriptions.Any(sub => sub.UserId == uid && sub.SeriesId == s.Id))
+                    : query.Where(_ => false);
+                break;
+            case "missing":
+                isFiltered = true;
+                query = query.Where(s => s.Monitored && s.Episodes.Any(e => e.SeasonNumber > 0 && e.EpisodeFileId == null && e.Monitored && e.AirDate != null && e.AirDate <= today));
+                break;
+            case "continuing":
+                isFiltered = true;
+                query = query.Where(s => s.Status != SeriesStatus.Ended);
+                break;
+            case "ended":
+                isFiltered = true;
+                query = query.Where(s => s.Status == SeriesStatus.Ended);
+                break;
+            case "unmonitored":
+                isFiltered = true;
+                query = query.Where(s => !s.Monitored);
+                break;
+        }
+
+        return (query, isFiltered);
+    }
+
+    private static IOrderedQueryable<Core.Domain.Series> SortSeries(IQueryable<Core.Domain.Series> query, string? sort, bool desc) =>
+        sort switch
+        {
+            "year" => (desc
+                    ? query.OrderBy(s => s.Year == 0 ? 1 : 0).ThenByDescending(s => s.Year)
+                    : query.OrderBy(s => s.Year == 0 ? 1 : 0).ThenBy(s => s.Year))
+                .ThenBy(s => s.SortTitle)
+                .ThenBy(s => s.Id),
+            "status" => (desc
+                    ? query.OrderByDescending(s => s.Status == SeriesStatus.Ended ? 1 : 0)
+                    : query.OrderBy(s => s.Status == SeriesStatus.Ended ? 1 : 0))
+                .ThenBy(s => s.SortTitle)
+                .ThenBy(s => s.Id),
+            _ => desc
+                ? query.OrderByDescending(s => s.SortTitle).ThenByDescending(s => s.Id)
+                : query.OrderBy(s => s.SortTitle).ThenBy(s => s.Id),
+        };
+
+    private static IOrderedQueryable<SeriesWithEpisodeStats> SortSeriesByEpisodeStats(
+        IQueryable<Core.Domain.Series> query, string sort, bool desc, DateOnly today)
+    {
+        var projected = query.Select(s => new SeriesWithEpisodeStats
+        {
+            Id = s.Id,
+            Title = s.Title,
+            SortTitle = s.SortTitle,
+            Year = s.Year,
+            PosterUrl = s.PosterUrl,
+            Status = s.Status,
+            Monitored = s.Monitored,
+            EpisodeCount = s.Episodes.Count(e => e.SeasonNumber > 0 && (e.EpisodeFileId != null || (e.Monitored && e.AirDate != null && e.AirDate <= today))),
+            EpisodeFileCount = s.Episodes.Count(e => e.SeasonNumber > 0 && e.EpisodeFileId != null),
+            NextAiring = s.Episodes.Where(e => e.SeasonNumber > 0 && e.AirDate > today).Min(e => e.AirDate),
+        });
+
+        if (sort == "episodes")
+        {
+            var byCompletion = desc
+                ? projected.OrderByDescending(x => x.EpisodeCount == 0 ? 0.0 : (double)x.EpisodeFileCount / x.EpisodeCount)
+                : projected.OrderBy(x => x.EpisodeCount == 0 ? 0.0 : (double)x.EpisodeFileCount / x.EpisodeCount);
+            return byCompletion.ThenBy(x => x.SortTitle).ThenBy(x => x.Id);
+        }
+
+        // nextAiring: shows with no upcoming episode always go last.
+        var byKnown = projected.OrderBy(x => x.NextAiring == null ? 1 : 0);
+        return (desc ? byKnown.ThenByDescending(x => x.NextAiring) : byKnown.ThenBy(x => x.NextAiring))
+            .ThenBy(x => x.SortTitle)
+            .ThenBy(x => x.Id);
+    }
 
     private static async Task<Dictionary<int, double>> EpisodeProgressAsync(KrakarrDbContext db, ITorrentEngine engine, int seriesId, CancellationToken ct)
     {

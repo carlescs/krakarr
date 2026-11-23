@@ -6,7 +6,7 @@ import { Auth } from './auth';
 import { readNdjson } from './ndjson';
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
-  IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, WantedSubtitleLanguages, Episode, EpisodeDetails, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListItem, MovieLookup, Quality, QualityProfile,
+  IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, WantedSubtitleLanguages, Episode, EpisodeDetails, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
   DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction,
 } from './models';
@@ -162,7 +162,10 @@ export class Api {
   removeDownload(hash: string, deleteData: boolean) { return this.delete<void>(`downloads/${hash}`, { deleteData }); }
 
   // Movies
-  movies() { return this.get<MovieListItem[]>('movies'); }
+  movies(query?: MovieListQuery) { return this.get<MovieListPage>('movies', query as Record<string, string | number | boolean | null | undefined>); }
+  movieIds(query?: Omit<MovieListQuery, 'page' | 'pageSize'>) {
+    return this.get<number[]>('movies/ids', query as Record<string, string | number | boolean | null | undefined>);
+  }
   movieCollections() { return this.get<MovieCollection[]>('movies/collections'); }
   movie(id: number) { return this.get<Movie>(`movies/${id}`); }
   /** The movie's Jellyfin page; null (HTTP 204) when Jellyfin isn't set up or doesn't have it. */
@@ -236,7 +239,10 @@ export class Api {
   }
 
   // Series
-  seriesList() { return this.get<SeriesListItem[]>('series'); }
+  seriesList(query?: SeriesListQuery) { return this.get<SeriesListPage>('series', query as Record<string, string | number | boolean | null | undefined>); }
+  seriesIds(query?: Omit<SeriesListQuery, 'page' | 'pageSize'>) {
+    return this.get<number[]>('series/ids', query as Record<string, string | number | boolean | null | undefined>);
+  }
   series(id: number) { return this.get<Series>(`series/${id}`); }
   /** The series' Jellyfin page; null (HTTP 204) when Jellyfin isn't set up or doesn't have it. */
   seriesJellyfinLink(id: number) { return this.get<{ url: string } | null>(`series/${id}/jellyfin`); }

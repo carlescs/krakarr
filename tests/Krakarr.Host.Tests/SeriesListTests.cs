@@ -46,15 +46,16 @@ public sealed class SeriesListTests : IClassFixture<KrakarrFactory>
         var url = status.GetProperty("setupRequired").GetBoolean() ? "/api/v1/auth/setup" : "/api/v1/auth/login";
         (await client.PostAsJsonAsync(url, new { username = "admin", password = "correct-horse", setupToken = KrakarrFactory.TestSetupToken }, ct)).EnsureSuccessStatusCode();
 
-        var list = await client.GetFromJsonAsync<JsonElement[]>("/api/v1/series", ct);
-        var show = list!.Single(s => s.GetProperty("title").GetString() == "Counted Show");
+        var page = await client.GetFromJsonAsync<JsonElement>("/api/v1/series", ct);
+        var list = page.GetProperty("items").EnumerateArray().ToArray();
+        var show = list.Single(s => s.GetProperty("title").GetString() == "Counted Show");
         Assert.Equal(3, show.GetProperty("episodeCount").GetInt32());
         Assert.Equal(2, show.GetProperty("episodeFileCount").GetInt32());
         Assert.Equal("2099-01-01", show.GetProperty("nextAiring").GetString());
         Assert.Equal(0, show.GetProperty("downloadingCount").GetInt32());
         Assert.False(show.TryGetProperty("seasons", out _), "the list must stay slim");
 
-        var empty = list!.Single(s => s.GetProperty("title").GetString() == "Empty Show");
+        var empty = list.Single(s => s.GetProperty("title").GetString() == "Empty Show");
         Assert.Equal(0, empty.GetProperty("episodeCount").GetInt32());
         Assert.Equal(JsonValueKind.Null, empty.GetProperty("nextAiring").ValueKind);
 
@@ -67,6 +68,79 @@ public sealed class SeriesListTests : IClassFixture<KrakarrFactory>
         var seasons = single.GetProperty("seasons").EnumerateArray()
             .Select(s => $"{s.GetProperty("seasonNumber").GetInt32()}:{s.GetProperty("episodeCount").GetInt32()}/{s.GetProperty("episodeFileCount").GetInt32()}/{s.GetProperty("totalEpisodeCount").GetInt32()}/{s.GetProperty("sizeOnDisk").GetInt64()}");
         Assert.Equal(["0:1/1/1/5", "1:3/2/3/100", "2:0/0/1/0"], seasons);
+    }
+
+    [Fact]
+    public async Task Paginates_filters_sorts_and_lists_ids()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        int darkId, lostId, severanceId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+            db.Series.RemoveRange(db.Series);
+            await db.SaveChangesAsync(ct);
+
+            var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+            var dark = new Krakarr.Core.Domain.Series { TmdbId = 81, Title = "Dark", SortTitle = "dark", Year = 2017, Status = SeriesStatus.Ended, Path = "/tv/dark", QualityProfileId = profile };
+            var lost = new Krakarr.Core.Domain.Series { TmdbId = 82, Title = "Lost", SortTitle = "lost", Year = 2004, Status = SeriesStatus.Ended, Monitored = false, Path = "/tv/lost", QualityProfileId = profile };
+            var severance = new Krakarr.Core.Domain.Series { TmdbId = 83, Title = "Severance", SortTitle = "severance", Year = 2022, Status = SeriesStatus.Continuing, Path = "/tv/severance", QualityProfileId = profile };
+            db.Series.AddRange(dark, lost, severance);
+            await db.SaveChangesAsync(ct);
+
+            var darkFile = new EpisodeFile { SeriesId = dark.Id, SeasonNumber = 1, RelativePath = "S01E01.mkv", Size = 10 };
+            dark.Episodes.Add(new Episode { SeasonNumber = 1, EpisodeNumber = 1, AirDate = new DateOnly(2017, 12, 1), EpisodeFile = darkFile });
+
+            var sevFile = new EpisodeFile { SeriesId = severance.Id, SeasonNumber = 1, RelativePath = "S01E01.mkv", Size = 10 };
+            severance.Episodes.Add(new Episode { SeasonNumber = 1, EpisodeNumber = 1, AirDate = new DateOnly(2022, 2, 18), EpisodeFile = sevFile });
+            severance.Episodes.Add(new Episode { SeasonNumber = 1, EpisodeNumber = 2, AirDate = new DateOnly(2022, 2, 25) });
+            severance.Episodes.Add(new Episode { SeasonNumber = 2, EpisodeNumber = 1, AirDate = new DateOnly(2099, 5, 1) });
+
+            lost.Episodes.Add(new Episode { SeasonNumber = 1, EpisodeNumber = 1, AirDate = new DateOnly(2004, 9, 22) });
+            await db.SaveChangesAsync(ct);
+            (darkId, lostId, severanceId) = (dark.Id, lost.Id, severance.Id);
+        }
+
+        var client = _factory.CreateClient(new() { HandleCookies = true });
+        var status = await client.GetFromJsonAsync<JsonElement>("/api/v1/auth/status", ct);
+        var url = status.GetProperty("setupRequired").GetBoolean() ? "/api/v1/auth/setup" : "/api/v1/auth/login";
+        (await client.PostAsJsonAsync(url, new { username = "admin", password = "correct-horse", setupToken = KrakarrFactory.TestSetupToken }, ct)).EnsureSuccessStatusCode();
+        (await client.PutAsJsonAsync($"/api/v1/subscriptions/Series/{darkId}", new { }, ct)).EnsureSuccessStatusCode();
+
+        // Pagination
+        var p1 = await client.GetFromJsonAsync<JsonElement>("/api/v1/series?page=1&pageSize=2", ct);
+        Assert.Equal(3, p1.GetProperty("total").GetInt32());
+        Assert.Equal(3, p1.GetProperty("libraryTotal").GetInt32());
+        Assert.Equal(["Dark", "Lost"], p1.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("title").GetString()));
+
+        var p2 = await client.GetFromJsonAsync<JsonElement>("/api/v1/series?page=2&pageSize=2", ct);
+        Assert.Equal(["Severance"], p2.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("title").GetString()));
+
+        // Filters & search
+        var missing = await client.GetFromJsonAsync<JsonElement>("/api/v1/series?filter=missing", ct);
+        Assert.Equal(1, missing.GetProperty("total").GetInt32());
+        Assert.Equal(3, missing.GetProperty("libraryTotal").GetInt32());
+        Assert.Equal(["Severance"], missing.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("title").GetString()));
+
+        var ended = await client.GetFromJsonAsync<JsonElement>("/api/v1/series?filter=ended", ct);
+        Assert.Equal(["Dark", "Lost"], ended.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("title").GetString()));
+
+        var following = await client.GetFromJsonAsync<JsonElement>("/api/v1/series?filter=following", ct);
+        Assert.Equal(["Dark"], following.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("title").GetString()));
+
+        var search = await client.GetFromJsonAsync<JsonElement>("/api/v1/series?q=lo", ct);
+        Assert.Equal(["Lost"], search.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("title").GetString()));
+
+        // Sorting (including episode completion ratio and nextAiring with nulls last)
+        var byEpisodes = await client.GetFromJsonAsync<JsonElement>("/api/v1/series?sort=episodes", ct);
+        Assert.Equal(["Lost", "Severance", "Dark"], byEpisodes.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("title").GetString()));
+
+        var byNextAiring = await client.GetFromJsonAsync<JsonElement>("/api/v1/series?sort=nextAiring", ct);
+        Assert.Equal(["Severance", "Dark", "Lost"], byNextAiring.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("title").GetString()));
+
+        // Matching ids
+        var ids = await client.GetFromJsonAsync<int[]>("/api/v1/series/ids?sort=episodes", ct);
+        Assert.Equal([lostId, severanceId, darkId], ids);
     }
 
     [Fact]
