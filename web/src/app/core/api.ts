@@ -5,7 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { Auth } from './auth';
 import { readNdjson } from './ndjson';
 import {
-  AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
+  AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
   IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, WantedSubtitleLanguages, Episode, EpisodeDetails, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListItem, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
   DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction,
@@ -131,9 +131,12 @@ export class Api {
   importProwlarrIndexers(url: string, apiKey: string, indexerIds: number[]) {
     return this.post<ProwlarrImportResult>('indexers/prowlarr/import', { url, apiKey, indexerIds });
   }
+  /** Enabled indexers that manual search can target. */
+  searchIndexers() { return this.get<SearchIndexer[]>('search/indexers'); }
   /** Streamed: results arrive as each indexer answers (see `ReleaseSearch`). */
-  searchStream(query: string, type: SearchType, onEvent: (e: SearchStreamEvent<SearchResult>) => void, signal: AbortSignal) {
-    return this.stream('search', { query, type }, onEvent, signal);
+  searchStream(query: string, type: SearchType, onEvent: (e: SearchStreamEvent<SearchResult>) => void, signal: AbortSignal,
+    indexerIds?: readonly number[]) {
+    return this.stream('search', { query, type, indexerIds: indexerIds?.length ? indexerIds.join(',') : null }, onEvent, signal);
   }
 
   // Downloads

@@ -21,6 +21,9 @@ public sealed record ProwlarrImportResult(int Added, int Updated);
 
 public sealed record SearchResultDto(ReleaseInfo Release, string Quality, string? ParsedTitle, int? ParsedYear);
 
+/// <summary>An enabled indexer that manual search can target.</summary>
+public sealed record SearchIndexerDto(int Id, string Name);
+
 public static class IndexerEndpoints
 {
     public static IEndpointRouteBuilder MapIndexerEndpoints(this IEndpointRouteBuilder app)
@@ -179,12 +182,32 @@ public static class IndexerEndpoints
             return Results.Ok(new ProwlarrImportResult(added, updated));
         });
 
+        // Enabled indexers that manual search can target (no URLs or API keys, so managers can list them too).
+        app.MapGet("/api/v1/search/indexers", async (KrakarrDbContext db, CancellationToken ct) =>
+            await db.Indexers.AsNoTracking()
+                .Where(i => i.Enabled)
+                .OrderBy(i => i.Priority)
+                .ThenBy(i => i.Name)
+                .Select(i => new SearchIndexerDto(i.Id, i.Name))
+                .ToListAsync(ct)).WithTags("Search");
+
         // Manual search across indexers (Prowlarr-style). With "Accept: application/x-ndjson" the results stream in as each indexer answers (SearchStream).
         app.MapGet("/api/v1/search", async (
             string? query, SearchType? type, string? imdbId, int? tmdbId, int? tvdbId, int? season, int? episode, string? indexerIds,
             HttpRequest request, IIndexerSearchService search, CancellationToken ct) =>
         {
-            var ids = indexerIds?.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToList();
+            List<int>? ids = null;
+            if (!string.IsNullOrWhiteSpace(indexerIds))
+            {
+                ids = [];
+                foreach (var part in indexerIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    if (!int.TryParse(part, out var id))
+                        return Results.ValidationProblem(new Dictionary<string, string[]> { ["indexerIds"] = ["Indexer ids must be integers"] });
+                    ids.Add(id);
+                }
+            }
+
             var criteria = new SearchCriteria
             {
                 Type = type ?? SearchType.Generic,

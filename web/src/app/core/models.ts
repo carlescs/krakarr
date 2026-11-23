@@ -27,6 +27,9 @@ export interface Indexer {
   defaultLanguage?: string | null;
 }
 
+/** An enabled indexer that manual search can target. */
+export interface SearchIndexer { id: number; name: string; }
+
 export interface IndexerCapabilities {
   searchAvailable: boolean; movieSearchAvailable: boolean; movieSearchParams: string[];
   tvSearchAvailable: boolean; tvSearchParams: string[]; categories: IndexerCategory[];

@@ -116,4 +116,25 @@ public sealed class IndexerSearchServiceTests : IAsyncLifetime
         Assert.Single(result.Releases);
         Assert.Equal(["Broken", "Slow"], result.Errors.Select(e => e.IndexerName).Order());
     }
+
+    [Fact]
+    public async Task Search_filters_to_requested_enabled_indexers()
+    {
+        using var scope = _services.CreateScope();
+        var ct = TestContext.Current.CancellationToken;
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        var byName = await db.Indexers.AsNoTracking().ToDictionaryAsync(i => i.Name, i => i.Id, ct);
+
+        // Single enabled indexer plus a disabled one: only the enabled one is queried.
+        var single = await Service(scope).SearchAsync(Criteria, [byName["Good"], byName["Disabled"]], ct);
+        Assert.Equal(["Good"], single.Indexers.Select(s => s.IndexerName));
+        Assert.Single(single.Releases);
+        Assert.Empty(single.Errors);
+
+        // Multiple enabled indexers: only those two are queried ("Slow" is never touched).
+        var multiple = await Service(scope).SearchAsync(Criteria, [byName["Good"], byName["Broken"]], ct);
+        Assert.Equal(["Broken", "Good"], multiple.Indexers.Select(s => s.IndexerName).Order());
+        Assert.Single(multiple.Releases);
+        Assert.Equal(["Broken"], multiple.Errors.Select(e => e.IndexerName));
+    }
 }

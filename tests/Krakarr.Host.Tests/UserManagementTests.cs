@@ -45,6 +45,7 @@ public sealed class RoleAccessTests
     [InlineData("GET", "/api/v1/history", UserRole.Manager)]
     [InlineData("GET", "/api/v1/downloads", UserRole.Manager)]
     [InlineData("GET", "/api/v1/search", UserRole.Manager)]
+    [InlineData("GET", "/api/v1/search/indexers", UserRole.Manager)]
     [InlineData("GET", "/api/v1/system/commands", UserRole.Manager)]
     [InlineData("GET", "/api/v1/subtitles/wanted", UserRole.Manager)]
     [InlineData("GET", "/api/v1/rootfolders", UserRole.Manager)]

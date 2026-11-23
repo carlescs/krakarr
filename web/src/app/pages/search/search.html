@@ -1,6 +1,9 @@
 <h1 class="page-title mb-6">Search indexers</h1>
 <form class="mb-6 flex flex-wrap gap-3" (ngSubmit)="search()">
-  <input class="input min-w-0 flex-1 max-sm:basis-full" name="q" [(ngModel)]="query" placeholder="Search all enabled indexers…" />
+  <input class="input min-w-0 flex-1 max-sm:basis-full" name="q" [(ngModel)]="query" [placeholder]="placeholder()" />
+  @if (availableIndexers().length > 0) {
+    <kr-indexer-picker class="min-w-0 flex-1 sm:w-48 sm:flex-none" [indexers]="availableIndexers()" [(selected)]="selectedIndexerIds" [disabled]="busy()" />
+  }
   <select class="input flex-1 sm:w-36 sm:flex-none" name="type" [(ngModel)]="type">
     <option value="Generic">All</option><option value="Movie">Movies</option><option value="Tv">TV</option>
   </select>
