@@ -42,4 +42,20 @@ public sealed class SeedingPolicyTests
         Assert.False(SeedingPolicy.DeleteDataOnRemove(Row(imported: false)));
         Assert.False(SeedingPolicy.DeleteDataOnRemove(Row(movieId: null, imported: false)));
     }
+
+    [Fact]
+    public void Only_finished_media_downloads_with_a_failed_import_count_as_failed()
+    {
+        static Download Failed(Download row)
+        {
+            row.ImportMessage = "Import failed: no video file found in download";
+            return row;
+        }
+
+        Assert.True(SeedingPolicy.ImportFailed(Failed(Row(imported: false))));
+        Assert.False(SeedingPolicy.ImportFailed(Row(imported: false))); // import pending
+        Assert.False(SeedingPolicy.ImportFailed(Failed(Row()))); // partially imported season pack
+        Assert.False(SeedingPolicy.ImportFailed(Failed(Row(movieId: null, imported: false)))); // dismissed: plain torrent
+        Assert.False(SeedingPolicy.ImportFailed(Failed(Row(imported: false, completedMinutesAgo: -1))));
+    }
 }

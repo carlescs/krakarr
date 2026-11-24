@@ -71,6 +71,59 @@ public sealed class DownloadClientRouterTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Adding_a_torrent_again_forgets_a_row_whose_torrent_left_every_client()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await AgeRowsAsync(ct);
+        _qbt.StaleHash = EmbeddedHash; // the row is the built-in client's, but that engine no longer runs the torrent
+
+        var added = await _router.AddMagnetAsync("magnet:?xt=urn:btih:" + EmbeddedHash, new AddTorrentOptions(), ct);
+
+        Assert.Equal("x", added.Name);
+        Assert.Equal(["add", "add"], _qbt.Calls);
+        using var scope = _services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        Assert.False(await db.Downloads.AnyAsync(d => d.InfoHash == EmbeddedHash, ct));
+    }
+
+    [Fact]
+    public async Task Adding_a_torrent_a_client_still_runs_is_refused()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await AgeRowsAsync(ct);
+        _qbt.StaleHash = EmbeddedHash;
+        _embedded.Statuses = [Status(EmbeddedHash, DownloadClients.Embedded, daysAgo: 3)];
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _router.AddMagnetAsync("magnet:?xt=urn:btih:" + EmbeddedHash, new AddTorrentOptions(), ct));
+
+        Assert.Equal("Torrent already exists: Old", ex.Message);
+        Assert.Equal(["add"], _qbt.Calls);
+    }
+
+    [Fact]
+    public async Task A_freshly_added_row_is_not_treated_as_stale()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        _qbt.StaleHash = QbtHash; // just added, qBittorrent doesn't list it yet
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            _router.AddMagnetAsync("magnet:?xt=urn:btih:" + QbtHash, new AddTorrentOptions(), ct));
+
+        using var scope = _services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        Assert.True(await db.Downloads.AnyAsync(d => d.InfoHash == QbtHash, ct));
+    }
+
+    private async Task AgeRowsAsync(CancellationToken ct)
+    {
+        using var scope = _services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        foreach (var row in await db.Downloads.ToListAsync(ct)) row.Added = DateTimeOffset.UtcNow.AddHours(-1);
+        await db.SaveChangesAsync(ct);
+    }
+
+    [Fact]
     public void Statuses_are_merged_from_every_client_newest_first()
     {
         _embedded.Statuses = [Status(EmbeddedHash, DownloadClients.Embedded, daysAgo: 3)];
@@ -122,6 +175,8 @@ public sealed class DownloadClientRouterTests : IAsyncLifetime
     {
         public List<string> Calls { get; } = [];
         public IReadOnlyList<TorrentStatus> Statuses { get; set; } = [];
+        /// <summary>When set, the first add reports an existing row for this hash, like the real clients do.</summary>
+        public string? StaleHash { get; set; }
         public DownloadClientKind Kind => kind;
         public string Name => name;
         public bool IsActive => true;
@@ -136,6 +191,7 @@ public sealed class DownloadClientRouterTests : IAsyncLifetime
         private Task<Download> Add()
         {
             Calls.Add("add");
+            if (StaleHash is { } stale && Calls.Count(c => c == "add") == 1) throw new StaleDownloadException(stale);
             return Task.FromResult(new Download { Client = name, InfoHash = "x", Name = "x", SavePath = "/d" });
         }
 

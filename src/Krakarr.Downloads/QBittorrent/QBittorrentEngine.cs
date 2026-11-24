@@ -223,6 +223,15 @@ public sealed class QBittorrentEngine(
     {
         foreach (var (row, torrent) in matched.ToList())
         {
+            if (torrent.Progress >= 1 && row.State == DownloadState.Seeding && SeedingPolicy.ImportFailed(row))
+            {
+                logger.LogInformation("Import of {Name} failed, stopping it in qBittorrent instead of seeding", row.Name);
+                await api.PauseAsync(torrent.Hash, ct);
+                row.State = DownloadState.Paused;
+                row.Paused = true;
+                continue;
+            }
+
             if (torrent.Progress < 1 || !SeedingPolicy.IsDone(settings, row, torrent.Ratio, now))
             {
                 continue;
@@ -282,9 +291,15 @@ public sealed class QBittorrentEngine(
 
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        if (_statuses.TryGetValue(hash, out var existing))
+        {
+            throw new InvalidOperationException($"Torrent already exists: {existing.Name}");
+        }
+
         if (await db.Downloads.AnyAsync(d => d.InfoHash == hash, ct))
         {
-            throw new InvalidOperationException("Torrent already exists");
+            // A row whose torrent isn't listed in qBittorrent (removed there, or not synced yet); the router decides.
+            throw new StaleDownloadException(hash);
         }
 
         var category = string.IsNullOrWhiteSpace(settings.Category) ? options.Category : settings.Category;

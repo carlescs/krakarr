@@ -31,6 +31,14 @@ public static class SeedingPolicy
     }
 
     /// <summary>
+    /// A finished media download whose import failed: it is stopped rather than left seeding. Its files stay so the
+    /// import can be retried; dismissing the issue turns it back into a plain torrent the user can resume.
+    /// </summary>
+    public static bool ImportFailed(Download row) =>
+        row.CompletedAt is not null && !row.Imported && row.ImportMessage is not null
+        && (row.MovieId is not null || row.SeriesId is not null);
+
+    /// <summary>
     /// Imported media downloads were copied or hardlinked into the library, so their download data can go.
     /// Anything else (manual downloads) keeps its files.
     /// </summary>

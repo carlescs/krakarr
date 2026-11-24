@@ -297,7 +297,8 @@ public sealed class EmbeddedTorrentEngine(
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
             if (await db.Downloads.AnyAsync(d => d.InfoHash == row.InfoHash, ct))
             {
-                throw new InvalidOperationException("Torrent already exists");
+                // A row without a torrent in this engine: another client's, or left behind (the router sorts it out).
+                throw new StaleDownloadException(row.InfoHash);
             }
 
             Directory.CreateDirectory(row.SavePath);
@@ -513,6 +514,12 @@ public sealed class EmbeddedTorrentEngine(
             {
                 logger.LogInformation("Seeding limit reached for {Name}, stopping", row.Name);
                 await manager!.StopAsync();
+                row.State = DownloadState.Completed;
+            }
+            else if (manager is not null && status.State == DownloadState.Seeding && SeedingPolicy.ImportFailed(row))
+            {
+                logger.LogInformation("Import of {Name} failed, stopping it instead of seeding", row.Name);
+                await manager.StopAsync();
                 row.State = DownloadState.Completed;
             }
 
