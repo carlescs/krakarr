@@ -11,7 +11,7 @@ public static class MovieFileDeletion
 {
     /// <summary>
     /// Deletes a movie file (video plus subtitle sidecars) and unlinks it from its movie, optionally unmonitoring the
-    /// movie so the next search doesn't fetch it again. Returns null when the file doesn't exist.
+    /// movie so the next search doesn't fetch it again. Returns false when the file doesn't exist.
     /// </summary>
     /// <exception cref="InvalidOperationException">The file's path is outside the movie folder.</exception>
     /// <exception cref="IOException">The file could not be deleted; the library is left unchanged.</exception>
