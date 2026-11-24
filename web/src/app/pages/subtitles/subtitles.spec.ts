@@ -1,6 +1,8 @@
+import { CdkVirtualScrollViewport } from '@angular/cdk/scrolling';
 import { TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { describe, expect, it, vi } from 'vitest';
-import { WantedSubtitle } from '../../core/models';
+import { WantedSubtitle, WantedSubtitlePage, WantedSubtitleQuery } from '../../core/models';
 import { button, mockApi, settle, setupTest, text } from '../../../testing/test-setup';
 import { Events } from '../../core/events';
 import { SubtitlesPage } from './subtitles';
@@ -9,6 +11,16 @@ const wanted: WantedSubtitle[] = [
   { mediaType: 'Movie', movieId: 3, movieFileId: 30, label: 'Alien (1979)', missingLanguages: ['es'] },
   { mediaType: 'Series', seriesId: 4, episodeFileId: 40, label: 'Dark S01E01', missingLanguages: ['en', 'es'] },
 ];
+/** A server page of `all` filtered like the API does, with the totals per filter. */
+function serve(all: WantedSubtitle[], q: WantedSubtitleQuery & { page: number; pageSize: number }): WantedSubtitlePage {
+  const filtered = q.notFound == null ? all : all.filter(w => !!w.notFound === q.notFound);
+  const notFound = all.filter(w => w.notFound).length;
+  return {
+    items: filtered.slice((q.page - 1) * q.pageSize, q.page * q.pageSize), page: q.page, pageSize: q.pageSize,
+    total: filtered.length, libraryTotal: all.length, searching: all.length - notFound, notFound,
+  };
+}
+const list = async (q: WantedSubtitleQuery & { page: number; pageSize: number }) => serve(wanted, q);
 const settings = { enabled: true, openSubtitles: { apiKey: 'key' }, languages: ['es'], searchIntervalHours: 6 };
 
 describe('SubtitlesPage', () => {
@@ -17,7 +29,7 @@ describe('SubtitlesPage', () => {
       api: mockApi({
         settings: async () => settings,
         subtitleLanguages: async () => [{ code: 'es', name: 'Spanish' }],
-        wantedSubtitles: async () => wanted,
+        wantedSubtitles: list,
         searchSubtitles: async () => undefined,
       }),
     });
@@ -49,11 +61,7 @@ describe('SubtitlesPage', () => {
       api: mockApi({
         settings: async () => settings,
         subtitleLanguages: async () => [{ code: 'es', name: 'Spanish' }],
-        wantedSubtitles: async (onlyNotFound?: boolean) => {
-          const all = marked ? [notFound, wanted[1]] : [wanted[0], wanted[1]];
-          return onlyNotFound == null ? all : all.filter(w => !!w.notFound === onlyNotFound);
-        },
-        wantedSubtitleCounts: async () => marked ? { searching: 250, notFound: 1 } : { searching: 251, notFound: 0 },
+        wantedSubtitles: async q => serve(marked ? [notFound, wanted[1]] : [wanted[0], wanted[1]], q),
         retrySubtitles: async () => { marked = false; return { count: 1 }; },
         searchSubtitles: async () => undefined,
       }),
@@ -65,14 +73,13 @@ describe('SubtitlesPage', () => {
     const radioText = () => [...el.querySelectorAll('[role="radio"]')].map(b => b.textContent!.replace(/\s+/g, ' ').trim());
     const heading = () => el.querySelector('h2')!.textContent!.replace(/\s+/g, ' ').trim();
 
-    // Default: only files still searched automatically. Counts come from the server, not the (capped) list.
-    expect(api.wantedSubtitles).toHaveBeenLastCalledWith(false);
+    // Default: only files still searched automatically; every page reports the totals per filter.
+    expect(api.wantedSubtitles).toHaveBeenLastCalledWith({ notFound: false, page: 1, pageSize: 60 });
     expect(radio('Searching').getAttribute('aria-checked')).toBe('true');
-    expect(radioText()).toEqual(['Searching 250', 'Not found 1', 'All 251']);
-    expect(heading()).toBe('Wanted 250');
-    expect(el.querySelectorAll('tbody tr').length).toBe(1);
+    expect(radioText()).toEqual(['Searching 1', 'Not found 1', 'All 2']);
+    expect(heading()).toBe('Wanted 1');
     expect(text(el)).not.toContain('Alien (1979)');
-    expect(text(el)).toContain('Showing the first 1 of 250.');
+    expect(text(el)).toContain('Dark S01E01');
 
     button(el, 'Search all missing').click();
     await settle(fixture);
@@ -80,9 +87,9 @@ describe('SubtitlesPage', () => {
 
     radio('All').click();
     await settle(fixture);
-    expect(api.wantedSubtitles).toHaveBeenLastCalledWith(undefined);
-    expect(heading()).toBe('Wanted 251');
-    expect(el.querySelectorAll('tbody tr').length).toBe(2);
+    expect(api.wantedSubtitles).toHaveBeenLastCalledWith({ page: 1, pageSize: 60 });
+    expect(heading()).toBe('Wanted 2');
+    expect(text(el)).toContain('Alien (1979)');
 
     button(el, 'Search all missing').click();
     await settle(fixture);
@@ -90,7 +97,7 @@ describe('SubtitlesPage', () => {
 
     radio('Not found').click();
     await settle(fixture);
-    expect(api.wantedSubtitles).toHaveBeenLastCalledWith(true);
+    expect(api.wantedSubtitles).toHaveBeenLastCalledWith({ notFound: true, page: 1, pageSize: 60 });
     expect(heading()).toBe('Wanted 1');
     expect(text(el)).toContain('Not found');
     expect(el.querySelector('a[href="/movies/3"]')).not.toBeNull();
@@ -99,10 +106,33 @@ describe('SubtitlesPage', () => {
     button(el, 'Retry').click();
     await settle(fixture);
     expect(api.retrySubtitles).toHaveBeenLastCalledWith({ movieFileId: 30, episodeFileId: undefined });
-    expect(radioText()).toEqual(['Searching 251', 'Not found 0', 'All 251']);
+    expect(radioText()).toEqual(['Searching 2', 'Not found 0', 'All 2']);
     expect(heading()).toBe('Wanted 0');
     expect(text(el)).toContain('No files are marked as not found.');
     expect([...el.querySelectorAll('button')].some(b => b.textContent?.trim() === 'Retry all')).toBe(false);
+  });
+
+  it('loads further pages as the list scrolls and sorts on the server', async () => {
+    const many: WantedSubtitle[] = Array.from({ length: 130 }, (_, i) => (
+      { mediaType: 'Series', seriesId: 4, episodeFileId: 100 + i, label: `Dark S01E${i + 1}`, missingLanguages: ['es'] }));
+    const api = setupTest({
+      api: mockApi({ settings: async () => settings, subtitleLanguages: async () => [], wantedSubtitles: async q => serve(many, q) }),
+    });
+    const fixture = TestBed.createComponent(SubtitlesPage);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('h2')!.textContent!.replace(/\s+/g, ' ')).toContain('Wanted 130');
+    expect(api.wantedSubtitles).toHaveBeenCalledTimes(1);
+
+    const viewport = fixture.debugElement.query(By.directive(CdkVirtualScrollViewport)).componentInstance as CdkVirtualScrollViewport;
+    viewport.setRenderedRange({ start: 120, end: 130 });
+    await settle(fixture);
+    expect(api.wantedSubtitles).toHaveBeenLastCalledWith({ notFound: false, page: 3, pageSize: 60 });
+    expect(text(el)).toContain('Dark S01E125');
+
+    button(el, 'Missing').click();
+    await settle(fixture);
+    expect(api.wantedSubtitles).toHaveBeenCalledWith({ notFound: false, sort: 'missing', desc: true, page: 1, pageSize: 60 });
   });
 
   it('marks every file still searched as not found after confirming', async () => {
@@ -111,8 +141,7 @@ describe('SubtitlesPage', () => {
       api: mockApi({
         settings: async () => settings,
         subtitleLanguages: async () => [],
-        wantedSubtitles: async (onlyNotFound?: boolean) => (onlyNotFound === false && !marked ? wanted : []),
-        wantedSubtitleCounts: async () => marked ? { searching: 0, notFound: 2 } : { searching: 2, notFound: 0 },
+        wantedSubtitles: async q => serve(marked ? wanted.map(w => ({ ...w, notFound: '2026-11-20T10:00:00Z' })) : wanted, q),
         markAllSubtitlesNotFound: async () => { marked = true; return { count: 2 }; },
       }),
     });
@@ -136,33 +165,29 @@ describe('SubtitlesPage', () => {
   });
 
   it('refreshes the list and counts when subtitles change', async () => {
-    let counts = { searching: 2, notFound: 0 };
+    let current = wanted;
     const api = setupTest({
-      api: mockApi({
-        settings: async () => settings,
-        subtitleLanguages: async () => [],
-        wantedSubtitles: async () => wanted,
-        wantedSubtitleCounts: async () => counts,
-      }),
+      api: mockApi({ settings: async () => settings, subtitleLanguages: async () => [], wantedSubtitles: async q => serve(current, q) }),
     });
     const fixture = TestBed.createComponent(SubtitlesPage);
     await settle(fixture);
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('h2')!.textContent).toContain('2');
 
-    counts = { searching: 1, notFound: 1 };
+    current = [wanted[0], { ...wanted[1], notFound: '2026-11-20T10:00:00Z' }];
+    const calls = vi.mocked(api.wantedSubtitles).mock.calls.length;
     const events = TestBed.inject(Events);
     events.subtitlesUpdated.next({ movieId: 3 });
     events.subtitlesUpdated.next({ movieId: 3 });
     await new Promise(r => setTimeout(r, 600));
     await settle(fixture);
-    expect(api.wantedSubtitleCounts).toHaveBeenCalledTimes(2); // debounced: one refresh for both events
+    expect(api.wantedSubtitles).toHaveBeenCalledTimes(calls + 1); // collapsed: one refresh for both events
     expect(el.querySelector('h2')!.textContent!.replace(/\s+/g, ' ')).toContain('Wanted 1');
   });
 
   it('warns admins when no provider is configured', async () => {
     setupTest({
-      api: mockApi({ settings: async () => ({ ...settings, openSubtitles: { apiKey: '' } }), subtitleLanguages: async () => [], wantedSubtitles: async () => wanted }),
+      api: mockApi({ settings: async () => ({ ...settings, openSubtitles: { apiKey: '' } }), subtitleLanguages: async () => [], wantedSubtitles: list }),
     });
     const fixture = TestBed.createComponent(SubtitlesPage);
     await settle(fixture);
@@ -175,7 +200,7 @@ describe('SubtitlesPage', () => {
       api: mockApi({
         settings: async () => ({ ...settings, openSubtitles: { apiKey: '' }, subdl: { enabled: true, apiKey: 'subdl-key' } }),
         subtitleLanguages: async () => [{ code: 'es', name: 'Spanish' }],
-        wantedSubtitles: async () => wanted,
+        wantedSubtitles: list,
       }),
     });
     const fixture = TestBed.createComponent(SubtitlesPage);
@@ -194,7 +219,7 @@ describe('SubtitlesPage', () => {
           { name: 'subdl', displayName: 'SubDL', configured: true },
           { name: 'disabled-provider', displayName: 'Disabled', configured: false },
         ],
-        wantedSubtitles: async () => wanted,
+        wantedSubtitles: list,
         searchSubtitles: async () => undefined,
       }),
     });
@@ -240,7 +265,7 @@ describe('SubtitlesPage', () => {
       api: mockApi({
         subtitleLanguages: async () => [],
         subtitleProviders: async () => [{ name: 'subdl', displayName: 'SubDL', configured: true }],
-        wantedSubtitles: async () => wanted,
+        wantedSubtitles: list,
         searchSubtitles: async () => undefined,
       }),
     });

@@ -25,6 +25,8 @@ public sealed record ScoredSubtitleDto(SubtitleCandidate Candidate, int Score, I
 /// <summary>The subtitle languages Krakarr looks for, so detail pages can show which ones a file is missing.</summary>
 public sealed record WantedSubtitleLanguagesDto(bool Enabled, bool UseEmbeddedSubtitles, IReadOnlyList<string> Languages);
 public sealed record WantedSubtitleDto(string MediaType, int? MovieId, int? SeriesId, int? MovieFileId, int? EpisodeFileId, string Label, IReadOnlyList<string> MissingLanguages, DateTimeOffset? NotFound);
+/// <summary>A page of the wanted list. <c>Total</c> counts the selected filter, <c>LibraryTotal</c> every wanted file.</summary>
+public sealed record WantedSubtitlePageDto(IReadOnlyList<WantedSubtitleDto> Items, int Page, int PageSize, int Total, int LibraryTotal, int Searching, int NotFound);
 
 public static class SubtitleEndpoints
 {
@@ -101,9 +103,17 @@ public static class SubtitleEndpoints
         });
 
         // notFound: true = only files no provider had subtitles for, false = only files still searched automatically.
-        group.MapGet("/wanted", async (int? limit, bool? notFound, SubtitleService service, CancellationToken ct) =>
-            (await service.WantedAsync(Math.Clamp(limit ?? 200, 1, 1000), ct, notFound)).Select(w => new WantedSubtitleDto(
-                w.Target.MediaType.ToString(), w.Target.MovieId, w.Target.SeriesId, w.Target.MovieFileId, w.Target.EpisodeFileId, w.Target.Label, w.MissingLanguages, w.NotFound)));
+        // sort: type, title or missing (default: movies first, then episodes by series and season).
+        group.MapGet("/wanted", async (int? page, int? pageSize, bool? notFound, string? sort, bool? desc, SubtitleService service, CancellationToken ct) =>
+        {
+            var p = Math.Max(1, page ?? 1);
+            var size = Math.Clamp(pageSize ?? 60, 1, 500);
+            var order = Enum.TryParse<WantedSort>(sort, ignoreCase: true, out var parsed) ? parsed : WantedSort.Default;
+            var result = await service.WantedPageAsync(p, size, ct, notFound, order, desc ?? false);
+            var items = result.Items.Select(w => new WantedSubtitleDto(
+                w.Target.MediaType.ToString(), w.Target.MovieId, w.Target.SeriesId, w.Target.MovieFileId, w.Target.EpisodeFileId, w.Target.Label, w.MissingLanguages, w.NotFound)).ToList();
+            return new WantedSubtitlePageDto(items, p, size, result.Total, result.Searching + result.NotFound, result.Searching, result.NotFound);
+        });
 
         group.MapGet("/wanted/counts", async (SubtitleService service, CancellationToken ct) =>
         {
