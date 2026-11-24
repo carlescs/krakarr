@@ -14,7 +14,10 @@ public sealed record SubtitleFileDto(int Id, int? MovieFileId, int? EpisodeFileI
     string FileName, string Provider, int? Score, string? Release, DateTimeOffset DateAdded);
 
 public sealed record SubtitleProviderDto(string Name, string DisplayName, bool Configured);
-public sealed record SubtitleSearchRequest(int? MovieFileId, int? EpisodeFileId, int? MovieId = null, int? SeriesId = null, IReadOnlyList<string>? Providers = null);
+/// <param name="NotFound">Searching all wanted files only: true = only files marked "not found", false = only unmarked files, null = all.</param>
+public sealed record SubtitleSearchRequest(int? MovieFileId, int? EpisodeFileId, int? MovieId = null, int? SeriesId = null, IReadOnlyList<string>? Providers = null, bool? NotFound = null);
+/// <summary>Files missing a wanted language: still searched automatically, and marked "not found".</summary>
+public sealed record WantedSubtitleCountsDto(int Searching, int NotFound);
 /// <summary>Movie file to search automatically again; null retries every file marked "not found".</summary>
 public sealed record SubtitleRetryRequest(int? MovieFileId);
 public sealed record SubtitleDownloadRequest(int? MovieFileId, int? EpisodeFileId, SubtitleCandidate Candidate, int? Score);
@@ -102,6 +105,12 @@ public static class SubtitleEndpoints
             (await service.WantedAsync(Math.Clamp(limit ?? 200, 1, 1000), ct, notFound)).Select(w => new WantedSubtitleDto(
                 w.Target.MediaType.ToString(), w.Target.MovieId, w.Target.SeriesId, w.Target.MovieFileId, w.Target.EpisodeFileId, w.Target.Label, w.MissingLanguages, w.NotFound)));
 
+        group.MapGet("/wanted/counts", async (SubtitleService service, CancellationToken ct) =>
+        {
+            var (searching, notFound) = await service.WantedCountsAsync(ct);
+            return new WantedSubtitleCountsDto(searching, notFound);
+        });
+
         // Clears the "not found" mark so the scheduled search picks the file(s) up again on its next run.
         group.MapPost("/retry", async (SubtitleRetryRequest req, SubtitleService service, CancellationToken ct) =>
             Results.Ok(new { count = await service.RetryNotFoundAsync(req.MovieFileId, ct) }));
@@ -185,7 +194,7 @@ public static class SubtitleEndpoints
                 {
                     var svc = sp.GetRequiredService<SubtitleService>();
                     var scopedDb = sp.GetRequiredService<KrakarrDbContext>();
-                    var wanted = await svc.WantedAsync(100, token);
+                    var wanted = await svc.WantedAsync(100, token, req.NotFound);
                     foreach (var w in wanted)
                     {
                         await svc.SearchMissingAsync(w.Target, token, providers: selectedProviders);

@@ -304,6 +304,8 @@ export interface WantedSubtitle {
   /** When every provider came up empty (movie files only); the scheduled search skips the file until it is retried. */
   notFound?: string | null;
 }
+/** Files missing a wanted language: still searched automatically, and marked "not found". */
+export interface WantedSubtitleCounts { searching: number; notFound: number; }
 /** The subtitle languages Krakarr looks for (Settings › Subtitles). */
 export interface WantedSubtitleLanguages { enabled: boolean; useEmbeddedSubtitles: boolean; languages: string[]; }
 export interface SubtitleProvider { name: string; displayName: string; configured: boolean; }

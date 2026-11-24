@@ -296,6 +296,8 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
         _provider.Fail = true;
         Assert.Contains("server error", await SearchAsync());
         Assert.Null(await NotFoundAsync());
+        using (var scope = _services.CreateScope())
+            Assert.Equal((1, 0), await scope.ServiceProvider.GetRequiredService<SubtitleService>().WantedCountsAsync(TestContext.Current.CancellationToken));
 
         // Every provider answered and none had a wanted language: marked, and the first mark is kept.
         _provider.Fail = false;
@@ -312,12 +314,15 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
             Assert.Single(await service.WantedAsync(10, ct, notFound: true));
             Assert.Empty(await service.WantedAsync(10, ct, notFound: false));
             Assert.Equal(marked, (await service.WantedAsync(10, ct)).Single().NotFound);
+            Assert.Equal((0, 1), await service.WantedCountsAsync(ct));
         }
 
         // Found later (e.g. a manual search): the mark is cleared.
         _provider.Candidates.AddRange([C("en", "The.Matrix.1999.1080p.BluRay.x264-SPARKS"), C("es", "The.Matrix.1999.1080p.BluRay.x264-SPARKS", lang: "es")]);
         Assert.Contains("downloaded en, es", await SearchAsync());
         Assert.Null(await NotFoundAsync());
+        using (var scope = _services.CreateScope())
+            Assert.Equal((0, 0), await scope.ServiceProvider.GetRequiredService<SubtitleService>().WantedCountsAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]
