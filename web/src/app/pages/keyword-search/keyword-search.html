@@ -1,11 +1,11 @@
 <div class="mb-6 flex flex-wrap items-center gap-3">
-  <a routerLink="/discover" class="btn-ghost btn-sm -ml-2">← Discover</a>
-  <h1 class="page-title mr-auto">Search keywords</h1>
+  <a routerLink="/discover/search" class="btn-ghost btn-sm -ml-2">← Search</a>
+  <h1 class="page-title mr-auto">Browse by keyword</h1>
 </div>
 
 <form class="mb-4 flex gap-2 sm:gap-3" (ngSubmit)="search()">
   <input class="input min-w-0 flex-1 !py-3 !text-base" type="search" enterkeyhint="search" name="term" [(ngModel)]="term"
-         placeholder="Search for a theme or topic, e.g. “time travel”" autofocus />
+         [placeholder]="selected().length ? 'Add another keyword, e.g. “space”' : 'Search for a theme or topic, e.g. “time travel”'" autofocus />
   <button class="btn-primary px-4 sm:px-6" [disabled]="searching() || !term.trim()">{{ searching() ? 'Searching…' : 'Search' }}</button>
 </form>
 

@@ -1,0 +1,196 @@
+<div class="mb-6 flex flex-wrap items-center gap-3">
+  <a routerLink="/discover" class="btn-ghost btn-sm -ml-2">← Discover</a>
+  <h1 class="page-title mr-auto">Search</h1>
+</div>
+
+<form class="mb-4 flex gap-2 sm:gap-3" (ngSubmit)="search()">
+  <input class="input min-w-0 flex-1 !py-3 !text-base" type="search" enterkeyhint="search" name="term" [(ngModel)]="term"
+         placeholder="Movies, series, people or keywords, e.g. “The Matrix”, “Keanu Reeves”, “heist”" autofocus />
+  <button class="btn-primary px-4 sm:px-6" [disabled]="searching() || !term.trim()">{{ searching() ? 'Searching…' : 'Search' }}</button>
+</form>
+
+<div class="mb-6 flex flex-wrap gap-1" role="tablist">
+  @for (t of tabs(); track t.id) {
+    <button type="button" role="tab" class="btn-sm" [class]="t.id === tab() ? 'btn-primary' : 'btn-secondary'"
+            [attr.aria-selected]="t.id === tab()" (click)="setTab(t.id)">
+      {{ t.label }}@if (t.count !== null) { <span class="ml-1 opacity-70">{{ t.count }}</span> }
+    </button>
+  }
+</div>
+
+@if (setupError(); as e) {
+  <div class="card mb-6 border-amber-500/30 px-5 py-4 text-sm text-amber-200">
+    {{ e }} — @if (auth.isAdmin()) { <a routerLink="/settings" class="underline">open settings</a> } @else { ask an admin to check the metadata settings. }
+  </div>
+}
+
+@if (!searched()) {
+  <p class="text-sm text-slate-500">
+    Search TMDB for something to {{ auth.isStaff() ? 'add' : 'request' }}, an actor or director to browse their work, or a keyword such as “time travel” to find every title tagged with it.
+  </p>
+} @else if (!searching() && nothing()) {
+  <p class="text-sm text-slate-500">Nothing found for “{{ searched() }}”.</p>
+}
+
+<!-- ── All: a preview of each kind ── -->
+@if (tab() === 'all' && searched()) {
+  @for (s of [{ title: 'Movies', section: movies() }, { title: 'Series', section: series() }]; track s.title) {
+    @if (!s.section || s.section.items.length > 0 || s.section.error) {
+      <kr-media-row [title]="s.title" [items]="s.section?.items ?? []" [loading]="!s.section" [error]="s.section?.error ?? null" />
+    }
+  }
+
+  @if (people(); as p) {
+    @if (p.items.length > 0 || p.error) {
+      <section class="mb-8">
+        <div class="mb-3 flex items-center gap-3">
+          <h2 class="text-lg font-semibold text-white">People</h2>
+          <div class="flex-1"></div>
+          @if (p.items.length > preview) { <button type="button" class="text-sm text-accent-300 hover:text-accent-200" (click)="setTab('people')">See all →</button> }
+        </div>
+        @if (p.error) {
+          <p class="text-sm text-rose-300">{{ p.error }}</p>
+        } @else {
+          <div class="-mx-1 flex snap-x gap-3 overflow-x-auto px-1 pb-2 [scrollbar-width:thin]">
+            @for (r of p.items.slice(0, preview); track r.tmdbId) {
+              <a [routerLink]="['/people', r.tmdbId]" class="group w-24 shrink-0 snap-start text-center sm:w-28">
+                <div class="mx-auto aspect-square w-20 overflow-hidden rounded-full bg-surface-800 ring-1 ring-surface-700 transition group-hover:ring-accent-500 sm:w-24">
+                  @if (r.profileUrl) {
+                    <img [src]="r.profileUrl" [alt]="r.name" loading="lazy" class="h-full w-full object-cover" />
+                  } @else {
+                    <div class="flex h-full w-full items-center justify-center text-lg font-semibold text-slate-500">{{ initials(r.name) }}</div>
+                  }
+                </div>
+                <div class="mt-2 truncate text-sm font-medium text-slate-100 group-hover:text-accent-300">{{ r.name }}</div>
+                @if (r.knownForDepartment) { <div class="truncate text-xs text-slate-500">{{ r.knownForDepartment }}</div> }
+              </a>
+            }
+          </div>
+        }
+      </section>
+    }
+  }
+
+  @if (keywords(); as k) {
+    @if (k.items.length > 0 || k.error) {
+      <section class="mb-8">
+        <div class="mb-3 flex items-center gap-3">
+          <h2 class="text-lg font-semibold text-white">Keywords</h2>
+          <div class="flex-1"></div>
+          @if (k.items.length > preview) { <button type="button" class="text-sm text-accent-300 hover:text-accent-200" (click)="setTab('keywords')">See all →</button> }
+        </div>
+        @if (k.error) {
+          <p class="text-sm text-rose-300">{{ k.error }}</p>
+        } @else {
+          <div class="flex flex-wrap gap-2">
+            @for (kw of k.items.slice(0, preview); track kw.id) {
+              <a [routerLink]="['/keywords']" [queryParams]="{ keywords: kw.id }" class="btn-secondary btn-sm rounded-full">{{ kw.name }}</a>
+            }
+          </div>
+        }
+      </section>
+    }
+  }
+}
+
+<!-- ── Movies / Series: full list with overview and add/request ── -->
+@if ((tab() === 'movies' || tab() === 'series') && searched()) {
+  @let list = tab() === 'movies' ? movies() : series();
+  @if (!list) {
+    <p class="text-center text-slate-500">Searching…</p>
+  } @else if (list.error) {
+    <div class="card mb-6 border-rose-500/30 px-5 py-4 text-sm text-rose-300">{{ list.error }}</div>
+  } @else if (list.items.length === 0) {
+    <p class="text-sm text-slate-500">No {{ tab() === 'movies' ? 'movies' : 'series' }} found.</p>
+  }
+  <div class="space-y-3">
+    @for (d of list?.items ?? []; track key(d)) {
+      @let detail = detailRoute(d);
+      @let library = libraryRoute(d);
+      <div class="card flex gap-3 p-3 sm:gap-4 sm:p-4" data-testid="title-result">
+        @if (detail) {
+          <a [routerLink]="detail" class="w-20 shrink-0 sm:w-24" [attr.aria-label]="d.item.title"><kr-poster [url]="d.item.posterUrl" [title]="d.item.title" /></a>
+        } @else {
+          <kr-poster class="w-20 shrink-0 sm:w-24" [url]="d.item.posterUrl" [title]="d.item.title" />
+        }
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-baseline gap-x-2">
+            <h2 class="text-base font-semibold text-white sm:text-lg">
+              @if (detail) { <a [routerLink]="detail" class="hover:text-accent-300">{{ d.item.title }}</a> } @else { {{ d.item.title }} }
+            </h2>
+            <span class="text-slate-400">{{ d.item.year || '' }}</span>
+          </div>
+          @if (d.kind === 'movie') {
+            @if (d.item.originalTitle && d.item.originalTitle !== d.item.title) { <div class="text-xs text-slate-500">{{ d.item.originalTitle }}</div> }
+          } @else {
+            <div class="text-xs text-slate-500">{{ d.item.network }}{{ d.item.network && d.item.status ? ' · ' : '' }}{{ d.item.status }}</div>
+          }
+          <p class="mt-2 line-clamp-3 text-sm text-slate-400">{{ d.item.overview }}</p>
+        </div>
+        <div class="shrink-0 self-center">
+          @if (library) {
+            <a [routerLink]="library" class="btn-secondary">In library</a>
+          } @else if (auth.isStaff()) {
+            <button class="btn-primary" (click)="adding.set(d)">Add</button>
+          } @else if (isRequested(d)) {
+            <a routerLink="/requests" class="btn-secondary">Requested</a>
+          } @else {
+            <button class="btn-primary" [disabled]="d.item.tmdbId == null" [title]="d.item.tmdbId != null ? '' : 'Only titles on TMDB can be requested'"
+                    (click)="adding.set(d)">Request</button>
+          }
+        </div>
+      </div>
+    }
+  </div>
+}
+
+<!-- ── People ── -->
+@if (tab() === 'people' && searched()) {
+  @if (!people()) {
+    <p class="text-center text-slate-500">Searching…</p>
+  } @else if (people()!.error) {
+    <div class="card mb-6 border-rose-500/30 px-5 py-4 text-sm text-rose-300">{{ people()!.error }}</div>
+  } @else if (people()!.items.length === 0) {
+    <p class="text-sm text-slate-500">No people found.</p>
+  }
+  <div class="space-y-3">
+    @for (r of people()?.items ?? []; track r.tmdbId) {
+      <a [routerLink]="['/people', r.tmdbId]" class="card group flex gap-3 p-3 transition hover:border-accent-500/50 sm:gap-4 sm:p-4">
+        <div class="aspect-[2/3] w-16 shrink-0 overflow-hidden rounded-lg bg-surface-800 sm:w-20">
+          @if (r.profileUrl) {
+            <img [src]="r.profileUrl" [alt]="r.name" loading="lazy" class="h-full w-full object-cover" />
+          } @else {
+            <div class="flex h-full w-full items-center justify-center bg-gradient-to-br from-surface-700 to-surface-850 text-xl font-semibold text-slate-500">{{ initials(r.name) }}</div>
+          }
+        </div>
+        <div class="min-w-0 flex-1 self-center">
+          <h2 class="text-base font-semibold text-white group-hover:text-accent-300 sm:text-lg">{{ r.name }}</h2>
+          @if (r.knownForDepartment) { <div class="text-xs text-slate-500">{{ r.knownForDepartment }}</div> }
+          @if (r.knownFor.length > 0) { <p class="mt-1.5 line-clamp-2 text-sm text-slate-400">Known for: {{ r.knownFor.join(', ') }}</p> }
+        </div>
+      </a>
+    }
+  </div>
+}
+
+<!-- ── Keywords ── -->
+@if (tab() === 'keywords' && searched()) {
+  @if (!keywords()) {
+    <p class="text-center text-slate-500">Searching…</p>
+  } @else if (keywords()!.error) {
+    <div class="card mb-6 border-rose-500/30 px-5 py-4 text-sm text-rose-300">{{ keywords()!.error }}</div>
+  } @else if (keywords()!.items.length === 0) {
+    <p class="text-sm text-slate-500">No keywords found.</p>
+  } @else {
+    <p class="mb-3 text-sm text-slate-500">Open a keyword to browse the titles tagged with it; you can combine it with more keywords there.</p>
+  }
+  <div class="flex flex-wrap gap-2">
+    @for (kw of keywords()?.items ?? []; track kw.id) {
+      <a [routerLink]="['/keywords']" [queryParams]="{ keywords: kw.id }" class="btn-secondary btn-sm rounded-full">{{ kw.name }}</a>
+    }
+  </div>
+}
+
+@if (adding(); as d) {
+  <kr-discover-add [item]="d" (closed)="adding.set(null)" (added)="markAdded($event)" (requested)="markRequested()" />
+}
