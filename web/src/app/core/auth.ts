@@ -4,6 +4,7 @@ import { CanActivateFn, Router } from '@angular/router';
 import { catchError, throwError } from 'rxjs';
 import { Api } from './api';
 import { AuthStatus, UserRole } from './models';
+import { credentialToJson, toRequestOptions } from './passkeys';
 
 @Injectable({ providedIn: 'root' })
 export class Auth {
@@ -23,6 +24,15 @@ export class Auth {
 
   async login(username: string, password: string) {
     await this.api.login(username, password);
+    await this.refresh();
+  }
+
+  /** Asks the browser for one of the user's passkeys and signs in with it. Throws when cancelled or rejected. */
+  async loginWithPasskey() {
+    const options = await this.api.passkeyLoginOptions();
+    const credential = await navigator.credentials.get({ publicKey: toRequestOptions(options) });
+    if (!(credential instanceof PublicKeyCredential)) throw new DOMException('No passkey was selected', 'NotAllowedError');
+    await this.api.passkeyLogin(credentialToJson(credential));
     await this.refresh();
   }
 

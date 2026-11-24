@@ -46,7 +46,7 @@
         <label class="label" for="user-password">{{ f.id ? 'New password' : 'Password' }}</label>
         <input id="user-password" class="input" name="password" type="password" [(ngModel)]="f.password" autocomplete="new-password"
                [placeholder]="f.id ? 'Leave empty to keep the current one' : 'At least 8 characters'" />
-        @if (f.id) { <p class="hint">Setting a new password signs the user out everywhere.</p> }
+        @if (f.id) { <p class="hint">Setting a new password signs the user out everywhere and removes their passkeys.</p> }
       </div>
       <fieldset>
         <legend class="label">Role</legend>

@@ -9,6 +9,7 @@ using Krakarr.Data.Postgres;
 using Krakarr.Data.Sqlite;
 using Krakarr.Downloads;
 using Krakarr.Host.Auth;
+using Krakarr.Host.Auth.Passkeys;
 using Krakarr.Host.Endpoints;
 using Krakarr.Host.Hosting;
 using Krakarr.Host.Hubs;
@@ -140,6 +141,7 @@ builder.Services.Configure<AuthSecurityOptions>(builder.Configuration.GetSection
 builder.Services.TryAddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<LoginThrottle>();
 builder.Services.AddSingleton<SetupTokenStore>();
+builder.Services.AddSingleton<PasskeyChallenges>();
 builder.Services.AddRateLimiter(o =>
 {
     o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -204,6 +206,7 @@ app.UseRateLimiter();
 
 app.MapOpenApi("/api/openapi/{documentName}.json");
 app.MapAuthEndpoints();
+app.MapPasskeyEndpoints();
 app.MapUserEndpoints();
 app.MapSystemEndpoints();
 app.MapDashboardEndpoints();

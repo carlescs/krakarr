@@ -278,6 +278,19 @@ Everyone changes their own username and password under *Account* (the current pa
 takes effect immediately; resetting or changing a password, or deleting an account, signs that user out everywhere.
 There is always at least one admin, and admins can't delete themselves. The API key acts as an admin.
 
+### Passkeys
+
+Anyone can add **passkeys** under *Settings → Account → Passkeys* (confirming their password) and then use *Sign in
+with a passkey* on the login page instead of a username and password: a fingerprint, face, device PIN, phone or
+security key. Passkeys always verify the user (PIN or biometrics) and are stored in the device or password manager;
+Krakarr keeps only their public keys.
+
+- Browsers only offer passkeys on HTTPS or `localhost`, and never for an IP address: open Krakarr through a domain name
+  (behind a TLS reverse proxy that passes the original `Host` header). A passkey belongs to the host name it was
+  created on, so add one per name if you reach Krakarr under several.
+- Each user can rename or remove their own passkeys. An admin resetting someone's password also removes that user's
+  passkeys, so a lost or stolen device can't sign in afterwards.
+
 ### Requests
 
 Users can't add titles themselves, so wherever an admin or manager sees *+ Add* (Discover, a title's page, a person's
@@ -317,7 +330,8 @@ follows a title next to the button. Removing a title (or a user) removes its fol
   another container or host, add its address or network; Krakarr logs a warning naming the address it ignored.
 - **Sessions can be revoked.** Every request re-checks the account, so deleting a user, changing a role or changing a
   password applies at once, and a password change signs out every other session. *Settings → Account → Sign out other
-  sessions* does the same without changing the password. Sign-ins also expire 30 days after the password was entered.
+  sessions* does the same without changing the password. Sign-ins also expire 30 days after the password (or passkey)
+  was entered.
 - **Browser hardening headers.** Every response carries a strict `Content-Security-Policy` (scripts only from Krakarr
   itself, images also from TMDB and TheTVDB), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
   `Referrer-Policy: no-referrer` and a restrictive `Permissions-Policy`.

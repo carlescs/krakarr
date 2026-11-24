@@ -9,7 +9,7 @@ public sealed record UserDto(int Id, string Username, UserRole Role, DateTimeOff
 
 public sealed record CreateUserRequest(string Username, string Password, UserRole Role);
 
-/// <param name="Password">New password; leave empty to keep the current one. Setting it signs the user out everywhere.</param>
+/// <param name="Password">New password; leave empty to keep the current one. Setting it signs the user out everywhere and removes their passkeys.</param>
 public sealed record UpdateUserRequest(string Username, UserRole Role, string? Password);
 
 /// <summary>User management (admins only; see <see cref="RoleAccess"/>).</summary>
@@ -67,6 +67,8 @@ public static class UserEndpoints
             {
                 user.PasswordHash = hasher.HashPassword(user, req.Password);
                 user.SecurityStamp = User.NewSecurityStamp();
+                // A reset is how a compromised or lost account is recovered: passkeys must not survive it.
+                await db.UserPasskeys.Where(p => p.UserId == id).ExecuteDeleteAsync(ct);
             }
 
             await db.SaveChangesAsync(ct);

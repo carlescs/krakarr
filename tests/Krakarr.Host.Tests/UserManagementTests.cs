@@ -23,6 +23,7 @@ public sealed class RoleAccessTests
     [InlineData("GET", "/api/v1/subtitles/files", UserRole.User)]
     [InlineData("GET", "/api/v1/subtitles/wanted-languages", UserRole.User)]
     [InlineData("POST", "/api/v1/auth/password", UserRole.User)]
+    [InlineData("DELETE", "/api/v1/auth/passkeys/3", UserRole.User)]
     [InlineData("POST", "/hubs/events/negotiate", UserRole.User)]
     [InlineData("GET", "/movies/5", UserRole.User)] // SPA routes
     [InlineData("POST", "/api/v1/movies", UserRole.Manager)]

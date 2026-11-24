@@ -4,6 +4,7 @@ import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { Auth } from './auth';
 import { readNdjson } from './ndjson';
+import type { Passkey, PasskeyCreationOptionsJson, PasskeyCredentialJson, PasskeyRequestOptionsJson } from './passkeys';
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
   IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, WantedSubtitle, WantedSubtitleCounts, WantedSubtitleLanguages, Episode, EpisodeDetails, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
@@ -92,6 +93,18 @@ export class Api {
   changeCredentials(username: string, currentPassword: string, newPassword?: string) {
     return this.post<void>('auth/password', { username, currentPassword, newPassword: newPassword || null });
   }
+
+  // Passkeys
+  passkeyLoginOptions() { return this.post<PasskeyRequestOptionsJson>('auth/passkeys/login/options'); }
+  passkeyLogin(credential: PasskeyCredentialJson) { return this.post<void>('auth/passkeys/login', { credential }); }
+  passkeys() { return this.get<Passkey[]>('auth/passkeys'); }
+  /** Starts adding a passkey; needs the current password. */
+  passkeyRegistrationOptions(currentPassword: string) {
+    return this.post<PasskeyCreationOptionsJson>('auth/passkeys/register/options', { currentPassword });
+  }
+  addPasskey(name: string, credential: PasskeyCredentialJson) { return this.post<Passkey>('auth/passkeys', { name, credential }); }
+  renamePasskey(id: number, name: string) { return this.put<Passkey>(`auth/passkeys/${id}`, { name }); }
+  deletePasskey(id: number) { return this.delete<void>(`auth/passkeys/${id}`); }
 
   // Users (admin)
   users() { return this.get<UserAccount[]>('users'); }
