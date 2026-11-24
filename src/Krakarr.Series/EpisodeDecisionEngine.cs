@@ -83,6 +83,15 @@ public static class EpisodeDecisionEngine
             }
         }
 
+        // Never grab episodes before their air date (an unknown date counts as not aired). Season packs already
+        // leave unaired episodes out; a single-episode release for one is a fake or a leak.
+        var unaired = mapped.Where(e => !e.HasAired(today) && e.EpisodeFileId is null).ToList();
+        if (unaired.Count > 0)
+        {
+            rejections.Add($"Not aired yet: {string.Join(", ", unaired.Select(e =>
+                $"{SeriesNaming.EpisodeCode(e.SeasonNumber, [e.EpisodeNumber])} ({(e.AirDate is { } d ? d.ToString("yyyy-MM-dd") : "air date unknown")})"))}");
+        }
+
         if (scope is not null)
         {
             if (scope.SeasonNumber is { } wantedSeason && wantedSeason != season)
