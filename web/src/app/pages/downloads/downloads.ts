@@ -4,7 +4,7 @@ import { RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
 import { Events } from '../../core/events';
 import { BytesPipe, DurationPipe, SpeedPipe } from '../../core/format';
-import { BulkDownloadAction, BulkResult, DownloadClientKind, DownloadClientName, DownloadClientStatus, TorrentStatus } from '../../core/models';
+import { BulkDownloadAction, BulkResult, DownloadClientKind, DownloadClientName, DownloadClientStatus, ImportIssue, TorrentStatus } from '../../core/models';
 import { Selection } from '../../core/selection';
 import { Toasts } from '../../core/toast';
 import { MediaLink, MediaLinkPicker, linkFields } from '../../shared/media-link-picker/media-link-picker';
@@ -117,6 +117,9 @@ export class DownloadsPage implements OnInit, OnDestroy {
     return [c, ...(c.others ?? [])].filter(x => x.error).map(x => ({ label: clientLabel(x.kind), error: x.error! }));
   });
   protected readonly clientLabel = clientLabel;
+  /** Downloads whose import failed: the dashboard's "imports need attention". */
+  protected readonly importIssues = signal<ImportIssue[]>([]);
+  protected readonly issueBusy = signal<number | null>(null);
   private clientTimer?: ReturnType<typeof setInterval>;
   protected readonly busy = signal(false);
   protected readonly removing = signal<TorrentStatus | null>(null);
@@ -134,9 +137,12 @@ export class DownloadsPage implements OnInit, OnDestroy {
   protected deleteData = false;
 
   async ngOnInit() {
-    const refreshClient = () => this.api.downloadClientStatus().then(c => this.client.set(c)).catch(() => {});
-    refreshClient();
-    this.clientTimer = setInterval(refreshClient, 10000);
+    const refresh = () => {
+      this.api.downloadClientStatus().then(c => this.client.set(c)).catch(() => {});
+      this.refreshIssues();
+    };
+    refresh();
+    this.clientTimer = setInterval(refresh, 10000);
     // Prime the list before the first SignalR tick arrives.
     if (this.events.downloads().length === 0) this.events.downloads.set(await this.api.downloads());
   }
@@ -224,6 +230,26 @@ export class DownloadsPage implements OnInit, OnDestroy {
   private report(message: string, result: BulkResult) {
     if (result.errors.length === 0) this.toasts.success(message);
     else this.toasts.error(`${message}; ${result.errors.length} failed: ${result.errors.slice(0, 3).join(' · ')}`);
+  }
+
+  private refreshIssues() {
+    return this.api.importIssues().then(i => this.importIssues.set(i)).catch(() => {});
+  }
+
+  /** Retry clears the failure so the import task tries again; dismiss stops tracking it. */
+  protected async resolveIssue(issue: ImportIssue, action: 'retry' | 'dismiss') {
+    if (this.issueBusy() !== null) return;
+    this.issueBusy.set(issue.id);
+    try {
+      if (action === 'retry') await this.api.retryImport(issue.id);
+      else await this.api.dismissImportIssue(issue.id);
+      this.importIssues.update(list => list.filter(i => i.id !== issue.id));
+      this.toasts.success(action === 'retry' ? 'Import queued again' : 'Dismissed');
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+    } finally {
+      this.issueBusy.set(null);
+    }
   }
 
   async remove(d: TorrentStatus) {

@@ -526,6 +526,9 @@ public sealed class EmbeddedTorrentEngine(
                 cached.ImportedAt = row.ImportedAt;
                 cached.Paused = row.Paused;
                 cached.ImportMessage = row.ImportMessage;
+                cached.MovieId = row.MovieId; // dismissing a failed import unlinks the download
+                cached.SeriesId = row.SeriesId;
+                cached.MediaType = row.MediaType;
             }
         }
 

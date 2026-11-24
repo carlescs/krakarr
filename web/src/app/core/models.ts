@@ -212,6 +212,12 @@ export interface TorrentStatus {
   /** The client that owns the torrent. */
   client: DownloadClientName;
 }
+/** A download whose automatic import failed. */
+export interface ImportIssue {
+  id: number; infoHash: string; name: string; client: DownloadClientName; movieId?: number; seriesId?: number; message: string; completedAt?: string;
+  /** False once the torrent was removed from its download client. */
+  inClient: boolean;
+}
 /** `Download.Client` values on the server. */
 export type DownloadClientName = 'embedded' | 'qbittorrent';
 

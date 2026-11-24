@@ -52,6 +52,31 @@ describe('DownloadsPage', () => {
     expect(text(el)).toContain('Dark.S01');
   });
 
+  it('lists failed imports and retries or dismisses them', async () => {
+    const issues = [
+      { id: 7, infoHash: 'h7', name: 'Robin.Hood.S01E10', client: 'embedded', seriesId: 4, message: 'Import failed: no video files', completedAt: '2026-01-02T00:00:00Z', inClient: true },
+      { id: 8, infoHash: 'h8', name: 'Gone.Movie', client: 'qbittorrent', movieId: 9, message: 'Removed from qBittorrent', inClient: false },
+    ];
+    const { api, fixture, el } = await render({
+      importIssues: async () => issues, retryImport: async () => undefined, dismissImportIssue: async () => undefined,
+    });
+    expect(text(el)).toContain('2 imports need attention');
+    expect(text(el)).toContain('Import failed: no video files');
+    expect(text(el)).toContain('No longer in the download client.');
+    // Only the download still in the client can be imported again.
+    expect(el.querySelectorAll('button[title="Try the import again"]').length).toBe(1);
+
+    button(el, 'Retry import').click();
+    await settle(fixture);
+    expect(api.retryImport).toHaveBeenCalledWith(7);
+    expect(text(el)).toContain('1 import needs attention');
+
+    button(el, 'Dismiss').click();
+    await settle(fixture);
+    expect(api.dismissImportIssue).toHaveBeenCalledWith(8);
+    expect(text(el)).not.toContain('needs attention');
+  });
+
   it('only treats complete torrents as finished', () => {
     expect(isFinished(torrent({ state: 'Seeding', progress: 100 }))).toBe(true);
     expect(isFinished(torrent({ state: 'Completed', progress: 100 }))).toBe(true);
