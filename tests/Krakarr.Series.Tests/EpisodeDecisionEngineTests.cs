@@ -40,6 +40,23 @@ public class EpisodeDecisionEngineTests
     }
 
     [Fact]
+    public void Rejects_episodes_that_have_not_aired()
+    {
+        var s = Office();
+        var future = Eval(s, "The.Office.S01E05.1080p.WEB-DL-GRP", requireMonitored: false);
+        Assert.Contains(future.Rejections, r => r.StartsWith("Not aired yet: S01E05 (2026-11-25)"));
+        Assert.Single(future.Episodes); // still mapped, so a manual grab can override
+
+        Assert.Contains(Eval(s, "The.Office.S01E04E05.1080p.WEB-DL-GRP").Rejections, r => r.StartsWith("Not aired yet: S01E05"));
+
+        s.Episodes.Single(e => e.SeasonNumber == 1 && e.EpisodeNumber == 5).AirDate = null;
+        Assert.Contains(Eval(s, "The.Office.S01E05.1080p.WEB-DL-GRP").Rejections, r => r.Contains("air date unknown"));
+
+        s.Episodes.Single(e => e.SeasonNumber == 1 && e.EpisodeNumber == 5).AirDate = Today;
+        Assert.True(Eval(s, "The.Office.S01E05.1080p.WEB-DL-GRP").Approved);
+    }
+
+    [Fact]
     public void Matches_by_tvdb_id_even_when_title_differs()
     {
         var release = Release("Office.Show.S02E01.1080p.WEB-DL-GRP") with { TvdbId = 73244 };
