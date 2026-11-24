@@ -297,7 +297,8 @@ public sealed class EmbeddedTorrentEngine(
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
             if (await db.Downloads.AnyAsync(d => d.InfoHash == row.InfoHash, ct))
             {
-                throw new InvalidOperationException("Torrent already exists");
+                // A row without a torrent in this engine: another client's, or left behind (the router sorts it out).
+                throw new StaleDownloadException(row.InfoHash);
             }
 
             Directory.CreateDirectory(row.SavePath);

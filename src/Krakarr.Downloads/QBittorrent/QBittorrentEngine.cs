@@ -282,9 +282,15 @@ public sealed class QBittorrentEngine(
 
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        if (_statuses.TryGetValue(hash, out var existing))
+        {
+            throw new InvalidOperationException($"Torrent already exists: {existing.Name}");
+        }
+
         if (await db.Downloads.AnyAsync(d => d.InfoHash == hash, ct))
         {
-            throw new InvalidOperationException("Torrent already exists");
+            // A row whose torrent isn't listed in qBittorrent (removed there, or not synced yet); the router decides.
+            throw new StaleDownloadException(hash);
         }
 
         var category = string.IsNullOrWhiteSpace(settings.Category) ? options.Category : settings.Category;
