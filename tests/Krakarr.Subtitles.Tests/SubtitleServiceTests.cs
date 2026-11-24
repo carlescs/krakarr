@@ -341,6 +341,40 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Mark_all_not_found_covers_movie_and_episode_files_until_retried()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        int episodeFileId;
+        using (var scope = _services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+            var series = new Series { Title = "Show", Year = 2020, Path = Path.Combine(_root.FullName, "Show"), QualityProfileId = (await db.QualityProfiles.FirstAsync(ct)).Id };
+            db.Series.Add(series);
+            await db.SaveChangesAsync(ct);
+            var episodeFile = new EpisodeFile { SeriesId = series.Id, SeasonNumber = 1, RelativePath = "Season 01/Show - S01E01.mkv", QualityId = 17 };
+            db.EpisodeFiles.Add(episodeFile);
+            await db.SaveChangesAsync(ct);
+            episodeFileId = episodeFile.Id;
+        }
+
+        using (var scope = _services.CreateScope())
+        {
+            var service = scope.ServiceProvider.GetRequiredService<SubtitleService>();
+            Assert.Equal((2, 0), await service.WantedCountsAsync(ct));
+            Assert.Equal(2, await service.MarkAllNotFoundAsync(ct));
+            Assert.Equal(0, await service.MarkAllNotFoundAsync(ct)); // already marked
+            Assert.Equal((0, 2), await service.WantedCountsAsync(ct));
+            Assert.Empty(await service.WantedAsync(10, ct, notFound: false));
+            Assert.All(await service.WantedAsync(10, ct, notFound: true), w => Assert.NotNull(w.NotFound));
+
+            // Retrying one episode only clears that file.
+            Assert.Equal(1, await service.RetryNotFoundAsync(null, ct, episodeFileId));
+            Assert.Equal((1, 1), await service.WantedCountsAsync(ct));
+            Assert.NotNull(await NotFoundAsync());
+        }
+    }
+
+    [Fact]
     public async Task Filters_search_and_backoff_to_selected_providers()
     {
         var ct = TestContext.Current.CancellationToken;

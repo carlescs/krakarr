@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { WantedSubtitle } from '../../core/models';
 import { button, mockApi, settle, setupTest, text } from '../../../testing/test-setup';
 import { Events } from '../../core/events';
@@ -98,11 +98,41 @@ describe('SubtitlesPage', () => {
     // Retrying moves the movie back to "Searching" and the counts follow.
     button(el, 'Retry').click();
     await settle(fixture);
-    expect(api.retrySubtitles).toHaveBeenLastCalledWith(30);
+    expect(api.retrySubtitles).toHaveBeenLastCalledWith({ movieFileId: 30, episodeFileId: undefined });
     expect(radioText()).toEqual(['Searching 251', 'Not found 0', 'All 251']);
     expect(heading()).toBe('Wanted 0');
-    expect(text(el)).toContain('No movies are marked as not found.');
+    expect(text(el)).toContain('No files are marked as not found.');
     expect([...el.querySelectorAll('button')].some(b => b.textContent?.trim() === 'Retry all')).toBe(false);
+  });
+
+  it('marks every file still searched as not found after confirming', async () => {
+    let marked = false;
+    const api = setupTest({
+      api: mockApi({
+        settings: async () => settings,
+        subtitleLanguages: async () => [],
+        wantedSubtitles: async (onlyNotFound?: boolean) => (onlyNotFound === false && !marked ? wanted : []),
+        wantedSubtitleCounts: async () => marked ? { searching: 0, notFound: 2 } : { searching: 2, notFound: 0 },
+        markAllSubtitlesNotFound: async () => { marked = true; return { count: 2 }; },
+      }),
+    });
+    const fixture = TestBed.createComponent(SubtitlesPage);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    button(el, 'Mark all not found').click();
+    await settle(fixture);
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(api.markAllSubtitlesNotFound).not.toHaveBeenCalled();
+
+    confirmSpy.mockReturnValue(true);
+    button(el, 'Mark all not found').click();
+    await settle(fixture);
+    expect(api.markAllSubtitlesNotFound).toHaveBeenCalledTimes(1);
+    expect(text(el)).toContain('No files are waiting for an automatic search.');
+    expect([...el.querySelectorAll('button')].some(b => b.textContent?.trim() === 'Mark all not found')).toBe(false);
+    confirmSpy.mockRestore();
   });
 
   it('refreshes the list and counts when subtitles change', async () => {

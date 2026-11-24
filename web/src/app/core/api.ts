@@ -316,8 +316,12 @@ export class Api {
   wantedSubtitles(notFound?: boolean) { return this.get<WantedSubtitle[]>('subtitles/wanted', { notFound }); }
   /** Totals per filter (the wanted list itself is capped). */
   wantedSubtitleCounts() { return this.get<WantedSubtitleCounts>('subtitles/wanted/counts'); }
-  /** Lets the scheduled search try a movie file marked "not found" again (every marked file when omitted). */
-  retrySubtitles(movieFileId?: number) { return this.post<{ count: number }>('subtitles/retry', { movieFileId: movieFileId ?? null }); }
+  /** Lets the scheduled search try a movie or episode file marked "not found" again (every marked file when omitted). */
+  retrySubtitles(ref: SubtitleFileRef = {}) {
+    return this.post<{ count: number }>('subtitles/retry', { movieFileId: ref.movieFileId ?? null, episodeFileId: ref.episodeFileId ?? null });
+  }
+  /** Marks every movie and episode file missing a wanted language "not found": the scheduled search stops retrying them. */
+  markAllSubtitlesNotFound() { return this.post<{ count: number }>('subtitles/not-found', {}); }
   /** Searches one file, a whole movie or series (every wanted language, upgrading existing ones), or all wanted files when empty. */
   searchSubtitles(ref: SubtitleFileRef & { movieId?: number; seriesId?: number; providers?: string[]; notFound?: boolean } = {}) {
     return this.post<CommandInfo>('subtitles/search', {

@@ -8,8 +8,8 @@ namespace Krakarr.Subtitles;
 
 /// <summary>
 /// Searches subtitles for newly imported files (never searched) right away and re-checks files that are still
-/// missing languages every <see cref="SubtitleSettings.SearchIntervalHours"/>, except movie files where no provider
-/// had them (<see cref="Krakarr.Core.Domain.MovieFile.SubtitlesNotFound"/>). Processes a few files per run to
+/// missing languages every <see cref="SubtitleSettings.SearchIntervalHours"/>, except files marked "not found"
+/// (<see cref="Krakarr.Core.Domain.MovieFile.SubtitlesNotFound"/>, <see cref="Krakarr.Core.Domain.EpisodeFile.SubtitlesNotFound"/>). Processes a few files per run to
 /// respect provider quotas.
 /// </summary>
 public sealed class SubtitleSearchTask(
@@ -44,12 +44,17 @@ public sealed class SubtitleSearchTask(
                 await db.MovieFiles.ExecuteUpdateAsync(x => x
                     .SetProperty(f => f.LastSubtitleSearch, (DateTimeOffset?)null)
                     .SetProperty(f => f.SubtitlesNotFound, (DateTimeOffset?)null), cancellationToken);
-                await db.EpisodeFiles.ExecuteUpdateAsync(x => x.SetProperty(f => f.LastSubtitleSearch, (DateTimeOffset?)null), cancellationToken);
+                await db.EpisodeFiles.ExecuteUpdateAsync(x => x
+                    .SetProperty(f => f.LastSubtitleSearch, (DateTimeOffset?)null)
+                    .SetProperty(f => f.SubtitlesNotFound, (DateTimeOffset?)null), cancellationToken);
             }
             else if (state.ProvidersSignature is not null && state.ProvidersSignature != providersSignature)
             {
                 logger.LogInformation("Subtitle providers changed ({Old} → {New}); re-checking files without subtitles found", state.ProvidersSignature, providersSignature);
                 await db.MovieFiles.Where(f => f.SubtitlesNotFound != null).ExecuteUpdateAsync(x => x
+                    .SetProperty(f => f.LastSubtitleSearch, (DateTimeOffset?)null)
+                    .SetProperty(f => f.SubtitlesNotFound, (DateTimeOffset?)null), cancellationToken);
+                await db.EpisodeFiles.Where(f => f.SubtitlesNotFound != null).ExecuteUpdateAsync(x => x
                     .SetProperty(f => f.LastSubtitleSearch, (DateTimeOffset?)null)
                     .SetProperty(f => f.SubtitlesNotFound, (DateTimeOffset?)null), cancellationToken);
             }
@@ -59,13 +64,14 @@ public sealed class SubtitleSearchTask(
 
         var due = time.GetUtcNow() - TimeSpan.FromHours(Math.Max(1, s.SearchIntervalHours));
         // DateTimeOffset comparisons are translated on both providers (SQLite stores them as sortable binary).
-        // Movie files where every provider already came up empty are not retried (see MovieFile.SubtitlesNotFound).
+        // Files marked "not found" (every provider came up empty, or the user marked them) are not retried.
         var movieFiles = await db.MovieFiles.AsNoTracking()
             .Where(f => f.SubtitlesNotFound == null)
             .Where(f => f.LastSubtitleSearch == null || f.LastSubtitleSearch < due)
             .OrderBy(f => f.LastSubtitleSearch != null).ThenBy(f => f.LastSubtitleSearch).ThenBy(f => f.Id)
             .Select(f => f.Id).Take(BatchSize).ToListAsync(cancellationToken);
         var episodeFiles = await db.EpisodeFiles.AsNoTracking()
+            .Where(f => f.SubtitlesNotFound == null)
             .Where(f => f.LastSubtitleSearch == null || f.LastSubtitleSearch < due)
             .OrderBy(f => f.LastSubtitleSearch != null).ThenBy(f => f.LastSubtitleSearch).ThenBy(f => f.Id)
             .Select(f => f.Id).Take(BatchSize).ToListAsync(cancellationToken);

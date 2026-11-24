@@ -35,11 +35,11 @@ export class SubtitlesPage implements OnInit {
     this.providers().filter(p => p.configured).map(p => ({ id: p.name, name: p.displayName || p.name })));
   protected readonly selectedProviders = signal<string[]>([]);
   protected readonly wanted = signal<WantedSubtitle[]>([]);
-  /** Movies marked "not found" are hidden by default: nothing will happen to them until they are retried. */
+  /** Files marked "not found" are hidden by default: nothing will happen to them until they are retried. */
   protected readonly filter = signal<WantedFilter>('searching');
   protected readonly filters: { id: WantedFilter; label: string; title: string }[] = [
     { id: 'searching', label: 'Searching', title: 'Files the scheduled search still retries' },
-    { id: 'notFound', label: 'Not found', title: 'Movies no provider had subtitles for; not searched automatically until retried' },
+    { id: 'notFound', label: 'Not found', title: 'Files no provider had subtitles for, or marked by hand; not searched automatically until retried' },
     { id: 'all', label: 'All', title: 'Every file missing a wanted language' },
   ];
   protected readonly counts = signal<WantedSubtitleCounts | null>(null);
@@ -100,8 +100,19 @@ export class SubtitlesPage implements OnInit {
 
   async retry(w?: WantedSubtitle) {
     try {
-      const { count } = await this.api.retrySubtitles(w?.movieFileId);
-      this.toasts.show(w ? `${w.label} will be searched again shortly` : `${count} movie(s) will be searched again shortly`);
+      const { count } = await this.api.retrySubtitles(w ? { movieFileId: w.movieFileId, episodeFileId: w.episodeFileId } : {});
+      this.toasts.show(w ? `${w.label} will be searched again shortly` : `${count} file(s) will be searched again shortly`);
+      await this.load();
+    } catch (e) { this.toasts.error(errorMessage(e)); }
+  }
+
+  /** Stops the scheduled search for every movie and episode still missing subtitles, until they are retried. */
+  async markAllNotFound() {
+    const n = this.count('searching');
+    if (!confirm(`Mark ${n ?? 'all'} file(s) missing subtitles as not found? They won't be searched automatically until you retry them.`)) return;
+    try {
+      const { count } = await this.api.markAllSubtitlesNotFound();
+      this.toasts.show(`${count} file(s) marked as not found`);
       await this.load();
     } catch (e) { this.toasts.error(errorMessage(e)); }
   }

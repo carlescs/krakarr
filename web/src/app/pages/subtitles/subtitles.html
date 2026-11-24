@@ -21,7 +21,7 @@
     <p class="mb-4 text-sm text-slate-400">
       Wanted languages: <span class="text-slate-200">{{ languageNames(s.languages) }}</span>.
       New files are searched right after import; files still missing subtitles are retried every {{ s.searchIntervalHours }} h,
-      except movies no provider had subtitles for (<span class="text-amber-300">Not found</span>), which wait until you retry them.
+      except movies no provider had subtitles for and files you marked (<span class="text-amber-300">Not found</span>), which wait until you retry them.
     </p>
   }
 }
@@ -33,6 +33,10 @@
     </h2>
     @if (filter() === 'notFound' && total() > 0) {
       <button class="btn-secondary btn-sm" (click)="retry()">Retry all</button>
+    }
+    @if (filter() === 'searching' && total() > 0) {
+      <button class="btn-secondary btn-sm" (click)="markAllNotFound()"
+              title="Stop searching automatically for every movie and episode still missing subtitles, until retried">Mark all not found</button>
     }
     <div class="inline-flex rounded-lg border border-surface-700 bg-surface-900 p-0.5" role="radiogroup" aria-label="Show">
       @for (f of filters; track f.id) {
@@ -51,7 +55,7 @@
   } @else if (wanted().length === 0) {
     <p class="px-5 py-8 text-sm text-slate-500">
       @switch (filter()) {
-        @case ('notFound') { No movies are marked as not found. }
+        @case ('notFound') { No files are marked as not found. }
         @case ('searching') { No files are waiting for an automatic search. }
         @default { Every library file has subtitles in all wanted languages. }
       }
@@ -83,12 +87,12 @@
                 @for (l of w.missingLanguages; track l) { <span class="badge mr-1 bg-rose-500/15 text-rose-300">{{ l }}</span> }
                 @if (w.notFound) {
                   <span class="badge bg-amber-500/15 text-amber-300"
-                        [title]="'No provider had subtitles (' + (w.notFound | date: 'medium') + '); not searched automatically until retried'">Not found</span>
+                        [title]="'Marked not found (' + (w.notFound | date: 'medium') + '); not searched automatically until retried'">Not found</span>
                 }
               </td>
               <td class="text-right sm:whitespace-nowrap">
                 @if (w.notFound) {
-                  <button class="btn-ghost btn-sm" (click)="retry(w)" title="Let the scheduled search try this movie again">Retry</button>
+                  <button class="btn-ghost btn-sm" (click)="retry(w)" title="Let the scheduled search try this file again">Retry</button>
                 }
                 <button class="btn-ghost btn-sm" (click)="search(w)" [disabled]="!ready()">Search</button>
                 <button class="btn-ghost btn-sm" (click)="manage.set(w)">Manual</button>
