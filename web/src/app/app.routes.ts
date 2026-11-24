@@ -1,6 +1,7 @@
 import { inject } from '@angular/core';
 import { Routes } from '@angular/router';
 import { Auth, authGuard, guestGuard, roleGuard } from './core/auth';
+import { calendarRouteMatcher } from './core/calendar';
 import { Shell } from './layout/shell/shell';
 
 /** Staff land on the dashboard, plain users on the library. Runs before the guards, so it may have to load the status. */
@@ -34,7 +35,7 @@ export const routes: Routes = [
       { path: 'people', loadComponent: () => import('./pages/person-search/person-search').then(m => m.PersonSearchPage), title: 'Search people · Krakarr' },
       { path: 'people/:id', loadComponent: () => import('./pages/person/person').then(m => m.PersonPage), title: 'Person · Krakarr' },
       { path: 'requests', loadComponent: () => import('./pages/requests/requests').then(m => m.RequestsPage), title: 'Requests · Krakarr' },
-      { path: 'calendar', loadComponent: () => import('./pages/calendar/calendar').then(m => m.CalendarPage), title: 'Calendar · Krakarr' },
+      { matcher: calendarRouteMatcher, loadComponent: () => import('./pages/calendar/calendar').then(m => m.CalendarPage), title: 'Calendar · Krakarr' },
       { path: 'subtitles', canActivate: [roleGuard('Manager')], loadComponent: () => import('./pages/subtitles/subtitles').then(m => m.SubtitlesPage), title: 'Subtitles · Krakarr' },
       { path: 'indexers', canActivate: [roleGuard('Admin')], loadComponent: () => import('./pages/indexers/indexers').then(m => m.IndexersPage), title: 'Indexers · Krakarr' },
       { path: 'search', canActivate: [roleGuard('Manager')], loadComponent: () => import('./pages/search/search').then(m => m.SearchPage), title: 'Search · Krakarr' },
