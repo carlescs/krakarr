@@ -33,7 +33,9 @@
     @else { Nothing downloading. {{ seedingCount() }} torrent(s) seeding — <button class="underline hover:text-slate-200" (click)="toggleSeeding(true)">show them</button>. }
   </div>
 } @else {
-  <div class="card sticky top-[calc(3.5rem+env(safe-area-inset-top)+0.5rem)] z-10 mb-3 flex flex-wrap items-center gap-2 px-3 py-2"
+  <!-- Opaque strip flush with the top bar, so cards scrolling underneath don't show through the gap above the toolbar. -->
+  <div class="sticky top-[calc(3.5rem+1px+env(safe-area-inset-top))] z-10 -mt-2 mb-1 bg-surface-950 pt-2 pb-2">
+  <div class="card flex flex-wrap items-center gap-2 px-3 py-2"
        [class.shadow-lg]="selection.count() > 0" role="toolbar" aria-label="Bulk actions">
     <label class="flex items-center gap-2 text-sm">
       <input type="checkbox" class="size-4 accent-accent-500" aria-label="Select all torrents"
@@ -61,6 +63,7 @@
       <button type="button" class="btn-ghost btn-sm" (click)="flipSort()"
               [attr.aria-label]="sort().desc ? 'Sort descending' : 'Sort ascending'" [title]="sort().desc ? 'Descending' : 'Ascending'">{{ sort().desc ? '↓' : '↑' }}</button>
     </div>
+  </div>
   </div>
   <div class="space-y-2">
     @for (d of visible(); track d.infoHash) {

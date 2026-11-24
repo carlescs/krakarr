@@ -1,5 +1,6 @@
-<div class="card sticky top-[calc(3.5rem+env(safe-area-inset-top)+0.5rem)] z-10 mb-4 flex flex-wrap items-center gap-2 px-3 py-2 shadow-lg"
-     role="toolbar" aria-label="Bulk actions">
+<!-- Opaque strip flush with the top bar, so items scrolling underneath don't show through the gap above the toolbar. -->
+<div class="sticky top-[calc(3.5rem+1px+env(safe-area-inset-top))] z-10 -mt-2 mb-2 bg-surface-950 pt-2 pb-2">
+<div class="card flex flex-wrap items-center gap-2 px-3 py-2 shadow-lg" role="toolbar" aria-label="Bulk actions">
   <span class="text-sm font-medium text-white" aria-live="polite">{{ count() }} selected</span>
   <button type="button" class="btn-ghost btn-sm" (click)="selection().toggleAll()">{{ selection().all() ? 'Select none' : 'Select all ' + total() }}</button>
   <div class="flex-1"></div>
@@ -20,6 +21,7 @@
       <button type="button" class="btn-primary btn-sm" (click)="closed.emit()">Done</button>
     }
   </div>
+</div>
 </div>
 
 @if (editingProfile()) {
