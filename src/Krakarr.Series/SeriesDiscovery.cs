@@ -58,6 +58,8 @@ public sealed record EpisodeDetails
 public interface ISeriesDiscovery
 {
     Task<DiscoverPage<SeriesLookup>> ListAsync(SeriesList list, int page, CancellationToken ct = default);
+    /// <summary>Shows tagged with every one of the TMDB keywords, most popular first.</summary>
+    Task<DiscoverPage<SeriesLookup>> KeywordsAsync(IReadOnlyList<int> keywordIds, int page, CancellationToken ct = default);
     Task<IReadOnlyList<SeriesLookup>> RecommendationsAsync(SeriesIds ids, CancellationToken ct = default);
     Task<IReadOnlyList<SeriesLookup>> SimilarAsync(SeriesIds ids, CancellationToken ct = default);
     /// <summary>Recommendations for several shows at once (unknown shows yield an empty list), in the order given.</summary>
@@ -85,6 +87,15 @@ public sealed class TmdbSeriesDiscovery(TmdbApi api, ISettingsService settings, 
             // Shows premiering from today on, most anticipated first.
             _ => $"3/discover/tv?page={p}&first_air_date.gte={today}&sort_by=popularity.desc&include_adult=false",
         };
+        var meta = await settings.GetAsync<MetadataSettings>(ct);
+        var result = await api.GetAsync<TmdbPaged<TmdbTvClient.TvResult>>(meta, path, ct);
+        return new DiscoverPage<SeriesLookup>(result.Results.Select(TmdbTvClient.Map).ToList(), result.Page, Math.Min(result.TotalPages, 500));
+    }
+
+    public async Task<DiscoverPage<SeriesLookup>> KeywordsAsync(IReadOnlyList<int> keywordIds, int page, CancellationToken ct = default)
+    {
+        var p = Math.Clamp(page, 1, 500).ToString(CultureInfo.InvariantCulture);
+        var path = $"3/discover/tv?page={p}&with_keywords={KeywordIds.ToTmdb(keywordIds)}&sort_by=popularity.desc&include_adult=false";
         var meta = await settings.GetAsync<MetadataSettings>(ct);
         var result = await api.GetAsync<TmdbPaged<TmdbTvClient.TvResult>>(meta, path, ct);
         return new DiscoverPage<SeriesLookup>(result.Results.Select(TmdbTvClient.Map).ToList(), result.Page, Math.Min(result.TotalPages, 500));
@@ -300,6 +311,18 @@ public static class SeriesDiscoveryEndpoints
                 var ranked = RecommendationRanker.Rank(lists, s => s.TmdbId ?? 0, owned, 40);
                 // Shows stored without a TMDB id slip past the exclusion above; drop them once matched.
                 return (await MarkLibraryAsync(db, ranked, ct)).Where(s => s.SeriesId is null).ToList();
+            });
+        });
+
+        // Comma-separated TMDB keyword ids, all of which must match.
+        group.MapGet("/discover/keywords", async (string? keywords, int? page, ISeriesDiscovery discovery, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            var ids = KeywordIds.Parse(keywords);
+            if (ids.Count == 0) return Results.Problem("Pick at least one keyword.", statusCode: StatusCodes.Status400BadRequest);
+            return await Run(async () =>
+            {
+                var result = await discovery.KeywordsAsync(ids, page ?? 1, ct);
+                return result with { Results = await MarkLibraryAsync(db, result.Results, ct) };
             });
         });
 

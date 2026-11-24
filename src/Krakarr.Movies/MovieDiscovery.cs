@@ -30,6 +30,8 @@ public sealed record MovieDetails
 public interface IMovieDiscovery
 {
     Task<DiscoverPage<MovieLookup>> ListAsync(MovieList list, int page, CancellationToken ct = default);
+    /// <summary>Movies tagged with every one of the TMDB keywords, most popular first.</summary>
+    Task<DiscoverPage<MovieLookup>> KeywordsAsync(IReadOnlyList<int> keywordIds, int page, CancellationToken ct = default);
     Task<IReadOnlyList<MovieLookup>> RecommendationsAsync(int tmdbId, CancellationToken ct = default);
     Task<IReadOnlyList<MovieLookup>> SimilarAsync(int tmdbId, CancellationToken ct = default);
     /// <summary>Recommendations for several titles at once (missing titles yield an empty list), in the order given.</summary>
@@ -54,6 +56,15 @@ public sealed class TmdbMovieDiscovery(TmdbApi api, ISettingsService settings, T
             // Theatrical or digital releases from today on, most anticipated first.
             _ => $"3/discover/movie?page={p}&primary_release_date.gte={today}&sort_by=popularity.desc&with_release_type=2|3&include_adult=false",
         };
+        var meta = await settings.GetAsync<MetadataSettings>(ct);
+        var result = await api.GetAsync<TmdbPaged<TmdbClient.TmdbMovie>>(meta, path, ct);
+        return new DiscoverPage<MovieLookup>(result.Results.Select(TmdbClient.Map).ToList(), result.Page, Math.Min(result.TotalPages, 500));
+    }
+
+    public async Task<DiscoverPage<MovieLookup>> KeywordsAsync(IReadOnlyList<int> keywordIds, int page, CancellationToken ct = default)
+    {
+        var p = Math.Clamp(page, 1, 500).ToString(CultureInfo.InvariantCulture);
+        var path = $"3/discover/movie?page={p}&with_keywords={KeywordIds.ToTmdb(keywordIds)}&sort_by=popularity.desc&include_adult=false";
         var meta = await settings.GetAsync<MetadataSettings>(ct);
         var result = await api.GetAsync<TmdbPaged<TmdbClient.TmdbMovie>>(meta, path, ct);
         return new DiscoverPage<MovieLookup>(result.Results.Select(TmdbClient.Map).ToList(), result.Page, Math.Min(result.TotalPages, 500));
@@ -134,6 +145,18 @@ public static class MovieDiscoveryEndpoints
                 var lists = await discovery.RecommendationsAsync(seeds, ct);
                 var owned = library.Select(m => m.TmdbId).ToHashSet();
                 return RecommendationRanker.Rank(lists, m => m.TmdbId, owned, 40);
+            });
+        });
+
+        // Comma-separated TMDB keyword ids, all of which must match.
+        group.MapGet("/discover/keywords", async (string? keywords, int? page, IMovieDiscovery discovery, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            var ids = KeywordIds.Parse(keywords);
+            if (ids.Count == 0) return Results.Problem("Pick at least one keyword.", statusCode: StatusCodes.Status400BadRequest);
+            return await Run(async () =>
+            {
+                var result = await discovery.KeywordsAsync(ids, page ?? 1, ct);
+                return result with { Results = await MarkLibraryAsync(db, result.Results, ct) };
             });
         });
 

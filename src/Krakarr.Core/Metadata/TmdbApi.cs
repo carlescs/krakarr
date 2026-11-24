@@ -103,6 +103,7 @@ public static class TmdbServiceCollectionExtensions
         });
         services.TryAddSingleton<TmdbApi>();
         services.TryAddSingleton<IPersonMetadata, TmdbPeople>();
+        services.TryAddSingleton<IKeywordMetadata, TmdbKeywords>();
         return services;
     }
 }

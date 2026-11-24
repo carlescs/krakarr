@@ -151,6 +151,8 @@ export interface PersonCredit {
   kind: 'movie' | 'series'; tmdbId: number; title: string; year: number; date?: string; overview?: string; posterUrl?: string; rating?: number;
   department: string; role?: string; movieId?: number; seriesId?: number;
 }
+/** A TMDB keyword ("time travel", "heist"…) that movies and shows are tagged with. */
+export interface KeywordLookup { id: number; name: string; }
 export interface PersonLookup {
   tmdbId: number; name: string; profileUrl?: string; knownForDepartment?: string; knownFor: string[];
 }

@@ -218,6 +218,7 @@ app.MapSeriesEndpoints();
 app.MapSubtitleEndpoints();
 app.MapCalendarEndpoints();
 app.MapPeopleEndpoints();
+app.MapKeywordEndpoints();
 app.MapRequestEndpoints();
 app.MapSubscriptionEndpoints();
 app.MapNotificationEndpoints();

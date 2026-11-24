@@ -109,6 +109,20 @@ public class TmdbMovieDiscoveryTests
     }
 
     [Fact]
+    public async Task Keyword_discovery_requires_every_keyword()
+    {
+        var fake = new FakeTmdb();
+        var page = await Discovery(fake).KeywordsAsync([4379, 9882], 3, TestContext.Current.CancellationToken);
+
+        Assert.Equal(603, Assert.Single(page.Results).TmdbId);
+        Assert.Equal("/3/discover/movie", fake.Requests[0].AbsolutePath);
+        var query = Uri.UnescapeDataString(fake.Requests[0].Query);
+        Assert.Contains("with_keywords=4379,9882", query);
+        Assert.Contains("page=3", query);
+        Assert.Contains("include_adult=false", query);
+    }
+
+    [Fact]
     public async Task Batch_recommendations_skip_unknown_titles()
     {
         var lists = await Discovery(new FakeTmdb()).RecommendationsAsync([603, 999], TestContext.Current.CancellationToken);
@@ -143,6 +157,63 @@ public class TmdbMovieDiscoveryTests
         Assert.Equal("https://image.tmdb.org/t/p/w185/k.jpg", neo.ProfileUrl);
         var director = Assert.Single(details.Crew);
         Assert.Equal("Director, Screenplay", director.Jobs);
+    }
+}
+
+public class TmdbKeywordsTests
+{
+    private static TmdbKeywords Keywords(FakeTmdbKeywords fake) => new(new TmdbApi(new Factory(fake), new ConfigurationBuilder().Build()));
+    private static readonly MetadataSettings Meta = new() { TmdbApiKey = "v3key" };
+
+    [Fact]
+    public async Task Search_puts_exact_and_prefix_matches_first_and_drops_blank_names()
+    {
+        var results = await Keywords(new FakeTmdbKeywords()).SearchAsync(Meta, " heist ", TestContext.Current.CancellationToken);
+
+        Assert.Equal(["heist", "heist movie", "bank heist"], results.Select(k => k.Name));
+        Assert.Equal(10051, results[0].Id);
+    }
+
+    [Fact]
+    public async Task Blank_search_asks_nothing()
+    {
+        var fake = new FakeTmdbKeywords();
+        Assert.Empty(await Keywords(fake).SearchAsync(Meta, "  ", TestContext.Current.CancellationToken));
+        Assert.Equal(0, fake.Calls);
+    }
+
+    [Fact]
+    public async Task Resolves_a_keyword_name_by_id() =>
+        Assert.Equal(new KeywordLookup(10051, "heist"), await Keywords(new FakeTmdbKeywords()).GetAsync(Meta, 10051, TestContext.Current.CancellationToken));
+
+    [Theory]
+    [InlineData(null, new int[0])]
+    [InlineData("", new int[0])]
+    [InlineData("4379, 9882,4379,x,-3,0", new[] { 4379, 9882 })]
+    [InlineData("1,2,3,4,5,6,7,8,9,10,11,12", new[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 })]
+    public void Keyword_ids_are_distinct_positive_and_capped(string? value, int[] expected) =>
+        Assert.Equal(expected, KeywordIds.Parse(value));
+
+    private sealed class FakeTmdbKeywords : HttpMessageHandler
+    {
+        public int Calls { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Calls++;
+            var json = request.RequestUri!.AbsolutePath.Contains("search/keyword")
+                ? """
+                  {"page":1,"total_pages":1,"results":[
+                    {"id":1,"name":"bank heist"},{"id":2,"name":"heist movie"},{"id":3,"name":" "},{"id":10051,"name":"heist"},{"id":2,"name":"heist movie"}]}
+                  """
+                : """{"id":10051,"name":"heist"}""";
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, Encoding.UTF8, "application/json") });
+        }
+    }
+
+    private sealed class Factory(HttpMessageHandler handler) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
     }
 }
 

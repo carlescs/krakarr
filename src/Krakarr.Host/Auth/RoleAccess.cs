@@ -45,6 +45,7 @@ public static class RoleAccess
         "/api/v1/series",
         "/api/v1/calendar",
         "/api/v1/people",
+        "/api/v1/keywords",
         "/api/v1/ratings",
         "/api/v1/qualities",
         "/api/v1/qualityprofiles",
