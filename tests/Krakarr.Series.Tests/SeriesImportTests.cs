@@ -135,16 +135,16 @@ public sealed class SeriesImportTests : IAsyncLifetime
 
         using var check = _services.CreateScope();
         var db = check.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-        var episodes = await db.Episodes.Include(e => e.EpisodeFile).OrderBy(e => e.EpisodeNumber).ToListAsync();
+        var episodes = await db.Episodes.Include(e => e.EpisodeFile).OrderBy(e => e.EpisodeNumber).ToListAsync(TestContext.Current.CancellationToken);
         Assert.All(episodes, e => Assert.NotNull(e.EpisodeFile));
         Assert.Equal(Path.Combine("Season 01", "Test Show - S01E02 - Chapter 2 [WEBDL-1080p].mkv"), episodes[1].EpisodeFile!.RelativePath);
-        var series = await db.Series.SingleAsync();
+        var series = await db.Series.SingleAsync(TestContext.Current.CancellationToken);
         Assert.True(File.Exists(Path.Combine(series.Path, episodes[0].EpisodeFile!.RelativePath)));
-        Assert.Equal(3, await db.EpisodeFiles.CountAsync());
+        Assert.Equal(3, await db.EpisodeFiles.CountAsync(TestContext.Current.CancellationToken));
         Assert.Equal("Test.Show.S01E02.1080p.WEB-DL.x264-KRK", episodes[1].EpisodeFile!.SceneName); // per-file name, not the pack name
-        var download = await db.Downloads.SingleAsync();
+        var download = await db.Downloads.SingleAsync(TestContext.Current.CancellationToken);
         Assert.True(download.Imported);
-        var history = await db.History.SingleAsync();
+        var history = await db.History.SingleAsync(TestContext.Current.CancellationToken);
         Assert.Equal(HistoryEventType.Imported, history.EventType);
         Assert.StartsWith("Imported S01E01E02E03", history.Message);
     }
@@ -170,9 +170,9 @@ public sealed class SeriesImportTests : IAsyncLifetime
         using (var check = _services.CreateScope())
         {
             var db = check.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-            var file = await db.EpisodeFiles.SingleAsync();
+            var file = await db.EpisodeFiles.SingleAsync(TestContext.Current.CancellationToken);
             Assert.Equal(Qualities.Bluray1080.Id, file.QualityId);
-            var seasonDir = Path.Combine((await db.Series.SingleAsync()).Path, "Season 01");
+            var seasonDir = Path.Combine((await db.Series.SingleAsync(TestContext.Current.CancellationToken)).Path, "Season 01");
             Assert.Equal(["Test Show - S01E01 - Chapter 1 [Bluray-1080p].mkv"], Directory.GetFiles(seasonDir).Select(Path.GetFileName));
         }
 
@@ -183,7 +183,7 @@ public sealed class SeriesImportTests : IAsyncLifetime
 
         using var final = _services.CreateScope();
         var finalDb = final.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-        var last = await finalDb.Downloads.OrderBy(d => d.Id).LastAsync();
+        var last = await finalDb.Downloads.OrderBy(d => d.Id).LastAsync(TestContext.Current.CancellationToken);
         Assert.False(last.Imported);
         Assert.Contains("existing file is better", last.ImportMessage);
     }
@@ -198,9 +198,9 @@ public sealed class SeriesImportTests : IAsyncLifetime
 
         using var check = _services.CreateScope();
         var db = check.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-        var download = await db.Downloads.SingleAsync();
+        var download = await db.Downloads.SingleAsync(TestContext.Current.CancellationToken);
         Assert.False(download.Imported);
         Assert.Contains("could not determine the episode", download.ImportMessage);
-        Assert.Equal(0, await db.EpisodeFiles.CountAsync());
+        Assert.Equal(0, await db.EpisodeFiles.CountAsync(TestContext.Current.CancellationToken));
     }
 }

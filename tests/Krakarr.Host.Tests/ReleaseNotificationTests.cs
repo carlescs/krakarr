@@ -32,7 +32,7 @@ public sealed class ReleaseNotificationTests : IClassFixture<KrakarrFactory>
     {
         var ct = TestContext.Current.CancellationToken;
         if (await db.Movies.AnyAsync(ct)) return;
-        var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+        var profile = await db.QualityProfiles.MinAsync(p => p.Id, ct);
         var tmdb = 500;
 
         Movie AddMovie(string title, bool monitored, params MovieReleaseDate[] dates)

@@ -109,7 +109,7 @@ public sealed class JellyfinTests(JellyfinFactory factory) : IClassFixture<Jelly
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-            var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+            var profile = await db.QualityProfiles.MinAsync(p => p.Id, ct);
             var m1 = new Movie { TmdbId = 7001, Title = "Jelly Movie", SortTitle = "jelly movie", Year = 2020, Path = "/movies/jelly", QualityProfileId = profile };
             var m2 = new Movie { TmdbId = 7002, Title = "Jelly Movie", SortTitle = "jelly movie", Year = 2020, Path = "/movies/jelly2", QualityProfileId = profile };
             var s1 = new Krakarr.Core.Domain.Series { TvdbId = 8001, Title = "Jelly Show", SortTitle = "jelly show", Year = 2019, Path = "/tv/jelly", QualityProfileId = profile };

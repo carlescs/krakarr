@@ -46,7 +46,7 @@ public sealed class FileDeletionTests(KrakarrFactory factory) : IClassFixture<Kr
         var subtitle = Touch("Film (2001)", "Film (2001).en.srt");
         var (movieId, fileId) = await WithDbAsync(async db =>
         {
-            var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+            var profile = await db.QualityProfiles.MinAsync(p => p.Id, ct);
             var movie = new Movie { TmdbId = 81_001, Title = "Film", SortTitle = "film", Year = 2001, Path = Path.Combine(_media, "Film (2001)"), QualityProfileId = profile };
             db.Movies.Add(movie);
             await db.SaveChangesAsync(ct);
@@ -89,7 +89,7 @@ public sealed class FileDeletionTests(KrakarrFactory factory) : IClassFixture<Kr
         var kept = Touch("Show", "Season 01", "S01E03.mkv");
         var (seriesId, fileIds) = await WithDbAsync(async db =>
         {
-            var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+            var profile = await db.QualityProfiles.MinAsync(p => p.Id, ct);
             var series = new Krakarr.Core.Domain.Series { TvdbId = 82_001, Title = "Show", SortTitle = "show", Year = 2010, Path = Path.Combine(_media, "Show"), QualityProfileId = profile };
             db.Series.Add(series);
             await db.SaveChangesAsync(ct);

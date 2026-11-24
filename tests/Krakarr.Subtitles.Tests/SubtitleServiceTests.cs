@@ -123,14 +123,14 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
 
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-        Assert.Equal(2, await db.History.CountAsync(h => h.EventType == HistoryEventType.SubtitleDownloaded));
-        Assert.NotNull((await db.MovieFiles.SingleAsync()).LastSubtitleSearch);
+        Assert.Equal(2, await db.History.CountAsync(h => h.EventType == HistoryEventType.SubtitleDownloaded, TestContext.Current.CancellationToken));
+        Assert.NotNull((await db.MovieFiles.SingleAsync(TestContext.Current.CancellationToken)).LastSubtitleSearch);
     }
 
     [Fact]
     public async Task Detects_existing_subtitles_on_disk()
     {
-        await File.WriteAllTextAsync(Path.ChangeExtension(_moviePath, null) + ".eng.srt", "existing");
+        await File.WriteAllTextAsync(Path.ChangeExtension(_moviePath, null) + ".eng.srt", "existing", TestContext.Current.CancellationToken);
         _provider.Candidates.Add(C("en-best", "The.Matrix.1999.1080p.BluRay.x264-SPARKS"));
         _provider.Candidates.Add(C("es-best", "The.Matrix.1999.1080p.BluRay.x264-SPARKS", lang: "es"));
 
@@ -195,10 +195,10 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
 
         using var scope = _services.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<SubtitleService>();
-        await service.SyncDiskAsync((await service.GetMovieTargetAsync(_movieFileId))!);
+        await service.SyncDiskAsync((await service.GetMovieTargetAsync(_movieFileId, TestContext.Current.CancellationToken))!, TestContext.Current.CancellationToken);
         Assert.Empty(await RowsAsync());
 
-        var wanted = await service.WantedAsync(10);
+        var wanted = await service.WantedAsync(10, TestContext.Current.CancellationToken);
         var item = Assert.Single(wanted);
         Assert.Equal(["en", "es"], item.MissingLanguages);
         Assert.Equal("The Matrix (1999)", item.Target.Label);
@@ -226,7 +226,7 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
     [Fact]
     public async Task Embedded_subtitles_count_as_present()
     {
-        await File.WriteAllBytesAsync(_moviePath, Mkv(("eng", false), ("spa", true)));
+        await File.WriteAllBytesAsync(_moviePath, Mkv(("eng", false), ("spa", true)), TestContext.Current.CancellationToken);
         _provider.Candidates.Add(C("en-best", "The.Matrix.1999.1080p.BluRay.x264-SPARKS"));
         _provider.Candidates.Add(C("es-best", "The.Matrix.1999.1080p.BluRay.x264-SPARKS", lang: "es"));
 
@@ -237,18 +237,18 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
         Assert.Equal(["es"], _provider.LastQuery!.Languages);
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-        Assert.Equal("en,es+forced", (await db.MovieFiles.SingleAsync()).EmbeddedSubtitles);
-        Assert.Empty(await scope.ServiceProvider.GetRequiredService<SubtitleService>().WantedAsync(10));
+        Assert.Equal("en,es+forced", (await db.MovieFiles.SingleAsync(TestContext.Current.CancellationToken)).EmbeddedSubtitles);
+        Assert.Empty(await scope.ServiceProvider.GetRequiredService<SubtitleService>().WantedAsync(10, TestContext.Current.CancellationToken));
     }
 
     [Fact]
     public async Task Embedded_subtitles_are_ignored_when_disabled()
     {
-        await File.WriteAllBytesAsync(_moviePath, Mkv(("eng", false)));
+        await File.WriteAllBytesAsync(_moviePath, Mkv(("eng", false)), TestContext.Current.CancellationToken);
         using (var scope = _services.CreateScope())
         {
             await scope.ServiceProvider.GetRequiredService<ISettingsService>()
-                .SaveAsync(new SubtitleSettings { Enabled = true, Languages = ["en", "es"], UseEmbeddedSubtitles = false });
+                .SaveAsync(new SubtitleSettings { Enabled = true, Languages = ["en", "es"], UseEmbeddedSubtitles = false }, TestContext.Current.CancellationToken);
         }
 
         _provider.Candidates.Add(C("en-best", "The.Matrix.1999.1080p.BluRay.x264-SPARKS"));
@@ -348,7 +348,7 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
         using (var scope = _services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-            var series = new Series { Title = "Show", Year = 2020, Path = Path.Combine(_root.FullName, "Show"), QualityProfileId = (await db.QualityProfiles.FirstAsync(ct)).Id };
+            var series = new Series { Title = "Show", Year = 2020, Path = Path.Combine(_root.FullName, "Show"), QualityProfileId = await db.QualityProfiles.MinAsync(p => p.Id, ct) };
             db.Series.Add(series);
             await db.SaveChangesAsync(ct);
             var episodeFile = new EpisodeFile { SeriesId = series.Id, SeasonNumber = 1, RelativePath = "Season 01/Show - S01E01.mkv", QualityId = 17 };
@@ -383,7 +383,7 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
         using (var scope = _services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-            var series = new Series { Title = "Andor", SortTitle = "andor", Year = 2022, Path = Path.Combine(_root.FullName, "Andor"), QualityProfileId = (await db.QualityProfiles.FirstAsync(ct)).Id };
+            var series = new Series { Title = "Andor", SortTitle = "andor", Year = 2022, Path = Path.Combine(_root.FullName, "Andor"), QualityProfileId = await db.QualityProfiles.MinAsync(p => p.Id, ct) };
             db.Series.Add(series);
             await db.SaveChangesAsync(ct);
             for (var e = 2; e >= 1; e--)

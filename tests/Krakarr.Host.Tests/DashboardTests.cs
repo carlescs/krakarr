@@ -31,7 +31,7 @@ public sealed class DashboardTests(KrakarrFactory factory) : IClassFixture<Kraka
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-            var profile = db.QualityProfiles.First().Id;
+            var profile = db.QualityProfiles.Min(p => p.Id);
             var dora = db.Users.Single(u => u.Username == "dora");
 
             var have = new Movie { TmdbId = 1, Title = "Alien", Year = 1979, Path = "/m/alien", QualityProfileId = profile };
