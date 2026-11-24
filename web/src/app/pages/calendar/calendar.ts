@@ -213,14 +213,14 @@ export class CalendarPage {
       this.selectedDay.set(null);
       this.scrollToToday = view === 'agenda';
     }
-    if (params.get('view') !== view || params.get('date') !== this.period()) this.syncUrl(true);
+    if (params.get('view') !== view || params.get('date') !== this.period()) this.syncUrl();
   }
 
   private period() { return periodParam(this.view(), this.anchor(), this.firstDay); }
 
-  /** Puts the view and period in the URL; user moves add a history entry so Back returns to the previous one. */
-  private syncUrl(replaceUrl = false) {
-    void this.router.navigate(['/calendar', this.view(), this.period()], { replaceUrl }).catch(() => { /* navigation cancelled */ });
+  /** Puts the view and period in the URL without adding history entries, so Back leaves the calendar. */
+  private syncUrl() {
+    void this.router.navigate(['/calendar', this.view(), this.period()], { replaceUrl: true }).catch(() => { /* navigation cancelled */ });
   }
 
   protected setView(view: CalendarView, sync = true) {
