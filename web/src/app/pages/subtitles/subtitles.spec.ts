@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
 import { WantedSubtitle } from '../../core/models';
 import { button, mockApi, settle, setupTest, text } from '../../../testing/test-setup';
+import { Events } from '../../core/events';
 import { SubtitlesPage } from './subtitles';
 
 const wanted: WantedSubtitle[] = [
@@ -34,48 +35,99 @@ describe('SubtitlesPage', () => {
 
     button(el, 'Search all missing').click();
     await settle(fixture);
-    expect(api.searchSubtitles).toHaveBeenLastCalledWith();
+    expect(api.searchSubtitles).toHaveBeenLastCalledWith({ notFound: false });
 
     button(el, 'Manual').click();
     await settle(fixture);
     expect(el.querySelector('kr-subtitle-manager')).not.toBeNull();
   });
 
-  it('filters movies marked not found and retries them', async () => {
+  it('hides movies marked not found by default, counts each filter and retries them', async () => {
     const notFound: WantedSubtitle = { ...wanted[0], notFound: '2026-11-20T10:00:00Z' };
+    let marked = true;
     const api = setupTest({
       api: mockApi({
         settings: async () => settings,
         subtitleLanguages: async () => [{ code: 'es', name: 'Spanish' }],
-        wantedSubtitles: async (onlyNotFound?: boolean) => onlyNotFound === true ? [notFound] : onlyNotFound === false ? [wanted[1]] : [notFound, wanted[1]],
-        retrySubtitles: async () => ({ count: 1 }),
+        wantedSubtitles: async (onlyNotFound?: boolean) => {
+          const all = marked ? [notFound, wanted[1]] : [wanted[0], wanted[1]];
+          return onlyNotFound == null ? all : all.filter(w => !!w.notFound === onlyNotFound);
+        },
+        wantedSubtitleCounts: async () => marked ? { searching: 250, notFound: 1 } : { searching: 251, notFound: 0 },
+        retrySubtitles: async () => { marked = false; return { count: 1 }; },
+        searchSubtitles: async () => undefined,
       }),
     });
     const fixture = TestBed.createComponent(SubtitlesPage);
     await settle(fixture);
     const el = fixture.nativeElement as HTMLElement;
+    const radio = (label: string) => [...el.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(b => b.textContent!.trim().startsWith(label))!;
+    const radioText = () => [...el.querySelectorAll('[role="radio"]')].map(b => b.textContent!.replace(/\s+/g, ' ').trim());
+    const heading = () => el.querySelector('h2')!.textContent!.replace(/\s+/g, ' ').trim();
+
+    // Default: only files still searched automatically. Counts come from the server, not the (capped) list.
+    expect(api.wantedSubtitles).toHaveBeenLastCalledWith(false);
+    expect(radio('Searching').getAttribute('aria-checked')).toBe('true');
+    expect(radioText()).toEqual(['Searching 250', 'Not found 1', 'All 251']);
+    expect(heading()).toBe('Wanted 250');
+    expect(el.querySelectorAll('tbody tr').length).toBe(1);
+    expect(text(el)).not.toContain('Alien (1979)');
+    expect(text(el)).toContain('Showing the first 1 of 250.');
+
+    button(el, 'Search all missing').click();
+    await settle(fixture);
+    expect(api.searchSubtitles).toHaveBeenLastCalledWith({ notFound: false });
+
+    radio('All').click();
+    await settle(fixture);
     expect(api.wantedSubtitles).toHaveBeenLastCalledWith(undefined);
-    expect(text(el)).toContain('Not found');
+    expect(heading()).toBe('Wanted 251');
     expect(el.querySelectorAll('tbody tr').length).toBe(2);
 
-    button(el, 'Searching').click();
+    button(el, 'Search all missing').click();
     await settle(fixture);
-    expect(api.wantedSubtitles).toHaveBeenLastCalledWith(false);
-    expect(el.querySelectorAll('tbody tr').length).toBe(1);
-    expect([...el.querySelectorAll('button')].some(b => b.textContent?.trim() === 'Retry')).toBe(false);
+    expect(api.searchSubtitles).toHaveBeenLastCalledWith({});
 
-    el.querySelector<HTMLButtonElement>('[role="radio"]:last-child')!.click();
+    radio('Not found').click();
     await settle(fixture);
     expect(api.wantedSubtitles).toHaveBeenLastCalledWith(true);
+    expect(heading()).toBe('Wanted 1');
+    expect(text(el)).toContain('Not found');
     expect(el.querySelector('a[href="/movies/3"]')).not.toBeNull();
 
+    // Retrying moves the movie back to "Searching" and the counts follow.
     button(el, 'Retry').click();
     await settle(fixture);
     expect(api.retrySubtitles).toHaveBeenLastCalledWith(30);
+    expect(radioText()).toEqual(['Searching 251', 'Not found 0', 'All 251']);
+    expect(heading()).toBe('Wanted 0');
+    expect(text(el)).toContain('No movies are marked as not found.');
+    expect([...el.querySelectorAll('button')].some(b => b.textContent?.trim() === 'Retry all')).toBe(false);
+  });
 
-    button(el, 'Retry all').click();
+  it('refreshes the list and counts when subtitles change', async () => {
+    let counts = { searching: 2, notFound: 0 };
+    const api = setupTest({
+      api: mockApi({
+        settings: async () => settings,
+        subtitleLanguages: async () => [],
+        wantedSubtitles: async () => wanted,
+        wantedSubtitleCounts: async () => counts,
+      }),
+    });
+    const fixture = TestBed.createComponent(SubtitlesPage);
     await settle(fixture);
-    expect(api.retrySubtitles).toHaveBeenLastCalledWith(undefined);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('h2')!.textContent).toContain('2');
+
+    counts = { searching: 1, notFound: 1 };
+    const events = TestBed.inject(Events);
+    events.subtitlesUpdated.next({ movieId: 3 });
+    events.subtitlesUpdated.next({ movieId: 3 });
+    await new Promise(r => setTimeout(r, 600));
+    await settle(fixture);
+    expect(api.wantedSubtitleCounts).toHaveBeenCalledTimes(2); // debounced: one refresh for both events
+    expect(el.querySelector('h2')!.textContent!.replace(/\s+/g, ' ')).toContain('Wanted 1');
   });
 
   it('warns admins when no provider is configured', async () => {
@@ -131,7 +183,7 @@ describe('SubtitlesPage', () => {
     await settle(fixture);
     button(el, 'Search all missing').click();
     await settle(fixture);
-    expect(api.searchSubtitles).toHaveBeenLastCalledWith({ providers: ['subdl'] });
+    expect(api.searchSubtitles).toHaveBeenLastCalledWith({ providers: ['subdl'], notFound: false });
 
     // Selecting a second provider passes both.
     button(el, 'SubDL').click();
@@ -140,7 +192,7 @@ describe('SubtitlesPage', () => {
     await settle(fixture);
     button(el, 'Search all missing').click();
     await settle(fixture);
-    expect(api.searchSubtitles).toHaveBeenLastCalledWith({ providers: ['subdl', 'opensubtitles'] });
+    expect(api.searchSubtitles).toHaveBeenLastCalledWith({ providers: ['subdl', 'opensubtitles'], notFound: false });
 
     // Clearing the selection falls back to searching all configured providers.
     button(el, '2 providers').click();
@@ -149,7 +201,7 @@ describe('SubtitlesPage', () => {
     await settle(fixture);
     button(el, 'Search all missing').click();
     await settle(fixture);
-    expect(api.searchSubtitles).toHaveBeenLastCalledWith();
+    expect(api.searchSubtitles).toHaveBeenLastCalledWith({ notFound: false });
   });
 
   it('does not read settings as a manager but can pick subtitle providers', async () => {
@@ -174,6 +226,6 @@ describe('SubtitlesPage', () => {
     await settle(fixture);
     button(el, 'Search all missing').click();
     await settle(fixture);
-    expect(api.searchSubtitles).toHaveBeenLastCalledWith({ providers: ['subdl'] });
+    expect(api.searchSubtitles).toHaveBeenLastCalledWith({ providers: ['subdl'], notFound: false });
   });
 });

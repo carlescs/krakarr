@@ -6,7 +6,7 @@ import { Auth } from './auth';
 import { readNdjson } from './ndjson';
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
-  IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, WantedSubtitle, WantedSubtitleLanguages, Episode, EpisodeDetails, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
+  IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, WantedSubtitle, WantedSubtitleCounts, WantedSubtitleLanguages, Episode, EpisodeDetails, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
   DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue,
 } from './models';
@@ -309,13 +309,16 @@ export class Api {
   wantedSubtitleLanguages() { return this.get<WantedSubtitleLanguages>('subtitles/wanted-languages'); }
   /** notFound: true = only files no provider had subtitles for, false = only files still searched automatically. */
   wantedSubtitles(notFound?: boolean) { return this.get<WantedSubtitle[]>('subtitles/wanted', { notFound }); }
+  /** Totals per filter (the wanted list itself is capped). */
+  wantedSubtitleCounts() { return this.get<WantedSubtitleCounts>('subtitles/wanted/counts'); }
   /** Lets the scheduled search try a movie file marked "not found" again (every marked file when omitted). */
   retrySubtitles(movieFileId?: number) { return this.post<{ count: number }>('subtitles/retry', { movieFileId: movieFileId ?? null }); }
   /** Searches one file, a whole movie or series (every wanted language, upgrading existing ones), or all wanted files when empty. */
-  searchSubtitles(ref: SubtitleFileRef & { movieId?: number; seriesId?: number; providers?: string[] } = {}) {
+  searchSubtitles(ref: SubtitleFileRef & { movieId?: number; seriesId?: number; providers?: string[]; notFound?: boolean } = {}) {
     return this.post<CommandInfo>('subtitles/search', {
       movieFileId: ref.movieFileId ?? null, episodeFileId: ref.episodeFileId ?? null, movieId: ref.movieId ?? null, seriesId: ref.seriesId ?? null,
       ...(ref.providers?.length ? { providers: ref.providers } : {}),
+      ...(ref.notFound != null ? { notFound: ref.notFound } : {}),
     });
   }
   subtitleCandidates(ref: SubtitleFileRef, language?: string) {

@@ -4,10 +4,10 @@
     @if (availableProviders().length > 0) {
       <kr-multi-picker class="min-w-0 flex-1 sm:w-48 sm:flex-none"
                        [options]="availableProviders()" [(selected)]="selectedProviders"
-                       [disabled]="!ready() || wanted().length === 0"
+                       [disabled]="!ready() || total() === 0"
                        plural="providers" qualifier="configured" />
     }
-    <button class="btn-primary shrink-0" (click)="searchAll()" [disabled]="!ready() || wanted().length === 0">Search all missing</button>
+    <button class="btn-primary shrink-0" (click)="searchAll()" [disabled]="!ready() || total() === 0">Search all missing</button>
   </div>
 </div>
 
@@ -29,16 +29,20 @@
 <section class="card overflow-hidden">
   <div class="flex flex-wrap items-center gap-3 border-b border-surface-700 px-5 py-3">
     <h2 class="mr-auto text-sm font-semibold uppercase tracking-wide text-slate-400">
-      Wanted <span class="ml-1 font-normal normal-case text-slate-500">{{ wanted().length }}</span>
+      Wanted <span class="ml-1 font-normal normal-case text-slate-500">{{ total() }}</span>
     </h2>
-    @if (filter() === 'notFound' && wanted().length > 0) {
+    @if (filter() === 'notFound' && total() > 0) {
       <button class="btn-secondary btn-sm" (click)="retry()">Retry all</button>
     }
     <div class="inline-flex rounded-lg border border-surface-700 bg-surface-900 p-0.5" role="radiogroup" aria-label="Show">
       @for (f of filters; track f.id) {
         <button class="rounded-md px-2.5 py-1 text-xs font-medium transition" [title]="f.title"
                 [class]="filter() === f.id ? 'bg-surface-700 text-white' : 'text-slate-400 hover:text-slate-200'"
-                role="radio" [attr.aria-checked]="filter() === f.id" (click)="setFilter(f.id)">{{ f.label }}</button>
+                role="radio" [attr.aria-checked]="filter() === f.id" (click)="setFilter(f.id)">
+          {{ f.label }}@if (count(f.id) !== null) {
+            {{ ' ' }}<span class="ml-0.5 tabular-nums opacity-60">{{ count(f.id) }}</span>
+          }
+        </button>
       }
     </div>
   </div>
@@ -94,6 +98,9 @@
         </tbody>
       </table>
     </div>
+    @if (total() > wanted().length) {
+      <p class="px-5 py-3 text-xs text-slate-500">Showing the first {{ wanted().length }} of {{ total() }}.</p>
+    }
   }
 </section>
 
