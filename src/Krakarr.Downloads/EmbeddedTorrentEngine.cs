@@ -516,6 +516,12 @@ public sealed class EmbeddedTorrentEngine(
                 await manager!.StopAsync();
                 row.State = DownloadState.Completed;
             }
+            else if (manager is not null && status.State == DownloadState.Seeding && SeedingPolicy.ImportFailed(row))
+            {
+                logger.LogInformation("Import of {Name} failed, stopping it instead of seeding", row.Name);
+                await manager.StopAsync();
+                row.State = DownloadState.Completed;
+            }
 
             if (_rows.TryGetValue(row.InfoHash, out var cached))
             {

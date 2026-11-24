@@ -223,6 +223,15 @@ public sealed class QBittorrentEngine(
     {
         foreach (var (row, torrent) in matched.ToList())
         {
+            if (torrent.Progress >= 1 && row.State == DownloadState.Seeding && SeedingPolicy.ImportFailed(row))
+            {
+                logger.LogInformation("Import of {Name} failed, stopping it in qBittorrent instead of seeding", row.Name);
+                await api.PauseAsync(torrent.Hash, ct);
+                row.State = DownloadState.Paused;
+                row.Paused = true;
+                continue;
+            }
+
             if (torrent.Progress < 1 || !SeedingPolicy.IsDone(settings, row, torrent.Ratio, now))
             {
                 continue;
