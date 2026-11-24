@@ -12,7 +12,7 @@ import { PagedSelection, ViewMode, storeView, storedView } from '../../../core/s
 import { Subscriptions } from '../../../core/subscriptions';
 import { TableSort } from '../../../core/table-sort';
 import { Toasts } from '../../../core/toast';
-import { gridMetrics, observeContainerWidth } from '../../../core/virtual-scroll';
+import { gridMetrics, gridSlots, observeContainerWidth } from '../../../core/virtual-scroll';
 import { BulkActions } from '../../../shared/bulk-actions/bulk-actions';
 import { MoreMenu } from '../../../shared/more-menu/more-menu';
 import { PosterGridSkeleton } from '../../../shared/poster-grid/poster-grid';
@@ -28,7 +28,6 @@ interface SeriesGridRow {
   key: number;
   start: number;
   count: number;
-  indices: number[];
 }
 
 @Component({
@@ -68,6 +67,7 @@ export class SeriesListPage {
   protected readonly selecting = signal(false);
   protected readonly following = this.subscriptions.seriesIds;
   protected readonly tableRowHeight = TABLE_ROW_HEIGHT;
+  protected readonly slots = gridSlots;
 
   /** Sort state shared with `SortHeader`; actual sorting happens on the server. */
   protected readonly sort = new TableSort<SeriesListItem, SeriesSortKey>(
@@ -105,10 +105,7 @@ export class SeriesListPage {
     const rows: SeriesGridRow[] = new Array(count);
     for (let r = 0; r < count; r++) {
       const start = r * cols;
-      const len = Math.min(cols, total - start);
-      const indices: number[] = new Array(len);
-      for (let i = 0; i < len; i++) indices[i] = start + i;
-      rows[r] = { key: r, start, count: len, indices };
+      rows[r] = { key: r, start, count: Math.min(cols, total - start) };
     }
     return rows;
   });
@@ -130,6 +127,7 @@ export class SeriesListPage {
     (a, b) => this.cache.idsBetween(a, b),
     () => this.api.seriesIds(this.cache.currentQuery()),
     e => this.toasts.error(errorMessage(e)),
+    (selected, total) => this.toasts.show(`Selected the first ${selected} of ${total} series (bulk actions are limited to ${selected}).`, 'info', 7000),
   );
 
   /** The bulk toolbar shows while something is selected in the table, and throughout grid selection mode. */
@@ -186,9 +184,10 @@ export class SeriesListPage {
       }
     });
 
-    let lastRevision = this.cache.revision();
+    // Narrow the selection when the query changes. Plain reloads of the same query keep it (and the Shift+click anchor).
+    let lastRevision = this.cache.queryRevision();
     effect(() => {
-      const rev = this.cache.revision();
+      const rev = this.cache.queryRevision();
       if (rev !== lastRevision) {
         lastRevision = rev;
         void untracked(() => this.selection.reconcile());

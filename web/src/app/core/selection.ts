@@ -89,12 +89,14 @@ export class PagedSelection implements SelectionModel<number> {
   private readonly ids = signal<ReadonlySet<number>>(new Set());
   private anchor: number | null = null;
   private generation = 0;
+  /** Size of the id list when the server capped "Select all" below `total`; selecting that many then counts as all. */
+  private readonly cap = signal(Infinity);
 
   readonly selected = computed(() => [...this.ids()]);
   readonly count = computed(() => this.ids().size);
   readonly all = computed(() => {
     const total = this.total();
-    return total > 0 && this.ids().size >= total;
+    return total > 0 && this.ids().size >= Math.min(total, this.cap());
   });
 
   constructor(
@@ -104,6 +106,8 @@ export class PagedSelection implements SelectionModel<number> {
     private readonly idsBetween: (a: number, b: number) => number[] | null,
     private readonly fetchAllIds: () => Promise<number[]>,
     private readonly onError?: (e: unknown) => void,
+    /** Called when "Select all" got fewer ids than `total` (the server caps bulk id lists). */
+    private readonly onTruncated?: (selected: number, total: number) => void,
   ) {}
 
   has(id: number): boolean { return this.ids().has(id); }
@@ -160,6 +164,11 @@ export class PagedSelection implements SelectionModel<number> {
     const gen = this.generation;
     return this.fetchAllIds().then(all => {
       if (gen !== this.generation) return;
+      const total = this.total();
+      if (all.length < total) {
+        this.cap.set(all.length);
+        this.onTruncated?.(all.length, total);
+      }
       this.ids.set(new Set(all));
     }, e => this.onError?.(e));
   }
@@ -168,6 +177,7 @@ export class PagedSelection implements SelectionModel<number> {
   reconcile(): void | Promise<void> {
     const gen = ++this.generation;
     this.anchor = null;
+    this.cap.set(Infinity);
     const current = this.ids();
     if (current.size === 0) return;
     if (this.total() === 0) {

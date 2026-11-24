@@ -110,7 +110,8 @@
            class="grid w-full gap-x-3 pb-4 sm:gap-x-4"
            [style.grid-template-columns]="gridTemplate()"
            [style.height.px]="metrics().rowHeight">
-        @for (index of row.indices; track $index) {
+        @for (slot of slots(row.count); track slot) {
+          @let index = row.start + slot;
           @if (seriesAt(index); as s) {
             @let checked = selecting() && selection.has(s.id);
             <a [routerLink]="selecting() ? null : ['/series', s.id]" class="group min-w-0 cursor-pointer" (click)="cardClick($event, s)"

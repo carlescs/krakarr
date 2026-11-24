@@ -106,8 +106,9 @@ public static class MovieEndpoints
             var total = await filtered.CountAsync(ct);
             var libraryTotal = isFiltered ? await db.Movies.CountAsync(ct) : total;
 
+            // Groups describe the whole result, so only the first page (which the client reads them from) carries them.
             List<MovieCollectionGroupDto>? groups = null;
-            if (grouped)
+            if (grouped && currentPage == 1)
             {
                 groups = await LoadGroupsAsync(db, filtered, ct);
             }

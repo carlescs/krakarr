@@ -50,6 +50,8 @@ export class PagedListCache<T extends { id: number }, Q extends object, P extend
   readonly version = signal(0);
   /** Increments when a query commit or full reload completes (not when scrolling loads additional pages). */
   readonly revision = signal(0);
+  /** Increments only when results for a different query are committed (not on reloads of the same query). */
+  readonly queryRevision = signal(0);
 
   private query: Q;
   private queryKey: string;
@@ -57,6 +59,10 @@ export class PagedListCache<T extends { id: number }, Q extends object, P extend
   private pages = new Map<number, T[]>();
   private inFlight = new Set<number>();
   private activeRange: [number, number] = [1, 1];
+  /** Last item range a view asked for, kept so it can be requested again after a commit replaces the pages. */
+  private requestedRange: [number, number] | null = null;
+  /** Pages loaded by scrolling while a reload was in flight: fresher than the reload's snapshot, so the reload keeps them. */
+  private loadedDuringReload = new Set<number>();
   private generation = 0;
   private watchers = 0;
   private reloading?: Promise<void>;
@@ -90,7 +96,8 @@ export class PagedListCache<T extends { id: number }, Q extends object, P extend
     if (this.watchers > 0) {
       void this.loadForNewQuery();
     } else {
-      // Dropped cache will be fetched when a page next attaches.
+      // Dropped cache will be fetched when a page next attaches. Responses still in flight belong to the old query.
+      this.generation++;
       this.committedKey = null;
       this.pages.clear();
       this.inFlight.clear();
@@ -136,6 +143,7 @@ export class PagedListCache<T extends { id: number }, Q extends object, P extend
     const key = this.queryKey;
     const pagesToLoad = new Set<number>([1]);
     for (let p = this.activeRange[0]; p <= this.activeRange[1]; p++) pagesToLoad.add(p);
+    this.loadedDuringReload.clear();
 
     this.reloading = (async () => {
       try {
@@ -148,9 +156,13 @@ export class PagedListCache<T extends { id: number }, Q extends object, P extend
             nextPages.set(ordered[i], results[i].items);
           }
         }
+        // Keep pages that scrolling loaded meanwhile (they are at least as fresh); drop the other stale ones.
+        for (const p of this.loadedDuringReload) {
+          const items = this.pages.get(p);
+          if (items && !nextPages.has(p)) nextPages.set(p, items);
+        }
         const first = results[0];
         this.pages = nextPages;
-        this.inFlight.clear();
         this.committedKey = key;
         this.total.set(first.total);
         this.libraryTotal.set(first.libraryTotal);
@@ -158,12 +170,14 @@ export class PagedListCache<T extends { id: number }, Q extends object, P extend
         this.loading.set(false);
         this.version.update(v => v + 1);
         this.revision.update(v => v + 1);
+        this.refillRequestedRange();
       } catch (e) {
         if (gen !== this.generation) return;
         this.loading.set(false);
         this.onError(e);
       } finally {
         this.reloading = undefined;
+        this.loadedDuringReload.clear();
         if (this.queued) {
           this.queued = false;
           if (this.watchers > 0) void this.reload();
@@ -182,6 +196,7 @@ export class PagedListCache<T extends { id: number }, Q extends object, P extend
     this.pages.clear();
     this.inFlight.clear();
     this.activeRange = [1, 1];
+    this.requestedRange = null;
     this.total.set(0);
     this.libraryTotal.set(0);
     this.meta.set(null);
@@ -251,9 +266,12 @@ export class PagedListCache<T extends { id: number }, Q extends object, P extend
 
   /** Ensures every page overlapping 0-based item indices `[startIndex, endIndex]` is loaded or in flight. */
   ensureRange(startIndex: number, endIndex: number) {
+    if (endIndex < startIndex) return;
+    // Remembered even while a new query loads: views only ask again when their range changes, so the commit re-requests it.
+    this.requestedRange = [startIndex, endIndex];
     if (this.committedKey !== this.queryKey) return;
     const total = this.total();
-    if (total === 0 || endIndex < startIndex) return;
+    if (total === 0) return;
     const maxPage = Math.ceil(total / this.pageSize);
     const firstPage = Math.max(1, Math.min(maxPage, Math.floor(Math.max(0, startIndex) / this.pageSize) + 1));
     const lastPage = Math.max(firstPage, Math.min(maxPage, Math.floor(Math.max(0, endIndex) / this.pageSize) + 1));
@@ -289,6 +307,9 @@ export class PagedListCache<T extends { id: number }, Q extends object, P extend
       this.loading.set(false);
       this.version.update(v => v + 1);
       this.revision.update(v => v + 1);
+      this.queryRevision.update(v => v + 1);
+      // Rows past page 1 that are already rendered (e.g. a sort change without scrolling) would otherwise stay empty.
+      this.refillRequestedRange();
     } catch (e) {
       if (gen !== this.generation) return;
       this.inFlight.delete(1);
@@ -306,6 +327,7 @@ export class PagedListCache<T extends { id: number }, Q extends object, P extend
       if (gen !== this.generation) return;
       this.pages.delete(page);
       this.pages.set(page, res.items);
+      if (this.reloading) this.loadedDuringReload.add(page);
       this.evictIfNeeded();
       if (res.total !== this.total()) this.total.set(res.total);
       if (res.libraryTotal !== this.libraryTotal()) this.libraryTotal.set(res.libraryTotal);
@@ -316,6 +338,12 @@ export class PagedListCache<T extends { id: number }, Q extends object, P extend
     } finally {
       if (gen === this.generation) this.inFlight.delete(page);
     }
+  }
+
+  /** Loads pages of the last requested range that a commit left out. */
+  private refillRequestedRange() {
+    if (this.requestedRange) this.ensureRange(this.requestedRange[0], this.requestedRange[1]);
+    this.evictIfNeeded();
   }
 
   private evictIfNeeded() {

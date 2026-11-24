@@ -2,6 +2,18 @@ import { CdkVirtualScrollViewport, VIRTUAL_SCROLL_STRATEGY, VirtualScrollStrateg
 import { Directive, OnChanges, forwardRef, input } from '@angular/core';
 import { Subject, distinctUntilChanged } from 'rxjs';
 
+const SLOTS: number[][] = [];
+
+/** `[0, 1, ..., count - 1]`, shared between calls so grid rows don't each allocate their own index list. */
+export function gridSlots(count: number): readonly number[] {
+  let slots = SLOTS[count];
+  if (!slots) {
+    slots = Array.from({ length: count }, (_, i) => i);
+    SLOTS[count] = slots;
+  }
+  return slots;
+}
+
 export interface GridMetrics {
   cols: number;
   rowHeight: number;
