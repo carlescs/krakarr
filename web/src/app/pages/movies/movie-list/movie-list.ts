@@ -12,7 +12,7 @@ import { PagedSelection, ViewMode, storeView, storedView } from '../../../core/s
 import { Subscriptions } from '../../../core/subscriptions';
 import { TableSort } from '../../../core/table-sort';
 import { Toasts } from '../../../core/toast';
-import { KrRowHeights, gridMetrics, observeContainerWidth } from '../../../core/virtual-scroll';
+import { KrRowHeights, gridMetrics, gridSlots, observeContainerWidth } from '../../../core/virtual-scroll';
 import { BulkActions } from '../../../shared/bulk-actions/bulk-actions';
 import { MoreMenu } from '../../../shared/more-menu/more-menu';
 import { PosterGridSkeleton } from '../../../shared/poster-grid/poster-grid';
@@ -36,7 +36,6 @@ interface MovieGridCardsRow {
   key: string;
   start: number;
   count: number;
-  indices: number[];
 }
 
 interface MovieGridHeaderRow {
@@ -120,6 +119,7 @@ export class MovieListPage {
   protected readonly selecting = signal(false);
   protected readonly following = this.subscriptions.movieIds;
   protected readonly tableRowHeight = TABLE_ROW_HEIGHT;
+  protected readonly slots = gridSlots;
 
   /** Sort state shared with `SortHeader`; actual sorting happens on the server. Groups keep their own order. */
   protected readonly sort = new TableSort<MovieListItem, MovieSortKey>(
@@ -163,10 +163,7 @@ export class MovieListPage {
     const rows: MovieGridCardsRow[] = new Array(count);
     for (let r = 0; r < count; r++) {
       const start = r * cols;
-      const len = Math.min(cols, total - start);
-      const indices: number[] = new Array(len);
-      for (let i = 0; i < len; i++) indices[i] = start + i;
-      rows[r] = { kind: 'cards', key: `r-${r}`, start, count: len, indices };
+      rows[r] = { kind: 'cards', key: `r-${r}`, start, count: Math.min(cols, total - start) };
     }
     return rows;
   });
@@ -192,10 +189,7 @@ export class MovieListPage {
         const rowCount = Math.ceil(group.count / cols);
         for (let r = 0; r < rowCount; r++) {
           const start = offset + r * cols;
-          const len = Math.min(cols, offset + group.count - start);
-          const indices: number[] = new Array(len);
-          for (let i = 0; i < len; i++) indices[i] = start + i;
-          rows.push({ kind: 'cards', key: `c-${group.key}-${r}`, start, count: len, indices });
+          rows.push({ kind: 'cards', key: `c-${group.key}-${r}`, start, count: Math.min(cols, offset + group.count - start) });
         }
       }
       offset += group.count;
@@ -242,6 +236,7 @@ export class MovieListPage {
     (a, b) => this.cache.idsBetween(a, b),
     () => this.api.movieIds(this.cache.currentQuery()),
     e => this.toasts.error(errorMessage(e)),
+    (selected, total) => this.toasts.show(`Selected the first ${selected} of ${total} movies (bulk actions are limited to ${selected}).`, 'info', 7000),
   );
 
   /** The bulk toolbar shows while something is selected in the table, and throughout grid selection mode. */
@@ -321,9 +316,10 @@ export class MovieListPage {
       }
     });
 
-    let lastRevision = this.cache.revision();
+    // Narrow the selection when the query changes. Plain reloads of the same query keep it (and the Shift+click anchor).
+    let lastRevision = this.cache.queryRevision();
     effect(() => {
-      const rev = this.cache.revision();
+      const rev = this.cache.queryRevision();
       if (rev !== lastRevision) {
         lastRevision = rev;
         void untracked(() => this.selection.reconcile());
@@ -335,9 +331,14 @@ export class MovieListPage {
       const key = this.liveDownloadingKey();
       if (key !== lastDownloadingKey) {
         lastDownloadingKey = key;
-        if (untracked(() => this.filter()) === 'downloading') {
-          void untracked(() => this.cache.reload());
-        }
+        // What is downloading decides membership of the Downloading filter and the order of the status sort.
+        untracked(() => {
+          if (this.filter() === 'downloading') {
+            void this.cache.reload().then(() => this.selection.reconcile());
+          } else if (this.grouping() === 'none' && this.sort.state().key === 'status') {
+            void this.cache.reload();
+          }
+        });
       }
     });
   }

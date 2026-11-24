@@ -6,7 +6,9 @@ namespace Krakarr.Data.Sqlite;
 public static class SqliteDbContextOptions
 {
     public static DbContextOptionsBuilder UseKrakarrSqlite(this DbContextOptionsBuilder builder, string connectionString) =>
-        builder.UseSqlite(connectionString, o => o.MigrationsAssembly(typeof(SqliteDbContextOptions).Assembly.GetName().Name));
+        builder
+            .UseSqlite(connectionString, o => o.MigrationsAssembly(typeof(SqliteDbContextOptions).Assembly.GetName().Name))
+            .AddInterceptors(UnicodeCaseFunctions.Instance);
 }
 
 /// <summary>Used by <c>dotnet ef</c> to generate Sqlite migrations.</summary>

@@ -105,4 +105,18 @@ describe('PagedSelection', () => {
     await selection.reconcile();
     expect(selection.selected().sort((a, b) => a - b)).toEqual([20, 40]);
   });
+
+  it('treats a capped "Select all" as everything and reports the cap', async () => {
+    const total = signal(5);
+    const onTruncated = vi.fn();
+    const selection = new PagedSelection(total, () => [], () => false, () => null, async () => [1, 2, 3], undefined, onTruncated);
+
+    await selection.toggleAll();
+    expect(selection.count()).toBe(3);
+    expect(selection.all()).toBe(true);
+    expect(onTruncated).toHaveBeenCalledWith(3, 5);
+
+    await selection.toggleAll();
+    expect(selection.count()).toBe(0);
+  });
 });

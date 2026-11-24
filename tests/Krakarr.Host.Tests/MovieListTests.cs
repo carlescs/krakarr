@@ -133,8 +133,41 @@ public sealed class MovieListTests : IClassFixture<KrakarrFactory>
         Assert.Equal("other", groups[1].GetProperty("key").GetString());
         Assert.Equal(1, groups[1].GetProperty("count").GetInt32());
 
+        // Only the first page carries the groups: later pages would recompute them for nothing.
+        var groupedPage2 = await client.GetFromJsonAsync<JsonElement>("/api/v1/movies?groupBy=collection&page=2&pageSize=2", ct);
+        Assert.Equal(["Arrival"], groupedPage2.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("title").GetString()));
+        Assert.Equal(JsonValueKind.Null, groupedPage2.GetProperty("groups").ValueKind);
+
         // Matching ids
         var ids = await client.GetFromJsonAsync<int[]>("/api/v1/movies/ids?sort=year&desc=true", ct);
         Assert.Equal([arrivalId, aliensId, alienId], ids);
+    }
+
+    [Fact]
+    public async Task Search_ignores_case_of_non_ascii_letters()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+            db.Movies.RemoveRange(db.Movies);
+            await db.SaveChangesAsync(ct);
+            var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+            db.Movies.AddRange(
+                new Movie { TmdbId = 9201, Title = "Àlex i l'Ésser", SortTitle = "alex i l'esser", Year = 2020, Path = "/movies/alex", QualityProfileId = profile },
+                new Movie { TmdbId = 9202, Title = "Other", SortTitle = "other", Year = 2021, Path = "/movies/other", QualityProfileId = profile });
+            await db.SaveChangesAsync(ct);
+        }
+
+        var client = _factory.CreateClient(new() { HandleCookies = true });
+        var status = await client.GetFromJsonAsync<JsonElement>("/api/v1/auth/status", ct);
+        var url = status.GetProperty("setupRequired").GetBoolean() ? "/api/v1/auth/setup" : "/api/v1/auth/login";
+        (await client.PostAsJsonAsync(url, new { username = "admin", password = "correct-horse", setupToken = KrakarrFactory.TestSetupToken }, ct)).EnsureSuccessStatusCode();
+
+        foreach (var q in new[] { "àlex", "ÀLEX", "l'éSSER" })
+        {
+            var page = await client.GetFromJsonAsync<JsonElement>($"/api/v1/movies?q={Uri.EscapeDataString(q)}", ct);
+            Assert.Equal(["Àlex i l'Ésser"], page.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("title").GetString()));
+        }
     }
 }
