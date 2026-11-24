@@ -8,7 +8,7 @@ import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
   IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, WantedSubtitle, WantedSubtitleLanguages, Episode, EpisodeDetails, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
-  DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction,
+  DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue,
 } from './models';
 
 const API = 'api/v1';
@@ -160,6 +160,9 @@ export class Api {
     return this.post<BulkResult>('downloads/bulk', { hashes, action, deleteData });
   }
   removeDownload(hash: string, deleteData: boolean) { return this.delete<void>(`downloads/${hash}`, { deleteData }); }
+  importIssues() { return this.get<ImportIssue[]>('downloads/import-issues'); }
+  retryImport(id: number) { return this.post<void>(`downloads/import-issues/${id}/retry`); }
+  dismissImportIssue(id: number) { return this.delete<void>(`downloads/import-issues/${id}`); }
 
   // Movies
   movies(query?: MovieListQuery) { return this.get<MovieListPage>('movies', query as Record<string, string | number | boolean | null | undefined>); }

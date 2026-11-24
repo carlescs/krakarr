@@ -26,6 +26,35 @@
   </div>
 }
 
+@if (importIssues().length > 0) {
+  <section class="card mb-4 border-amber-500/30" aria-labelledby="import-issues-title">
+    <h2 id="import-issues-title" class="border-b border-surface-700 px-4 py-3 text-sm font-semibold text-amber-300">
+      ⚠ {{ importIssues().length }} {{ importIssues().length === 1 ? 'import needs' : 'imports need' }} attention
+    </h2>
+    <ul class="divide-y divide-surface-700">
+      @for (i of importIssues(); track i.id) {
+        <li class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+          <div class="min-w-0 flex-1 basis-60">
+            <p class="break-all font-medium text-slate-100">{{ i.name }}</p>
+            <p class="mt-1 text-xs text-rose-300">{{ i.message }}</p>
+            @if (!i.inClient) { <p class="mt-1 text-xs text-slate-500">No longer in the download client.</p> }
+          </div>
+          @if (i.movieId) { <a [routerLink]="['/movies', i.movieId]" class="badge bg-accent-500/15 text-accent-300 hover:bg-accent-500/25">Movie</a> }
+          @if (i.seriesId) { <a [routerLink]="['/series', i.seriesId]" class="badge bg-violet-500/15 text-violet-300 hover:bg-violet-500/25">Series</a> }
+          <div class="flex gap-2">
+            @if (i.inClient && i.completedAt) {
+              <button type="button" class="btn-secondary btn-sm" [disabled]="issueBusy() !== null" (click)="resolveIssue(i, 'retry')"
+                      title="Try the import again">Retry import</button>
+            }
+            <button type="button" class="btn-ghost btn-sm" [disabled]="issueBusy() !== null" (click)="resolveIssue(i, 'dismiss')"
+                    [title]="i.inClient ? 'Keep the torrent but stop importing it into the library' : 'Forget this download'">Dismiss</button>
+          </div>
+        </li>
+      }
+    </ul>
+  </section>
+}
+
 @if (visible().length === 0) {
   <div class="card px-6 py-12 text-center text-sm text-slate-400">
     @if (list().length === 0) { No torrents. Grab a release or add a magnet link. }
