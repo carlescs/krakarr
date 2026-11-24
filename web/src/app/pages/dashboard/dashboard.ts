@@ -10,6 +10,7 @@ import { DashboardStats, DownloadState, MediaType, RootFolder } from '../../core
 import { Poster } from '../../shared/poster/poster';
 import { Progress } from '../../shared/progress/progress';
 import { StateBadge } from '../../shared/state-badge/state-badge';
+import { Upcoming } from './upcoming/upcoming';
 
 /** One part of a segmented bar: its share of the whole and how it is drawn in the bar and the legend. */
 export interface Segment { label: string; value: number; color: string; }
@@ -32,7 +33,7 @@ export const TOP_DOWNLOADS = 5;
 
 @Component({
   selector: 'kr-dashboard',
-  imports: [NgTemplateOutlet, RouterLink, BytesPipe, SpeedPipe, DurationPipe, AgoPipe, Poster, Progress, StateBadge],
+  imports: [NgTemplateOutlet, RouterLink, BytesPipe, SpeedPipe, DurationPipe, AgoPipe, Poster, Progress, StateBadge, Upcoming],
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.scss',
 })

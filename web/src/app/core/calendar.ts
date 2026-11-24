@@ -46,6 +46,26 @@ export type ItemState = 'downloaded' | 'downloading' | 'missing' | 'upcoming' | 
 
 export const RELEASE_LABELS: Record<ReleaseDateType, string> = { Theatrical: 'In cinemas', Digital: 'Digital', Physical: 'Physical' };
 
+export type StyleKey = 'episodes' | 'Theatrical' | 'Digital' | 'Physical';
+
+/** Colour per kind of release: left bar, chip background and legend dot. */
+export const CALENDAR_STYLES: Record<StyleKey, { bar: string; chip: string; dot: string; label: string }> = {
+  episodes: { bar: 'border-l-accent-400', chip: 'bg-accent-500/10 hover:bg-accent-500/20', dot: 'bg-accent-400', label: 'Episodes' },
+  Theatrical: { bar: 'border-l-amber-400', chip: 'bg-amber-500/10 hover:bg-amber-500/20', dot: 'bg-amber-400', label: RELEASE_LABELS.Theatrical },
+  Digital: { bar: 'border-l-violet-400', chip: 'bg-violet-500/10 hover:bg-violet-500/20', dot: 'bg-violet-400', label: RELEASE_LABELS.Digital },
+  Physical: { bar: 'border-l-pink-400', chip: 'bg-pink-500/10 hover:bg-pink-500/20', dot: 'bg-pink-400', label: RELEASE_LABELS.Physical },
+};
+
+export const CALENDAR_STATES: Record<ItemState, { label: string; badge: string; icon: string }> = {
+  downloaded: { label: 'Downloaded', badge: 'bg-emerald-500/15 text-emerald-300', icon: '✓' },
+  downloading: { label: 'Downloading', badge: 'bg-accent-500/15 text-accent-300', icon: '↓' },
+  missing: { label: 'Missing', badge: 'bg-rose-500/15 text-rose-300', icon: '!' },
+  upcoming: { label: 'Upcoming', badge: 'bg-surface-700 text-slate-300', icon: '' },
+  unmonitored: { label: 'Unmonitored', badge: 'bg-slate-500/15 text-slate-400', icon: '' },
+};
+
+export function styleKey(item: CalendarItem): StyleKey { return item.kind === 'episodes' ? 'episodes' : item.releaseType ?? 'Theatrical'; }
+
 // ---- Dates (local, yyyy-MM-dd) -------------------------------------------------------------
 
 export function toIsoDate(d: Date): string {

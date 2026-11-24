@@ -7,8 +7,8 @@ import { debounceTime, merge } from 'rxjs';
 import { Api, errorMessage } from '../../core/api';
 import { Auth } from '../../core/auth';
 import {
-  CalendarFilters, CalendarItem, CalendarStatusFilter, CalendarView, DEFAULT_FILTERS, FeedOptions, ItemState, RELEASE_LABELS, addDays, buildItems, daysBetween,
-  feedUrl, groupByDay, itemState, localeFirstDayOfWeek, parseIsoDate, shiftAnchor, toIsoDate, viewRange,
+  CALENDAR_STATES as STATES, CALENDAR_STYLES as STYLES, CalendarFilters, CalendarItem, CalendarStatusFilter, CalendarView, DEFAULT_FILTERS, FeedOptions, RELEASE_LABELS,
+  StyleKey, addDays, buildItems, daysBetween, feedUrl, groupByDay, itemState, localeFirstDayOfWeek, parseIsoDate, shiftAnchor, styleKey, toIsoDate, viewRange,
 } from '../../core/calendar';
 import { Events } from '../../core/events';
 import { CalendarEntry, Subscriber } from '../../core/models';
@@ -17,24 +17,6 @@ import { Modal } from '../../shared/modal/modal';
 import { Poster } from '../../shared/poster/poster';
 
 const STORAGE_KEY = 'krakarr.calendar';
-
-type StyleKey = 'episodes' | 'Theatrical' | 'Digital' | 'Physical';
-
-/** Colour per kind of release: left bar, chip background and legend dot. */
-const STYLES: Record<StyleKey, { bar: string; chip: string; dot: string; label: string }> = {
-  episodes: { bar: 'border-l-accent-400', chip: 'bg-accent-500/10 hover:bg-accent-500/20', dot: 'bg-accent-400', label: 'Episodes' },
-  Theatrical: { bar: 'border-l-amber-400', chip: 'bg-amber-500/10 hover:bg-amber-500/20', dot: 'bg-amber-400', label: RELEASE_LABELS.Theatrical },
-  Digital: { bar: 'border-l-violet-400', chip: 'bg-violet-500/10 hover:bg-violet-500/20', dot: 'bg-violet-400', label: RELEASE_LABELS.Digital },
-  Physical: { bar: 'border-l-pink-400', chip: 'bg-pink-500/10 hover:bg-pink-500/20', dot: 'bg-pink-400', label: RELEASE_LABELS.Physical },
-};
-
-const STATES: Record<ItemState, { label: string; badge: string; icon: string }> = {
-  downloaded: { label: 'Downloaded', badge: 'bg-emerald-500/15 text-emerald-300', icon: '✓' },
-  downloading: { label: 'Downloading', badge: 'bg-accent-500/15 text-accent-300', icon: '↓' },
-  missing: { label: 'Missing', badge: 'bg-rose-500/15 text-rose-300', icon: '!' },
-  upcoming: { label: 'Upcoming', badge: 'bg-surface-700 text-slate-300', icon: '' },
-  unmonitored: { label: 'Unmonitored', badge: 'bg-slate-500/15 text-slate-400', icon: '' },
-};
 
 /** Whose titles the calendar shows: the whole library, the signed-in user's followed titles, or (staff) another user's. */
 type Owner = 'all' | 'me' | number;
@@ -256,7 +238,7 @@ export class CalendarPage {
   }
   private shortDate(day: string) { return parseIsoDate(day).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); }
 
-  protected styleKey(item: CalendarItem): StyleKey { return item.kind === 'episodes' ? 'episodes' : item.releaseType ?? 'Theatrical'; }
+  protected styleKey(item: CalendarItem): StyleKey { return styleKey(item); }
   protected state(item: CalendarItem) { return itemState(item, this.today); }
   protected stateText(item: CalendarItem) {
     const s = this.state(item);
