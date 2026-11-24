@@ -231,7 +231,7 @@
 
 <!-- Week -->
 @if (view() === 'week') {
-  <div class="grid gap-3 lg:grid-cols-7 lg:gap-2">
+  <div class="grid grid-cols-1 gap-3 lg:grid-cols-7 lg:gap-2">
     @for (day of days(); track day) {
       @let list = byDay().get(day) ?? [];
       <section class="card min-w-0 p-3 lg:min-h-64 lg:p-2" [class.ring-1]="day === today" [class.ring-accent-500]="day === today"
