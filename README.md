@@ -112,6 +112,11 @@ TheTVDB is the series metadata source.
 - Titles already in the library carry a ✓ and open their page. Any other title opens a TMDB detail page (overview,
   genres, seasons, cast and crew, related titles) and has an *Add* button that asks for a root folder and quality
   profile, as *Add movie* / *Add series* do.
+- **Search** (the button on Discover, or *+ Add movie* / *+ Add series* on the library lists) is one search box for
+  movies, series, people and keywords at once. *All* previews each kind; the *Movies*, *Series*, *People* and
+  *Keywords* tabs list one kind in full, with overviews and an *Add* (or *Request*) button for titles.
+- **Keywords**: opening a keyword ("heist", "time travel", "based on novel"…) lists every movie and show TMDB tags
+  with it, most popular first. Add more keywords to narrow it down: a title has to carry all of them.
 - **People**: clicking a cast or crew member opens their page with a short biography and every movie and show they
   worked on, grouped by department (acting, directing, writing…). Talk-show and news appearances are left out.
 
@@ -294,8 +299,8 @@ Krakarr keeps only their public keys.
 ### Requests
 
 Users can't add titles themselves, so wherever an admin or manager sees *+ Add* (Discover, a title's page, a person's
-credits, the movie and series search pages) they see *Request* instead. Users reach the search pages from Discover
-(*Search movies* / *Search series*) or *Search & request* on the library lists. Requests are listed under **Requests**:
+credits, search results) they see *Request* instead. Users reach the search from Discover (*Search*) or *Search &
+request* on the library lists. Requests are listed under **Requests**:
 
 - **Users** see their own requests and can withdraw them while pending.
 - **Admins and managers** see everyone's. *Approve* opens the usual add dialog (root

@@ -42,6 +42,7 @@ public sealed class RequestsFactory : KrakarrFactory
             Task.FromResult(new SeriesDetails { Show = new SeriesLookup { TmdbId = tmdbId, TvdbId = tmdbId + 100_000, Title = $"Show {tmdbId}", Year = 2019 } });
 
         public Task<DiscoverPage<SeriesLookup>> ListAsync(SeriesList list, int page, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<DiscoverPage<SeriesLookup>> KeywordsAsync(IReadOnlyList<int> keywordIds, int page, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<SeriesLookup>> RecommendationsAsync(SeriesIds ids, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<SeriesLookup>> SimilarAsync(SeriesIds ids, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<IReadOnlyList<SeriesLookup>>> RecommendationsAsync(IReadOnlyList<SeriesIds> shows, CancellationToken ct = default) => throw new NotSupportedException();

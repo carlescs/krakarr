@@ -26,8 +26,7 @@ describe('DiscoverPage', () => {
     expect(text(el)).toContain('Dune');
     // Plain users can search too, and get a link to their requests.
     expect(el.querySelector('a[href="/requests"]')).not.toBeNull();
-    expect(el.querySelector('a[href="/movies/add"]')).not.toBeNull();
-    expect(el.querySelector('a[href="/people"]')).not.toBeNull();
+    expect(el.querySelector('a[href="/discover/search"]')).not.toBeNull();
   });
 
   it('explains a missing TMDB key instead of showing empty rows', async () => {

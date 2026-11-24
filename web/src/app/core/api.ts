@@ -8,7 +8,7 @@ import type { Passkey, PasskeyCreationOptionsJson, PasskeyCredentialJson, Passke
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
   IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
-  ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
+  ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, KeywordLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
   DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue,
 } from './models';
 
@@ -283,6 +283,14 @@ export class Api {
 
   // People
   lookupPeople(term: string) { return this.get<PersonLookup[]>('people/lookup', { term }); }
+
+  // Keywords
+  lookupKeywords(term: string) { return this.get<KeywordLookup[]>('keywords/lookup', { term }); }
+  keyword(id: number) { return this.get<KeywordLookup>(`keywords/${id}`); }
+  /** Movies tagged with every one of the keywords, most popular first. */
+  moviesByKeywords(ids: readonly number[], page = 1) { return this.get<DiscoverPage<MovieLookup>>('movies/discover/keywords', { keywords: ids.join(','), page }); }
+  /** Shows tagged with every one of the keywords, most popular first. */
+  seriesByKeywords(ids: readonly number[], page = 1) { return this.get<DiscoverPage<SeriesLookup>>('series/discover/keywords', { keywords: ids.join(','), page }); }
   person(tmdbId: number) { return this.get<PersonDetails>(`people/${tmdbId}`); }
   /** IMDb, Rotten Tomatoes and Metacritic scores; null (HTTP 204) when no OMDb key is set or they are unavailable. */
   ratings(imdbId: string) { return this.get<TitleRatings | null>(`ratings/${encodeURIComponent(imdbId)}`); }

@@ -1,0 +1,77 @@
+<div class="mb-6 flex flex-wrap items-center gap-3">
+  <a routerLink="/discover/search" class="btn-ghost btn-sm -ml-2">← Search</a>
+  <h1 class="page-title mr-auto">Browse by keyword</h1>
+</div>
+
+<form class="mb-4 flex gap-2 sm:gap-3" (ngSubmit)="search()">
+  <input class="input min-w-0 flex-1 !py-3 !text-base" type="search" enterkeyhint="search" name="term" [(ngModel)]="term"
+         [placeholder]="selected().length ? 'Add another keyword, e.g. “space”' : 'Search for a theme or topic, e.g. “time travel”'" autofocus />
+  <button class="btn-primary px-4 sm:px-6" [disabled]="searching() || !term.trim()">{{ searching() ? 'Searching…' : 'Search' }}</button>
+</form>
+
+@if (searchError()) {
+  <div class="card mb-4 border-rose-500/30 px-5 py-4 text-sm text-rose-300">
+    {{ searchError() }} @if (searchError()!.includes('TMDB')) { — <a routerLink="/settings" class="underline">open settings</a> }
+  </div>
+}
+
+@if (suggestions()?.length) {
+  <div class="mb-6">
+    <div class="mb-2 text-xs uppercase tracking-wide text-slate-500">Matching keywords — pick one or more</div>
+    <div class="flex flex-wrap gap-2" data-testid="suggestions">
+      @for (k of suggestions(); track k.id) {
+        <button type="button" class="btn-sm rounded-full" [attr.aria-pressed]="selectedIds().has(k.id)"
+                [class]="selectedIds().has(k.id) ? 'btn-primary' : 'btn-secondary'"
+                [disabled]="!selectedIds().has(k.id) && selected().length >= maxKeywords"
+                (click)="toggle(k)">{{ k.name }}</button>
+      }
+    </div>
+  </div>
+}
+
+@if (selected().length > 0) {
+  <div class="mb-6 flex flex-wrap items-center gap-2 border-t border-surface-800 pt-4">
+    <span class="mr-1 text-sm text-slate-400">Titles tagged with</span>
+    @for (k of selected(); track k.id; let last = $last) {
+      <span class="inline-flex items-center gap-1 rounded-full bg-accent-500/15 py-1 pl-3 pr-1 text-sm text-accent-200" data-testid="selected">
+        {{ k.name || '…' }}
+        <button type="button" class="rounded-full px-1.5 text-accent-300 hover:bg-accent-500/20 hover:text-white"
+                [attr.aria-label]="'Remove ' + (k.name || 'keyword')" (click)="toggle(k)">×</button>
+      </span>
+      @if (!last) { <span class="text-xs text-slate-500">and</span> }
+    }
+    <button type="button" class="btn-ghost btn-sm" (click)="clear()">Clear</button>
+    <div class="ml-auto flex gap-1">
+      @for (f of filters; track f.id) {
+        <button type="button" class="btn-sm" [class]="f.id === filter() ? 'btn-primary' : 'btn-secondary'"
+                [attr.aria-pressed]="f.id === filter()" (click)="setFilter(f.id)">{{ f.label }}</button>
+      }
+    </div>
+  </div>
+
+  @if (error()) {
+    <div class="card mb-6 border-rose-500/30 px-5 py-4 text-sm text-rose-300">
+      {{ error() }} @if (error()!.includes('TMDB')) { — <a routerLink="/settings" class="underline">open settings</a> }
+    </div>
+  }
+
+  <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8">
+    @for (d of items(); track key(d)) {
+      <kr-media-card [item]="d" (add)="picked.set($event)" />
+    }
+  </div>
+
+  @if (loading()) {
+    <p class="mt-6 text-center text-slate-500">Loading…</p>
+  } @else if (page() > 0 && items().length === 0 && !error()) {
+    <p class="mt-6 text-center text-slate-500">No titles have all of these keywords. Try removing one.</p>
+  } @else if (hasMore()) {
+    <div class="mt-8 flex justify-center"><button class="btn-secondary px-8" (click)="load(page() + 1)">Load more</button></div>
+  }
+} @else if (!suggestions()?.length) {
+  <p class="text-sm text-slate-500">TMDB tags movies and shows with keywords such as “heist”, “time travel” or “based on novel”. Search for one, then pick it to see every title tagged with it.</p>
+}
+
+@if (picked(); as d) {
+  <kr-discover-add [item]="d" (closed)="picked.set(null)" (added)="markAdded($event)" (requested)="picked.set(null)" />
+}

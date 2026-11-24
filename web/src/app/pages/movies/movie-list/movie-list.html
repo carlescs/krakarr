@@ -21,13 +21,13 @@
   </div>
   @if (auth.isStaff()) {
     <div class="flex gap-2 max-sm:basis-full">
-      <a routerLink="/movies/add" class="btn-primary max-sm:flex-1">+ Add movie</a>
+      <a routerLink="/discover/search" [queryParams]="{ type: 'movies' }" class="btn-primary max-sm:flex-1">+ Add movie</a>
       <kr-more-menu>
         <a routerLink="/movies/import" class="menu-item" role="menuitem">Import existing library…</a>
       </kr-more-menu>
     </div>
   } @else {
-    <a routerLink="/movies/add" class="btn-secondary max-sm:basis-full">Search &amp; request</a>
+    <a routerLink="/discover/search" [queryParams]="{ type: 'movies' }" class="btn-secondary max-sm:basis-full">Search &amp; request</a>
   }
 </div>
 
@@ -41,7 +41,7 @@
       <div class="mt-2 flex gap-2">
         <a routerLink="/settings" class="btn-secondary">Settings</a>
         <a routerLink="/movies/import" class="btn-secondary">Import existing</a>
-        <a routerLink="/movies/add" class="btn-primary">Add movie</a>
+        <a routerLink="/discover/search" [queryParams]="{ type: 'movies' }" class="btn-primary">Add movie</a>
       </div>
     } @else {
       <p class="max-w-md text-sm text-slate-400">Nothing here yet. Browse <a routerLink="/discover" class="underline">Discover</a> for ideas.</p>

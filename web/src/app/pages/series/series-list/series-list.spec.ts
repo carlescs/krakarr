@@ -139,10 +139,10 @@ describe('SeriesListPage', () => {
 
   it('guides staff to add series and plain users to Discover', async () => {
     const staff = await render([]);
-    expect(staff.el.querySelector('a[href="/series/add"]')).not.toBeNull();
+    expect(staff.el.querySelector('a[href="/discover/search?type=series"]')).not.toBeNull();
     TestBed.resetTestingModule();
     const user = await render([], 'User');
-    expect(user.el.querySelector('a[href="/series/add"]')?.textContent).toBe('Search & request');
+    expect(user.el.querySelector('a[href="/discover/search?type=series"]')?.textContent).toBe('Search & request');
     expect(user.el.querySelector('a[href="/discover"]')).not.toBeNull();
   });
 });

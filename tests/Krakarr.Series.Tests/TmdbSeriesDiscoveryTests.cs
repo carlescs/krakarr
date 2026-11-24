@@ -19,7 +19,7 @@ public class TmdbSeriesDiscoveryTests
             Requests.Add(uri);
             return uri.AbsolutePath switch
             {
-                "/3/tv/popular" => Json("""
+                "/3/tv/popular" or "/3/discover/tv" => Json("""
                     {"page":1,"total_pages":3,"results":[{"id":1396,"name":"Breaking Bad","first_air_date":"2008-01-20","poster_path":"/p.jpg","vote_average":8.9}]}
                     """),
                 "/3/find/81189" => Json("""{"tv_results":[{"id":1396,"name":"Breaking Bad"}]}"""),
@@ -74,6 +74,19 @@ public class TmdbSeriesDiscoveryTests
         Assert.Equal(2008, show.Year);
         Assert.Equal(8.9, show.Rating);
         Assert.Equal(3, page.TotalPages);
+    }
+
+    [Fact]
+    public async Task Keyword_discovery_requires_every_keyword()
+    {
+        var fake = new FakeTmdb();
+        var page = await Discovery(fake).KeywordsAsync([818], 2, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1396, Assert.Single(page.Results).TmdbId);
+        Assert.Equal("/3/discover/tv", fake.Requests[0].AbsolutePath);
+        var query = Uri.UnescapeDataString(fake.Requests[0].Query);
+        Assert.Contains("with_keywords=818", query);
+        Assert.Contains("page=2", query);
     }
 
     [Fact]
