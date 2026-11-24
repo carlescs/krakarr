@@ -33,9 +33,11 @@ public static class SecurityHeaders
         "form-action 'self'; " +
         "frame-ancestors 'none'";
 
+    /// <summary>Turns off browser features Krakarr doesn't use. Passkeys (WebAuthn) are allowed for Krakarr itself only.</summary>
     public const string PermissionsPolicy =
         "accelerometer=(), autoplay=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), " +
-        "microphone=(), midi=(), payment=(), publickey-credentials-get=(), usb=(), xr-spatial-tracking=()";
+        "microphone=(), midi=(), payment=(), publickey-credentials-create=(self), publickey-credentials-get=(self), usb=(), " +
+        "xr-spatial-tracking=()";
 
     public const string StrictTransportSecurity = "max-age=31536000";
 

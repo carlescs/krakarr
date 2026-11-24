@@ -197,7 +197,7 @@ public static class AuthEndpoints
     internal static IResult UsernameTaken() =>
         Results.ValidationProblem(new Dictionary<string, string[]> { ["username"] = ["That username is already taken"] });
 
-    private static Task SignInAsync(HttpContext http, User user, DateTimeOffset? signedInAt = null) =>
+    internal static Task SignInAsync(HttpContext http, User user, DateTimeOffset? signedInAt = null) =>
         http.SignInAsync(AuthConstants.CookieScheme,
             UserClaims.Create(user.Id, user.Username, user.Role, user.SecurityStamp,
                 signedInAt ?? http.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow()),

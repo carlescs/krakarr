@@ -17,6 +17,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
     };
 
     public DbSet<User> Users => Set<User>();
+    public DbSet<UserPasskey> UserPasskeys => Set<UserPasskey>();
     public DbSet<SettingEntry> Settings => Set<SettingEntry>();
     public DbSet<RootFolder> RootFolders => Set<RootFolder>();
     public DbSet<QualityProfile> QualityProfiles => Set<QualityProfile>();
@@ -68,6 +69,16 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
             e.HasIndex(x => x.Username).IsUnique();
             e.Property(x => x.Username).HasMaxLength(100);
             e.Property(x => x.SecurityStamp).HasMaxLength(64);
+        });
+
+        b.Entity<UserPasskey>(e =>
+        {
+            e.Property(x => x.CredentialId).HasMaxLength(1023);
+            e.HasIndex(x => x.CredentialId).IsUnique();
+            e.Property(x => x.PublicKey).HasMaxLength(2048);
+            e.Property(x => x.Transports).HasMaxLength(200);
+            e.Property(x => x.Name).HasMaxLength(100);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         b.Entity<SettingEntry>(e =>

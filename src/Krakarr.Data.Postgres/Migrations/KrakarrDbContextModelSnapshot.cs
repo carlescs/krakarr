@@ -17,7 +17,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261124192026_EpisodeFileSubtitlesNotFound";
+    public override string LastMigrationId => "20261124200842_UserPasskeys";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -936,6 +936,55 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("Users");
             });
 
+        modelBuilder.Entity("Krakarr.Core.Domain.UserPasskey", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<byte[]>("CredentialId")
+                    .IsRequired()
+                    .HasMaxLength(1023)
+                    .HasColumnType("bytea");
+
+                b.Property<DateTimeOffset?>("LastUsedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("character varying(100)");
+
+                b.Property<byte[]>("PublicKey")
+                    .IsRequired()
+                    .HasMaxLength(2048)
+                    .HasColumnType("bytea");
+
+                b.Property<long>("SignCount")
+                    .HasColumnType("bigint");
+
+                b.Property<string>("Transports")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)");
+
+                b.Property<int>("UserId")
+                    .HasColumnType("integer");
+
+                b.HasKey("Id");
+
+                b.HasIndex("CredentialId")
+                    .IsUnique();
+
+                b.HasIndex("UserId");
+
+                b.ToTable("UserPasskeys");
+            });
+
         modelBuilder.Entity("Krakarr.Core.Domain.Episode", b =>
             {
                 b.HasOne("Krakarr.Core.Domain.EpisodeFile", "EpisodeFile")
@@ -1071,6 +1120,17 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .WithMany()
                     .HasForeignKey("MovieFileId")
                     .OnDelete(DeleteBehavior.Cascade);
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.UserPasskey", b =>
+            {
+                b.HasOne("Krakarr.Core.Domain.User", "User")
+                    .WithMany()
+                    .HasForeignKey("UserId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.Navigation("User");
             });
 
         modelBuilder.Entity("Krakarr.Core.Domain.Series", b =>

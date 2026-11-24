@@ -37,6 +37,29 @@ public class User
     public static string NewSecurityStamp() => Guid.NewGuid().ToString("N");
 }
 
+/// <summary>
+/// A WebAuthn passkey that signs <see cref="User"/> in without a password. Only the public key is stored; the private
+/// key never leaves the user's device or password manager.
+/// </summary>
+public class UserPasskey
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public User? User { get; set; }
+    /// <summary>Credential id chosen by the authenticator (at most 1023 bytes).</summary>
+    public required byte[] CredentialId { get; set; }
+    /// <summary>The credential's public key as a COSE_Key (CBOR).</summary>
+    public required byte[] PublicKey { get; set; }
+    /// <summary>Signature counter last reported by the authenticator; synced passkeys always report 0.</summary>
+    public long SignCount { get; set; }
+    /// <summary>Transport hints ("internal", "hybrid", "usb"...), comma-separated, passed back to the browser.</summary>
+    public string? Transports { get; set; }
+    /// <summary>Label the user gave it ("Phone", "YubiKey").</summary>
+    public required string Name { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? LastUsedAt { get; set; }
+}
+
 /// <summary>Key/value settings store; values are JSON documents per section.</summary>
 public class SettingEntry
 {
