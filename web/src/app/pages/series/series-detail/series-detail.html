@@ -81,6 +81,11 @@
             <button class="btn-ghost btn-sm" title="Interactive search" (click)="interactive({ label: seasonLabel(season.seasonNumber), season: season.seasonNumber })">
               <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" [attr.d]="icons.list" /></svg>
             </button>
+            @if (season.episodeFileCount > 0) {
+              <button class="btn-ghost btn-sm text-rose-300" title="Delete season files" (click)="confirmDeleteSeasonFiles(season.seasonNumber)" data-delete-season>
+                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons.trash" /></svg>
+              </button>
+            }
           }
         </div>
         @if (expanded().has(season.seasonNumber)) {
@@ -123,6 +128,9 @@
                         @if (e.episodeFile) {
                           <button class="btn-ghost btn-sm" title="Subtitles" (click)="subtitleEpisode.set(e)">
                             <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons.cc" /></svg>
+                          </button>
+                          <button class="btn-ghost btn-sm text-rose-300 max-sm:hidden" title="Delete file" (click)="confirmDeleteEpisodeFile(e)" data-delete-file>
+                            <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons.trash" /></svg>
                           </button>
                         }
                         <button class="btn-ghost btn-sm" title="Automatic search" (click)="searchEpisode(e)">
@@ -238,7 +246,12 @@
   @if (detailEpisode(); as e) {
     <kr-episode-details [seriesId]="s.id" [episode]="e" [subtitles]="e.episodeFile ? (subtitlesByFile().get(e.episodeFile.id) ?? []) : []"
                         (closed)="detailEpisodeId.set(null)" (search)="searchEpisode(e)"
-                        (interactive)="fromDetails(e, 'interactive')" (manageSubtitles)="fromDetails(e, 'subtitles')" (subtitlesChanged)="loadSubtitles()" />
+                        (interactive)="fromDetails(e, 'interactive')" (manageSubtitles)="fromDetails(e, 'subtitles')" (deleteFile)="fromDetails(e, 'delete')" (subtitlesChanged)="loadSubtitles()" />
+  }
+
+  @if (fileDeletion(); as d) {
+    <kr-delete-files [title]="d.title" [paths]="d.paths" [unmonitorLabel]="d.unmonitorLabel" [action]="deleteEpisodeFiles"
+                     (closed)="fileDeletion.set(null)" (deleted)="filesDeleted()" />
   }
 
   @if (subtitleEpisode(); as e) {

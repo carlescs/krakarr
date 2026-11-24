@@ -440,6 +440,18 @@ public static class MovieEndpoints
             }
         });
 
+        app.MapDelete("/api/v1/moviefiles/{id:int}", async (int id, bool? unmonitor, KrakarrDbContext db, Krakarr.Core.Events.IEventHub eventHub, CancellationToken ct) =>
+        {
+            try
+            {
+                return await MovieFileDeletion.DeleteAsync(db, eventHub, id, unmonitor == true, ct) ? Results.NoContent() : Results.NotFound();
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest);
+            }
+        }).WithTags("Movies");
+
         app.MapGet("/api/v1/history", async (int? movieId, int? seriesId, int? page, int? pageSize, KrakarrDbContext db, CancellationToken ct) =>
         {
             var size = Math.Clamp(pageSize ?? 50, 1, 500);

@@ -33,6 +33,8 @@ export class EpisodeDetailsDialog {
   readonly search = output<void>();
   readonly interactive = output<void>();
   readonly manageSubtitles = output<void>();
+  /** Asks to delete the episode's file. */
+  readonly deleteFile = output<void>();
   /** A subtitle was deleted from the dialog. */
   readonly subtitlesChanged = output<void>();
 

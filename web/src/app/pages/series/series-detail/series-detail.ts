@@ -25,9 +25,11 @@ import { SubtitleLanguages } from '../../../core/subtitles';
 import { SubscribeButton } from '../../../shared/subscribe-button/subscribe-button';
 import { ExternalLinks } from '../../../shared/external-links/external-links';
 import { EpisodeDetailsDialog } from '../episode-details/episode-details';
+import { DeleteFilesDialog } from '../../../shared/delete-files/delete-files';
 
 const ICON_SEARCH = 'm21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z';
 const ICON_LIST = 'M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM3.75 12h.007v.008H3.75V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm-.375 5.25h.007v.008H3.75v-.008Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z';
+const ICON_TRASH = 'm14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0';
 const ICON_CC = 'M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 0 1 .865-.501 48.172 48.172 0 0 0 3.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z';
 const ICON_BOOKMARK = 'M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z';
 
@@ -35,7 +37,7 @@ interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
 
 @Component({
   selector: 'kr-series-detail',
-  imports: [ExternalLinks, EpisodeDetailsDialog, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, IndexerProgress, BytesPipe, AgoPipe, SubtitleManager, SortHeader],
+  imports: [DeleteFilesDialog, ExternalLinks, EpisodeDetailsDialog, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, IndexerProgress, BytesPipe, AgoPipe, SubtitleManager, SortHeader],
   templateUrl: './series-detail.html',
   styleUrl: './series-detail.scss',
 })
@@ -49,9 +51,11 @@ export class SeriesDetailPage implements OnInit {
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
 
-  protected readonly icons = { search: ICON_SEARCH, list: ICON_LIST, bookmark: ICON_BOOKMARK, cc: ICON_CC };
+  protected readonly icons = { search: ICON_SEARCH, list: ICON_LIST, bookmark: ICON_BOOKMARK, cc: ICON_CC, trash: ICON_TRASH };
   protected readonly subtitles = signal<SubtitleFile[]>([]);
   protected readonly subtitleEpisode = signal<Episode | null>(null);
+  /** Episode files waiting for the delete confirmation. */
+  protected readonly fileDeletion = signal<{ title: string; unmonitorLabel: string; fileIds: number[]; paths: string[] } | null>(null);
   protected readonly subtitlesByFile = computed(() => {
     const map = new Map<number, SubtitleFile[]>();
     for (const s of this.subtitles()) {
@@ -173,6 +177,7 @@ export class SeriesDetailPage implements OnInit {
     this.history.set([]);
     this.subtitles.set([]);
     this.subtitleEpisode.set(null);
+    this.fileDeletion.set(null);
     this.detailEpisodeId.set(null);
     this.expanded.set(new Set<number>());
     this.expandedInitialised = false;
@@ -297,10 +302,42 @@ export class SeriesDetailPage implements OnInit {
   }
 
   /** Swaps the details dialog for the interactive search or the subtitle manager, so only one dialog is open. */
-  protected fromDetails(e: Episode, action: 'interactive' | 'subtitles') {
+  protected fromDetails(e: Episode, action: 'interactive' | 'subtitles' | 'delete') {
     this.detailEpisodeId.set(null);
     if (action === 'interactive') this.interactive({ label: this.code(e), episodeId: e.id });
+    else if (action === 'delete') this.confirmDeleteEpisodeFile(e);
     else this.subtitleEpisode.set(e);
+  }
+
+  protected confirmDeleteEpisodeFile(e: Episode) {
+    if (!e.episodeFile) return;
+    this.fileDeletion.set({
+      title: `Delete ${this.code(e)} file`, unmonitorLabel: 'Unmonitor the episode', fileIds: [e.episodeFile.id], paths: [e.episodeFile.relativePath],
+    });
+  }
+
+  /** Asks to delete every file of a season (a multi-episode file once). */
+  protected confirmDeleteSeasonFiles(seasonNumber: number) {
+    const files = new Map<number, string>();
+    for (const e of this.episodes()) {
+      if (e.seasonNumber === seasonNumber && e.episodeFile) files.set(e.episodeFile.id, e.episodeFile.relativePath);
+    }
+    if (files.size === 0) return;
+    this.fileDeletion.set({
+      title: `Delete ${this.seasonLabel(seasonNumber)} files`, unmonitorLabel: 'Unmonitor these episodes',
+      fileIds: [...files.keys()], paths: [...files.values()].sort(),
+    });
+  }
+
+  protected readonly deleteEpisodeFiles = async (unmonitor: boolean) => {
+    const result = await this.api.deleteEpisodeFiles(this.fileDeletion()!.fileIds, unmonitor);
+    if (result.errors.length > 0) this.toasts.error(`${result.errors.length} file(s) could not be deleted: ${result.errors[0]}`);
+    else this.toasts.success(result.affected === 1 ? 'File deleted' : `${result.affected} files deleted`);
+  };
+
+  protected async filesDeleted() {
+    this.fileDeletion.set(null);
+    await this.load();
   }
 
   async refresh() {

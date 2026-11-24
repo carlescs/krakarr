@@ -84,7 +84,12 @@
   <!-- File -->
   @if (m.movieFile; as f) {
     <section class="card mb-6 p-4 sm:p-5">
-      <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">File</h2>
+      <div class="mb-3 flex flex-wrap items-center gap-2">
+        <h2 class="flex-1 text-sm font-semibold uppercase tracking-wide text-slate-400">File</h2>
+        @if (auth.isStaff()) {
+          <button class="btn-ghost btn-sm text-rose-300" (click)="confirmDeleteFile.set(true)">Delete file</button>
+        }
+      </div>
       <div class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm sm:gap-x-8">
         <span class="text-slate-500">Path</span><span class="break-all font-mono text-xs text-slate-300">{{ f.relativePath }}</span>
         <span class="text-slate-500">Size</span><span>{{ f.size | bytes }}</span>
@@ -105,6 +110,10 @@
       </div>
       <kr-subtitle-list [files]="subtitles()" [deletable]="auth.isStaff()" (changed)="loadSubtitles()" />
     </section>
+    @if (confirmDeleteFile()) {
+      <kr-delete-files title="Delete movie file" [paths]="[f.relativePath]" unmonitorLabel="Unmonitor the movie"
+                       [action]="deleteFile" (closed)="confirmDeleteFile.set(false)" (deleted)="fileDeleted()" />
+    }
     @if (subtitlesOpen()) {
       <kr-subtitle-manager [fileRef]="{ movieFileId: f.id }" [label]="m.title" [files]="subtitles()"
                            (closed)="subtitlesOpen.set(false)" (changed)="loadSubtitles()" />

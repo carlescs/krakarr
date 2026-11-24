@@ -27,10 +27,11 @@ import { SubtitleList } from '../../../shared/subtitle-list/subtitle-list';
 import { SubscribeButton } from '../../../shared/subscribe-button/subscribe-button';
 import { ExternalLinks } from '../../../shared/external-links/external-links';
 import { MovieReleases } from '../../../shared/movie-releases/movie-releases';
+import { DeleteFilesDialog } from '../../../shared/delete-files/delete-files';
 
 @Component({
   selector: 'kr-movie-detail',
-  imports: [ExternalLinks, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, MovieReleases, FormsModule, DatePipe, Poster, Progress, Modal, IndexerProgress, StateBadge, SubtitleManager, SubtitleList, SortHeader, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
+  imports: [DeleteFilesDialog, ExternalLinks, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, MovieReleases, FormsModule, DatePipe, Poster, Progress, Modal, IndexerProgress, StateBadge, SubtitleManager, SubtitleList, SortHeader, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
   templateUrl: './movie-detail.html',
   styleUrl: './movie-detail.scss',
 })
@@ -63,6 +64,7 @@ export class MovieDetailPage implements OnInit {
   protected readonly grabbing = signal<string | null>(null);
   protected readonly editing = signal(false);
   protected readonly confirmDelete = signal(false);
+  protected readonly confirmDeleteFile = signal(false);
   protected readonly subtitles = signal<SubtitleFile[]>([]);
   protected readonly subtitlesOpen = signal(false);
   /** The movie's page on Jellyfin, once it's downloaded and Jellyfin is set up. */
@@ -117,6 +119,7 @@ export class MovieDetailPage implements OnInit {
     this.grabbing.set(null);
     this.editing.set(false);
     this.confirmDelete.set(false);
+    this.confirmDeleteFile.set(false);
     this.subtitlesOpen.set(false);
     this.jellyfinUrl.set(null);
     this.jellyfinCheckedFor = null;
@@ -217,6 +220,14 @@ export class MovieDetailPage implements OnInit {
     } catch (e) {
       this.toasts.error(errorMessage(e));
     }
+  }
+
+  protected readonly deleteFile = (unmonitor: boolean) => this.api.deleteMovieFile(this.movie()!.movieFile!.id, unmonitor);
+
+  protected async fileDeleted() {
+    this.confirmDeleteFile.set(false);
+    this.toasts.success('File deleted');
+    await this.load();
   }
 
   async delete() {

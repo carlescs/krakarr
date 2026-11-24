@@ -131,4 +131,58 @@ describe('SeriesDetailPage', () => {
     expect([...page.missingSubtitles()]).toEqual([[11, ['es']]]);
     expect(page.seasonSubtitleGaps().get(1)).toBe(1);
   });
+
+  it('deletes all files of a season once each, then reloads', async () => {
+    const file = (id: number, relativePath: string) => ({ id, relativePath, size: 1, quality: 'HDTV-720p', dateAdded: '2024-01-01T00:00:00Z' });
+    const api = {
+      series: vi.fn(async (id: number) => ({ id, title: 'Show', monitored: true, seasonFolder: true, qualityProfileId: 1, seasons: [{ seasonNumber: 1 }, { seasonNumber: 2 }] })),
+      episodes: vi.fn(async () => [
+        { id: 1, seasonNumber: 1, episodeNumber: 1, episodeFile: file(10, 'Season 01/S01E01-E02.mkv') },
+        { id: 2, seasonNumber: 1, episodeNumber: 2, episodeFile: file(10, 'Season 01/S01E01-E02.mkv') },
+        { id: 3, seasonNumber: 1, episodeNumber: 3 },
+        { id: 4, seasonNumber: 2, episodeNumber: 1, episodeFile: file(20, 'Season 02/S02E01.mkv') },
+      ]),
+      qualityProfiles: vi.fn(async () => []),
+      history: vi.fn(async () => ({ items: [] })),
+      subtitleFiles: vi.fn(async () => []),
+      languages: vi.fn(async () => ({ all: [], preferred: [] })),
+      wantedSubtitleLanguages: vi.fn(async () => ({ enabled: false, useEmbeddedSubtitles: true, languages: [] })),
+      subtitleLanguages: vi.fn(async () => []),
+      deleteEpisodeFiles: vi.fn(async () => ({ affected: 1, errors: [] })),
+    };
+    const toasts = { error: vi.fn(), show: vi.fn(), success: vi.fn() };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: Api, useValue: api },
+        { provide: Auth, useValue: { isStaff: () => true } },
+        { provide: Events, useValue: { downloads: signal([]), seriesUpdated: new Subject(), historyAdded: new Subject(), subtitlesUpdated: new Subject() } },
+        { provide: Toasts, useValue: toasts },
+        { provide: Router, useValue: { navigateByUrl: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(SeriesDetailPage, { set: { template: '', imports: [] } });
+
+    type Page = {
+      confirmDeleteSeasonFiles(season: number): void;
+      fileDeletion: () => { fileIds: number[]; paths: string[] } | null;
+      deleteEpisodeFiles(unmonitor: boolean): Promise<void>;
+      filesDeleted(): Promise<void>;
+    };
+    const fixture = TestBed.createComponent(SeriesDetailPage);
+    const page = fixture.componentInstance as unknown as Page;
+    fixture.componentRef.setInput('id', 1);
+    await fixture.whenStable();
+
+    page.confirmDeleteSeasonFiles(1);
+    expect(page.fileDeletion()).toMatchObject({ fileIds: [10], paths: ['Season 01/S01E01-E02.mkv'] });
+
+    await page.deleteEpisodeFiles(true);
+    expect(api.deleteEpisodeFiles).toHaveBeenCalledWith([10], true);
+    expect(toasts.success).toHaveBeenCalledWith('File deleted');
+
+    api.series.mockClear();
+    await page.filesDeleted();
+    expect(page.fileDeletion()).toBeNull();
+    expect(api.series).toHaveBeenCalledWith(1);
+  });
 });

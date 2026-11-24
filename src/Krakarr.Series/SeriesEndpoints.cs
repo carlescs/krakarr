@@ -69,6 +69,8 @@ public sealed record EpisodeDto(
 /// <param name="Title">New display title; null keeps the current one, blank restores the metadata title.</param>
 public sealed record UpdateSeriesRequest(bool Monitored, int QualityProfileId, bool SeasonFolder, IReadOnlyList<string>? Languages = null, string? Title = null);
 public sealed record MonitorRequest(bool Monitored);
+/// <param name="Unmonitor">Also unmonitor the episodes of the deleted files, so searches don't fetch them again.</param>
+public sealed record DeleteEpisodeFilesRequest(IReadOnlyList<int> Ids, bool Unmonitor = false);
 public sealed record SeriesSearchRequest(int? SeasonNumber, IReadOnlyList<int>? EpisodeIds);
 public sealed record EpisodeReleaseDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections, string? Episodes, bool SeasonPack, IReadOnlyList<string> Languages)
 {
@@ -507,19 +509,17 @@ public static class SeriesEndpoints
             return updated > 0 ? Results.NoContent() : Results.NotFound();
         }).WithTags("Series");
 
-        app.MapDelete("/api/v1/episodefiles/{id:int}", async (int id, KrakarrDbContext db, CancellationToken ct) =>
+        app.MapDelete("/api/v1/episodefiles/{id:int}", async (int id, bool? unmonitor, KrakarrDbContext db, Krakarr.Core.Events.IEventHub eventHub, CancellationToken ct) =>
         {
-            var file = await db.EpisodeFiles.FirstOrDefaultAsync(f => f.Id == id, ct);
-            if (file is null) return Results.NotFound();
-            var series = await db.Series.AsNoTracking().FirstAsync(s => s.Id == file.SeriesId, ct);
-            var path = System.IO.Path.Combine(series.Path, file.RelativePath);
-            if (File.Exists(path)) File.Delete(path);
-            Krakarr.Media.Files.SidecarFiles.DeleteFor(path);
-            await db.Episodes.Where(e => e.EpisodeFileId == id).ExecuteUpdateAsync(s => s.SetProperty(e => e.EpisodeFileId, (int?)null), ct);
-            db.EpisodeFiles.Remove(file);
-            db.History.Add(new HistoryEntry { EventType = HistoryEventType.FileDeleted, SourceTitle = file.RelativePath, SeriesId = file.SeriesId, QualityId = file.QualityId });
-            await db.SaveChangesAsync(ct);
-            return Results.NoContent();
+            var result = await EpisodeFileDeletion.DeleteAsync(db, eventHub, [id], unmonitor == true, ct);
+            if (result.Errors.Count > 0) return Results.Problem(result.Errors[0], statusCode: StatusCodes.Status400BadRequest);
+            return result.Affected > 0 ? Results.NoContent() : Results.NotFound();
+        }).WithTags("Series");
+
+        app.MapPost("/api/v1/episodefiles/bulk/delete", async (DeleteEpisodeFilesRequest req, KrakarrDbContext db, Krakarr.Core.Events.IEventHub eventHub, CancellationToken ct) =>
+        {
+            if (BulkLimits.Clean(req.Ids) is not { } ids) return Results.Problem(BulkLimits.InvalidMessage, statusCode: 400);
+            return Results.Ok(await EpisodeFileDeletion.DeleteAsync(db, eventHub, ids.ToList(), req.Unmonitor, ct));
         }).WithTags("Series");
 
         app.MapSeriesDiscoveryEndpoints();

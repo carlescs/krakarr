@@ -191,6 +191,8 @@ export class Api {
     return this.put<void>(`movies/${id}`, { monitored, qualityProfileId, minimumAvailability: minimumAvailability ?? null, languages });
   }
   deleteMovie(id: number, deleteFiles: boolean) { return this.delete<void>(`movies/${id}`, { deleteFiles }); }
+  /** Deletes a movie's file from disk; `unmonitor` also unmonitors the movie. */
+  deleteMovieFile(id: number, unmonitor = false) { return this.delete<void>(`moviefiles/${id}`, { unmonitor }); }
   refreshMovie(id: number) { return this.post<CommandInfo>(`movies/${id}/refresh`); }
   searchMovie(id: number) { return this.post<CommandInfo>(`movies/${id}/search`); }
   /** Interactive search, streamed (see `ReleaseSearch`). */
@@ -291,7 +293,10 @@ export class Api {
     return this.stream(`series/${id}/releases`, { season, episodeId }, onEvent, signal);
   }
   grabSeriesRelease(id: number, release: ReleaseInfo) { return this.post<unknown>(`series/${id}/releases/grab`, { release }); }
-  deleteEpisodeFile(id: number) { return this.delete<void>(`episodefiles/${id}`); }
+  /** Deletes an episode file from disk; `unmonitor` also unmonitors its episodes. */
+  deleteEpisodeFile(id: number, unmonitor = false) { return this.delete<void>(`episodefiles/${id}`, { unmonitor }); }
+  /** Deletes several episode files from disk (a season's); `unmonitor` also unmonitors their episodes. */
+  deleteEpisodeFiles(ids: number[], unmonitor = false) { return this.post<BulkResult>('episodefiles/bulk/delete', { ids, unmonitor }); }
 
   // Calendar
   /** Library releases between two ISO dates (inclusive); `user` = 'me' or a user id limits them to that user's titles. */
