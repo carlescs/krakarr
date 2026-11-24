@@ -247,6 +247,7 @@ public sealed class SeriesService(
                 if (parsed.ReleaseGroup is not null) file.ReleaseGroup = parsed.ReleaseGroup;
                 file.EmbeddedSubtitles = null;
                 file.LastSubtitleSearch = null;
+                file.SubtitlesNotFound = null;
                 subtitlesChanged = true;
             }
 

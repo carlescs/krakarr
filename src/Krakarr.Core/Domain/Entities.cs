@@ -171,8 +171,8 @@ public class MovieFile
     /// </summary>
     public string? EmbeddedSubtitles { get; set; }
     /// <summary>
-    /// When a search of every configured provider first found nothing for a missing wanted language (null = not
-    /// marked). The scheduled subtitle search skips marked files; a new or replaced file, or a change of wanted
+    /// When a search of every configured provider first found nothing for a missing wanted language, or the user marked
+    /// it by hand (null = not marked). The scheduled subtitle search skips marked files; a new or replaced file, or a change of wanted
     /// languages or providers clears the mark, and manual searches still run.
     /// </summary>
     public DateTimeOffset? SubtitlesNotFound { get; set; }
@@ -281,6 +281,12 @@ public class EpisodeFile
     /// Subtitle tracks inside the video, as comma-separated "lang[+hi][+forced]" tokens ("" = none, null = not read yet).
     /// </summary>
     public string? EmbeddedSubtitles { get; set; }
+    /// <summary>
+    /// When the user marked this file "not found" (null = not marked). Unlike movie files, episode files are only marked
+    /// by hand: the scheduled subtitle search skips them until retried; a replaced file or a change of wanted languages
+    /// or providers clears the mark, and manual searches still run.
+    /// </summary>
+    public DateTimeOffset? SubtitlesNotFound { get; set; }
 }
 
 /// <summary>An external subtitle file stored next to a movie or episode file.</summary>

@@ -24,7 +24,7 @@ public sealed record SubtitleTarget
     public int? TmdbId { get; init; }
 }
 
-/// <param name="NotFound">When every provider last came up empty (movie files only); automatic searches skip the file.</param>
+/// <param name="NotFound">When the file was marked "not found" (every provider came up empty, or by hand); automatic searches skip it.</param>
 public sealed record WantedSubtitle(SubtitleTarget Target, IReadOnlyList<string> MissingLanguages, DateTimeOffset? NotFound = null);
 
 /// <summary>Finds, scores, downloads and tracks external subtitles for library files.</summary>
@@ -457,14 +457,20 @@ public sealed class SubtitleService(
     }
 
     /// <summary>
-    /// Sets or clears <see cref="MovieFile.SubtitlesNotFound"/>; a first mark is kept. Episode files are always retried.
-    /// Publishes <see cref="EventNames.SubtitlesUpdated"/> when the mark changes so the wanted list and its counts refresh.
+    /// Sets or clears the "not found" mark; a first mark is kept. Only movie files are marked automatically: episode
+    /// subtitles often appear days after airing, so episode files are only marked by hand (<see cref="MarkAllNotFoundAsync"/>),
+    /// but finding their subtitles clears the mark. Publishes <see cref="EventNames.SubtitlesUpdated"/> when the mark
+    /// changes so the wanted list and its counts refresh.
     /// </summary>
     private async Task MarkNotFoundAsync(SubtitleTarget target, bool notFound, CancellationToken ct)
     {
-        if (target.MovieFileId is not { } mf) return;
         int changed;
-        if (notFound)
+        if (target.MovieFileId is not { } mf)
+        {
+            if (notFound || target.EpisodeFileId is not { } ef) return;
+            changed = await db.EpisodeFiles.Where(f => f.Id == ef && f.SubtitlesNotFound != null).ExecuteUpdateAsync(x => x.SetProperty(f => f.SubtitlesNotFound, (DateTimeOffset?)null), ct);
+        }
+        else if (notFound)
         {
             var now = time.GetUtcNow();
             changed = await db.MovieFiles.Where(f => f.Id == mf && f.SubtitlesNotFound == null).ExecuteUpdateAsync(x => x.SetProperty(f => f.SubtitlesNotFound, now), ct);
@@ -479,19 +485,64 @@ public sealed class SubtitleService(
     }
 
     /// <summary>
-    /// Clears <see cref="MovieFile.SubtitlesNotFound"/> for one movie file (or every marked one) and makes it due, so the
-    /// scheduled search tries it again. Returns how many files were reset.
+    /// Clears the "not found" mark of one movie or episode file (or of every marked file when neither is given) and makes
+    /// it due, so the scheduled search tries it again. Returns how many files were reset.
     /// </summary>
-    public async Task<int> RetryNotFoundAsync(int? movieFileId, CancellationToken ct = default)
+    public async Task<int> RetryNotFoundAsync(int? movieFileId, CancellationToken ct = default, int? episodeFileId = null)
     {
-        var query = db.MovieFiles.Where(f => f.SubtitlesNotFound != null);
-        if (movieFileId is { } id) query = query.Where(f => f.Id == id);
-        var count = await query.ExecuteUpdateAsync(x => x
-            .SetProperty(f => f.SubtitlesNotFound, (DateTimeOffset?)null)
-            .SetProperty(f => f.LastSubtitleSearch, (DateTimeOffset?)null), ct);
+        var count = 0;
+        if (episodeFileId is null)
+        {
+            var movies = db.MovieFiles.Where(f => f.SubtitlesNotFound != null);
+            if (movieFileId is { } id) movies = movies.Where(f => f.Id == id);
+            count += await movies.ExecuteUpdateAsync(x => x
+                .SetProperty(f => f.SubtitlesNotFound, (DateTimeOffset?)null)
+                .SetProperty(f => f.LastSubtitleSearch, (DateTimeOffset?)null), ct);
+        }
+
+        if (movieFileId is null)
+        {
+            var episodes = db.EpisodeFiles.Where(f => f.SubtitlesNotFound != null);
+            if (episodeFileId is { } id) episodes = episodes.Where(f => f.Id == id);
+            count += await episodes.ExecuteUpdateAsync(x => x
+                .SetProperty(f => f.SubtitlesNotFound, (DateTimeOffset?)null)
+                .SetProperty(f => f.LastSubtitleSearch, (DateTimeOffset?)null), ct);
+        }
+
         if (count > 0)
         {
-            logger.LogInformation("Subtitles: retrying {Count} movie file(s) where nothing was found", count);
+            logger.LogInformation("Subtitles: retrying {Count} file(s) where nothing was found", count);
+            await eventHub.PublishAsync(EventNames.SubtitlesUpdated, new { MovieId = (int?)null, SeriesId = (int?)null }, ct);
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Marks every movie and episode file still missing a wanted language "not found", so the scheduled search stops
+    /// retrying them until they are retried (or replaced, or the wanted languages or providers change). Files already
+    /// marked keep their mark. Returns how many files were marked.
+    /// </summary>
+    public async Task<int> MarkAllNotFoundAsync(CancellationToken ct = default)
+    {
+        // Ids only: the wanted scan already works from slim rows.
+        var movieIds = new List<int>();
+        var episodeIds = new List<int>();
+        await foreach (var file in WantedFilesAsync(false, ct))
+            (file.MediaType == MediaType.Movie ? movieIds : episodeIds).Add(file.Id);
+
+        var now = time.GetUtcNow();
+        var count = 0;
+        foreach (var chunk in movieIds.Chunk(500))
+            count += await db.MovieFiles.Where(f => chunk.Contains(f.Id) && f.SubtitlesNotFound == null)
+                .ExecuteUpdateAsync(x => x.SetProperty(f => f.SubtitlesNotFound, now), ct);
+        foreach (var chunk in episodeIds.Chunk(500))
+            count += await db.EpisodeFiles.Where(f => chunk.Contains(f.Id) && f.SubtitlesNotFound == null)
+                .ExecuteUpdateAsync(x => x.SetProperty(f => f.SubtitlesNotFound, now), ct);
+
+        if (count > 0)
+        {
+            logger.LogInformation("Subtitles: marked {Count} file(s) as not found; they will not be searched automatically until retried", count);
             await eventHub.PublishAsync(EventNames.SubtitlesUpdated, new { MovieId = (int?)null, SeriesId = (int?)null }, ct);
         }
 
@@ -502,7 +553,7 @@ public sealed class SubtitleService(
 
     /// <summary>
     /// Library files missing at least one wanted language (based on known subtitle rows and embedded tracks).
-    /// <paramref name="notFound"/>: true = only files marked "not found" (movie files), false = only unmarked files.
+    /// <paramref name="notFound"/>: true = only files marked "not found", false = only unmarked files.
     /// </summary>
     public async Task<IReadOnlyList<WantedSubtitle>> WantedAsync(int limit, CancellationToken ct = default, bool? notFound = null)
     {
@@ -553,13 +604,13 @@ public sealed class SubtitleService(
             if (missing.Count > 0) yield return new WantedFile(MediaType.Movie, file.Id, missing, file.SubtitlesNotFound);
         }
 
-        if (notFound == true) yield break; // episode files are never marked
-
-        foreach (var file in await db.EpisodeFiles.AsNoTracking().OrderBy(f => f.SeriesId).ThenBy(f => f.SeasonNumber).ThenBy(f => f.Id)
-                     .Select(f => new { f.Id, f.EmbeddedSubtitles }).ToListAsync(ct))
+        var episodeFiles = db.EpisodeFiles.AsNoTracking();
+        if (notFound is { } enf) episodeFiles = enf ? episodeFiles.Where(f => f.SubtitlesNotFound != null) : episodeFiles.Where(f => f.SubtitlesNotFound == null);
+        foreach (var file in await episodeFiles.OrderBy(f => f.SeriesId).ThenBy(f => f.SeasonNumber).ThenBy(f => f.Id)
+                     .Select(f => new { f.Id, f.EmbeddedSubtitles, f.SubtitlesNotFound }).ToListAsync(ct))
         {
             var missing = s.Languages.Except(episodeLangs[file.Id]).Except(Embedded(file.EmbeddedSubtitles)).ToList();
-            if (missing.Count > 0) yield return new WantedFile(MediaType.Series, file.Id, missing, null);
+            if (missing.Count > 0) yield return new WantedFile(MediaType.Series, file.Id, missing, file.SubtitlesNotFound);
         }
     }
 }
