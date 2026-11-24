@@ -205,11 +205,13 @@ public sealed record SubtitleSettings : ISettingsSection
     public SubdlSettings Subdl { get; init; } = new();
 }
 
-/// <summary>Internal bookkeeping: the language set the subtitle search last ran with.</summary>
+/// <summary>Internal bookkeeping: the language set and providers the subtitle search last ran with.</summary>
 public sealed record SubtitleSearchState : ISettingsSection
 {
     public static string SectionKey => "subtitles-state";
     public string? LanguagesSignature { get; init; }
+    /// <summary>The configured providers; when it changes, files marked "not found" are searched again.</summary>
+    public string? ProvidersSignature { get; init; }
 }
 
 /// <summary>Optional Jellyfin server; when set, downloaded movies and series link to their Jellyfin page.</summary>

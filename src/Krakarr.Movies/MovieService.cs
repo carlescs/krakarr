@@ -167,6 +167,7 @@ public sealed class MovieService(
                     if (parsedGroup is not null) existing.ReleaseGroup = parsedGroup;
                     existing.EmbeddedSubtitles = null;
                     existing.LastSubtitleSearch = null;
+                    existing.SubtitlesNotFound = null;
                     subtitlesChanged = true;
                 }
 

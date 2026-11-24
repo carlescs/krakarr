@@ -170,6 +170,12 @@ public class MovieFile
     /// Subtitle tracks inside the video, as comma-separated "lang[+hi][+forced]" tokens ("" = none, null = not read yet).
     /// </summary>
     public string? EmbeddedSubtitles { get; set; }
+    /// <summary>
+    /// When a search of every configured provider first found nothing for a missing wanted language (null = not
+    /// marked). The scheduled subtitle search skips marked files; a new or replaced file, or a change of wanted
+    /// languages or providers clears the mark, and manual searches still run.
+    /// </summary>
+    public DateTimeOffset? SubtitlesNotFound { get; set; }
 }
 
 public enum SeriesStatus

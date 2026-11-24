@@ -22,12 +22,14 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
         public List<SubtitleCandidate> Candidates { get; } = [];
         public List<string> Downloads { get; } = [];
         public SubtitleQuery? LastQuery { get; private set; }
+        public bool Fail { get; set; }
         public string Name => "fake";
         public bool IsConfigured(SubtitleSettings settings) => true;
 
         public Task<IReadOnlyList<SubtitleCandidate>> SearchAsync(SubtitleQuery query, SubtitleSettings settings, CancellationToken ct = default)
         {
             LastQuery = query;
+            if (Fail) throw new SubtitleProviderException("server error");
             return Task.FromResult<IReadOnlyList<SubtitleCandidate>>(Candidates.Where(c => query.Languages.Contains(c.Language)).ToList());
         }
 
@@ -280,6 +282,59 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
         Assert.Equal(["en", "fr"], EmbeddedSubtitleList.FullLanguages(stored));
     }
 
+    private async Task<DateTimeOffset?> NotFoundAsync()
+    {
+        using var scope = _services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<KrakarrDbContext>().MovieFiles
+            .Select(f => f.SubtitlesNotFound).SingleAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task Marks_movie_files_where_no_provider_has_subtitles()
+    {
+        // A provider error may be transient: not marked.
+        _provider.Fail = true;
+        Assert.Contains("server error", await SearchAsync());
+        Assert.Null(await NotFoundAsync());
+
+        // Every provider answered and none had a wanted language: marked, and the first mark is kept.
+        _provider.Fail = false;
+        Assert.Contains("nothing suitable found", await SearchAsync());
+        var marked = await NotFoundAsync();
+        Assert.NotNull(marked);
+        await SearchAsync();
+        Assert.Equal(marked, await NotFoundAsync());
+
+        using (var scope = _services.CreateScope())
+        {
+            var service = scope.ServiceProvider.GetRequiredService<SubtitleService>();
+            var ct = TestContext.Current.CancellationToken;
+            Assert.Single(await service.WantedAsync(10, ct, notFound: true));
+            Assert.Empty(await service.WantedAsync(10, ct, notFound: false));
+            Assert.Equal(marked, (await service.WantedAsync(10, ct)).Single().NotFound);
+        }
+
+        // Found later (e.g. a manual search): the mark is cleared.
+        _provider.Candidates.AddRange([C("en", "The.Matrix.1999.1080p.BluRay.x264-SPARKS"), C("es", "The.Matrix.1999.1080p.BluRay.x264-SPARKS", lang: "es")]);
+        Assert.Contains("downloaded en, es", await SearchAsync());
+        Assert.Null(await NotFoundAsync());
+    }
+
+    [Fact]
+    public async Task Retry_clears_the_not_found_mark_and_makes_the_file_due()
+    {
+        await SearchAsync();
+        Assert.NotNull(await NotFoundAsync());
+
+        using var scope = _services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<SubtitleService>();
+        Assert.Equal(1, await service.RetryNotFoundAsync(null, TestContext.Current.CancellationToken));
+        Assert.Equal(0, await service.RetryNotFoundAsync(_movieFileId, TestContext.Current.CancellationToken));
+        Assert.Null(await NotFoundAsync());
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        Assert.Null(await db.MovieFiles.Select(f => f.LastSubtitleSearch).SingleAsync(TestContext.Current.CancellationToken));
+    }
+
     [Fact]
     public async Task Filters_search_and_backoff_to_selected_providers()
     {
@@ -318,6 +373,10 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
         Assert.Equal(1, secondary.Searches);
         Assert.Equal(["subdl-en"], secondary.Downloads);
         Assert.Equal("subdl", (await RowsAsync()).Single().Provider);
+
+        // A search limited to some providers that finds nothing doesn't mark the file: the others may have it.
+        Assert.Contains("nothing suitable found", await service.SearchMissingAsync(target, ct, providers: ["subdl"]));
+        Assert.Null(await NotFoundAsync());
     }
 
     private sealed class NamedFakeProvider(string name, string displayName) : ISubtitleProvider
@@ -419,6 +478,31 @@ public sealed class SubtitleSearchTaskTests : IAsyncLifetime
 
         await RunAsync(new SubtitleSettings { Enabled = true, Languages = ["en", "fr"] });
         Assert.Equal(2, _provider.Searches); // language added → due again
+    }
+
+    [Fact]
+    public async Task Stops_retrying_movie_files_without_subtitles_until_retried()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var settings = new SubtitleSettings { Enabled = true, Languages = ["en"], SearchIntervalHours = 1 };
+        await RunAsync(settings);
+        Assert.Equal(1, _provider.Searches);
+
+        async Task MakeDueAsync()
+        {
+            using var scope = _services.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<KrakarrDbContext>().MovieFiles
+                .ExecuteUpdateAsync(x => x.SetProperty(f => f.LastSubtitleSearch, DateTimeOffset.UtcNow.AddDays(-2)), ct);
+        }
+
+        await MakeDueAsync();
+        await RunAsync(settings);
+        Assert.Equal(1, _provider.Searches); // nothing found last time: not retried
+
+        using (var scope = _services.CreateScope())
+            await scope.ServiceProvider.GetRequiredService<SubtitleService>().RetryNotFoundAsync(null, ct);
+        await RunAsync(settings);
+        Assert.Equal(2, _provider.Searches);
     }
 
     [Fact]

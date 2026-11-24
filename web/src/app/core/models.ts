@@ -301,6 +301,8 @@ export interface SubtitleCandidate {
 export interface ScoredSubtitle { candidate: SubtitleCandidate; score: number; matches: string[]; rejections: string[]; acceptable: boolean; }
 export interface WantedSubtitle {
   mediaType: 'Movie' | 'Series'; movieId?: number; seriesId?: number; movieFileId?: number; episodeFileId?: number; label: string; missingLanguages: string[];
+  /** When every provider came up empty (movie files only); the scheduled search skips the file until it is retried. */
+  notFound?: string | null;
 }
 /** The subtitle languages Krakarr looks for (Settings › Subtitles). */
 export interface WantedSubtitleLanguages { enabled: boolean; useEmbeddedSubtitles: boolean; languages: string[]; }
