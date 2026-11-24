@@ -26,7 +26,7 @@
   }
 }
 
-<section class="card overflow-hidden">
+<section class="card">
   <div class="flex flex-wrap items-center gap-3 border-b border-surface-700 px-5 py-3">
     <h2 class="mr-auto text-sm font-semibold uppercase tracking-wide text-slate-400">
       Wanted <span class="ml-1 font-normal normal-case text-slate-500">{{ total() }}</span>
@@ -52,7 +52,7 @@
   </div>
   @if (loading()) {
     <p class="px-5 py-8 text-sm text-slate-500">Loading…</p>
-  } @else if (wanted().length === 0) {
+  } @else if (total() === 0) {
     <p class="px-5 py-8 text-sm text-slate-500">
       @switch (filter()) {
         @case ('notFound') { No files are marked as not found. }
@@ -61,7 +61,7 @@
       }
     </p>
   } @else {
-    <div class="overflow-x-auto">
+    <cdk-virtual-scroll-viewport scrollWindow [itemSize]="rowHeight()" [minBufferPx]="600" [maxBufferPx]="1200">
       <table class="table">
         <thead>
           <tr>
@@ -72,15 +72,20 @@
           </tr>
         </thead>
         <tbody>
-          @for (w of sort.rows(); track (w.movieFileId ?? 0) + ':' + (w.episodeFileId ?? 0)) {
-            <tr>
+          <tr *cdkVirtualFor="let index of dataSource; trackBy: trackRow" [style.height.px]="rowHeight()">
+            @if (wantedAt(index); as w) {
               <td class="max-sm:hidden"><span class="badge" [class]="w.mediaType === 'Movie' ? 'bg-accent-500/15 text-accent-300' : 'bg-violet-500/15 text-violet-300'">{{ w.mediaType === 'Movie' ? 'Movie' : 'Episode' }}</span></td>
               <td class="w-full max-w-0">
-                <a class="block hover:text-accent-300 sm:truncate" [routerLink]="w.movieId ? ['/movies', w.movieId] : ['/series', w.seriesId]" [title]="w.label">{{ w.label }}</a>
-                <div class="mt-1 flex flex-wrap gap-1 sm:hidden">
-                  <span class="badge" [class]="w.mediaType === 'Movie' ? 'bg-accent-500/15 text-accent-300' : 'bg-violet-500/15 text-violet-300'">{{ w.mediaType === 'Movie' ? 'Movie' : 'Episode' }}</span>
-                  @if (w.notFound) { <span class="badge bg-amber-500/15 text-amber-300">Not found</span> }
-                  @for (l of w.missingLanguages; track l) { <span class="badge bg-rose-500/15 text-rose-300">{{ l }}</span> }
+                <a class="block truncate hover:text-accent-300" [routerLink]="w.movieId ? ['/movies', w.movieId] : ['/series', w.seriesId]" [title]="w.label">{{ w.label }}</a>
+                <div class="mt-1 flex items-center gap-2 sm:hidden">
+                  <div class="flex min-w-0 flex-1 gap-1 overflow-hidden">
+                    <span class="badge shrink-0" [class]="w.mediaType === 'Movie' ? 'bg-accent-500/15 text-accent-300' : 'bg-violet-500/15 text-violet-300'">{{ w.mediaType === 'Movie' ? 'Movie' : 'Episode' }}</span>
+                    @if (w.notFound) { <span class="badge shrink-0 bg-amber-500/15 text-amber-300">Not found</span> }
+                    @for (l of w.missingLanguages; track l) { <span class="badge shrink-0 bg-rose-500/15 text-rose-300">{{ l }}</span> }
+                  </div>
+                  <div class="flex shrink-0">
+                    <ng-container *ngTemplateOutlet="actions; context: { $implicit: w }" />
+                  </div>
                 </div>
               </td>
               <td class="whitespace-nowrap max-sm:hidden">
@@ -90,22 +95,24 @@
                         [title]="'Marked not found (' + (w.notFound | date: 'medium') + '); not searched automatically until retried'">Not found</span>
                 }
               </td>
-              <td class="text-right sm:whitespace-nowrap">
-                @if (w.notFound) {
-                  <button class="btn-ghost btn-sm" (click)="retry(w)" title="Let the scheduled search try this file again">Retry</button>
-                }
-                <button class="btn-ghost btn-sm" (click)="search(w)" [disabled]="!ready()">Search</button>
-                <button class="btn-ghost btn-sm" (click)="manage.set(w)">Manual</button>
+              <td class="whitespace-nowrap text-right max-sm:hidden">
+                <ng-container *ngTemplateOutlet="actions; context: { $implicit: w }" />
               </td>
-            </tr>
-          }
+            } @else {
+              <td colspan="4"><div class="h-4 w-48 animate-pulse rounded bg-surface-800"></div></td>
+            }
+          </tr>
         </tbody>
       </table>
-    </div>
-    @if (total() > wanted().length) {
-      <p class="px-5 py-3 text-xs text-slate-500">Showing the first {{ wanted().length }} of {{ total() }}.</p>
-    }
+    </cdk-virtual-scroll-viewport>
   }
+  <ng-template #actions let-w>
+    @if (w.notFound) {
+      <button class="btn-ghost btn-sm" (click)="retry(w)" title="Let the scheduled search try this file again">Retry</button>
+    }
+    <button class="btn-ghost btn-sm" (click)="search(w)" [disabled]="!ready()">Search</button>
+    <button class="btn-ghost btn-sm" (click)="manage.set(w)">Manual</button>
+  </ng-template>
 </section>
 
 @if (manage(); as w) {

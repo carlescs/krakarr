@@ -304,8 +304,13 @@ export interface WantedSubtitle {
   /** When every provider came up empty (movie files only); the scheduled search skips the file until it is retried. */
   notFound?: string | null;
 }
-/** Files missing a wanted language: still searched automatically, and marked "not found". */
-export interface WantedSubtitleCounts { searching: number; notFound: number; }
+export type WantedSubtitleSortKey = 'type' | 'title' | 'missing';
+/** Filter and sort of the wanted list. notFound: true = only files marked "not found", false = only files still searched automatically. */
+export type WantedSubtitleQuery = { notFound?: boolean; sort?: WantedSubtitleSortKey; desc?: boolean; };
+/** A page of the wanted list: `total` counts the filter, `searching` and `notFound` every wanted file, `libraryTotal` both. */
+export interface WantedSubtitlePage {
+  items: WantedSubtitle[]; page: number; pageSize: number; total: number; libraryTotal: number; searching: number; notFound: number;
+}
 /** The subtitle languages Krakarr looks for (Settings › Subtitles). */
 export interface WantedSubtitleLanguages { enabled: boolean; useEmbeddedSubtitles: boolean; languages: string[]; }
 export interface SubtitleProvider { name: string; displayName: string; configured: boolean; }

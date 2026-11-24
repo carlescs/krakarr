@@ -354,6 +354,8 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
             var episodeFile = new EpisodeFile { SeriesId = series.Id, SeasonNumber = 1, RelativePath = "Season 01/Show - S01E01.mkv", QualityId = 17 };
             db.EpisodeFiles.Add(episodeFile);
             await db.SaveChangesAsync(ct);
+            db.Episodes.Add(new Episode { SeriesId = series.Id, SeasonNumber = 1, EpisodeNumber = 1, EpisodeFileId = episodeFile.Id });
+            await db.SaveChangesAsync(ct);
             episodeFileId = episodeFile.Id;
         }
 
@@ -371,6 +373,51 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
             Assert.Equal(1, await service.RetryNotFoundAsync(null, ct, episodeFileId));
             Assert.Equal((1, 1), await service.WantedCountsAsync(ct));
             Assert.NotNull(await NotFoundAsync());
+        }
+    }
+
+    [Fact]
+    public async Task Wanted_pages_are_sorted_on_the_server_and_counted_per_filter()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using (var scope = _services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+            var series = new Series { Title = "Andor", SortTitle = "andor", Year = 2022, Path = Path.Combine(_root.FullName, "Andor"), QualityProfileId = (await db.QualityProfiles.FirstAsync(ct)).Id };
+            db.Series.Add(series);
+            await db.SaveChangesAsync(ct);
+            for (var e = 2; e >= 1; e--)
+            {
+                var file = new EpisodeFile { SeriesId = series.Id, SeasonNumber = 1, RelativePath = $"Season 01/Andor - S01E0{e}.mkv", QualityId = 17 };
+                db.EpisodeFiles.Add(file);
+                await db.SaveChangesAsync(ct);
+                db.Episodes.Add(new Episode { SeriesId = series.Id, SeasonNumber = 1, EpisodeNumber = e, EpisodeFileId = file.Id });
+            }
+            // An episode file no episode points at has nothing to search for, so it is not listed or counted.
+            db.EpisodeFiles.Add(new EpisodeFile { SeriesId = series.Id, SeasonNumber = 1, RelativePath = "Season 01/orphan.mkv", QualityId = 17 });
+            await db.SaveChangesAsync(ct);
+            await db.MovieFiles.ExecuteUpdateAsync(x => x.SetProperty(f => f.SubtitlesNotFound, DateTimeOffset.UtcNow), ct);
+            await db.Movies.ExecuteUpdateAsync(x => x.SetProperty(m => m.SortTitle, "matrix"), ct);
+        }
+
+        using (var scope = _services.CreateScope())
+        {
+            var service = scope.ServiceProvider.GetRequiredService<SubtitleService>();
+
+            var first = await service.WantedPageAsync(1, 2, ct);
+            Assert.Equal((3, 2, 1), (first.Total, first.Searching, first.NotFound));
+            Assert.Equal(["The Matrix (1999)", "Andor S01E02"], first.Items.Select(w => w.Target.Label)); // movies first, then by file
+            Assert.Equal(["Andor S01E01"], (await service.WantedPageAsync(2, 2, ct)).Items.Select(w => w.Target.Label));
+
+            var byTitle = await service.WantedPageAsync(1, 10, ct, sort: WantedSort.Title);
+            Assert.Equal(["Andor S01E01", "Andor S01E02", "The Matrix (1999)"], byTitle.Items.Select(w => w.Target.Label));
+            var byTypeDesc = await service.WantedPageAsync(1, 10, ct, sort: WantedSort.Type, desc: true);
+            Assert.Equal(["Andor S01E02", "Andor S01E01", "The Matrix (1999)"], byTypeDesc.Items.Select(w => w.Target.Label));
+
+            var searching = await service.WantedPageAsync(1, 10, ct, notFound: false);
+            Assert.Equal(2, searching.Total);
+            Assert.All(searching.Items, w => Assert.Null(w.NotFound));
+            Assert.Equal(1, (await service.WantedPageAsync(1, 10, ct, notFound: true)).Total);
         }
     }
 
