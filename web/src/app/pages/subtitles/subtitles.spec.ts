@@ -41,6 +41,43 @@ describe('SubtitlesPage', () => {
     expect(el.querySelector('kr-subtitle-manager')).not.toBeNull();
   });
 
+  it('filters movies marked not found and retries them', async () => {
+    const notFound: WantedSubtitle = { ...wanted[0], notFound: '2026-11-20T10:00:00Z' };
+    const api = setupTest({
+      api: mockApi({
+        settings: async () => settings,
+        subtitleLanguages: async () => [{ code: 'es', name: 'Spanish' }],
+        wantedSubtitles: async (onlyNotFound?: boolean) => onlyNotFound === true ? [notFound] : onlyNotFound === false ? [wanted[1]] : [notFound, wanted[1]],
+        retrySubtitles: async () => ({ count: 1 }),
+      }),
+    });
+    const fixture = TestBed.createComponent(SubtitlesPage);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(api.wantedSubtitles).toHaveBeenLastCalledWith(undefined);
+    expect(text(el)).toContain('Not found');
+    expect(el.querySelectorAll('tbody tr').length).toBe(2);
+
+    button(el, 'Searching').click();
+    await settle(fixture);
+    expect(api.wantedSubtitles).toHaveBeenLastCalledWith(false);
+    expect(el.querySelectorAll('tbody tr').length).toBe(1);
+    expect([...el.querySelectorAll('button')].some(b => b.textContent?.trim() === 'Retry')).toBe(false);
+
+    el.querySelector<HTMLButtonElement>('[role="radio"]:last-child')!.click();
+    await settle(fixture);
+    expect(api.wantedSubtitles).toHaveBeenLastCalledWith(true);
+    expect(el.querySelector('a[href="/movies/3"]')).not.toBeNull();
+
+    button(el, 'Retry').click();
+    await settle(fixture);
+    expect(api.retrySubtitles).toHaveBeenLastCalledWith(30);
+
+    button(el, 'Retry all').click();
+    await settle(fixture);
+    expect(api.retrySubtitles).toHaveBeenLastCalledWith(undefined);
+  });
+
   it('warns admins when no provider is configured', async () => {
     setupTest({
       api: mockApi({ settings: async () => ({ ...settings, openSubtitles: { apiKey: '' } }), subtitleLanguages: async () => [], wantedSubtitles: async () => wanted }),

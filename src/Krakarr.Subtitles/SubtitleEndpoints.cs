@@ -15,11 +15,13 @@ public sealed record SubtitleFileDto(int Id, int? MovieFileId, int? EpisodeFileI
 
 public sealed record SubtitleProviderDto(string Name, string DisplayName, bool Configured);
 public sealed record SubtitleSearchRequest(int? MovieFileId, int? EpisodeFileId, int? MovieId = null, int? SeriesId = null, IReadOnlyList<string>? Providers = null);
+/// <summary>Movie file to search automatically again; null retries every file marked "not found".</summary>
+public sealed record SubtitleRetryRequest(int? MovieFileId);
 public sealed record SubtitleDownloadRequest(int? MovieFileId, int? EpisodeFileId, SubtitleCandidate Candidate, int? Score);
 public sealed record ScoredSubtitleDto(SubtitleCandidate Candidate, int Score, IReadOnlyList<string> Matches, IReadOnlyList<string> Rejections, bool Acceptable);
 /// <summary>The subtitle languages Krakarr looks for, so detail pages can show which ones a file is missing.</summary>
 public sealed record WantedSubtitleLanguagesDto(bool Enabled, bool UseEmbeddedSubtitles, IReadOnlyList<string> Languages);
-public sealed record WantedSubtitleDto(string MediaType, int? MovieId, int? SeriesId, int? MovieFileId, int? EpisodeFileId, string Label, IReadOnlyList<string> MissingLanguages);
+public sealed record WantedSubtitleDto(string MediaType, int? MovieId, int? SeriesId, int? MovieFileId, int? EpisodeFileId, string Label, IReadOnlyList<string> MissingLanguages, DateTimeOffset? NotFound);
 
 public static class SubtitleEndpoints
 {
@@ -95,9 +97,14 @@ public static class SubtitleEndpoints
             return new WantedSubtitleLanguagesDto(s.Enabled, s.UseEmbeddedSubtitles, s.Languages);
         });
 
-        group.MapGet("/wanted", async (int? limit, SubtitleService service, CancellationToken ct) =>
-            (await service.WantedAsync(Math.Clamp(limit ?? 200, 1, 1000), ct)).Select(w => new WantedSubtitleDto(
-                w.Target.MediaType.ToString(), w.Target.MovieId, w.Target.SeriesId, w.Target.MovieFileId, w.Target.EpisodeFileId, w.Target.Label, w.MissingLanguages)));
+        // notFound: true = only files no provider had subtitles for, false = only files still searched automatically.
+        group.MapGet("/wanted", async (int? limit, bool? notFound, SubtitleService service, CancellationToken ct) =>
+            (await service.WantedAsync(Math.Clamp(limit ?? 200, 1, 1000), ct, notFound)).Select(w => new WantedSubtitleDto(
+                w.Target.MediaType.ToString(), w.Target.MovieId, w.Target.SeriesId, w.Target.MovieFileId, w.Target.EpisodeFileId, w.Target.Label, w.MissingLanguages, w.NotFound)));
+
+        // Clears the "not found" mark so the scheduled search picks the file(s) up again on its next run.
+        group.MapPost("/retry", async (SubtitleRetryRequest req, SubtitleService service, CancellationToken ct) =>
+            Results.Ok(new { count = await service.RetryNotFoundAsync(req.MovieFileId, ct) }));
 
         // Automatic search for one file (every wanted language, upgrading existing subtitles), or all wanted files
         // (missing languages only) when no id is given.

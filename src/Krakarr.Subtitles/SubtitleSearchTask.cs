@@ -8,7 +8,8 @@ namespace Krakarr.Subtitles;
 
 /// <summary>
 /// Searches subtitles for newly imported files (never searched) right away and re-checks files that are still
-/// missing languages every <see cref="SubtitleSettings.SearchIntervalHours"/>. Processes a few files per run to
+/// missing languages every <see cref="SubtitleSettings.SearchIntervalHours"/>, except movie files where no provider
+/// had them (<see cref="Krakarr.Core.Domain.MovieFile.SubtitlesNotFound"/>). Processes a few files per run to
 /// respect provider quotas.
 /// </summary>
 public sealed class SubtitleSearchTask(
@@ -30,24 +31,37 @@ public sealed class SubtitleSearchTask(
         if (!s.Enabled || s.Languages.Count == 0 || !service.Providers.Any(p => p.IsConfigured(s))) return;
         if (service.BackoffUntil(s) is not null) return; // rate limited or out of quota: try again on a later run
 
-        // When the wanted languages change, every file becomes due again.
+        // When the wanted languages change, every file becomes due again. When the configured providers change, files
+        // where nothing was found are searched again, since the new providers may have them.
         var signature = string.Join(',', s.Languages.Order(StringComparer.Ordinal));
+        var providersSignature = string.Join(',', service.Providers.Where(p => p.IsConfigured(s)).Select(p => p.Name).Order(StringComparer.Ordinal));
         var state = await settings.GetAsync<SubtitleSearchState>(cancellationToken);
-        if (state.LanguagesSignature != signature)
+        if (state.LanguagesSignature != signature || state.ProvidersSignature != providersSignature)
         {
-            if (state.LanguagesSignature is not null)
+            if (state.LanguagesSignature is not null && state.LanguagesSignature != signature)
             {
                 logger.LogInformation("Subtitle languages changed ({Old} → {New}); re-checking all files", state.LanguagesSignature, signature);
-                await db.MovieFiles.ExecuteUpdateAsync(x => x.SetProperty(f => f.LastSubtitleSearch, (DateTimeOffset?)null), cancellationToken);
+                await db.MovieFiles.ExecuteUpdateAsync(x => x
+                    .SetProperty(f => f.LastSubtitleSearch, (DateTimeOffset?)null)
+                    .SetProperty(f => f.SubtitlesNotFound, (DateTimeOffset?)null), cancellationToken);
                 await db.EpisodeFiles.ExecuteUpdateAsync(x => x.SetProperty(f => f.LastSubtitleSearch, (DateTimeOffset?)null), cancellationToken);
             }
+            else if (state.ProvidersSignature is not null && state.ProvidersSignature != providersSignature)
+            {
+                logger.LogInformation("Subtitle providers changed ({Old} → {New}); re-checking files without subtitles found", state.ProvidersSignature, providersSignature);
+                await db.MovieFiles.Where(f => f.SubtitlesNotFound != null).ExecuteUpdateAsync(x => x
+                    .SetProperty(f => f.LastSubtitleSearch, (DateTimeOffset?)null)
+                    .SetProperty(f => f.SubtitlesNotFound, (DateTimeOffset?)null), cancellationToken);
+            }
 
-            await settings.SaveAsync(new SubtitleSearchState { LanguagesSignature = signature }, cancellationToken);
+            await settings.SaveAsync(new SubtitleSearchState { LanguagesSignature = signature, ProvidersSignature = providersSignature }, cancellationToken);
         }
 
         var due = time.GetUtcNow() - TimeSpan.FromHours(Math.Max(1, s.SearchIntervalHours));
         // DateTimeOffset comparisons are translated on both providers (SQLite stores them as sortable binary).
+        // Movie files where every provider already came up empty are not retried (see MovieFile.SubtitlesNotFound).
         var movieFiles = await db.MovieFiles.AsNoTracking()
+            .Where(f => f.SubtitlesNotFound == null)
             .Where(f => f.LastSubtitleSearch == null || f.LastSubtitleSearch < due)
             .OrderBy(f => f.LastSubtitleSearch != null).ThenBy(f => f.LastSubtitleSearch).ThenBy(f => f.Id)
             .Select(f => f.Id).Take(BatchSize).ToListAsync(cancellationToken);
