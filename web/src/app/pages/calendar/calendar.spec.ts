@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
+import { Router, provideRouter } from '@angular/router';
+import { RouterTestingHarness } from '@angular/router/testing';
 import { afterEach, describe, expect, it } from 'vitest';
-import { toIsoDate } from '../../core/calendar';
+import { calendarRouteMatcher, toIsoDate } from '../../core/calendar';
 import { CalendarEntry } from '../../core/models';
 import { button, mockApi, settle, setupTest, text } from '../../../testing/test-setup';
 import { CalendarPage } from './calendar';
@@ -14,12 +16,18 @@ const entries = [
   entry({ kind: 'Movie', movieId: 3, title: 'Arrival', releaseType: 'Digital', hasFile: true }),
 ];
 
-async function render(view: 'agenda' | 'month', extra: Record<string, (...args: never[]) => unknown> = {}, role: 'Admin' | 'User' = 'Admin', stored: object = {}) {
+async function render(view: 'agenda' | 'month', extra: Record<string, (...args: never[]) => unknown> = {}, role: 'Admin' | 'User' = 'Admin', stored: object = {},
+  url = '/calendar') {
   localStorage.setItem('krakarr.calendar', JSON.stringify({ view, ...stored }));
-  const api = setupTest({ role, api: mockApi({ calendar: async () => entries, subscribers: async () => [], ...extra }) });
-  const fixture = TestBed.createComponent(CalendarPage);
+  const api = setupTest({
+    role, api: mockApi({ calendar: async () => entries, subscribers: async () => [], ...extra }),
+    providers: [provideRouter([{ matcher: calendarRouteMatcher, component: CalendarPage }])],
+  });
+  const harness = await RouterTestingHarness.create();
+  await harness.navigateByUrl(url, CalendarPage);
+  const fixture = harness.fixture;
   await settle(fixture);
-  return { api, fixture, el: fixture.nativeElement as HTMLElement };
+  return { api, fixture, harness, router: TestBed.inject(Router), el: fixture.nativeElement as HTMLElement };
 }
 
 describe('CalendarPage', () => {
@@ -76,6 +84,29 @@ describe('CalendarPage', () => {
     button(el, 'Week').click();
     await settle(fixture);
     expect(button(el, 'Next week')).toBeTruthy();
+  });
+
+  it('puts the view and period in the URL', async () => {
+    const { fixture, router, el } = await render('month');
+    expect(router.url).toBe(`/calendar/month/${today.slice(0, 7)}`);
+    button(el, 'Week').click();
+    await settle(fixture);
+    expect(router.url).toMatch(/^\/calendar\/week\/\d{4}-\d{2}-\d{2}$/);
+    button(el, 'Agenda').click();
+    await settle(fixture);
+    expect(router.url).toBe(`/calendar/agenda/${today.slice(0, 7)}`);
+  });
+
+  it('opens the view and month in the URL and follows URL changes', async () => {
+    const { api, fixture, harness, el } = await render('agenda', {}, 'Admin', {}, '/calendar/month/2025-02');
+    expect(button(el, 'Next month')).toBeTruthy();
+    const [start, end] = api.calendar.mock.calls.at(-1)! as [string, string];
+    expect(start > '2025-01-25' && start <= '2025-02-01' && end >= '2025-02-28' && end < '2025-03-08').toBe(true);
+    await harness.navigateByUrl('/calendar/week/2025-03-10');
+    await settle(fixture);
+    expect(button(el, 'Next week')).toBeTruthy();
+    const [weekStart, weekEnd] = api.calendar.mock.calls.at(-1)! as [string, string];
+    expect(weekStart <= '2025-03-10' && '2025-03-10' <= weekEnd && weekStart > '2025-03-03').toBe(true);
   });
 
   it('shows the iCal feed URL with the API key', async () => {

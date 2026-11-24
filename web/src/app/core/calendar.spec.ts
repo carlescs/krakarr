@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_FILTERS, buildItems, episodeRangeLabel, feedUrl, groupByDay, itemState, parseIsoDate, shiftAnchor, toIsoDate, viewRange,
+  DEFAULT_FILTERS, buildItems, episodeRangeLabel, feedUrl, groupByDay, itemState, parseIsoDate, parsePeriodParam, periodParam, shiftAnchor, toIsoDate, viewRange,
 } from './calendar';
 import { CalendarEntry } from './models';
 
@@ -30,6 +30,18 @@ describe('calendar ranges', () => {
     expect([toIsoDate(start), toIsoDate(end)]).toEqual(['2026-02-01', '2026-02-28']);
     expect(toIsoDate(shiftAnchor('agenda', parseIsoDate('2026-01-31'), 1))).toBe('2026-02-01');
     expect(toIsoDate(shiftAnchor('week', parseIsoDate('2026-01-31'), -1))).toBe('2026-01-24');
+  });
+
+  it('puts the month or the week start in the URL period', () => {
+    expect(periodParam('month', parseIsoDate('2026-11-20'), 1)).toBe('2026-11');
+    expect(periodParam('agenda', parseIsoDate('2026-11-20'), 1)).toBe('2026-11');
+    expect(periodParam('week', parseIsoDate('2026-11-20'), 1)).toBe('2026-11-16');
+  });
+
+  it('parses URL periods and rejects invalid ones', () => {
+    expect(toIsoDate(parsePeriodParam('2026-11')!)).toBe('2026-11-01');
+    expect(toIsoDate(parsePeriodParam('2026-11-16')!)).toBe('2026-11-16');
+    for (const bad of ['2026-13', '2026-02-30', 'november', '', null, undefined]) expect(parsePeriodParam(bad)).toBeNull();
   });
 });
 
