@@ -67,10 +67,15 @@ describe('EpisodeDetailsDialog', () => {
     button(root, 'Interactive search').click();
     expect(interactive).toHaveBeenCalled();
     expect(button(root, 'Subtitles')).toBeTruthy();
+    const deleteFile = vi.fn();
+    fixture.componentInstance.deleteFile.subscribe(deleteFile);
+    button(root, 'Delete file').click();
+    expect(deleteFile).toHaveBeenCalled();
 
     TestBed.resetTestingModule();
     const user = create(undefined, 'User');
     await settle(user.fixture);
     expect(() => button(user.root, 'Automatic search')).toThrow();
+    expect(() => button(user.root, 'Delete file')).toThrow();
   });
 });

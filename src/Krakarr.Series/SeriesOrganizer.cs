@@ -103,7 +103,7 @@ public sealed class SeriesOrganizer(KrakarrDbContext db, ISettingsService settin
         }
 
         await db.SaveChangesAsync(ct);
-        foreach (var dir in touchedDirs) DeleteEmptyFolders(series.Path, dir);
+        foreach (var dir in touchedDirs) LibraryFiles.DeleteEmptyFolders(series.Path, dir);
         await eventHub.PublishAsync(EventNames.SeriesUpdated, new { series.Id }, ct);
 
         summary.Insert(0, renamed == 0 && summary.Count == 0 && problems.Count == 0 ? "already organized" : $"renamed {renamed} file{(renamed == 1 ? "" : "s")}");
@@ -228,25 +228,6 @@ public sealed class SeriesOrganizer(KrakarrDbContext db, ISettingsService settin
             }
 
             foreach (var row in subtitles.Where(s => string.Equals(s.Path, sidecar, StringComparison.Ordinal))) row.Path = target;
-        }
-    }
-
-    /// <summary>Removes <paramref name="dir"/> and its parents while empty, never the series folder itself or anything outside it.</summary>
-    private static void DeleteEmptyFolders(string seriesPath, string dir)
-    {
-        var current = dir;
-        while (MediaFolder.IsInside(seriesPath, current) && Directory.Exists(current) && !Directory.EnumerateFileSystemEntries(current).Any())
-        {
-            try
-            {
-                Directory.Delete(current);
-            }
-            catch (IOException)
-            {
-                return;
-            }
-
-            current = Path.GetDirectoryName(current)!;
         }
     }
 }

@@ -67,7 +67,10 @@
 
   @if (auth.isStaff()) {
     <ng-container footer>
-      @if (e.episodeFile) { <button class="btn-ghost" (click)="manageSubtitles.emit()">Subtitles</button> }
+      @if (e.episodeFile) {
+        <button class="btn-ghost text-rose-300 sm:mr-auto" (click)="deleteFile.emit()">Delete file</button>
+        <button class="btn-ghost" (click)="manageSubtitles.emit()">Subtitles</button>
+      }
       <button class="btn-secondary" (click)="interactive.emit()">Interactive search</button>
       <button class="btn-primary" (click)="search.emit()">Automatic search</button>
     </ng-container>

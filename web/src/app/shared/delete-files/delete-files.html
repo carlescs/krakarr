@@ -1,0 +1,16 @@
+<kr-modal [title]="title()" (closed)="closed.emit()">
+  <p class="text-sm text-slate-300">
+    {{ paths().length === 1 ? 'This file is deleted from disk, along with its subtitles:' : 'These ' + paths().length + ' files are deleted from disk, along with their subtitles:' }}
+  </p>
+  <ul class="mt-3 max-h-60 space-y-1 overflow-y-auto rounded-lg border border-surface-700 p-3" data-paths>
+    @for (p of paths(); track p) { <li class="break-all font-mono text-xs text-slate-300">{{ p }}</li> }
+  </ul>
+  <label class="mt-4 flex items-center gap-2 text-sm">
+    <input type="checkbox" class="accent-accent-500" [(ngModel)]="unmonitor" data-unmonitor /> {{ unmonitorLabel() }}
+  </label>
+  <p class="hint">Otherwise a monitored title counts as missing again and the next search downloads it.</p>
+  <ng-container footer>
+    <button class="btn-ghost" (click)="closed.emit()">Cancel</button>
+    <button class="btn-danger" (click)="confirm()" [disabled]="busy()">{{ busy() ? 'Deleting…' : 'Delete' }}</button>
+  </ng-container>
+</kr-modal>
