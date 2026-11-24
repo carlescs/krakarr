@@ -37,7 +37,7 @@ describe('DashboardPage', () => {
   it('shows library, request, user and activity figures', async () => {
     const api = setupTest({
       api: mockApi({
-        dashboard: async () => stats(),
+        dashboard: async () => stats(), calendar: async () => [],
         rootFolders: async () => [{ id: 1, path: '/media/movies', mediaType: 'Movie', accessible: true, freeSpace: 1024 ** 4 }],
       }),
     });
@@ -63,7 +63,7 @@ describe('DashboardPage', () => {
   });
 
   it('summarises live downloads', async () => {
-    setupTest({ api: mockApi({ dashboard: async () => stats(), rootFolders: async () => [] }) });
+    setupTest({ api: mockApi({ dashboard: async () => stats(), rootFolders: async () => [], calendar: async () => [] }) });
     const fixture = TestBed.createComponent(DashboardPage);
     const events = TestBed.inject(Events);
     const active = Array.from({ length: TOP_DOWNLOADS + 2 }, (_, i) => torrent(i + 1, { downloadRate: i * 10, movieId: i + 1 }));
