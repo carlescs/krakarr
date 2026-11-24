@@ -22,7 +22,7 @@
           </div>
 
           <!-- Releases that day -->
-          <ul class="grid min-w-0 flex-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          <ul class="grid grid-cols-1 min-w-0 flex-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
             @for (item of day.items; track item.key) {
               <li>
                 <a [routerLink]="item.link" class="group flex h-full gap-3 rounded-lg border-l-2 p-2 transition" [class]="styles[styleKey(item)].bar + ' ' + styles[styleKey(item)].chip"

@@ -4,7 +4,7 @@
     <span class="badge" [class]="roleInfo[auth.role()].badge" [title]="roleInfo[auth.role()].description">{{ roleInfo[auth.role()].label }}</span>
   </div>
   <form class="space-y-4" (ngSubmit)="save()">
-    <div class="grid gap-4 sm:grid-cols-2">
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <div>
         <label class="label" for="acc-username">Username</label>
         <input id="acc-username" class="input" name="username" [(ngModel)]="username" autocomplete="username" required />

@@ -118,7 +118,7 @@
     <div class="flex justify-end"><button class="btn-primary btn-sm" (click)="saveLanguages()">Save</button></div>
   </section>
   <div class="mb-4 flex justify-end"><button class="btn-secondary btn-sm" (click)="editProfile(null)">+ Add profile</button></div>
-  <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
     @for (p of profiles(); track p.id) {
       <button class="card flex flex-col items-start justify-start p-4 sm:p-5 text-left transition hover:border-accent-500/50" (click)="editProfile(p)">
         <div class="font-semibold text-white">{{ p.name }}</div>
@@ -137,7 +137,7 @@
   @if (downloads(); as d) {
     <section class="card mb-6 p-4 sm:p-5">
       <h2 class="mb-3 font-semibold text-white">Download client</h2>
-      <div class="grid gap-3 sm:grid-cols-2">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         @for (opt of clientOptions; track opt.id) {
           <label class="flex cursor-pointer gap-3 rounded-lg border p-4 transition"
                  [class]="d.client === opt.id ? 'border-accent-500 bg-accent-500/5' : 'border-surface-700 hover:border-surface-600'">
@@ -153,7 +153,7 @@
     </section>
 
     @if (d.client === 'QBittorrent') {
-      <section class="card grid gap-4 p-4 sm:p-5 sm:grid-cols-2">
+      <section class="card grid grid-cols-1 gap-4 p-4 sm:p-5 sm:grid-cols-2">
         <h2 class="font-semibold text-white sm:col-span-2">qBittorrent</h2>
         <div class="sm:col-span-2">
           <label class="label">WebUI URL</label>
@@ -191,7 +191,7 @@
           Only needed when qBittorrent runs in another container and sees the downloads under a different path.
         </p>
         @if (clientTest(); as t) {
-          <div class="rounded-lg px-3 py-2 text-sm sm:col-span-2" [class]="t.success ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'">
+          <div class="rounded-lg px-3 py-2 text-sm wrap-anywhere sm:col-span-2" [class]="t.success ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'">
             @if (t.success) { Connected to {{ t.version }} · {{ t.message }} } @else { {{ t.message }} }
           </div>
         }
@@ -201,7 +201,7 @@
         </div>
       </section>
     } @else {
-    <section class="card grid gap-4 p-4 sm:p-5 sm:grid-cols-2">
+    <section class="card grid grid-cols-1 gap-4 p-4 sm:p-5 sm:grid-cols-2">
       <h2 class="font-semibold text-white sm:col-span-2">Built-in torrent client</h2>
       <div class="sm:col-span-2"><label class="label">Download directory</label><input class="input font-mono" [(ngModel)]="d.downloadDirectory" [placeholder]="status()?.downloadDirectory ?? ''" />
         <p class="hint">For hardlinks to work, downloads and your library must be on the same filesystem.</p></div>
@@ -214,7 +214,7 @@
       <div class="flex justify-end sm:col-span-2"><button class="btn-primary" (click)="save('downloads', d)">Save</button></div>
     </section>
     }
-    <section class="card mt-6 grid gap-4 p-4 sm:p-5 sm:grid-cols-2">
+    <section class="card mt-6 grid grid-cols-1 gap-4 p-4 sm:p-5 sm:grid-cols-2">
       <h2 class="font-semibold text-white sm:col-span-2">Seeding</h2>
       <div><label class="label">Seed ratio limit (0 = none)</label><input class="input" type="number" step="0.1" min="0" [(ngModel)]="d.seedRatioLimit" /></div>
       <div><label class="label">Seed time limit (minutes, 0 = none)</label><input class="input" type="number" min="0" [(ngModel)]="d.seedTimeLimitMinutes" /></div>
@@ -234,7 +234,7 @@
     </section>
   }
   @if (automation(); as a) {
-    <section class="card mt-6 grid gap-4 p-4 sm:p-5 sm:grid-cols-2">
+    <section class="card mt-6 grid grid-cols-1 gap-4 p-4 sm:p-5 sm:grid-cols-2">
       <h2 class="font-semibold text-white sm:col-span-2">Automation</h2>
       <div><label class="label">RSS sync interval (minutes, 0 = off)</label><input class="input" type="number" min="0" [(ngModel)]="a.rssSyncIntervalMinutes" /></div>
       <div class="flex justify-end sm:col-span-2"><button class="btn-primary" (click)="save('automation', a)">Save</button></div>
@@ -265,7 +265,7 @@
           </div>
           <p class="hint">Subtitles are stored next to the video as e.g. “Movie (2020).en.srt”. Existing files like that are detected automatically.</p>
         </div>
-        <div class="grid gap-4 sm:grid-cols-2">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <label class="label">Hearing impaired</label>
             <select class="input" [(ngModel)]="st.hearingImpaired">
@@ -282,7 +282,7 @@
         <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="st.useEmbeddedSubtitles" /> Count subtitles inside the video file (MKV, MP4) as present</label>
         <p class="hint">Score: 100 for a file-hash match; otherwise title, year or season/episode, source, resolution, release group and codec of the subtitle's release are compared with your file.</p>
       </section>
-      <section class="card grid gap-4 p-4 sm:p-5 sm:grid-cols-2">
+      <section class="card grid grid-cols-1 gap-4 p-4 sm:p-5 sm:grid-cols-2">
         <div class="flex items-center justify-between sm:col-span-2">
           <h2 class="font-semibold text-white">OpenSubtitles.com</h2>
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="st.openSubtitles.enabled" /> Enabled</label>
@@ -296,14 +296,14 @@
         <div><label class="label">Password</label><input class="input" type="password" autocomplete="new-password" [(ngModel)]="st.openSubtitles.password" /></div>
         <p class="hint sm:col-span-2">Without an account, downloads are limited to a few per day; a free account raises the quota.</p>
         @if (subtitleTest(); as t) {
-          <div class="rounded-lg px-3 py-2 text-sm sm:col-span-2" [class]="t.success ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'">{{ t.message }}</div>
+          <div class="rounded-lg px-3 py-2 text-sm wrap-anywhere sm:col-span-2" [class]="t.success ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'">{{ t.message }}</div>
         }
         <div class="flex justify-end gap-2 sm:col-span-2">
           <button class="btn-secondary" (click)="testSubtitles(st, 'opensubtitles')" [disabled]="testingSubtitles()">{{ testingSubtitles() ? 'Testing…' : 'Test' }}</button>
           <button class="btn-primary" (click)="save('subtitles', st)">Save</button>
         </div>
       </section>
-      <section class="card grid gap-4 p-4 sm:p-5 sm:grid-cols-2">
+      <section class="card grid grid-cols-1 gap-4 p-4 sm:p-5 sm:grid-cols-2">
         <div class="flex items-center justify-between sm:col-span-2">
           <h2 class="font-semibold text-white">SubDL.com</h2>
           <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="st.subdl.enabled" /> Enabled</label>
@@ -314,7 +314,7 @@
           <p class="hint">Create an API key at subdl.com → Panel → API.</p>
         </div>
         @if (subdlTest(); as t) {
-          <div class="rounded-lg px-3 py-2 text-sm sm:col-span-2" [class]="t.success ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'">{{ t.message }}</div>
+          <div class="rounded-lg px-3 py-2 text-sm wrap-anywhere sm:col-span-2" [class]="t.success ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'">{{ t.message }}</div>
         }
         <div class="flex justify-end gap-2 sm:col-span-2">
           <button class="btn-secondary" (click)="testSubtitles(st, 'subdl')" [disabled]="testingSubtitles()">{{ testingSubtitles() ? 'Testing…' : 'Test' }}</button>
@@ -355,7 +355,7 @@
         <input class="input font-mono" type="password" autocomplete="off" [(ngModel)]="m.omdbApiKey" />
         <p class="hint">Free at omdbapi.com. Shows IMDb, Rotten Tomatoes and Metacritic scores on movie and series pages.</p>
       </div>
-      <div class="grid gap-4 sm:grid-cols-2">
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div><label class="label">Language</label><input class="input" [(ngModel)]="m.language" placeholder="en-US" /></div>
         <div>
           <label class="label">Release region</label>
@@ -371,7 +371,7 @@
 <!-- Jellyfin -->
 @if (tab() === 'jellyfin') {
   @if (jellyfin(); as j) {
-    <section class="card grid gap-4 p-4 sm:p-5 sm:grid-cols-2">
+    <section class="card grid grid-cols-1 gap-4 p-4 sm:p-5 sm:grid-cols-2">
       <p class="text-sm text-slate-400 sm:col-span-2">Downloaded movies and series get an <span class="text-slate-200">Open in Jellyfin</span> button, for every user. Leave the URL empty to turn it off.</p>
       <div>
         <label class="label">URL</label>
@@ -389,7 +389,7 @@
         <p class="hint">Jellyfin → Dashboard → API Keys. Used to find each title in your Jellyfin library.</p>
       </div>
       @if (jellyfinTest(); as t) {
-        <div class="rounded-lg px-3 py-2 text-sm sm:col-span-2" [class]="t.success ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'">
+        <div class="rounded-lg px-3 py-2 text-sm wrap-anywhere sm:col-span-2" [class]="t.success ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'">
           {{ t.success ? 'Connected to ' + (t.serverName || 'Jellyfin') + (t.version ? ' ' + t.version : '') : t.message }}
         </div>
       }
@@ -404,7 +404,7 @@
 <!-- Telemetry -->
 @if (tab() === 'telemetry') {
   @if (telemetry(); as t) {
-    <section class="card grid gap-4 p-4 sm:p-5 sm:grid-cols-2">
+    <section class="card grid grid-cols-1 gap-4 p-4 sm:p-5 sm:grid-cols-2">
       <div class="sm:col-span-2">
         <p class="text-sm text-slate-400">
           Send traces, metrics and logs over OTLP to an OpenTelemetry Collector or any compatible backend (Grafana Alloy, Tempo,
@@ -545,7 +545,7 @@
     @if (status(); as s) {
       <section class="card p-4 sm:p-5">
         <h2 class="mb-3 font-semibold text-white">About</h2>
-        <dl class="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-[auto_1fr]">
+        <dl class="grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-[auto_minmax(0,1fr)]">
           <dt class="text-slate-500">Version</dt><dd>{{ s.version }}</dd>
           <dt class="text-slate-500">Runtime</dt><dd>{{ s.runtime }}</dd>
           <dt class="text-slate-500">OS</dt><dd>{{ s.os }} {{ s.isDocker ? '(Docker)' : '' }}</dd>
@@ -573,7 +573,7 @@
           }
         </div>
       </div>
-      <div class="grid gap-4 sm:grid-cols-3">
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div>
           <label class="label">Upgrade until</label>
           <select class="input" [(ngModel)]="p.cutoffQualityId">

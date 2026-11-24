@@ -47,8 +47,8 @@
     <div class="overflow-x-auto sm:max-h-[55vh] sm:overflow-auto">
       @switch (tab()) {
         @case ('overview') {
-          <div class="grid gap-x-8 gap-y-6 md:grid-cols-2">
-            <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+          <div class="grid grid-cols-1 gap-x-8 gap-y-6 md:grid-cols-2">
+            <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm">
               <dt class="col-span-2 mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Transfer</dt>
               <dt class="text-slate-500">Downloaded</dt><dd>{{ d.status.downloaded | bytes }} @if (d.sessionDownloaded != null) { <span class="text-slate-500">({{ d.sessionDownloaded | bytes }} this session)</span> }</dd>
               <dt class="text-slate-500">Uploaded</dt><dd>{{ d.status.uploaded | bytes }} @if (d.sessionUploaded != null) { <span class="text-slate-500">({{ d.sessionUploaded | bytes }} this session)</span> }</dd>
@@ -67,7 +67,7 @@
               @if (d.lastSeenComplete) { <dt class="text-slate-500">Last seen complete</dt><dd>{{ d.lastSeenComplete | date: 'medium' }}</dd> }
               @if (d.nextAnnounceSeconds != null) { <dt class="text-slate-500">Next announce</dt><dd>{{ d.nextAnnounceSeconds | duration }}</dd> }
             </dl>
-            <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+            <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm">
               <dt class="col-span-2 mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Torrent</dt>
               @if (d.totalSize != null) { <dt class="text-slate-500">Total size</dt><dd>{{ d.totalSize | bytes }}{{ d.selectedSize != null && d.selectedSize !== d.totalSize ? ' (' + (d.selectedSize | bytes) + ' selected)' : '' }}</dd> }
               @if (d.infoHashV1) { <dt class="text-slate-500">Info hash v1</dt><dd class="break-all font-mono text-xs">{{ d.infoHashV1 }}</dd> }

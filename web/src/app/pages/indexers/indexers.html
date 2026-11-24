@@ -46,7 +46,7 @@
 
 @if (form(); as f) {
   <kr-modal [title]="f.id ? 'Edit indexer' : 'Add indexer'" width="max-w-2xl" (closed)="form.set(null)">
-    <div class="grid gap-4 sm:grid-cols-2">
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <div class="sm:col-span-2"><label class="label">Name</label><input class="input" [(ngModel)]="f.name" /></div>
       <div>
         <label class="label">Protocol</label>
@@ -102,7 +102,7 @@
       <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="f.enableRss" /> Use for RSS sync</label>
     </div>
     @if (test(); as t) {
-      <div class="mt-4 rounded-lg px-3 py-2 text-sm" [class]="t.success ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'">
+      <div class="mt-4 rounded-lg px-3 py-2 text-sm wrap-anywhere" [class]="t.success ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'">
         @if (t.success) {
           Connection OK.
           Movie search: {{ t.capabilities?.movieSearchAvailable ? 'yes (' + t.capabilities?.movieSearchParams?.join(', ') + ')' : 'no' }} ·
@@ -120,7 +120,7 @@
 
 @if (prowlarr(); as p) {
   <kr-modal title="Import from Prowlarr" width="max-w-2xl" (closed)="prowlarr.set(null)">
-    <div class="grid gap-4 sm:grid-cols-2">
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <div class="sm:col-span-2">
         <label class="label">Prowlarr URL</label>
         <input class="input font-mono" [(ngModel)]="p.url" placeholder="http://prowlarr:9696" />

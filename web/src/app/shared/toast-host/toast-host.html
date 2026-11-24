@@ -4,7 +4,7 @@
          [class]="t.kind === 'error' ? 'border-rose-500/40 bg-rose-950/90 text-rose-100'
                 : t.kind === 'success' ? 'border-emerald-500/40 bg-emerald-950/90 text-emerald-100'
                 : 'border-surface-600 bg-surface-800/95 text-slate-100'">
-      <span class="flex-1">{{ t.message }}</span>
+      <span class="min-w-0 flex-1 wrap-anywhere">{{ t.message }}</span>
       <button class="-my-1 -mr-2 px-2 py-1 text-slate-400 hover:text-white" (click)="toasts.dismiss(t.id)" aria-label="Dismiss">✕</button>
     </div>
   }
