@@ -54,8 +54,8 @@ public sealed class SubtitleSearchTests(KrakarrFactory factory) : IClassFixture<
         using (var scope = app.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-            var profile = await db.QualityProfiles.FirstAsync(ct);
-            var movie = new Movie { TmdbId = 900123, Title = "Provider Filter Test", Year = 2024, Path = "/nonexistent/provider-filter", QualityProfileId = profile.Id };
+            var profileId = await db.QualityProfiles.MinAsync(p => p.Id, ct);
+            var movie = new Movie { TmdbId = 900123, Title = "Provider Filter Test", Year = 2024, Path = "/nonexistent/provider-filter", QualityProfileId = profileId };
             db.Movies.Add(movie);
             await db.SaveChangesAsync(ct);
             db.MovieFiles.Add(new MovieFile { MovieId = movie.Id, RelativePath = "movie.mkv", QualityId = 17 });

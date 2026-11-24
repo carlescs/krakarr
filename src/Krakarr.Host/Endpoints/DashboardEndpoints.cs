@@ -59,7 +59,7 @@ public static class DashboardEndpoints
                 g.Count(m => m.Monitored),
                 g.Count(m => m.MovieFileId != null),
                 g.Count(m => m.Monitored && m.MovieFileId == null)))
-            .FirstOrDefaultAsync(ct) ?? new DashboardMovieStats(0, 0, 0, 0);
+            .SingleOrDefaultAsync(ct) ?? new DashboardMovieStats(0, 0, 0, 0);
 
         var series = await db.Series.AsNoTracking().GroupBy(_ => 1)
             .Select(g => new DashboardSeriesStats(
@@ -67,7 +67,7 @@ public static class DashboardEndpoints
                 g.Count(s => s.Monitored),
                 g.Count(s => s.Status == SeriesStatus.Continuing),
                 g.Count(s => s.Status == SeriesStatus.Ended)))
-            .FirstOrDefaultAsync(ct) ?? new DashboardSeriesStats(0, 0, 0, 0);
+            .SingleOrDefaultAsync(ct) ?? new DashboardSeriesStats(0, 0, 0, 0);
 
         // Regular episodes only: specials are rarely wanted and would make "missing" look worse than it is.
         var weekEnd = today.AddDays(7);
@@ -77,7 +77,7 @@ public static class DashboardEndpoints
                 g.Count(e => e.EpisodeFileId != null),
                 g.Count(e => e.Monitored && e.EpisodeFileId == null && e.AirDate != null && e.AirDate <= today),
                 g.Count(e => e.AirDate != null && e.AirDate > today && e.AirDate <= weekEnd)))
-            .FirstOrDefaultAsync(ct) ?? new DashboardEpisodeStats(0, 0, 0, 0);
+            .SingleOrDefaultAsync(ct) ?? new DashboardEpisodeStats(0, 0, 0, 0);
 
         // One row per quality (a couple of dozen at most), folded into resolutions here.
         var movieQualities = await db.MovieFiles.AsNoTracking().GroupBy(f => f.QualityId)

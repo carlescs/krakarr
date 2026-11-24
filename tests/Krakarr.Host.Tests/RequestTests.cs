@@ -174,7 +174,7 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
             db.RootFolders.Add(new RootFolder { Path = root, MediaType = MediaType.Movie });
             await db.SaveChangesAsync(Ct);
-            profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(Ct);
+            profile = await db.QualityProfiles.MinAsync(p => p.Id, Ct);
         }
 
         var id = (await CreateAsync(carol, "Movie", 2001)).GetProperty("id").GetInt32();
@@ -234,7 +234,7 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-            var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(Ct);
+            var profile = await db.QualityProfiles.MinAsync(p => p.Id, Ct);
             var movie = new Movie { TmdbId = 5001, Title = "Followed Movie", Year = 2031, Path = "/m/followed", QualityProfileId = profile,
                 InCinemas = new DateOnly(2031, 2, 3), ReleaseDates = [new("US", ReleaseDateType.Theatrical, new DateOnly(2031, 2, 3))] };
             var other = new Movie { TmdbId = 5002, Title = "Other Movie", Year = 2031, Path = "/m/other", QualityProfileId = profile,

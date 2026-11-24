@@ -150,7 +150,7 @@ public sealed class RequestNotificationSource(KrakarrDbContext db) : INotificati
 
         var summary = await pending.GroupBy(_ => 1)
             .Select(g => new { Count = g.Count(), Latest = g.Max(r => r.RequestedAt) })
-            .FirstOrDefaultAsync(ct);
+            .SingleOrDefaultAsync(ct);
         if (summary is null) return null;
 
         var n = summary.Count;

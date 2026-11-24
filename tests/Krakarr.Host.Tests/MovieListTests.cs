@@ -23,7 +23,7 @@ public sealed class MovieListTests : IClassFixture<KrakarrFactory>
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
             db.Movies.RemoveRange(db.Movies);
             await db.SaveChangesAsync(ct);
-            var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+            var profile = await db.QualityProfiles.MinAsync(p => p.Id, ct);
             var ownedMovie = new Movie { TmdbId = 9001, Title = "Owned Movie", SortTitle = "owned movie", Year = 2001, Path = "/movies/owned", QualityProfileId = profile, Overview = "long text" };
             var missingMovie = new Movie { TmdbId = 9002, Title = "Missing Movie", SortTitle = "missing movie", Year = 2002, Path = "/movies/missing", QualityProfileId = profile, Monitored = false };
             db.Movies.AddRange(ownedMovie, missingMovie);
@@ -70,7 +70,7 @@ public sealed class MovieListTests : IClassFixture<KrakarrFactory>
             db.MovieCollections.RemoveRange(db.MovieCollections);
             await db.SaveChangesAsync(ct);
 
-            var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+            var profile = await db.QualityProfiles.MinAsync(p => p.Id, ct);
             var col = new MovieCollection { TmdbId = 8091, Name = "Alien Collection", SortName = "alien collection" };
             db.MovieCollections.Add(col);
             await db.SaveChangesAsync(ct);
@@ -139,7 +139,7 @@ public sealed class MovieListTests : IClassFixture<KrakarrFactory>
         Assert.Equal(JsonValueKind.Null, groupedPage2.GetProperty("groups").ValueKind);
 
         // Matching ids
-        var ids = await client.GetFromJsonAsync<int[]>("/api/v1/movies/ids?sort=year&desc=true", ct);
+        var ids = await client.GetFromJsonAsync<int[]>("/api/v1/movies/ids?sort=year&desc=true", ct) ?? [];
         Assert.Equal([arrivalId, aliensId, alienId], ids);
     }
 
@@ -152,7 +152,7 @@ public sealed class MovieListTests : IClassFixture<KrakarrFactory>
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
             db.Movies.RemoveRange(db.Movies);
             await db.SaveChangesAsync(ct);
-            var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+            var profile = await db.QualityProfiles.MinAsync(p => p.Id, ct);
             db.Movies.AddRange(
                 new Movie { TmdbId = 9201, Title = "Àlex i l'Ésser", SortTitle = "alex i l'esser", Year = 2020, Path = "/movies/alex", QualityProfileId = profile },
                 new Movie { TmdbId = 9202, Title = "Other", SortTitle = "other", Year = 2021, Path = "/movies/other", QualityProfileId = profile });

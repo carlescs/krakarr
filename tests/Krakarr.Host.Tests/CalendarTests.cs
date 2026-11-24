@@ -31,7 +31,7 @@ public sealed class CalendarTests : IClassFixture<KrakarrFactory>
         using var scope = _factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
         if (await db.Movies.AnyAsync(ct)) return;
-        var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+        var profile = await db.QualityProfiles.MinAsync(p => p.Id, ct);
 
         var movie = new Movie { TmdbId = 1, Title = "Calendar Movie", Year = 2030, Path = "/m/cal", QualityProfileId = profile };
         MovieReleases.Apply(movie,
@@ -70,8 +70,8 @@ public sealed class CalendarTests : IClassFixture<KrakarrFactory>
 
         // With a region, its date wins and the earlier worldwide date is reported alongside.
         (await client.PutAsJsonAsync("/api/v1/settings/metadata", new { language = "en-US", releaseRegion = "es" }, ct)).EnsureSuccessStatusCode();
-        var regional = await client.GetFromJsonAsync<JsonElement[]>("/api/v1/calendar?start=2030-03-01&end=2030-06-30", ct);
-        var cinema = regional!.Single(e => Str(e, "releaseType") == "Theatrical" && Str(e, "title") == "Calendar Movie");
+        var regional = await client.GetFromJsonAsync<JsonElement[]>("/api/v1/calendar?start=2030-03-01&end=2030-06-30", ct) ?? [];
+        var cinema = regional.Single(e => Str(e, "releaseType") == "Theatrical" && Str(e, "title") == "Calendar Movie");
         Assert.Equal("2030-03-14", cinema.GetProperty("date").GetString());
         Assert.True(cinema.GetProperty("isRegionDate").GetBoolean());
         Assert.Equal("2030-03-07", cinema.GetProperty("earliestDate").GetString());

@@ -21,7 +21,7 @@ public sealed class SeriesListTests : IClassFixture<KrakarrFactory>
         using (var scope = _factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-            var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+            var profile = await db.QualityProfiles.MinAsync(p => p.Id, ct);
             var series = new Krakarr.Core.Domain.Series { TmdbId = 77, Title = "Counted Show", Year = 2020, Path = "/tv/counted", QualityProfileId = profile };
             series.Seasons.Add(new Season { SeasonNumber = 0, Monitored = false });
             series.Seasons.Add(new Season { SeasonNumber = 1, Monitored = true });
@@ -81,7 +81,7 @@ public sealed class SeriesListTests : IClassFixture<KrakarrFactory>
             db.Series.RemoveRange(db.Series);
             await db.SaveChangesAsync(ct);
 
-            var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+            var profile = await db.QualityProfiles.MinAsync(p => p.Id, ct);
             var dark = new Krakarr.Core.Domain.Series { TmdbId = 81, Title = "Dark", SortTitle = "dark", Year = 2017, Status = SeriesStatus.Ended, Path = "/tv/dark", QualityProfileId = profile };
             var lost = new Krakarr.Core.Domain.Series { TmdbId = 82, Title = "Lost", SortTitle = "lost", Year = 2004, Status = SeriesStatus.Ended, Monitored = false, Path = "/tv/lost", QualityProfileId = profile };
             var severance = new Krakarr.Core.Domain.Series { TmdbId = 83, Title = "Severance", SortTitle = "severance", Year = 2022, Status = SeriesStatus.Continuing, Path = "/tv/severance", QualityProfileId = profile };
@@ -139,7 +139,7 @@ public sealed class SeriesListTests : IClassFixture<KrakarrFactory>
         Assert.Equal(["Severance", "Dark", "Lost"], byNextAiring.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("title").GetString()));
 
         // Matching ids
-        var ids = await client.GetFromJsonAsync<int[]>("/api/v1/series/ids?sort=episodes", ct);
+        var ids = await client.GetFromJsonAsync<int[]>("/api/v1/series/ids?sort=episodes", ct) ?? [];
         Assert.Equal([lostId, severanceId, darkId], ids);
     }
 
@@ -151,7 +151,7 @@ public sealed class SeriesListTests : IClassFixture<KrakarrFactory>
         using (var scope = _factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-            profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+            profile = await db.QualityProfiles.MinAsync(p => p.Id, ct);
             var series = new Krakarr.Core.Domain.Series { TmdbId = 79, Title = "Same Name", MetadataTitle = "Same Name", Year = 2011, Path = "/tv/same", QualityProfileId = profile };
             db.Series.Add(series);
             await db.SaveChangesAsync(ct);
