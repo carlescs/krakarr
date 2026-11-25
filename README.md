@@ -193,10 +193,12 @@ Nothing is moved or renamed.
 - **Synchronisation:** a subtitle can be synced against the video from its subtitle list, or automatically after
   download when it scores below a threshold. The reference is a perfect-score subtitle of the same file, a text
   subtitle track inside the video, or the audio. [alass](https://github.com/kaegi/alass) or
-  [ffsubsync](https://github.com/smacke/ffsubsync) do the work when installed (plus ffmpeg for the audio and embedded
-  tracks); without them, Krakarr fixes a constant shift or a framerate difference against a reference subtitle. None of
-  these tools ship in the image: mount the binaries and set their paths in **Settings → Subtitles**, or put them on
-  `PATH`. Syncs run one at a time with a timeout. Subtitles (SRT, VTT, ASS/SSA) can also be shifted by hand by ± ms.
+  [ffsubsync](https://github.com/smacke/ffsubsync) do the work (plus ffmpeg for the audio and embedded tracks);
+  without them, Krakarr fixes a constant shift or a framerate difference against a reference subtitle. The Docker image
+  ships alass and a slimmed-down ffmpeg/ffprobe (audio decoding and text subtitle tracks only, ~14 MB in all), so syncing
+  works out of the box. ffsubsync isn't included (it needs Python and numpy); outside Docker, install any of the tools on
+  `PATH` or set their paths in **Settings → Subtitles**. Syncs run one at a time with a timeout. Subtitles (SRT, VTT,
+  ASS/SSA) can also be shifted by hand by ± ms.
 
 ### Jellyfin
 

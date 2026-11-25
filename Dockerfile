@@ -24,7 +24,58 @@ RUN dotnet publish src/Krakarr.Host/Krakarr.Host.csproj -c Release -a $TARGETARC
     -p:SkipWebBuild=true -p:UseAppHost=false -p:DebugType=none -p:Version=$VERSION
 COPY --from=web /src/src/Krakarr.Host/wwwroot /app/wwwroot
 
-# ---- 3. Runtime ---------------------------------------------------------------------------
+# ---- 3. Subtitle sync tools ----------------------------------------------------------------
+# alass, plus an ffmpeg/ffprobe built with only what syncing needs (demuxing, audio decoding, text subtitle tracks):
+# a few MB instead of the hundreds a full ffmpeg brings. Cross-compiled natively for the target, on the runtime's
+# Ubuntu release so the glibc matches.
+FROM --platform=$BUILDPLATFORM ubuntu:26.04 AS tools
+ARG TARGETARCH
+ARG FFMPEG_VERSION=9.0.2
+ARG FFMPEG_SHA256=8c3850283eb25fa026482078a04051e0be17347b09ef81a0849bec15a96e002e
+ARG FFMPEG_URL=https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz
+ARG ALASS_VERSION=2.0.0
+ARG RUST_VERSION=1.85.0
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl xz-utils make nasm gcc libc6-dev \
+       gcc-x86-64-linux-gnu libc6-dev-amd64-cross gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
+    && rm -rf /var/lib/apt/lists/*
+RUN case "$TARGETARCH" in \
+      amd64) echo "x86_64 x86_64-linux-gnu x86_64-unknown-linux-gnu" ;; \
+      arm64) echo "aarch64 aarch64-linux-gnu aarch64-unknown-linux-gnu" ;; \
+      *) echo "Unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
+    esac > /target
+RUN read arch triple _ < /target \
+    && curl -fsSL "$FFMPEG_URL" -o /tmp/ffmpeg.tar.xz \
+    && echo "$FFMPEG_SHA256  /tmp/ffmpeg.tar.xz" | sha256sum -c - \
+    && mkdir /tmp/ffmpeg && tar -xJf /tmp/ffmpeg.tar.xz -C /tmp/ffmpeg --strip-components=1 \
+    && cd /tmp/ffmpeg \
+    && ./configure --prefix=/out --enable-cross-compile --arch=$arch --target-os=linux --cross-prefix=$triple- \
+       --disable-everything --disable-autodetect --disable-network --disable-doc --disable-debug --disable-ffplay \
+       --enable-protocol=file,pipe \
+       --enable-demuxer=matroska,mov,avi,mpegts,mpegps,asf,flv,ogg,wav \
+       --enable-parser=aac,aac_latm,ac3,dca,flac,mlp,mpegaudio,opus,vorbis \
+       --enable-decoder=aac,aac_latm,ac3,eac3,dca,truehd,mlp,mp2,mp3,opus,vorbis,flac,alac,wmav2,wmapro \
+       --enable-decoder=pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_s16be,pcm_bluray,pcm_dvd \
+       --enable-decoder=ass,ssa,subrip,srt,webvtt,movtext,text \
+       --enable-encoder=pcm_s16le,subrip,srt \
+       --enable-muxer=pcm_s16le,wav,srt \
+       --enable-filter=aresample,aformat,anull,abuffer,abuffersink \
+       > /tmp/configure.log 2>&1 || { tail -n 30 /tmp/configure.log; exit 1; }; \
+    if grep "did not match anything" /tmp/configure.log; then exit 1; fi \
+    && make -j"$(nproc)" && make install \
+    && rm -rf /tmp/ffmpeg /tmp/ffmpeg.tar.xz
+ENV RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:$PATH \
+    CARGO_PROFILE_RELEASE_STRIP=symbols \
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc \
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
+RUN read _ _ target < /target \
+    && curl -fsSL "https://static.rust-lang.org/rustup/dist/$(uname -m)-unknown-linux-gnu/rustup-init" -o /tmp/rustup-init \
+    && chmod +x /tmp/rustup-init \
+    && /tmp/rustup-init -y --profile minimal --default-toolchain $RUST_VERSION --target $target --no-modify-path \
+    && cargo install alass-cli --version $ALASS_VERSION --locked --target $target --root /out \
+    && rm -rf /tmp/rustup-init $CARGO_HOME/registry
+
+# ---- 4. Runtime ---------------------------------------------------------------------------
 FROM mcr.microsoft.com/dotnet/aspnet:11.0
 ARG VERSION
 LABEL org.opencontainers.image.title="Krakarr" \
@@ -42,6 +93,8 @@ ENV ASPNETCORE_HTTP_PORTS=8787 \
     PGID=1000 \
     UMASK=002
 
+# Subtitle sync tools (alass-cli, ffmpeg, ffprobe); Krakarr finds them on PATH.
+COPY --from=tools /out/bin/ /usr/local/bin/
 WORKDIR /app
 COPY --from=build /app ./
 COPY docker/entrypoint.sh /entrypoint.sh
