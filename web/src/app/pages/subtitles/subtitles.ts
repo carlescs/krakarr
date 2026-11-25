@@ -12,6 +12,7 @@ import { Toasts } from '../../core/toast';
 import { observeContainerWidth } from '../../core/virtual-scroll';
 import { MultiPicker, PickerOption } from '../../shared/multi-picker/multi-picker';
 import { SubtitleManager } from '../../shared/subtitle-manager/subtitle-manager';
+import { BestMatchItem, SubtitleBestMatch } from '../../shared/subtitle-best-match/subtitle-best-match';
 import { TableSort } from '../../core/table-sort';
 import { SortHeader } from '../../shared/sort-header/sort-header';
 
@@ -28,11 +29,14 @@ const ROW_HEIGHT = 44;
 const MOBILE_ROW_HEIGHT = 64;
 const SM_BREAKPOINT = 640;
 
+/** Files one "best match for all" run walks through (the wanted endpoint's page size limit). */
+const BEST_MATCH_LIMIT = 500;
+
 function notFoundParam(filter: WantedFilter) { return filter === 'all' ? undefined : filter === 'notFound'; }
 
 @Component({
   selector: 'kr-subtitles',
-  imports: [ScrollingModule, RouterLink, DatePipe, NgTemplateOutlet, MultiPicker, SubtitleManager, SortHeader],
+  imports: [ScrollingModule, RouterLink, DatePipe, NgTemplateOutlet, MultiPicker, SubtitleManager, SubtitleBestMatch, SortHeader],
   templateUrl: './subtitles.html',
   styleUrl: './subtitles.scss',
 })
@@ -97,6 +101,9 @@ export class SubtitlesPage implements OnInit {
 
   protected readonly languages = signal<Language[]>([]);
   protected readonly manage = signal<WantedSubtitle | null>(null);
+  /** Files to confirm best-match subtitles for, one dialog step per file. */
+  protected readonly bestMatch = signal<BestMatchItem[] | null>(null);
+  protected readonly loadingBestMatch = signal(false);
   /** Managers can't read settings; for them the server reports a missing provider when they search. */
   protected readonly ready = computed(() => {
     if (!this.auth.isAdmin()) return true;
@@ -162,6 +169,28 @@ export class SubtitlesPage implements OnInit {
   async search(w: WantedSubtitle) {
     await this.api.searchSubtitles({ movieFileId: w.movieFileId, episodeFileId: w.episodeFileId });
     this.toasts.show(`Searching subtitles for ${w.label}…`);
+  }
+
+  /** Best match for one file, even below the minimum score, confirmed before downloading. */
+  bestMatchFor(w: WantedSubtitle) {
+    this.bestMatch.set([{ movieFileId: w.movieFileId, episodeFileId: w.episodeFileId, label: w.label }]);
+  }
+
+  /** Best match for every file in the current filter (in list order, up to one page), asking for each file in turn. */
+  async bestMatchAll() {
+    const { filter, ...q } = this.query();
+    const notFound = notFoundParam(filter);
+    this.loadingBestMatch.set(true);
+    try {
+      const res = await this.api.wantedSubtitles({ ...(notFound != null ? { notFound } : {}), ...q, page: 1, pageSize: BEST_MATCH_LIMIT });
+      if (res.items.length === 0) return;
+      if (res.total > res.items.length) this.toasts.show(`Going through the first ${res.items.length} of ${res.total} files`);
+      this.bestMatch.set(res.items.map(w => ({ movieFileId: w.movieFileId, episodeFileId: w.episodeFileId, label: w.label })));
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+    } finally {
+      this.loadingBestMatch.set(false);
+    }
   }
 
   async searchAll() {

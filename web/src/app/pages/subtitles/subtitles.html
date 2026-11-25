@@ -34,6 +34,10 @@
     @if (filter() === 'notFound' && total() > 0) {
       <button class="btn-secondary btn-sm" (click)="retry()">Retry all</button>
     }
+    @if (total() > 0) {
+      <button class="btn-secondary btn-sm" (click)="bestMatchAll()" [disabled]="!ready() || loadingBestMatch()"
+              title="Go through these files one by one and confirm the best subtitle for each, even below the minimum score">Best match all</button>
+    }
     @if (filter() === 'searching' && total() > 0) {
       <button class="btn-secondary btn-sm" (click)="markAllNotFound()"
               title="Stop searching automatically for every movie and episode still missing subtitles, until retried">Mark all not found</button>
@@ -111,6 +115,8 @@
       <button class="btn-ghost btn-sm" (click)="retry(w)" title="Let the scheduled search try this file again">Retry</button>
     }
     <button class="btn-ghost btn-sm" (click)="search(w)" [disabled]="!ready()">Search</button>
+    <button class="btn-ghost btn-sm" (click)="bestMatchFor(w)" [disabled]="!ready()"
+            title="Show the best subtitle even below the minimum score and confirm before downloading">Best</button>
     <button class="btn-ghost btn-sm" (click)="manage.set(w)">Manual</button>
   </ng-template>
 </section>
@@ -118,4 +124,8 @@
 @if (manage(); as w) {
   <kr-subtitle-manager [fileRef]="{ movieFileId: w.movieFileId, episodeFileId: w.episodeFileId }" [label]="w.label"
                        (closed)="manage.set(null); load()" (changed)="load()" />
+}
+
+@if (bestMatch(); as items) {
+  <kr-subtitle-best-match [items]="items" (closed)="bestMatch.set(null); load()" />
 }

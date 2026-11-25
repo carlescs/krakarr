@@ -186,6 +186,30 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Best_match_ignores_minimum_score_but_downloads_nothing()
+    {
+        _provider.Candidates.Add(C("en-low", "Completely.Different.Release.2004.720p.HDTV"));
+        _provider.Candidates.Add(C("en-hi", "The.Matrix.1999.1080p.BluRay.x264-SPARKS", hi: true));
+        await using (var write = _services.CreateAsyncScope())
+            await write.ServiceProvider.GetRequiredService<ISettingsService>().SaveAsync(new SubtitleSettings
+            {
+                Enabled = true, Languages = ["en", "es"], MinimumScoreMovies = 70, HearingImpaired = HearingImpairedMode.ExcludeHearingImpaired,
+            }, TestContext.Current.CancellationToken);
+
+        using var scope = _services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<SubtitleService>();
+        var target = (await service.GetMovieTargetAsync(_movieFileId, TestContext.Current.CancellationToken))!;
+        var best = await service.BestMatchesAsync(target, TestContext.Current.CancellationToken);
+
+        Assert.Equal(["en", "es"], best.MissingLanguages);
+        Assert.Equal(70, best.MinimumScore);
+        var en = Assert.Single(best.Best); // hearing impaired stays excluded; no Spanish candidates
+        Assert.Equal("en-low", en.Candidate.Payload);
+        Assert.True(en.Score < 70);
+        Assert.Empty(_provider.Downloads);
+    }
+
+    [Fact]
     public async Task Forgets_deleted_files_and_lists_wanted()
     {
         _provider.Candidates.Add(C("en-best", "The.Matrix.1999.1080p.BluRay.x264-SPARKS"));
