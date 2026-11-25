@@ -1,0 +1,59 @@
+<kr-modal [title]="items().length > 1 ? 'Best match · ' + (index() + 1) + ' of ' + items().length : 'Best match'" width="max-w-3xl" (closed)="finish()">
+  @if (item(); as it) {
+    <p class="mb-1 truncate font-medium text-white" [title]="it.label">{{ it.label }}</p>
+    <p class="mb-4 text-xs text-slate-400">
+      The best subtitle for each missing language, even below the minimum score automatic downloads need.
+      Nothing is downloaded until you confirm.
+    </p>
+
+    @if (loading()) {
+      <p class="py-6 text-center text-sm text-slate-400">Searching providers…</p>
+    } @else if (match(); as m) {
+      @for (e of m.errors; track e) { <p class="mb-2 rounded bg-amber-500/10 px-3 py-2 text-xs text-amber-300">{{ e }}</p> }
+      @if (m.missingLanguages.length === 0 && m.errors.length === 0) {
+        <p class="py-6 text-center text-sm text-slate-400">This file already has subtitles in every wanted language.</p>
+      }
+      <ul class="divide-y divide-surface-700">
+        @for (row of rows(); track row.language) {
+          <li class="flex items-start gap-3 py-3">
+            @if (row.best; as r) {
+              <input type="checkbox" class="mt-1" [checked]="selected().has(row.language)" (change)="toggle(row.language, $any($event.target).checked)"
+                     [attr.aria-label]="'Download ' + languageName(row.language)" />
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="font-medium text-slate-200">{{ languageName(row.language) }}</span>
+                  <span class="badge" [class]="belowMinimum(r) ? 'bg-rose-500/15 text-rose-300' : 'bg-emerald-500/15 text-emerald-300'">{{ r.score }}</span>
+                  @if (belowMinimum(r)) { <span class="text-xs text-rose-300">below minimum {{ m.minimumScore }}</span> }
+                </div>
+                <div class="break-all text-sm text-slate-300 sm:truncate sm:break-normal" [title]="r.candidate.releaseNames.join(' | ')">{{ r.candidate.releaseNames[0] ?? r.candidate.fileName }}</div>
+                <div class="flex flex-wrap gap-1 text-xs">
+                  <span class="badge bg-violet-500/15 text-violet-300">{{ r.candidate.provider }}</span>
+                  @if (r.candidate.hashMatch) { <span class="badge bg-emerald-500/15 text-emerald-300">hash match</span> }
+                  @if (r.candidate.hearingImpaired) { <span class="badge bg-surface-700 text-slate-300">HI</span> }
+                  <span class="text-slate-500">{{ r.matches.join(', ') }}</span>
+                </div>
+              </div>
+            } @else {
+              <div class="min-w-0 flex-1 pl-7">
+                <span class="font-medium text-slate-200">{{ languageName(row.language) }}</span>
+                <span class="ml-2 text-sm text-slate-500">No subtitles found</span>
+              </div>
+            }
+          </li>
+        }
+      </ul>
+    }
+  }
+
+  <ng-container footer>
+    @if (items().length > 1) {
+      <button class="btn-ghost" (click)="finish()" [disabled]="downloading()">Stop</button>
+      <button class="btn-secondary" (click)="next()" [disabled]="loading() || downloading()">Skip</button>
+    } @else {
+      <button class="btn-secondary" (click)="finish()" [disabled]="downloading()">Cancel</button>
+    }
+    <button class="btn-primary" (click)="confirm()" [disabled]="loading() || downloading() || selected().size === 0">
+      {{ downloading() ? 'Downloading…' : 'Download ' + selected().size }}
+    </button>
+  </ng-container>
+</kr-modal>

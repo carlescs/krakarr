@@ -8,11 +8,12 @@ import { Modal } from '../modal/modal';
 import { TableSort } from '../../core/table-sort';
 import { SortHeader } from '../sort-header/sort-header';
 import { SubtitleList } from '../subtitle-list/subtitle-list';
+import { SubtitleBestMatch } from '../subtitle-best-match/subtitle-best-match';
 
 /** Dialog listing a file's subtitles with automatic and interactive search. */
 @Component({
   selector: 'kr-subtitle-manager',
-  imports: [FormsModule, Modal, SortHeader, SubtitleList],
+  imports: [FormsModule, Modal, SortHeader, SubtitleList, SubtitleBestMatch],
   templateUrl: './subtitle-manager.html',
   styleUrl: './subtitle-manager.scss',
 })
@@ -40,6 +41,8 @@ export class SubtitleManager implements OnInit {
   protected readonly searched = signal(false);
   protected readonly downloading = signal<string | null>(null);
   protected language = '';
+  /** Shows the best match per missing language, even below the minimum score, to confirm before downloading. */
+  protected readonly bestMatch = signal(false);
 
   ngOnInit() { this.subtitleLanguages.load().catch(() => {}); }
 
