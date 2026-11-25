@@ -44,6 +44,20 @@ public sealed class JellyfinMatchTests
     }
 
     [Fact]
+    public void Matches_episodes_by_id_then_by_number_including_multi_episode_files()
+    {
+        static JellyfinItem Ep(string id, int season, int number, int? end = null, params (string Key, string Value)[] ids) =>
+            new(id, "Ep", "srv", null, ids.ToDictionary(i => i.Key, i => (string?)i.Value), season, number, end);
+        var items = new[] { Ep("e1", 1, 1), Ep("e2", 1, 2, 3), Ep("e5", 1, 5, null, ("Tvdb", "555")) };
+
+        Assert.Equal("e5", JellyfinClient.MatchEpisode(items, new(1, 4, null, 555))?.Id);
+        Assert.Equal("e1", JellyfinClient.MatchEpisode(items, new(1, 1, null, 999))?.Id);
+        Assert.Equal("e2", JellyfinClient.MatchEpisode(items, new(1, 3, null, null))?.Id);
+        Assert.Null(JellyfinClient.MatchEpisode(items, new(1, 4, null, null)));
+        Assert.Null(JellyfinClient.MatchEpisode(items, new(2, 1, null, null)));
+    }
+
+    [Fact]
     public void Links_to_the_public_url_when_set()
     {
         var item = Item("abc", "Dune", 2021);
@@ -66,6 +80,8 @@ public sealed class FakeJellyfin : HttpMessageHandler
         if (request.Headers.Authorization?.Parameter != "Token=\"secret\"") return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
         var body = path switch
         {
+            var p when p.StartsWith("/jf/Shows/show-1/Episodes?Season=1&", StringComparison.Ordinal) =>
+                """{"Items":[{"Id":"ep-1","Name":"Pilot","ServerId":"srv","ParentIndexNumber":1,"IndexNumber":1},{"Id":"ep-2","Name":"Two","ServerId":"srv","ParentIndexNumber":1,"IndexNumber":2,"IndexNumberEnd":3}]}""",
             "/jf/System/Info" => """{"ServerName":"Living room","Version":"10.10.3"}""",
             var p when p.StartsWith("/jf/Items?", StringComparison.Ordinal) && p.Contains("IncludeItemTypes=Movie", StringComparison.Ordinal) =>
                 """{"Items":[{"Id":"movie-1","Name":"Jelly Movie","ServerId":"srv","ProductionYear":2020,"ProviderIds":{"Tmdb":"7001"}}]}""",
@@ -105,7 +121,7 @@ public sealed class JellyfinTests(JellyfinFactory factory) : IClassFixture<Jelly
     public async Task Links_downloaded_titles_to_their_jellyfin_page()
     {
         var ct = TestContext.Current.CancellationToken;
-        int downloaded, missing, show, emptyShow;
+        int downloaded, missing, show, emptyShow, episode, doubleEpisode, missingEpisode;
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
@@ -117,9 +133,15 @@ public sealed class JellyfinTests(JellyfinFactory factory) : IClassFixture<Jelly
             db.AddRange(m1, m2, s1, s2);
             await db.SaveChangesAsync(ct);
             m1.MovieFile = new MovieFile { MovieId = m1.Id, RelativePath = "jelly.mkv", QualityId = 17 };
-            db.EpisodeFiles.Add(new EpisodeFile { SeriesId = s1.Id, SeasonNumber = 1, RelativePath = "s01e01.mkv", QualityId = 17 });
+            var f1 = new EpisodeFile { SeriesId = s1.Id, SeasonNumber = 1, RelativePath = "s01e01.mkv", QualityId = 17 };
+            var f2 = new EpisodeFile { SeriesId = s1.Id, SeasonNumber = 1, RelativePath = "s01e02e03.mkv", QualityId = 17 };
+            var e1 = new Episode { SeriesId = s1.Id, SeasonNumber = 1, EpisodeNumber = 1, EpisodeFile = f1 };
+            var e3 = new Episode { SeriesId = s1.Id, SeasonNumber = 1, EpisodeNumber = 3, EpisodeFile = f2 };
+            var e4 = new Episode { SeriesId = s1.Id, SeasonNumber = 1, EpisodeNumber = 4 };
+            db.AddRange(e1, e3, e4);
             await db.SaveChangesAsync(ct);
             (downloaded, missing, show, emptyShow) = (m1.Id, m2.Id, s1.Id, s2.Id);
+            (episode, doubleEpisode, missingEpisode) = (e1.Id, e3.Id, e4.Id);
         }
 
         var client = await AdminAsync(ct);
@@ -143,8 +165,15 @@ public sealed class JellyfinTests(JellyfinFactory factory) : IClassFixture<Jelly
         var showLink = await client.GetFromJsonAsync<JsonElement>($"/api/v1/series/{show}/jellyfin", ct);
         Assert.Equal("https://tv.example.com/web/#/details?id=show-1&serverId=srv", showLink.GetProperty("url").GetString());
 
+        var episodeLink = await client.GetFromJsonAsync<JsonElement>($"/api/v1/series/{show}/episodes/{episode}/jellyfin", ct);
+        Assert.Equal("https://tv.example.com/web/#/details?id=ep-1&serverId=srv", episodeLink.GetProperty("url").GetString());
+        var doubleLink = await client.GetFromJsonAsync<JsonElement>($"/api/v1/series/{show}/episodes/{doubleEpisode}/jellyfin", ct);
+        Assert.Equal("https://tv.example.com/web/#/details?id=ep-2&serverId=srv", doubleLink.GetProperty("url").GetString());
+
         // Nothing downloaded: no link, without asking Jellyfin.
         var before = factory.Jellyfin.Requests.Count;
+        Assert.Equal(HttpStatusCode.NoContent, (await client.GetAsync($"/api/v1/series/{show}/episodes/{missingEpisode}/jellyfin", ct)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"/api/v1/series/{emptyShow}/episodes/{episode}/jellyfin", ct)).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await client.GetAsync($"/api/v1/movies/{missing}/jellyfin", ct)).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await client.GetAsync($"/api/v1/series/{emptyShow}/jellyfin", ct)).StatusCode);
         Assert.Equal(before, factory.Jellyfin.Requests.Count);

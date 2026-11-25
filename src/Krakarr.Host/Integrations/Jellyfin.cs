@@ -16,7 +16,12 @@ public enum JellyfinItemKind
 /// <summary>What Krakarr knows about a title, used to find the same title on the Jellyfin server.</summary>
 public sealed record JellyfinLookup(JellyfinItemKind Kind, string Title, string? OriginalTitle, int Year, int? TmdbId, int? TvdbId, string? ImdbId);
 
-public sealed record JellyfinItem(string Id, string? Name, string? ServerId, int? ProductionYear, Dictionary<string, string?>? ProviderIds);
+/// <summary>An episode as Krakarr knows it, used to find it under the series' item on the Jellyfin server.</summary>
+public sealed record JellyfinEpisodeLookup(int SeasonNumber, int EpisodeNumber, int? TmdbId, int? TvdbId);
+
+/// <summary>A Jellyfin item; the index numbers are only set for episodes (season, episode and the last episode of a multi-episode file).</summary>
+public sealed record JellyfinItem(string Id, string? Name, string? ServerId, int? ProductionYear, Dictionary<string, string?>? ProviderIds,
+    int? ParentIndexNumber = null, int? IndexNumber = null, int? IndexNumberEnd = null);
 
 public sealed record JellyfinTestResult(bool Success, string? ServerName = null, string? Version = null, string? Message = null);
 
@@ -35,7 +40,21 @@ public sealed class JellyfinClient(IHttpClientFactory httpClientFactory, ILogger
     private sealed record SystemInfo(string? ServerName, string? Version);
 
     /// <summary>Link to the title's page in Jellyfin, or null when Jellyfin is not configured or doesn't have it.</summary>
-    public async Task<string?> FindItemUrlAsync(JellyfinSettings settings, JellyfinLookup lookup, CancellationToken ct)
+    public async Task<string?> FindItemUrlAsync(JellyfinSettings settings, JellyfinLookup lookup, CancellationToken ct) =>
+        await FindItemAsync(settings, lookup, ct) is { } item ? ItemUrl(settings, item) : null;
+
+    /// <summary>Link to the episode's page in Jellyfin, or null when Jellyfin is not configured or doesn't have the series or the episode.</summary>
+    public async Task<string?> FindEpisodeUrlAsync(JellyfinSettings settings, JellyfinLookup series, JellyfinEpisodeLookup episode, CancellationToken ct)
+    {
+        if (await FindItemAsync(settings, series, ct) is not { } show) return null;
+        // One season's episodes: bounded, and the only way to match a multi-episode file by its index range.
+        var query = $"Shows/{Uri.EscapeDataString(show.Id)}/Episodes?Season={episode.SeasonNumber}"
+            + "&Fields=ProviderIds&EnableImages=false&EnableUserData=false";
+        var response = await GetAsync<ItemsResponse>(settings, query, ct);
+        return MatchEpisode(response?.Items ?? [], episode) is { } item ? ItemUrl(settings, item) : null;
+    }
+
+    private async Task<JellyfinItem?> FindItemAsync(JellyfinSettings settings, JellyfinLookup lookup, CancellationToken ct)
     {
         if (!settings.IsConfigured) return null;
 
@@ -44,7 +63,7 @@ public sealed class JellyfinClient(IHttpClientFactory httpClientFactory, ILogger
             var query = $"Items?Recursive=true&IncludeItemTypes={lookup.Kind}&SearchTerm={Uri.EscapeDataString(term!)}"
                 + $"&Fields=ProviderIds&EnableImages=false&EnableUserData=false&Limit={SearchLimit}";
             var response = await GetAsync<ItemsResponse>(settings, query, ct);
-            if (Match(response?.Items ?? [], lookup) is { } item) return ItemUrl(settings, item);
+            if (Match(response?.Items ?? [], lookup) is { } item) return item;
         }
 
         return null;
@@ -81,6 +100,23 @@ public sealed class JellyfinClient(IHttpClientFactory httpClientFactory, ILogger
             && !Conflicts(i, "Tmdb", lookup.TmdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture))
             && !Conflicts(i, "Tvdb", lookup.TvdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture))
             && !Conflicts(i, "Imdb", lookup.ImdbId));
+    }
+
+    /// <summary>
+    /// Picks the Jellyfin episode for <paramref name="episode"/> among a season's episodes: one with a matching TheTVDB or
+    /// TMDB id, otherwise the one numbered like it (a multi-episode file covers every number up to its end index).
+    /// </summary>
+    public static JellyfinItem? MatchEpisode(IReadOnlyList<JellyfinItem> items, JellyfinEpisodeLookup episode)
+    {
+        var tvdb = episode.TvdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var tmdb = episode.TmdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var byId = items.FirstOrDefault(i => SameId(i, "Tvdb", tvdb) || SameId(i, "Tmdb", tmdb));
+        if (byId is not null) return byId;
+
+        return items.FirstOrDefault(i =>
+            (i.ParentIndexNumber is null || i.ParentIndexNumber == episode.SeasonNumber)
+            && i.IndexNumber is { } first
+            && (first == episode.EpisodeNumber || (i.IndexNumberEnd is { } last && first <= episode.EpisodeNumber && episode.EpisodeNumber <= last)));
     }
 
     /// <summary>The item's details page in the Jellyfin web client.</summary>
@@ -136,7 +172,8 @@ public static class JellyfinEndpoints
     }
 
     /// <summary>
-    /// <c>GET /api/v1/movies/{id}/jellyfin</c> and <c>/api/v1/series/{id}/jellyfin</c>: the title's Jellyfin page, or 204
+    /// <c>GET /api/v1/movies/{id}/jellyfin</c>, <c>/api/v1/series/{id}/jellyfin</c> and
+    /// <c>/api/v1/series/{id}/episodes/{episodeId}/jellyfin</c>: the title's (or episode's) Jellyfin page, or 204
     /// when Jellyfin isn't configured, nothing is downloaded yet, or Jellyfin doesn't have it (yet). Readable by every user.
     /// </summary>
     public static IEndpointRouteBuilder MapJellyfinEndpoints(this IEndpointRouteBuilder app)
@@ -165,6 +202,23 @@ public static class JellyfinEndpoints
             return await Resolve(jellyfin, logger, config, new(JellyfinItemKind.Series, series.Title, null, series.Year, series.TmdbId, series.TvdbId, series.ImdbId), ct);
         }).WithTags("Jellyfin");
 
+        app.MapGet("/api/v1/series/{id:int}/episodes/{episodeId:int}/jellyfin", async (int id, int episodeId, KrakarrDbContext db, ISettingsService settings, JellyfinClient jellyfin, ILogger<JellyfinClient> logger, CancellationToken ct) =>
+        {
+            var config = await settings.GetAsync<JellyfinSettings>(ct);
+            if (!config.IsConfigured) return Results.NoContent();
+            var episode = await db.Episodes.AsNoTracking().Where(e => e.Id == episodeId && e.SeriesId == id)
+                .Select(e => new { e.SeasonNumber, e.EpisodeNumber, e.TmdbId, e.TvdbId, HasFile = e.EpisodeFileId != null })
+                .FirstOrDefaultAsync(ct);
+            if (episode is null) return Results.NotFound();
+            if (!episode.HasFile) return Results.NoContent();
+            var series = await db.Series.AsNoTracking().Where(s => s.Id == id)
+                .Select(s => new { Title = s.MetadataTitle != "" ? s.MetadataTitle : s.Title, s.Year, s.TmdbId, s.TvdbId, s.ImdbId })
+                .FirstAsync(ct);
+            var lookup = new JellyfinLookup(JellyfinItemKind.Series, series.Title, null, series.Year, series.TmdbId, series.TvdbId, series.ImdbId);
+            return await Resolve(lookup.Title, logger, () => jellyfin.FindEpisodeUrlAsync(config, lookup,
+                new(episode.SeasonNumber, episode.EpisodeNumber, episode.TmdbId, episode.TvdbId), ct), ct);
+        }).WithTags("Jellyfin");
+
         // Under /api/v1/settings, so admins only (RoleAccess).
         app.MapPost("/api/v1/settings/jellyfin/test", async (JellyfinSettings input, ISettingsService settings, JellyfinClient jellyfin, CancellationToken ct) =>
         {
@@ -175,16 +229,19 @@ public static class JellyfinEndpoints
         return app;
     }
 
-    private static async Task<IResult> Resolve(JellyfinClient jellyfin, ILogger logger, JellyfinSettings config, JellyfinLookup lookup, CancellationToken ct)
+    private static Task<IResult> Resolve(JellyfinClient jellyfin, ILogger logger, JellyfinSettings config, JellyfinLookup lookup, CancellationToken ct) =>
+        Resolve(lookup.Title, logger, () => jellyfin.FindItemUrlAsync(config, lookup, ct), ct);
+
+    private static async Task<IResult> Resolve(string title, ILogger logger, Func<Task<string?>> find, CancellationToken ct)
     {
         try
         {
-            return await jellyfin.FindItemUrlAsync(config, lookup, ct) is { } url ? Results.Ok(new { Url = url }) : Results.NoContent();
+            return await find() is { } url ? Results.Ok(new { Url = url }) : Results.NoContent();
         }
         catch (Exception ex) when (ex is HttpRequestException or JsonException or UriFormatException || (ex is TaskCanceledException && !ct.IsCancellationRequested))
         {
             // The link is a convenience: an unreachable Jellyfin just hides it.
-            logger.LogWarning("Cannot look up {Title} on Jellyfin: {Error}", lookup.Title, ex.Message);
+            logger.LogWarning("Cannot look up {Title} on Jellyfin: {Error}", title, ex.Message);
             return Results.NoContent();
         }
     }

@@ -45,6 +45,8 @@ export class EpisodeDetailsDialog {
   protected readonly error = signal<string | null>(null);
   /** Media info of the episode's file (null while loading, when there is no file or it couldn't be read). */
   protected readonly mediaInfo = signal<MediaInfo | null>(null);
+  /** The episode's page on Jellyfin, once it is downloaded and Jellyfin is set up. */
+  protected readonly jellyfinUrl = signal<string | null>(null);
   private readonly fileId = computed(() => this.episode().episodeFile?.id);
 
   protected readonly code = computed(() => {
@@ -64,7 +66,10 @@ export class EpisodeDetailsDialog {
     // The file's media info, only when the file changes (a computed id ignores refreshes of the same episode).
     effect(() => {
       const seriesId = this.seriesId(), fileId = this.fileId();
-      untracked(() => this.loadMediaInfo(seriesId, fileId));
+      untracked(() => {
+        this.loadMediaInfo(seriesId, fileId);
+        this.loadJellyfin(seriesId, fileId);
+      });
     });
   }
 
@@ -76,6 +81,19 @@ export class EpisodeDetailsDialog {
       if (fileId === this.episode().episodeFile?.id) this.mediaInfo.set(info ?? null);
     } catch {
       // Optional detail: the dialog works without it.
+    }
+  }
+
+  /** Looks the episode up on Jellyfin when its file changes. Failures just hide the button. */
+  private async loadJellyfin(seriesId: number, fileId: number | undefined) {
+    this.jellyfinUrl.set(null);
+    if (fileId == null) return;
+    const episodeId = this.episode().id;
+    try {
+      const link = await this.api.episodeJellyfinLink(seriesId, episodeId);
+      if (episodeId === this.episode().id && fileId === this.fileId()) this.jellyfinUrl.set(link?.url ?? null);
+    } catch {
+      // Not configured, unreachable or unknown to Jellyfin: no button.
     }
   }
 
