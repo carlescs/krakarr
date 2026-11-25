@@ -16,8 +16,11 @@ namespace Krakarr.Subtitles.Sync;
 /// <param name="Finished">When the sync ended, null while waiting or running.</param>
 /// <param name="Succeeded">Whether it worked, once finished.</param>
 /// <param name="Result">The outcome, once finished (e.g. "Synced with alass against the audio").</param>
+/// <param name="Cancelled">Finished because it was cancelled.</param>
+/// <param name="Cancelling">Cancel was asked for and the sync is stopping.</param>
 public sealed record SubtitleSyncActivity(int SubtitleId, string Title, string Link, DateTimeOffset Since, string? Stage, double? Percent,
-    double? RemainingSeconds = null, DateTimeOffset? Finished = null, bool Succeeded = false, string? Result = null)
+    double? RemainingSeconds = null, DateTimeOffset? Finished = null, bool Succeeded = false, string? Result = null,
+    bool Cancelled = false, bool Cancelling = false)
 {
     public bool Waiting => Stage is null && Finished is null;
 }
@@ -61,23 +64,60 @@ public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvide
 
     /// <summary>
     /// Shows a sync as waiting. Does nothing when it's already waiting or running (a queued sync that starts); replaces
-    /// the outcome of an earlier sync of the same subtitle.
+    /// the outcome of an earlier sync of the same subtitle. Returns the token <see cref="Cancel"/> trips for this sync
+    /// (<see cref="CancellationToken.None"/> when it isn't tracked).
     /// </summary>
-    public void Queue(int subtitleId, string title, string link)
+    public CancellationToken Queue(int subtitleId, string title, string link)
     {
         Prune();
         var entry = new Entry(subtitleId, title, link, time.GetUtcNow());
         if (_entries.TryGetValue(subtitleId, out var existing))
         {
-            if (!existing.IsFinished || !_entries.TryUpdate(subtitleId, entry, existing)) return;
+            if (!existing.IsFinished) return existing.Token;
+            if (!_entries.TryUpdate(subtitleId, entry, existing)) return CancellationToken.None;
         }
         else if (_entries.Count >= MaxTracked || !_entries.TryAdd(subtitleId, entry))
         {
-            return;
+            return CancellationToken.None;
         }
 
         Publish(EventNames.NotificationsUpdated, null);
+        return entry.Token;
     }
+
+    /// <summary>
+    /// Cancels a waiting or running sync. A waiting one is finished as cancelled at once; a running one shows
+    /// "Cancelling…" until the sync stops and calls <see cref="Complete"/>. False when there is nothing to cancel.
+    /// </summary>
+    public bool Cancel(int subtitleId)
+    {
+        if (!_entries.TryGetValue(subtitleId, out var entry)) return false;
+        bool waiting;
+        lock (entry)
+        {
+            if (entry.Finished is not null || entry.CancelRequested) return false;
+            entry.CancelRequested = true;
+            waiting = entry.Stage is null;
+            if (waiting)
+            {
+                entry.Finished = time.GetUtcNow();
+                entry.Cancelled = true;
+                entry.Result = CancelledResult;
+            }
+            else
+            {
+                entry.Stage = "Cancelling…";
+                entry.Percent = null;
+                entry.RemainingSeconds = null;
+            }
+        }
+
+        entry.CancelSync();
+        Publish(EventNames.NotificationsUpdated, null);
+        return true;
+    }
+
+    public const string CancelledResult = "Cancelled before it finished";
 
     /// <summary>Moves a sync to a new stage with unknown progress; stages report their own progress with <see cref="Report"/>.</summary>
     public void Stage(int subtitleId, string stage)
@@ -85,7 +125,7 @@ public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvide
         if (!_entries.TryGetValue(subtitleId, out var entry)) return;
         lock (entry)
         {
-            if (entry.Finished is not null) return;
+            if (entry.Finished is not null || entry.CancelRequested) return;
             entry.Stage = stage;
             entry.Percent = null;
             entry.RemainingSeconds = null;
@@ -103,7 +143,7 @@ public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvide
         NotificationProgressUpdate update;
         lock (entry)
         {
-            if (entry.Stage is null || entry.Finished is not null) return;
+            if (entry.Stage is null || entry.Finished is not null || entry.CancelRequested) return;
             var now = time.GetUtcNow();
             var changed = entry.Percent is not { } last || Math.Floor(last) != Math.Floor(percent);
             entry.Percent = percent;
@@ -134,14 +174,15 @@ public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvide
     }
 
     /// <summary>Records the outcome: the notification turns green (or red on failure) and stays for <see cref="KeepFinished"/>.</summary>
-    public void Complete(int subtitleId, bool success, string result)
+    public void Complete(int subtitleId, bool success, string result, bool cancelled = false)
     {
         if (!_entries.TryGetValue(subtitleId, out var entry)) return;
         lock (entry)
         {
             if (entry.Finished is not null) return;
             entry.Finished = time.GetUtcNow();
-            entry.Succeeded = success;
+            entry.Succeeded = success && !cancelled;
+            entry.Cancelled = cancelled;
             entry.Result = result;
             entry.Percent = success ? 100 : entry.Percent;
             entry.RemainingSeconds = null;
@@ -212,6 +253,13 @@ public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvide
         public DateTimeOffset? Finished { get; set; }
         public bool Succeeded { get; set; }
         public string? Result { get; set; }
+        public bool Cancelled { get; set; }
+        public bool CancelRequested { get; set; }
+
+        // Not disposed: without CancelAfter it holds no timer, and dropping it is enough.
+        private readonly CancellationTokenSource _cancellation = new();
+        public CancellationToken Token => _cancellation.Token;
+        public void CancelSync() => _cancellation.Cancel();
 
         public DateTimeOffset? FinishedAt
         {
@@ -228,7 +276,7 @@ public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvide
         {
             lock (this)
                 return new SubtitleSyncActivity(subtitleId, title, link, since, Stage, Percent is { } p ? Math.Floor(p) : null, RemainingSeconds,
-                    Finished, Succeeded, Result);
+                    Finished, Succeeded, Result, Cancelled, CancelRequested && Finished is null);
         }
     }
 }
@@ -251,13 +299,18 @@ public sealed class SubtitleSyncNotificationSource(SubtitleSyncProgress progress
         var id = SubtitleSyncProgress.NotificationId(a.SubtitleId);
         // Dated when it ended, so a sync dismissed while running shows again with its outcome.
         if (a.Finished is { } finished)
+        {
+            if (a.Cancelled) return new Notification(id, "subtitle", "Cancelled sync of " + a.Title, a.Result, a.Link, Date: finished);
             return a.Succeeded
                 ? new Notification(id, "subtitle", "Synced " + a.Title, a.Result, a.Link,
                     Severity: NotificationSeverity.Success, Date: finished, Progress: new NotificationProgress(100))
                 : new Notification(id, "subtitle", "Could not sync " + a.Title, a.Result, a.Link,
                     Severity: NotificationSeverity.Error, Date: finished);
+        }
 
+        IReadOnlyList<NotificationAction>? actions = a.Cancelling ? null : [new NotificationAction("Cancel", $"subtitles/{a.SubtitleId}/sync/cancel")];
         return new Notification(id, "subtitle", (a.Waiting ? "Waiting to sync " : "Syncing ") + a.Title,
-            a.Stage ?? "Waiting for its turn", a.Link, Date: a.Since, Progress: new NotificationProgress(a.Percent, a.RemainingSeconds));
+            a.Stage ?? "Waiting for its turn", a.Link, Date: a.Since, Progress: new NotificationProgress(a.Percent, a.RemainingSeconds),
+            Actions: actions);
     }
 }

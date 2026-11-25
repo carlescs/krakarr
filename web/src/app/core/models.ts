@@ -433,7 +433,10 @@ export interface AppNotification {
   id: string; kind: string; title: string; message?: string | null; link: string; count: number; severity: NotificationSeverity; date?: string | null;
   /** Set for work in progress; `percent` is null when the work can't tell how far along it is, `remainingSeconds` until there is an estimate. */
   progress?: { percent?: number | null; remainingSeconds?: number | null } | null;
+  /** Buttons on the notification; each POSTs to its `path` (relative to /api/v1). */
+  actions?: NotificationAction[] | null;
 }
+export interface NotificationAction { label: string; path: string; }
 /** Live progress of a notification's work (the `notificationProgress` event). */
 export interface NotificationProgressUpdate { id: string; percent?: number | null; message?: string | null; remainingSeconds?: number | null; }
 

@@ -205,6 +205,76 @@ public sealed class SubtitleSyncProgressTests
     }
 
     [Fact]
+    public async Task Running_and_waiting_syncs_have_a_cancel_button()
+    {
+        _progress.Queue(1, "Dune (2021) · English", "/movies/3");
+        _progress.Queue(2, "Severance S01E03 · Spanish", "/series/5");
+        _progress.Stage(1, "Syncing");
+        _progress.Queue(3, "Old", "/movies/1");
+        _progress.Complete(3, true, "Synced");
+
+        var shown = await new SubtitleSyncNotificationSource(_progress)
+            .GetAsync(new NotificationContext(1, UserRole.Manager), TestContext.Current.CancellationToken);
+        Assert.Equal([new NotificationAction("Cancel", "subtitles/1/sync/cancel")], shown.Single(n => n.Id == "subtitles.sync.1").Actions!);
+        Assert.Equal([new NotificationAction("Cancel", "subtitles/2/sync/cancel")], shown.Single(n => n.Id == "subtitles.sync.2").Actions!);
+        Assert.Null(shown.Single(n => n.Id == "subtitles.sync.3").Actions);
+    }
+
+    [Fact]
+    public async Task Cancelling_a_waiting_sync_finishes_it_at_once()
+    {
+        var token = _progress.Queue(1, "Dune (2021) · English", "/movies/3");
+        Assert.Equal(token, _progress.Queue(1, "Dune (2021) · English", "/movies/3")); // the queued sync starting
+
+        Assert.True(_progress.Cancel(1));
+        Assert.True(token.IsCancellationRequested);
+        Assert.False(_progress.Cancel(1));
+        _progress.Stage(1, "late");
+        _progress.Complete(1, false, "The operation was canceled", cancelled: true);
+
+        var n = Assert.Single(await new SubtitleSyncNotificationSource(_progress)
+            .GetAsync(new NotificationContext(1, UserRole.Admin), TestContext.Current.CancellationToken));
+        Assert.Equal("Cancelled sync of Dune (2021) · English", n.Title);
+        Assert.Equal(SubtitleSyncProgress.CancelledResult, n.Message);
+        Assert.Equal(NotificationSeverity.Info, n.Severity);
+        Assert.Null(n.Actions);
+        Assert.Null(n.Progress);
+    }
+
+    [Fact]
+    public async Task Cancelling_a_running_sync_shows_it_stopping_until_it_completes()
+    {
+        var token = _progress.Queue(1, "Dune (2021) · English", "/movies/3");
+        _progress.Stage(1, "Syncing with alass against the audio");
+        _progress.Report(1, 40);
+
+        Assert.True(_progress.Cancel(1));
+        Assert.True(token.IsCancellationRequested);
+        _progress.Report(1, 60); // the tool's last lines before it is killed
+        var source = new SubtitleSyncNotificationSource(_progress);
+        var stopping = Assert.Single(await source.GetAsync(new NotificationContext(1, UserRole.Admin), TestContext.Current.CancellationToken));
+        Assert.Equal("Cancelling…", stopping.Message);
+        Assert.Equal(new NotificationProgress(null), stopping.Progress);
+        Assert.Null(stopping.Actions);
+
+        _progress.Complete(1, false, SubtitleSyncProgress.CancelledResult, cancelled: true);
+        var done = Assert.Single(_progress.Current);
+        Assert.True(done.Cancelled);
+        Assert.False(done.Succeeded);
+        Assert.False(done.Cancelling);
+    }
+
+    [Fact]
+    public void Nothing_to_cancel_once_finished_or_untracked()
+    {
+        Assert.False(_progress.Cancel(9));
+        _progress.Queue(1, "Dune (2021) · English", "/movies/3");
+        _progress.Complete(1, true, "Synced");
+        Assert.False(_progress.Cancel(1));
+        Assert.True(Assert.Single(_progress.Current).Succeeded);
+    }
+
+    [Fact]
     public void Untracked_syncs_report_nothing()
     {
         _progress.Stage(9, "Syncing");

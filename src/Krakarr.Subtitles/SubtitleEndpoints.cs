@@ -297,13 +297,15 @@ public static class SubtitleEndpoints
             var row = await db.SubtitleFiles.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct);
             if (row is null) return Results.NotFound();
             var (title, link) = await sync.DescribeAsync(row, ct);
-            progress.Queue(id, title, link);
+            var cancel = progress.Queue(id, title, link);
             var command = commands.Enqueue($"Sync subtitle: {Path.GetFileName(row.Path)}", async (sp, token) =>
             {
                 try
                 {
+                    if (cancel.IsCancellationRequested) return SubtitleSyncProgress.CancelledResult; // cancelled while queued
                     var result = await sp.GetRequiredService<SubtitleSyncService>().SyncAsync(id, token) ?? throw new KeyNotFoundException("Subtitle not found");
-                    return result.Success ? result.Message : throw new InvalidOperationException(result.Message);
+                    if (result.Success || cancel.IsCancellationRequested) return result.Message;
+                    throw new InvalidOperationException(result.Message);
                 }
                 finally
                 {
@@ -312,6 +314,10 @@ public static class SubtitleEndpoints
             });
             return Results.Accepted(value: command);
         });
+
+        // Stops a waiting or running sync (the Cancel button on its notification).
+        group.MapPost("/{id:int}/sync/cancel", (int id, SubtitleSyncProgress progress) =>
+            progress.Cancel(id) ? Results.NoContent() : Results.NotFound());
 
         // Moves every cue by a fixed amount (negative = earlier).
         group.MapPost("/{id:int}/shift", async (int id, SubtitleShiftRequest req, SubtitleSyncService sync, CancellationToken ct) =>
