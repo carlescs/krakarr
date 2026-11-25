@@ -56,6 +56,9 @@ public class TmdbMovieDiscoveryTests
                      "credits":{"cast":[{"id":6384,"name":"Keanu Reeves","character":"Neo","order":0,"profile_path":"/k.jpg"},{"id":0,"name":"Nobody","order":1}],
                       "crew":[{"id":9339,"name":"Lilly Wachowski","job":"Director"},{"id":9339,"name":"Lilly Wachowski","job":"Screenplay"},{"id":7,"name":"Best Boy","job":"Best Boy Electric"}]}}
                     """),
+                "/3/collection/2344" => Json("""
+                    {"id":2344,"name":"The Matrix Collection","parts":[{"id":604,"title":"The Matrix Reloaded","release_date":"2003-05-15"},{"id":603,"title":"The Matrix","release_date":"1999-03-30","poster_path":"/m.jpg"}]}
+                    """),
                 "/3/movie/603/recommendations" => Json("""{"page":1,"total_pages":1,"results":[{"id":604,"title":"The Matrix Reloaded","release_date":"2003-05-15"}]}"""),
                 _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)),
             };
@@ -120,6 +123,30 @@ public class TmdbMovieDiscoveryTests
         Assert.Contains("with_keywords=4379,9882", query);
         Assert.Contains("page=3", query);
         Assert.Contains("include_adult=false", query);
+    }
+
+    [Fact]
+    public async Task Reads_the_parts_of_a_collection()
+    {
+        var fake = new FakeTmdb();
+        var parts = await Discovery(fake).CollectionPartsAsync(2344, TestContext.Current.CancellationToken);
+        Assert.Equal([604, 603], parts.Select(p => p.TmdbId));
+        Assert.Equal("https://image.tmdb.org/t/p/w500/m.jpg", parts[1].PosterUrl);
+        Assert.Equal(1999, parts[1].Year);
+    }
+
+    [Fact]
+    public void Missing_parts_skip_library_movies_and_sort_by_year_with_unknown_years_last()
+    {
+        MovieLookup[] parts =
+        [
+            new() { TmdbId = 4, Title = "Untitled Sequel", Year = 0 },
+            new() { TmdbId = 2, Title = "Second", Year = 2003 },
+            new() { TmdbId = 1, Title = "First", Year = 1999, MovieId = 7 },
+            new() { TmdbId = 3, Title = "Third", Year = 2003 },
+            new() { TmdbId = 2, Title = "Second", Year = 2003 },
+        ];
+        Assert.Equal([2, 3, 4], MovieDiscoveryEndpoints.MissingParts(parts).Select(p => p.TmdbId));
     }
 
     [Fact]

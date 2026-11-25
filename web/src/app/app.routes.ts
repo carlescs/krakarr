@@ -28,6 +28,7 @@ export const routes: Routes = [
       // The separate movie, series and people searches became tabs of the one search page; keep old links working.
       { path: 'movies/add', pathMatch: 'full', redirectTo: '/discover/search?type=movies' },
       { path: 'movies/tmdb/:tmdbId', loadComponent: () => import('./pages/title-preview/title-preview').then(m => m.TitlePreviewPage), data: { kind: 'movie' }, title: 'Movie · Krakarr' },
+      { path: 'movies/collections/:id', loadComponent: () => import('./pages/movies/collection-detail/collection-detail').then(m => m.CollectionDetailPage), title: 'Collection · Krakarr' },
       { path: 'movies/:id', loadComponent: () => import('./pages/movies/movie-detail/movie-detail').then(m => m.MovieDetailPage), title: 'Movie · Krakarr' },
       { path: 'series', loadComponent: () => import('./pages/series/series-list/series-list').then(m => m.SeriesListPage), title: 'Series · Krakarr' },
       { path: 'series/import', canActivate: [roleGuard('Manager')], loadComponent: () => import('./pages/library-import/library-import').then(m => m.LibraryImportPage), data: { kind: 'series' }, title: 'Import series · Krakarr' },

@@ -7,7 +7,7 @@ import { readNdjson } from './ndjson';
 import type { Passkey, PasskeyCreationOptionsJson, PasskeyCredentialJson, PasskeyRequestOptionsJson } from './passkeys';
 import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
-  IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
+  IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, KeywordLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
   DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue,
 } from './models';
@@ -182,7 +182,11 @@ export class Api {
   movieIds(query?: Omit<MovieListQuery, 'page' | 'pageSize'>) {
     return this.get<number[]>('movies/ids', query as Record<string, string | number | boolean | null | undefined>);
   }
-  movieCollections() { return this.get<MovieCollection[]>('movies/collections'); }
+  /** Collections with library movies matching the movie list's search and filter. */
+  movieCollections(query?: { q?: string; filter?: MovieFilter }) { return this.get<MovieCollectionSummary[]>('movies/collections', query); }
+  movieCollection(id: number) { return this.get<MovieCollectionDetails>(`movies/collections/${id}`); }
+  /** Movies of the collection that are not in the library (asks TMDB). */
+  movieCollectionMissing(id: number) { return this.get<MovieLookup[]>(`movies/collections/${id}/missing`); }
   movie(id: number) { return this.get<Movie>(`movies/${id}`); }
   /** The movie's Jellyfin page; null (HTTP 204) when Jellyfin isn't set up or doesn't have it. */
   movieJellyfinLink(id: number) { return this.get<{ url: string } | null>(`movies/${id}/jellyfin`); }

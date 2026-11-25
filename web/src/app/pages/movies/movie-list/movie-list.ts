@@ -6,13 +6,13 @@ import { Api, errorMessage } from '../../../core/api';
 import { Auth } from '../../../core/auth';
 import { Events } from '../../../core/events';
 import { Library, MovieQuery } from '../../../core/library';
-import { MovieCollectionGroup, MovieFilter, MovieGrouping, MovieListItem, MovieSortKey } from '../../../core/models';
+import { MovieFilter, MovieGrouping, MovieListItem, MovieSortKey } from '../../../core/models';
 import { SEARCH_DEBOUNCE_MS, VirtualRowDataSource } from '../../../core/paged-list';
 import { PagedSelection, ViewMode, storeView, storedView } from '../../../core/selection';
 import { Subscriptions } from '../../../core/subscriptions';
 import { TableSort } from '../../../core/table-sort';
 import { Toasts } from '../../../core/toast';
-import { KrRowHeights, gridMetrics, gridSlots, observeContainerWidth } from '../../../core/virtual-scroll';
+import { gridMetrics, gridSlots, observeContainerWidth } from '../../../core/virtual-scroll';
 import { BulkActions } from '../../../shared/bulk-actions/bulk-actions';
 import { MoreMenu } from '../../../shared/more-menu/more-menu';
 import { PosterGridSkeleton } from '../../../shared/poster-grid/poster-grid';
@@ -20,63 +20,25 @@ import { Poster } from '../../../shared/poster/poster';
 import { Progress } from '../../../shared/progress/progress';
 import { SortHeader } from '../../../shared/sort-header/sort-header';
 import { ViewToggle } from '../../../shared/view-toggle/view-toggle';
+import { CollectionGrid } from '../collection-grid/collection-grid';
 
 const GROUPING_KEY = 'krakarr.movies.groupBy';
 const VIEW_KEY = 'krakarr.movies.view';
 const TABLE_ROW_HEIGHT = 44;
-const FIRST_HEADER_HEIGHT = 48;
-const NEXT_HEADER_HEIGHT = 64;
 
 function storedGrouping(): MovieGrouping {
   try { return localStorage.getItem(GROUPING_KEY) === 'collection' ? 'collection' : 'none'; } catch { return 'none'; }
 }
 
 interface MovieGridCardsRow {
-  kind: 'cards';
   key: string;
   start: number;
   count: number;
 }
 
-interface MovieGridHeaderRow {
-  kind: 'header';
+interface MovieTableRow {
   key: string;
-  group: MovieCollectionGroup;
-  first: boolean;
-  height: number;
-}
-
-type MovieGroupedGridRow = MovieGridHeaderRow | MovieGridCardsRow;
-
-type MovieTableRow =
-  | { kind: 'header'; key: string; group: MovieCollectionGroup }
-  | { kind: 'movie'; key: string; index: number };
-
-function cardRowRange(rows: readonly MovieGroupedGridRow[], start: number, end: number): [number, number] | null {
-  let min = Infinity;
-  let max = -1;
-  for (let i = start; i <= end; i++) {
-    const row = rows[i];
-    if (row.kind === 'cards') {
-      if (row.start < min) min = row.start;
-      const last = row.start + row.count - 1;
-      if (last > max) max = last;
-    }
-  }
-  return max >= min ? [min, max] : null;
-}
-
-function tableRowRange(rows: readonly MovieTableRow[], start: number, end: number): [number, number] | null {
-  let min = Infinity;
-  let max = -1;
-  for (let i = start; i <= end; i++) {
-    const row = rows[i];
-    if (row.kind === 'movie') {
-      if (row.index < min) min = row.index;
-      if (row.index > max) max = row.index;
-    }
-  }
-  return max >= min ? [min, max] : null;
+  index: number;
 }
 
 @Component({
@@ -93,7 +55,7 @@ function tableRowRange(rows: readonly MovieTableRow[], start: number, end: numbe
     BulkActions,
     ViewToggle,
     SortHeader,
-    KrRowHeights,
+    CollectionGrid,
   ],
   templateUrl: './movie-list.html',
   styleUrl: './movie-list.scss',
@@ -113,7 +75,6 @@ export class MovieListPage {
   private readonly committedQuery = signal('');
   protected readonly filter = signal<MovieFilter>('all');
   protected readonly grouping = signal<MovieGrouping>(storedGrouping());
-  protected readonly collapsed = signal<ReadonlySet<string>>(new Set());
   protected readonly view = signal<ViewMode>(storedView(VIEW_KEY));
   /** Grid selection mode: cards toggle selection instead of opening the movie. The table always has checkboxes. */
   protected readonly selecting = signal(false);
@@ -121,7 +82,7 @@ export class MovieListPage {
   protected readonly tableRowHeight = TABLE_ROW_HEIGHT;
   protected readonly slots = gridSlots;
 
-  /** Sort state shared with `SortHeader`; actual sorting happens on the server. Groups keep their own order. */
+  /** Sort state shared with `SortHeader`; actual sorting happens on the server. */
   protected readonly sort = new TableSort<MovieListItem, MovieSortKey>(
     signal<MovieListItem[]>([]),
     {
@@ -135,21 +96,11 @@ export class MovieListPage {
   private readonly listQuery = computed<MovieQuery>(() => {
     const s = this.sort.state();
     const q = this.committedQuery().trim();
-    const groupBy = this.grouping();
-    return {
-      q: q || undefined,
-      filter: this.filter(),
-      sort: groupBy === 'none' ? (s.key ?? 'title') : undefined,
-      desc: groupBy === 'none' && s.desc ? true : undefined,
-      groupBy,
-    };
+    return { q: q || undefined, filter: this.filter(), sort: s.key ?? 'title', desc: s.desc ? true : undefined, groupBy: 'none' };
   });
 
-  /** Collection groups returned by the server when `grouping === 'collection'`; null for flat views. */
-  protected readonly groups = computed<MovieCollectionGroup[] | null>(() => {
-    if (this.grouping() !== 'collection') return null;
-    return this.cache.meta()?.groups ?? null;
-  });
+  /** Search as sent to the server (debounced), shared with the collection cards. */
+  protected readonly searchTerm = computed(() => this.committedQuery().trim());
 
   private readonly containerWidth = signal(0);
   private readonly viewportWidth = signal(typeof window !== 'undefined' ? window.innerWidth : 1024);
@@ -163,70 +114,19 @@ export class MovieListPage {
     const rows: MovieGridCardsRow[] = new Array(count);
     for (let r = 0; r < count; r++) {
       const start = r * cols;
-      rows[r] = { kind: 'cards', key: `r-${r}`, start, count: Math.min(cols, total - start) };
+      rows[r] = { key: `r-${r}`, start, count: Math.min(cols, total - start) };
     }
     return rows;
-  });
-
-  private readonly groupedGridRows = computed<MovieGroupedGridRow[]>(() => {
-    const groups = this.groups();
-    if (!groups) return [];
-    const cols = this.metrics().cols;
-    const collapsed = this.collapsed();
-    const rows: MovieGroupedGridRow[] = [];
-    let offset = 0;
-    for (let gi = 0; gi < groups.length; gi++) {
-      const group = groups[gi];
-      const first = gi === 0;
-      rows.push({
-        kind: 'header',
-        key: `h-${group.key}`,
-        group,
-        first,
-        height: first ? FIRST_HEADER_HEIGHT : NEXT_HEADER_HEIGHT,
-      });
-      if (!collapsed.has(group.key)) {
-        const rowCount = Math.ceil(group.count / cols);
-        for (let r = 0; r < rowCount; r++) {
-          const start = offset + r * cols;
-          rows.push({ kind: 'cards', key: `c-${group.key}-${r}`, start, count: Math.min(cols, offset + group.count - start) });
-        }
-      }
-      offset += group.count;
-    }
-    return rows;
-  });
-
-  protected readonly groupedGridHeights = computed<number[]>(() => {
-    const cardHeight = this.metrics().rowHeight;
-    return this.groupedGridRows().map(row => (row.kind === 'header' ? row.height : cardHeight));
   });
 
   private readonly tableRows = computed<MovieTableRow[]>(() => {
-    const groups = this.groups();
-    if (!groups) {
-      const total = this.total();
-      const rows: MovieTableRow[] = new Array(total);
-      for (let i = 0; i < total; i++) rows[i] = { kind: 'movie', key: `m-${i}`, index: i };
-      return rows;
-    }
-    const collapsed = this.collapsed();
-    const rows: MovieTableRow[] = [];
-    let offset = 0;
-    for (const group of groups) {
-      rows.push({ kind: 'header', key: `h-${group.key}`, group });
-      if (!collapsed.has(group.key)) {
-        for (let i = 0; i < group.count; i++) {
-          rows.push({ kind: 'movie', key: `m-${offset + i}`, index: offset + i });
-        }
-      }
-      offset += group.count;
-    }
+    const total = this.total();
+    const rows: MovieTableRow[] = new Array(total);
+    for (let i = 0; i < total; i++) rows[i] = { key: `m-${i}`, index: i };
     return rows;
   });
 
   protected readonly flatGridDataSource: VirtualRowDataSource<MovieGridCardsRow>;
-  protected readonly groupedGridDataSource: VirtualRowDataSource<MovieGroupedGridRow>;
   protected readonly tableDataSource: VirtualRowDataSource<MovieTableRow>;
 
   protected readonly selection = new PagedSelection(
@@ -240,7 +140,8 @@ export class MovieListPage {
   );
 
   /** The bulk toolbar shows while something is selected in the table, and throughout grid selection mode. */
-  protected readonly showBulk = computed(() => (this.view() === 'table' ? this.selection.count() > 0 : this.selecting()));
+  protected readonly showBulk = computed(() =>
+    this.grouping() === 'none' && (this.view() === 'table' ? this.selection.count() > 0 : this.selecting()));
 
   /** Live download progress per movie, while connected; otherwise the list's own snapshot is used. */
   private readonly liveProgress = computed(() => {
@@ -270,15 +171,9 @@ export class MovieListPage {
       (s, e) => this.cache.ensureRange(s, e),
       injector,
     );
-    this.groupedGridDataSource = new VirtualRowDataSource(
-      this.groupedGridRows,
-      cardRowRange,
-      (s, e) => this.cache.ensureRange(s, e),
-      injector,
-    );
     this.tableDataSource = new VirtualRowDataSource(
       this.tableRows,
-      tableRowRange,
+      (rows, start, end) => [rows[start].index, rows[end].index],
       (s, e) => this.cache.ensureRange(s, e),
       injector,
     );
@@ -294,7 +189,6 @@ export class MovieListPage {
     );
     destroyRef.onDestroy(() => {
       this.flatGridDataSource.destroy();
-      this.groupedGridDataSource.destroy();
       this.tableDataSource.destroy();
     });
 
@@ -335,7 +229,7 @@ export class MovieListPage {
         untracked(() => {
           if (this.filter() === 'downloading') {
             void this.cache.reload().then(() => this.selection.reconcile());
-          } else if (this.grouping() === 'none' && this.sort.state().key === 'status') {
+          } else if (this.sort.state().key === 'status') {
             void this.cache.reload();
           }
         });
@@ -348,7 +242,6 @@ export class MovieListPage {
   }
 
   protected isRowSelected(row: MovieTableRow): boolean {
-    if (row.kind !== 'movie') return false;
     const m = this.cache.at(row.index);
     return m != null && this.selection.has(m.id);
   }
@@ -391,16 +284,10 @@ export class MovieListPage {
     void this.selection.toggle(m.id, (event as MouseEvent | KeyboardEvent).shiftKey);
   }
 
+  /** Switches between movie cards and collection cards. Collections have no selection mode. */
   protected setGrouping(value: MovieGrouping) {
     this.grouping.set(value);
+    if (value === 'collection') this.stopSelecting();
     try { localStorage.setItem(GROUPING_KEY, value); } catch { /* storage unavailable */ }
-  }
-
-  protected toggle(key: string) {
-    this.collapsed.update(set => {
-      const next = new Set(set);
-      if (!next.delete(key)) next.add(key);
-      return next;
-    });
   }
 }

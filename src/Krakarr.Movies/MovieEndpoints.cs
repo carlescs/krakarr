@@ -71,7 +71,11 @@ public sealed record MovieListPageDto(
     int LibraryTotal,
     IReadOnlyList<MovieCollectionGroupDto>? Groups = null);
 
-public sealed record MovieCollectionDto(int Id, int TmdbId, string Name, string? PosterUrl);
+/// <summary>A collection card: how many of its library movies match the list filter, and how many of those are downloaded.</summary>
+public sealed record MovieCollectionDto(int Id, int TmdbId, string Name, string? PosterUrl, int Count, int Downloaded);
+
+/// <summary>A collection with its library movies, in release order.</summary>
+public sealed record MovieCollectionDetailsDto(int Id, int TmdbId, string Name, string? PosterUrl, string? FanartUrl, IReadOnlyList<MovieListItemDto> Movies);
 
 /// <param name="Languages">Wanted audio languages, most preferred first; null = use the global default.</param>
 public sealed record UpdateMovieRequest(bool Monitored, int QualityProfileId, MinimumAvailability? MinimumAvailability = null, IReadOnlyList<string>? Languages = null);
@@ -150,12 +154,50 @@ public static class MovieEndpoints
                 .ToListAsync(ct);
         });
 
-        // Collections that have movies in the library, for grouping the movie list.
-        group.MapGet("/collections", async (KrakarrDbContext db, CancellationToken ct) =>
-            await db.MovieCollections.AsNoTracking()
-                .OrderBy(c => c.SortName)
-                .Select(c => new MovieCollectionDto(c.Id, c.TmdbId, c.Name, c.PosterUrl))
-                .ToListAsync(ct));
+        // Collections with at least one library movie matching the movie list's search and filter, as cards.
+        group.MapGet("/collections", async (string? q, string? filter, HttpContext http, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
+        {
+            var downloadingIds = ActiveProgress(engine).Keys.ToList();
+            var (filtered, _) = FilterMovies(db, q, filter, MediaSubscriptions.GetUserId(http.User), downloadingIds);
+            var counts = await filtered
+                .Where(m => m.CollectionId != null)
+                .GroupBy(m => m.CollectionId!.Value)
+                .Select(g => new { Id = g.Key, Count = g.Count(), Downloaded = g.Count(m => m.MovieFileId != null) })
+                .ToDictionaryAsync(g => g.Id, ct);
+            if (counts.Count == 0) return new List<MovieCollectionDto>();
+
+            var ids = counts.Keys.ToList();
+            var collections = await db.MovieCollections.AsNoTracking()
+                .Where(c => ids.Contains(c.Id))
+                .OrderBy(c => c.SortName).ThenBy(c => c.Id)
+                .Select(c => new { c.Id, c.TmdbId, c.Name, c.PosterUrl })
+                .ToListAsync(ct);
+            return collections
+                .Select(c => new MovieCollectionDto(c.Id, c.TmdbId, c.Name, c.PosterUrl, counts[c.Id].Count, counts[c.Id].Downloaded))
+                .ToList();
+        });
+
+        group.MapGet("/collections/{id:int}", async (int id, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
+        {
+            var collection = await db.MovieCollections.AsNoTracking()
+                .Where(c => c.Id == id)
+                .Select(c => new { c.Id, c.TmdbId, c.Name, c.PosterUrl, c.FanartUrl })
+                .FirstOrDefaultAsync(ct);
+            if (collection is null) return Results.NotFound();
+
+            var progress = ActiveProgress(engine);
+            var rows = await db.Movies.AsNoTracking()
+                .Where(m => m.CollectionId == id)
+                .OrderBy(m => m.Year == 0 ? 9999 : m.Year).ThenBy(m => m.SortTitle).ThenBy(m => m.Id)
+                .Select(m => new { m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, QualityId = m.MovieFile != null ? m.MovieFile.QualityId : (int?)null })
+                .ToListAsync(ct);
+            var movies = rows.Select(m => new MovieListItemDto(
+                m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, m.QualityId is not null,
+                m.QualityId is { } qual ? Qualities.FindById(qual).Name : null,
+                progress.TryGetValue(m.Id, out var p) ? p : null,
+                id)).ToList();
+            return Results.Ok(new MovieCollectionDetailsDto(collection.Id, collection.TmdbId, collection.Name, collection.PosterUrl, collection.FanartUrl, movies));
+        });
 
         group.MapGet("/{id:int}", async (int id, KrakarrDbContext db, ITorrentEngine engine, Krakarr.Data.ISettingsService settings, CancellationToken ct) =>
         {

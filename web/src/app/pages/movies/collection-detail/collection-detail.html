@@ -1,0 +1,75 @@
+<a routerLink="/movies" class="btn-ghost btn-sm -ml-2 mb-2">← Movies</a>
+
+@if (error(); as e) {
+  <p class="py-12 text-center text-rose-300">{{ e }}</p>
+} @else if (collection(); as c) {
+  <div class="relative -mx-4 mb-6 overflow-hidden lg:-mx-8">
+    @if (c.fanartUrl) {
+      <img [src]="c.fanartUrl" alt="" class="absolute inset-0 h-full w-full object-cover opacity-20" />
+    }
+    <div class="absolute inset-0 bg-gradient-to-t from-surface-950 via-surface-950/80 to-surface-950/40"></div>
+    <div class="relative flex flex-col gap-5 px-4 py-6 sm:flex-row sm:items-end sm:gap-6 lg:px-8">
+      <kr-poster class="w-28 shrink-0 shadow-2xl sm:w-40" [url]="c.posterUrl" [title]="c.name" />
+      <div class="min-w-0 flex-1">
+        <h1 class="text-2xl font-bold tracking-tight text-white sm:text-3xl">{{ c.name }}</h1>
+        <p class="mt-2 text-sm text-slate-400">
+          {{ c.movies.length }} {{ c.movies.length === 1 ? 'movie' : 'movies' }} in the library · {{ downloaded() }} downloaded
+          @if (showMissing() && missing(); as m) { · {{ m.length }} missing }
+        </p>
+        <button type="button" role="switch" class="mt-4 inline-flex items-center gap-3 text-sm text-slate-200" [attr.aria-checked]="showMissing()" (click)="toggleMissing()">
+          <span class="relative h-6 w-10 shrink-0 rounded-full transition" [class]="showMissing() ? 'bg-accent-500' : 'bg-surface-700'">
+            <span class="absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-transform" [class.translate-x-4]="showMissing()"></span>
+          </span>
+          Show missing movies
+        </button>
+      </div>
+    </div>
+  </div>
+
+  @if (showMissing()) {
+    @if (missingError(); as e) {
+      <div class="card mb-6 border-rose-500/30 px-5 py-4 text-sm text-rose-300">
+        Couldn’t load the missing movies: {{ e }}
+      </div>
+    } @else if (missingLoading() && missing() == null) {
+      <p class="mb-4 text-sm text-slate-500">Looking up the rest of the collection…</p>
+    } @else if (missing()?.length === 0) {
+      <p class="mb-4 text-sm text-emerald-300">Every movie of this collection is in the library.</p>
+    }
+  }
+
+  <div [class]="grid">
+    @for (e of entries(); track e.key) {
+      @if (e.kind === 'library') {
+        @let m = e.movie;
+        @let progress = progressOf(m);
+        <a [routerLink]="['/movies', m.id]" class="group min-w-0">
+          <div class="relative overflow-hidden rounded-lg ring-1 ring-surface-700 transition group-hover:ring-accent-500">
+            <kr-poster [url]="m.posterUrl" [title]="m.title" />
+            <div class="absolute inset-x-0 bottom-0 h-1"
+                 [class]="m.hasFile ? 'bg-emerald-500' : !m.monitored ? 'bg-slate-500' : progress != null ? 'bg-accent-500' : 'bg-rose-500'"></div>
+            @if (progress != null) {
+              <div class="absolute inset-x-2 bottom-3"><kr-progress [value]="progress" /></div>
+            }
+          </div>
+          <div class="mt-1.5 truncate text-xs font-medium text-slate-100 group-hover:text-white sm:mt-2 sm:text-sm">{{ m.title }}</div>
+          <div class="truncate text-[11px] text-slate-500 sm:text-xs">{{ m.year || '—' }}{{ m.quality ? ' · ' + m.quality : '' }}</div>
+        </a>
+      } @else {
+        <kr-media-card class="opacity-70 transition hover:opacity-100 focus-within:opacity-100" [item]="e.item" (add)="adding.set($event)" />
+      }
+    }
+  </div>
+
+  @if (adding(); as d) {
+    <kr-discover-add [item]="d" (closed)="adding.set(null)" (added)="added()" (requested)="adding.set(null)" />
+  }
+} @else {
+  <div class="flex gap-6 py-6">
+    <div class="aspect-[2/3] w-28 animate-pulse rounded-lg bg-surface-800 sm:w-40"></div>
+    <div class="flex-1 space-y-3 pt-4">
+      <div class="h-7 w-2/3 animate-pulse rounded bg-surface-800"></div>
+      <div class="h-4 w-1/3 animate-pulse rounded bg-surface-800"></div>
+    </div>
+  </div>
+}

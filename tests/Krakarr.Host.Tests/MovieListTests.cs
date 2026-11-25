@@ -138,6 +138,26 @@ public sealed class MovieListTests : IClassFixture<KrakarrFactory>
         Assert.Equal(["Arrival"], groupedPage2.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("title").GetString()));
         Assert.Equal(JsonValueKind.Null, groupedPage2.GetProperty("groups").ValueKind);
 
+        // Collection cards follow the list's search and filter
+        var collections = (await client.GetFromJsonAsync<JsonElement>("/api/v1/movies/collections", ct)).EnumerateArray().ToArray();
+        var card = Assert.Single(collections);
+        Assert.Equal("Alien Collection", card.GetProperty("name").GetString());
+        Assert.Equal(8091, card.GetProperty("tmdbId").GetInt32());
+        Assert.Equal(2, card.GetProperty("count").GetInt32());
+        Assert.Equal(1, card.GetProperty("downloaded").GetInt32());
+        var missingCards = (await client.GetFromJsonAsync<JsonElement>("/api/v1/movies/collections?filter=missing", ct)).EnumerateArray().ToArray();
+        Assert.Equal(1, Assert.Single(missingCards).GetProperty("count").GetInt32());
+        Assert.Empty((await client.GetFromJsonAsync<JsonElement>("/api/v1/movies/collections?q=arrival", ct)).EnumerateArray());
+
+        // Collection detail lists its library movies in release order
+        var collectionId = card.GetProperty("id").GetInt32();
+        var detail = await client.GetFromJsonAsync<JsonElement>($"/api/v1/movies/collections/{collectionId}", ct);
+        Assert.Equal("Alien Collection", detail.GetProperty("name").GetString());
+        var parts = detail.GetProperty("movies").EnumerateArray().ToArray();
+        Assert.Equal(["Alien", "Aliens"], parts.Select(x => x.GetProperty("title").GetString()));
+        Assert.True(parts[0].GetProperty("hasFile").GetBoolean());
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, (await client.GetAsync("/api/v1/movies/collections/999999", ct)).StatusCode);
+
         // Matching ids
         var ids = await client.GetFromJsonAsync<int[]>("/api/v1/movies/ids?sort=year&desc=true", ct) ?? [];
         Assert.Equal([arrivalId, aliensId, alienId], ids);
