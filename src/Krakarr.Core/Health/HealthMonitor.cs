@@ -111,7 +111,9 @@ public sealed class HealthMonitor(
                 foreach (var p in problems.DistinctBy(p => p.Key))
                 {
                     var id = $"{check.Id}.{p.Key}";
-                    var since = before.TryGetValue(id, out var old) && old.Severity == p.Severity ? old.Since : now;
+                    // A problem that gets worse is new again (and shows up again in the bell even if dismissed); one that
+                    // only eases, such as an indexer error turning into a warning when another indexer recovers, is not.
+                    var since = before.TryGetValue(id, out var old) && old.Severity >= p.Severity ? old.Since : now;
                     issues.Add(new HealthIssue(id, check.Id, check.Name, p.Severity, p.Message, p.Link, since));
                 }
             }

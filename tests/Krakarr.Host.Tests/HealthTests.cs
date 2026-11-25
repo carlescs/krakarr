@@ -47,7 +47,7 @@ public sealed class HealthMonitorTests
     }
 
     [Fact]
-    public async Task Problems_keep_the_time_they_appeared_until_they_change_severity()
+    public async Task Problems_keep_the_time_they_appeared_until_they_get_worse()
     {
         var ct = TestContext.Current.CancellationToken;
         var monitor = Monitor();
@@ -68,6 +68,11 @@ public sealed class HealthMonitorTests
         _check.Problems = [new HealthProblem("disk", HealthSeverity.Error, "Out of space")];
         var worse = Assert.Single((await monitor.CheckNowAsync(ct)).Issues);
         Assert.Equal(_time.GetUtcNow(), worse.Since); // notified again, even if the warning was dismissed
+
+        _time.Advance(TimeSpan.FromMinutes(5));
+        _check.Problems = [new HealthProblem("disk", HealthSeverity.Warning, "Low on space again")];
+        var better = Assert.Single((await monitor.CheckNowAsync(ct)).Issues);
+        Assert.Equal(worse.Since, better.Since); // easing off doesn't bring a dismissed problem back
 
         _check.Problems = [];
         var fixedReport = await monitor.CheckNowAsync(ct);
