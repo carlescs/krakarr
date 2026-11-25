@@ -35,6 +35,7 @@ export class SubtitleBestMatch implements OnInit {
   protected readonly selected = signal<ReadonlySet<string>>(new Set());
   protected readonly downloading = signal(false);
   private downloaded = 0;
+  private markedNotFound = 0;
 
   protected readonly rows = computed(() => {
     const m = this.match();
@@ -97,6 +98,23 @@ export class SubtitleBestMatch implements OnInit {
     await this.next();
   }
 
+  /** Rejects what is on offer: marks the file "not found" so the scheduled search stops retrying it, then moves on. */
+  async markNotFound() {
+    const item = this.item();
+    if (!item) return;
+    this.downloading.set(true);
+    try {
+      await this.api.markSubtitlesNotFound({ movieFileId: item.movieFileId, episodeFileId: item.episodeFileId });
+      this.markedNotFound++;
+      this.changed.emit();
+    } catch (e) {
+      this.toasts.error(`${item.label}: ${errorMessage(e)}`);
+    } finally {
+      this.downloading.set(false);
+    }
+    await this.next();
+  }
+
   /** Leaves this file as it is and moves on. */
   async next() {
     this.index.update(i => i + 1);
@@ -105,7 +123,11 @@ export class SubtitleBestMatch implements OnInit {
 
   /** Stops, leaving the remaining files untouched. */
   finish() {
-    if (this.downloaded > 0) this.toasts.success(`Downloaded ${this.downloaded} subtitle(s)`);
+    const done = [
+      this.downloaded > 0 ? `downloaded ${this.downloaded} subtitle(s)` : '',
+      this.markedNotFound > 0 ? `marked ${this.markedNotFound} file(s) not found` : '',
+    ].filter(Boolean).join(', ');
+    if (done) this.toasts.success(done[0].toUpperCase() + done.slice(1));
     this.closed.emit();
   }
 }

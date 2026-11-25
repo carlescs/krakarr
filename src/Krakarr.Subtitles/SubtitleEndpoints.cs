@@ -24,7 +24,7 @@ public sealed record SubtitleProviderDto(string Name, string DisplayName, bool C
 public sealed record SubtitleSearchRequest(int? MovieFileId, int? EpisodeFileId, int? MovieId = null, int? SeriesId = null, IReadOnlyList<string>? Providers = null, bool? NotFound = null);
 /// <summary>Files missing a wanted language: still searched automatically, and marked "not found".</summary>
 public sealed record WantedSubtitleCountsDto(int Searching, int NotFound);
-/// <summary>Movie or episode file to search automatically again; neither retries every file marked "not found".</summary>
+/// <summary>Movie or episode file to search automatically again (or to mark "not found"); neither means every file.</summary>
 public sealed record SubtitleRetryRequest(int? MovieFileId, int? EpisodeFileId = null);
 /// <param name="Manual">Picked by hand from the full list (default): automatic upgrades leave it alone. Best-match downloads send false so a better subtitle can still replace them.</param>
 public sealed record SubtitleDownloadRequest(int? MovieFileId, int? EpisodeFileId, SubtitleCandidate Candidate, int? Score, bool Manual = true);
@@ -134,10 +134,15 @@ public static class SubtitleEndpoints
         group.MapPost("/retry", async (SubtitleRetryRequest req, SubtitleService service, CancellationToken ct) =>
             Results.Ok(new { count = await service.RetryNotFoundAsync(req.MovieFileId, ct, req.EpisodeFileId) }));
 
-        // Marks every movie and episode file still missing a wanted language "not found": the scheduled search stops
-        // retrying them until they are retried.
-        group.MapPost("/not-found", async (SubtitleService service, CancellationToken ct) =>
-            Results.Ok(new { count = await service.MarkAllNotFoundAsync(ct) }));
+        // Marks one movie or episode file "not found", or every file still missing a wanted language when neither is
+        // given: the scheduled search stops retrying them until they are retried.
+        group.MapPost("/not-found", async (SubtitleRetryRequest? req, SubtitleService service, CancellationToken ct) =>
+            Results.Ok(new
+            {
+                count = req is { MovieFileId: not null } or { EpisodeFileId: not null }
+                    ? await service.MarkFileNotFoundAsync(req.MovieFileId, req.EpisodeFileId, ct)
+                    : await service.MarkAllNotFoundAsync(ct),
+            }));
 
         // Automatic search for one file (every wanted language, upgrading existing subtitles), or all wanted files
         // (missing languages only) when no id is given.
