@@ -553,6 +553,22 @@ public sealed class SubtitleService(
     }
 
     /// <summary>
+    /// Marks one movie or episode file "not found" by hand (e.g. the best subtitle on offer was not good enough), so the
+    /// scheduled search stops retrying it until it is retried. A file already marked keeps its mark. Returns 1 when marked.
+    /// </summary>
+    public async Task<int> MarkFileNotFoundAsync(int? movieFileId, int? episodeFileId, CancellationToken ct = default)
+    {
+        var now = time.GetUtcNow();
+        var count = movieFileId is { } mf
+            ? await db.MovieFiles.Where(f => f.Id == mf && f.SubtitlesNotFound == null).ExecuteUpdateAsync(x => x.SetProperty(f => f.SubtitlesNotFound, now), ct)
+            : episodeFileId is { } ef
+                ? await db.EpisodeFiles.Where(f => f.Id == ef && f.SubtitlesNotFound == null).ExecuteUpdateAsync(x => x.SetProperty(f => f.SubtitlesNotFound, now), ct)
+                : 0;
+        if (count > 0) await eventHub.PublishAsync(EventNames.SubtitlesUpdated, new { MovieId = (int?)null, SeriesId = (int?)null }, ct);
+        return count;
+    }
+
+    /// <summary>
     /// Marks every movie and episode file still missing a wanted language "not found", so the scheduled search stops
     /// retrying them until they are retried (or replaced, or the wanted languages or providers change). Files already
     /// marked keep their mark. Returns how many files were marked.

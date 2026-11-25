@@ -52,6 +52,8 @@
     } @else {
       <button class="btn-secondary" (click)="finish()" [disabled]="downloading()">Cancel</button>
     }
+    <button class="btn-secondary" (click)="markNotFound()" [disabled]="loading() || downloading() || (match()?.missingLanguages?.length ?? 0) === 0"
+            title="Not good enough: stop searching this file automatically until it is retried">Mark not found</button>
     <button class="btn-primary" (click)="confirm()" [disabled]="loading() || downloading() || selected().size === 0">
       {{ downloading() ? 'Downloading…' : 'Download ' + selected().size }}
     </button>

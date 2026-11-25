@@ -46,6 +46,27 @@ describe('SubtitleBestMatch', () => {
     expect(closed).toHaveBeenCalled();
   });
 
+  it('marks a file not found instead of downloading', async () => {
+    const api = setupTest({
+      api: mockApi({
+        subtitleLanguages: async () => [],
+        bestSubtitleMatches: async () => match('Alien', [low]),
+        markSubtitlesNotFound: async () => ({ count: 1 }),
+      }),
+    });
+    const fixture = TestBed.createComponent(SubtitleBestMatch);
+    fixture.componentRef.setInput('items', [{ episodeFileId: 7, label: 'Alien' }]);
+    const closed = vi.fn();
+    fixture.componentInstance.closed.subscribe(closed);
+    await settle(fixture);
+
+    button(fixture.nativeElement, 'Mark not found').click();
+    await settle(fixture);
+    expect(api.markSubtitlesNotFound).toHaveBeenCalledWith({ movieFileId: undefined, episodeFileId: 7 });
+    expect(api.downloadSubtitle).not.toHaveBeenCalled();
+    expect(closed).toHaveBeenCalled();
+  });
+
   it('downloads nothing when every language is unticked', async () => {
     setupTest({
       api: mockApi({ subtitleLanguages: async () => [], bestSubtitleMatches: async () => match('Alien', [low]) }),

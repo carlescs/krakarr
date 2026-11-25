@@ -210,6 +210,18 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Marks_one_file_not_found()
+    {
+        using var scope = _services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<SubtitleService>();
+        Assert.Equal(1, await service.MarkFileNotFoundAsync(_movieFileId, null, TestContext.Current.CancellationToken));
+        Assert.Equal(0, await service.MarkFileNotFoundAsync(_movieFileId, null, TestContext.Current.CancellationToken)); // keeps the first mark
+
+        var wanted = Assert.Single(await service.WantedAsync(10, TestContext.Current.CancellationToken, notFound: true));
+        Assert.NotNull(wanted.NotFound);
+    }
+
+    [Fact]
     public async Task Forgets_deleted_files_and_lists_wanted()
     {
         _provider.Candidates.Add(C("en-best", "The.Matrix.1999.1080p.BluRay.x264-SPARKS"));

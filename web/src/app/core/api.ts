@@ -372,6 +372,10 @@ export class Api {
   }
   /** Marks every movie and episode file missing a wanted language "not found": the scheduled search stops retrying them. */
   markAllSubtitlesNotFound() { return this.post<{ count: number }>('subtitles/not-found', {}); }
+  /** Marks one movie or episode file "not found": the scheduled search stops retrying it until it is retried. */
+  markSubtitlesNotFound(ref: SubtitleFileRef) {
+    return this.post<{ count: number }>('subtitles/not-found', { movieFileId: ref.movieFileId ?? null, episodeFileId: ref.episodeFileId ?? null });
+  }
   /** Searches one file, a whole movie or series (every wanted language, upgrading existing ones), or all wanted files when empty. */
   searchSubtitles(ref: SubtitleFileRef & { movieId?: number; seriesId?: number; providers?: string[]; notFound?: boolean } = {}) {
     return this.post<CommandInfo>('subtitles/search', {
