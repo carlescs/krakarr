@@ -30,7 +30,7 @@ describe('NotificationBell', () => {
     setupTest();
     TestBed.inject(Notifications).items.set([
       { id: 'subtitles.sync.1', kind: 'subtitle', title: 'Syncing Dune (2021) · English', message: 'Syncing with alass against the audio',
-        count: 1, severity: 'Info', link: '/movies/3', progress: { percent: 42 } },
+        count: 1, severity: 'Info', link: '/movies/3', progress: { percent: 42, remainingSeconds: 150 } },
       { id: 'subtitles.sync.2', kind: 'subtitle', title: 'Waiting to sync Severance S01E03 · Spanish', message: 'Waiting for its turn',
         count: 1, severity: 'Info', link: '/series/5', progress: { percent: null } },
     ] as AppNotification[]);
@@ -44,9 +44,31 @@ describe('NotificationBell', () => {
     expect(bars.length).toBe(2);
     expect(bars[0].getAttribute('aria-valuenow')).toBe('42');
     expect((bars[0].firstElementChild as HTMLElement).style.width).toBe('42%');
-    expect(text(el)).toContain('42%');
+    expect(text(el)).toContain('42% · 3 min left');
     expect(bars[1].getAttribute('aria-valuenow')).toBeNull();
     expect(bars[1].querySelector('.animate-pulse')).not.toBeNull();
+  });
+
+  it('formats the time left', async () => {
+    setupTest();
+    const items = TestBed.inject(Notifications).items;
+    const fixture = TestBed.createComponent(NotificationBell);
+    const el = fixture.nativeElement as HTMLElement;
+    const show = async (remainingSeconds: number | null) => {
+      items.set([{ id: 'subtitles.sync.1', kind: 'subtitle', title: 'Syncing', count: 1, severity: 'Info', link: '/movies/3',
+        progress: { percent: 10, remainingSeconds } }] as AppNotification[]);
+      await settle(fixture);
+      return text(el.querySelector('[role="progressbar"]')!.parentElement as HTMLElement);
+    };
+    await settle(fixture);
+    button(el, 'Notifications').click();
+
+    expect(await show(null)).toBe('10%');
+    expect(await show(0)).toBe('10% · 1 s left');
+    expect(await show(44.2)).toBe('10% · 45 s left');
+    expect(await show(61)).toBe('10% · 2 min left');
+    expect(await show(3600)).toBe('10% · 1 h left');
+    expect(await show(3900)).toBe('10% · 1 h 5 min left');
   });
 
   it('says when there is nothing to show', async () => {

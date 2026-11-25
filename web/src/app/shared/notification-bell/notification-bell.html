@@ -38,7 +38,9 @@
                         <span class="block h-full w-full animate-pulse rounded-full bg-accent-400/40"></span>
                       }
                     </span>
-                    @if (progress.percent != null) { <span class="w-8 text-right text-[11px] tabular-nums text-slate-400">{{ progress.percent }}%</span> }
+                    @if (progress.percent != null) {
+                      <span class="shrink-0 text-right text-[11px] tabular-nums text-slate-400">{{ progress.percent }}%@if (remaining(progress.remainingSeconds); as left) { · {{ left }} }</span>
+                    }
                   </span>
                 }
               </span>

@@ -33,10 +33,11 @@ public sealed record Notification(
 
 /// <summary>How far along a notification's work is.</summary>
 /// <param name="Percent">0 to 100, or null when the work can't tell (the bar is indeterminate).</param>
-public sealed record NotificationProgress(double? Percent);
+/// <param name="RemainingSeconds">Estimated time left, or null when there is no estimate yet.</param>
+public sealed record NotificationProgress(double? Percent, double? RemainingSeconds = null);
 
 /// <summary>Payload of <c>EventNames.NotificationProgress</c>: new progress and message for the notification <paramref name="Id"/>.</summary>
-public sealed record NotificationProgressUpdate(string Id, double? Percent, string? Message);
+public sealed record NotificationProgressUpdate(string Id, double? Percent, string? Message, double? RemainingSeconds = null);
 
 /// <summary>Who is asking: sources must only return what this user may see.</summary>
 public sealed record NotificationContext(int? UserId, UserRole Role)

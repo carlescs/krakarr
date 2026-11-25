@@ -67,11 +67,11 @@ describe('Notifications', () => {
 
     notifications.start();
     await vi.waitFor(() => expect(notifications.items().length).toBe(2));
-    events.notificationProgress.next({ id: 'subtitles.sync.7', percent: 42, message: 'Syncing with alass against the audio' });
+    events.notificationProgress.next({ id: 'subtitles.sync.7', percent: 42, message: 'Syncing with alass against the audio', remainingSeconds: 95 });
     events.notificationProgress.next({ id: 'subtitles.sync.9', percent: 10, message: 'Not shown' });
 
     const [updated, other] = notifications.items();
-    expect(updated.progress).toEqual({ percent: 42 });
+    expect(updated.progress).toEqual({ percent: 42, remainingSeconds: 95 });
     expect(updated.message).toBe('Syncing with alass against the audio');
     expect(other.progress).toBeUndefined();
     expect(notifications.items().length).toBe(2);

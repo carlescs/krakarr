@@ -40,6 +40,16 @@ export class NotificationBell {
     return n.severity === 'Error' ? 'text-rose-400' : n.severity === 'Warning' ? 'text-amber-400' : 'text-accent-300';
   }
 
+  /** Estimated time left as "45 s left", "3 min left" or "1 h 5 min left"; empty without an estimate. */
+  protected remaining(seconds: number | null | undefined): string {
+    if (seconds == null) return '';
+    if (seconds < 60) return `${Math.max(1, Math.ceil(seconds))} s left`;
+    const minutes = Math.ceil(seconds / 60);
+    if (minutes < 60) return `${minutes} min left`;
+    const rest = minutes % 60;
+    return `${Math.floor(minutes / 60)} h${rest ? ` ${rest} min` : ''} left`;
+  }
+
   protected onDocumentClick(event: MouseEvent) {
     if (this.open() && !event.composedPath().includes(this.host.nativeElement)) this.open.set(false);
   }
