@@ -4,6 +4,8 @@ namespace Krakarr.Core.Notifications;
 
 public enum NotificationSeverity
 {
+    /// <summary>Something finished well (shown in green). Below <see cref="Info"/> so it sorts last.</summary>
+    Success = -1,
     Info = 0,
     Warning = 1,
     Error = 2,

@@ -7,20 +7,25 @@ using Microsoft.Extensions.Logging;
 
 namespace Krakarr.Subtitles.Sync;
 
-/// <summary>A subtitle waiting for or going through a sync, as shown in the notification bell.</summary>
+/// <summary>A subtitle waiting for, going through or just done with a sync, as shown in the notification bell.</summary>
 /// <param name="Title">What is synced, e.g. "Dune (2021) · English".</param>
 /// <param name="Link">SPA route of the movie or series.</param>
 /// <param name="Stage">What it's doing now; null while waiting.</param>
 /// <param name="Percent">Progress of the current stage (0 to 100), null when unknown.</param>
 /// <param name="RemainingSeconds">Estimated time left in the current stage, null until there is enough progress to tell.</param>
+/// <param name="Finished">When the sync ended, null while waiting or running.</param>
+/// <param name="Succeeded">Whether it worked, once finished.</param>
+/// <param name="Result">The outcome, once finished (e.g. "Synced with alass against the audio").</param>
 public sealed record SubtitleSyncActivity(int SubtitleId, string Title, string Link, DateTimeOffset Since, string? Stage, double? Percent,
-    double? RemainingSeconds = null)
+    double? RemainingSeconds = null, DateTimeOffset? Finished = null, bool Succeeded = false, string? Result = null)
 {
-    public bool Waiting => Stage is null;
+    public bool Waiting => Stage is null && Finished is null;
 }
 
 /// <summary>
-/// Syncs waiting or running, for the notification bell. Start and end publish <see cref="EventNames.NotificationsUpdated"/>;
+/// Syncs waiting, running or recently finished, for the notification bell. Finished syncs stay for
+/// <see cref="KeepFinished"/> (at most <see cref="MaxFinished"/> of them) so the outcome can be seen. Start and end publish
+/// <see cref="EventNames.NotificationsUpdated"/>;
 /// progress in between goes out as <see cref="EventNames.NotificationProgress"/>, at most a few times a second per sync,
 /// so open bells update in place without refetching every notification source.
 /// </summary>
@@ -28,6 +33,11 @@ public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvide
 {
     /// <summary>Syncs tracked at once; more are still synced, just not shown. Syncs run one at a time, so this only caps the queue.</summary>
     internal const int MaxTracked = 200;
+
+    /// <summary>Finished syncs kept to show their outcome; older ones are dropped first.</summary>
+    internal const int MaxFinished = 50;
+
+    internal static readonly TimeSpan KeepFinished = TimeSpan.FromHours(1);
 
     private static readonly TimeSpan MinPublishInterval = TimeSpan.FromMilliseconds(500);
 
@@ -40,15 +50,33 @@ public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvide
     public static string NotificationId(int subtitleId) => $"subtitles.sync.{subtitleId}";
 
     /// <summary>Everything tracked, oldest first.</summary>
-    public IReadOnlyList<SubtitleSyncActivity> Current =>
-        _entries.Values.Select(e => e.Snapshot()).OrderBy(a => a.Since).ThenBy(a => a.SubtitleId).ToList();
+    public IReadOnlyList<SubtitleSyncActivity> Current
+    {
+        get
+        {
+            Prune();
+            return _entries.Values.Select(e => e.Snapshot()).OrderBy(a => a.Since).ThenBy(a => a.SubtitleId).ToList();
+        }
+    }
 
-    /// <summary>Shows a sync as waiting. Does nothing when it's already tracked (a queued sync that starts).</summary>
+    /// <summary>
+    /// Shows a sync as waiting. Does nothing when it's already waiting or running (a queued sync that starts); replaces
+    /// the outcome of an earlier sync of the same subtitle.
+    /// </summary>
     public void Queue(int subtitleId, string title, string link)
     {
-        if (_entries.Count >= MaxTracked) return;
-        if (_entries.TryAdd(subtitleId, new Entry(subtitleId, title, link, time.GetUtcNow())))
-            Publish(EventNames.NotificationsUpdated, null);
+        Prune();
+        var entry = new Entry(subtitleId, title, link, time.GetUtcNow());
+        if (_entries.TryGetValue(subtitleId, out var existing))
+        {
+            if (!existing.IsFinished || !_entries.TryUpdate(subtitleId, entry, existing)) return;
+        }
+        else if (_entries.Count >= MaxTracked || !_entries.TryAdd(subtitleId, entry))
+        {
+            return;
+        }
+
+        Publish(EventNames.NotificationsUpdated, null);
     }
 
     /// <summary>Moves a sync to a new stage with unknown progress; stages report their own progress with <see cref="Report"/>.</summary>
@@ -57,6 +85,7 @@ public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvide
         if (!_entries.TryGetValue(subtitleId, out var entry)) return;
         lock (entry)
         {
+            if (entry.Finished is not null) return;
             entry.Stage = stage;
             entry.Percent = null;
             entry.RemainingSeconds = null;
@@ -74,7 +103,7 @@ public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvide
         NotificationProgressUpdate update;
         lock (entry)
         {
-            if (entry.Stage is null) return;
+            if (entry.Stage is null || entry.Finished is not null) return;
             var now = time.GetUtcNow();
             var changed = entry.Percent is not { } last || Math.Floor(last) != Math.Floor(percent);
             entry.Percent = percent;
@@ -104,9 +133,43 @@ public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvide
         return Math.Ceiling(elapsed.TotalSeconds * (100 - percent) / percent);
     }
 
+    /// <summary>Records the outcome: the notification turns green (or red on failure) and stays for <see cref="KeepFinished"/>.</summary>
+    public void Complete(int subtitleId, bool success, string result)
+    {
+        if (!_entries.TryGetValue(subtitleId, out var entry)) return;
+        lock (entry)
+        {
+            if (entry.Finished is not null) return;
+            entry.Finished = time.GetUtcNow();
+            entry.Succeeded = success;
+            entry.Result = result;
+            entry.Percent = success ? 100 : entry.Percent;
+            entry.RemainingSeconds = null;
+        }
+
+        Prune();
+        Publish(EventNames.NotificationsUpdated, null);
+    }
+
+    /// <summary>Stops showing a sync that ended without an outcome (cancelled, or the subtitle is gone). Keeps finished ones.</summary>
     public void Finish(int subtitleId)
     {
-        if (_entries.TryRemove(subtitleId, out _)) Publish(EventNames.NotificationsUpdated, null);
+        if (_entries.TryGetValue(subtitleId, out var entry) && !entry.IsFinished
+            && _entries.TryRemove(new KeyValuePair<int, Entry>(subtitleId, entry)))
+            Publish(EventNames.NotificationsUpdated, null);
+    }
+
+    /// <summary>Drops finished syncs older than <see cref="KeepFinished"/>, and the oldest beyond <see cref="MaxFinished"/>.</summary>
+    private void Prune()
+    {
+        var cutoff = time.GetUtcNow() - KeepFinished;
+        var finished = _entries.Values.Select(e => (Entry: e, At: e.FinishedAt)).Where(x => x.At is not null)
+            .OrderByDescending(x => x.At).ToList();
+        for (var i = 0; i < finished.Count; i++)
+        {
+            var (entry, at) = finished[i];
+            if (i >= MaxFinished || at < cutoff) _entries.TryRemove(new KeyValuePair<int, Entry>(entry.SubtitleId, entry));
+        }
     }
 
     /// <summary>
@@ -144,7 +207,18 @@ public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvide
 
     private sealed class Entry(int subtitleId, string title, string link, DateTimeOffset since)
     {
+        public int SubtitleId => subtitleId;
         public string? Stage { get; set; }
+        public DateTimeOffset? Finished { get; set; }
+        public bool Succeeded { get; set; }
+        public string? Result { get; set; }
+
+        public DateTimeOffset? FinishedAt
+        {
+            get { lock (this) return Finished; }
+        }
+
+        public bool IsFinished => FinishedAt is not null;
         public double? Percent { get; set; }
         public double? RemainingSeconds { get; set; }
         public DateTimeOffset StageStarted { get; set; }
@@ -152,23 +226,38 @@ public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvide
 
         public SubtitleSyncActivity Snapshot()
         {
-            lock (this) return new SubtitleSyncActivity(subtitleId, title, link, since, Stage, Percent is { } p ? Math.Floor(p) : null, RemainingSeconds);
+            lock (this)
+                return new SubtitleSyncActivity(subtitleId, title, link, since, Stage, Percent is { } p ? Math.Floor(p) : null, RemainingSeconds,
+                    Finished, Succeeded, Result);
         }
     }
 }
 
-/// <summary>Staff: one notification per subtitle sync that is waiting or running, with its progress.</summary>
+/// <summary>
+/// Staff: one notification per subtitle sync that is waiting or running, with its progress, then with its outcome: green
+/// when it worked, red when it didn't.
+/// </summary>
 public sealed class SubtitleSyncNotificationSource(SubtitleSyncProgress progress) : INotificationSource
 {
     public Task<IReadOnlyList<Notification>> GetAsync(NotificationContext context, CancellationToken ct = default)
     {
         if (!context.IsStaff) return Task.FromResult<IReadOnlyList<Notification>>([]);
-        IReadOnlyList<Notification> notifications = progress.Current
-            .Select(a => new Notification(SubtitleSyncProgress.NotificationId(a.SubtitleId), "subtitle",
-                (a.Waiting ? "Waiting to sync " : "Syncing ") + a.Title,
-                a.Stage ?? "Waiting for its turn", a.Link,
-                Date: a.Since, Progress: new NotificationProgress(a.Percent, a.RemainingSeconds)))
-            .ToList();
+        IReadOnlyList<Notification> notifications = progress.Current.Select(ToNotification).ToList();
         return Task.FromResult(notifications);
+    }
+
+    private static Notification ToNotification(SubtitleSyncActivity a)
+    {
+        var id = SubtitleSyncProgress.NotificationId(a.SubtitleId);
+        // Dated when it ended, so a sync dismissed while running shows again with its outcome.
+        if (a.Finished is { } finished)
+            return a.Succeeded
+                ? new Notification(id, "subtitle", "Synced " + a.Title, a.Result, a.Link,
+                    Severity: NotificationSeverity.Success, Date: finished, Progress: new NotificationProgress(100))
+                : new Notification(id, "subtitle", "Could not sync " + a.Title, a.Result, a.Link,
+                    Severity: NotificationSeverity.Error, Date: finished);
+
+        return new Notification(id, "subtitle", (a.Waiting ? "Waiting to sync " : "Syncing ") + a.Title,
+            a.Stage ?? "Waiting for its turn", a.Link, Date: a.Since, Progress: new NotificationProgress(a.Percent, a.RemainingSeconds));
     }
 }
