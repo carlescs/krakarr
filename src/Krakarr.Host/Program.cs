@@ -10,6 +10,7 @@ using Krakarr.Data.Postgres;
 using Krakarr.Data.Sqlite;
 using Krakarr.Downloads;
 using Krakarr.Host.Auth;
+using Krakarr.Host.Backups;
 using Krakarr.Host.Auth.Passkeys;
 using Krakarr.Host.Endpoints;
 using Krakarr.Host.Hosting;
@@ -37,7 +38,7 @@ var inContainer = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINE
 var configDir = builder.Configuration["Krakarr:ConfigDirectory"]
     ?? (inContainer ? "/config" : Path.Combine(builder.Environment.ContentRootPath, "data"));
 configDir = Path.GetFullPath(configDir);
-builder.Configuration.AddJsonFile(Path.Combine(configDir, "config.json"), optional: true, reloadOnChange: false);
+builder.Configuration.AddJsonFile(Path.Combine(configDir, "config.json"), optional: true, reloadOnChange: false); // KrakarrPaths.ConfigFile
 builder.Configuration.AddEnvironmentVariables(); // environment wins over config.json
 
 var paths = new KrakarrPaths
@@ -59,18 +60,28 @@ if (string.IsNullOrEmpty(builder.Configuration["ASPNETCORE_URLS"]) && string.IsN
 }
 
 // ---- Database ------------------------------------------------------------------------------
+DatabaseOptions ReadDatabaseOptions() => builder.Configuration.GetSection(DatabaseOptions.SectionName).Get<DatabaseOptions>() ?? new DatabaseOptions();
+string SqliteConnectionString(DatabaseOptions o) => o.ConnectionString ?? $"Data Source={Path.Combine(configDir, "krakarr.db")}";
+
+// A backup staged from the UI is restored now, before anything opens the database or reads the keys.
+var restoreOutcome = BackupRestore.ApplyPending(
+    paths,
+    ReadDatabaseOptions().ProviderKind,
+    () => BackupRestore.SqliteFile(SqliteConnectionString(ReadDatabaseOptions())),
+    () => ((IConfigurationRoot)builder.Configuration).Reload());
+
 builder.Services.Configure<DatabaseOptions>(builder.Configuration.GetSection(DatabaseOptions.SectionName));
-var dbOptions = builder.Configuration.GetSection(DatabaseOptions.SectionName).Get<DatabaseOptions>() ?? new DatabaseOptions();
+var dbOptions = ReadDatabaseOptions();
 builder.Services.AddDbContext<KrakarrDbContext>(options =>
 {
-    switch (dbOptions.Provider.ToLowerInvariant())
+    switch (dbOptions.ProviderKind)
     {
-        case "postgres" or "postgresql" or "npgsql":
+        case "postgres":
             options.UseKrakarrPostgres(dbOptions.ConnectionString
                 ?? throw new InvalidOperationException("Database:ConnectionString is required for PostgreSQL"));
             break;
         case "sqlite":
-            options.UseKrakarrSqlite(dbOptions.ConnectionString ?? $"Data Source={Path.Combine(configDir, "krakarr.db")}");
+            options.UseKrakarrSqlite(SqliteConnectionString(dbOptions));
             break;
         default:
             throw new InvalidOperationException($"Unknown database provider '{dbOptions.Provider}' (use sqlite or postgres)");
@@ -90,6 +101,7 @@ builder.Services.AddKrakarrSubtitles();
 builder.Services.AddKrakarrJellyfin();
 builder.Services.AddKrakarrRatings();
 builder.Services.AddKrakarrTelemetry();
+builder.Services.AddKrakarrBackups(restoreOutcome);
 builder.Services.AddScoped<CalendarService>();
 builder.Services.AddScoped<Krakarr.Core.Notifications.INotificationSource, RequestNotificationSource>();
 builder.Services.AddScoped<Krakarr.Core.Notifications.INotificationSource, ReleaseNotificationSource>();
@@ -104,7 +116,7 @@ builder.Services.AddProblemDetails();
 builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddDataProtection()
     .SetApplicationName("Krakarr")
-    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(configDir, "keys")));
+    .PersistKeysToFileSystem(new DirectoryInfo(paths.KeysDirectory));
 
 var authSecurity = builder.Configuration.GetSection(AuthSecurityOptions.SectionName).Get<AuthSecurityOptions>() ?? new AuthSecurityOptions();
 builder.Services
@@ -184,8 +196,16 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     await scope.ServiceProvider.GetRequiredService<DatabaseSeeder>().InitializeAsync();
+    await BackupRestore.ImportPendingSettingsAsync(
+        scope.ServiceProvider.GetRequiredService<KrakarrDbContext>(), paths, app.Services.GetRequiredService<SettingsCache>());
     var setupRequired = !await scope.ServiceProvider.GetRequiredService<KrakarrDbContext>().Users.AnyAsync();
     app.Services.GetRequiredService<SetupTokenStore>().Initialize(setupRequired);
+}
+
+if (restoreOutcome is { } restored)
+{
+    if (restored.Succeeded) app.Logger.LogWarning("Restored the backup staged before the restart");
+    else app.Logger.LogError("{Message}", restored.Message);
 }
 
 app.Logger.LogInformation("Krakarr {Version} starting. Config: {Config}, DB: {Provider}", SystemEndpoints.Version, configDir, dbOptions.Provider);
@@ -230,6 +250,7 @@ app.MapNotificationEndpoints();
 app.MapJellyfinEndpoints();
 app.MapRatingsEndpoints();
 app.MapTelemetryEndpoints();
+app.MapBackupEndpoints();
 app.MapHub<EventsHub>("/hubs/events");
 app.MapKrakarrSpa(urlBase);
 

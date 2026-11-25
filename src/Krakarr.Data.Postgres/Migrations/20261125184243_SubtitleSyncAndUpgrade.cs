@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Krakarr.Data.Postgres.Migrations;
 
 /// <inheritdoc />
-public partial class _20261125175612_SubtitleSyncAndUpgrade : Migration
+public partial class _20261125184243_SubtitleSyncAndUpgrade : Migration
 {
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)

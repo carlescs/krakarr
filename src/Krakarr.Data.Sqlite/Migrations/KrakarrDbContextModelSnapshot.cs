@@ -15,7 +15,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261125175606_SubtitleSyncAndUpgrade";
+    public override string LastMigrationId => "20261125184236_SubtitleSyncAndUpgrade";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -194,6 +194,10 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<long?>("LastSubtitleSearch")
                     .HasColumnType("INTEGER");
+
+                b.Property<string>("MediaInfo")
+                    .HasMaxLength(2048)
+                    .HasColumnType("TEXT");
 
                 b.Property<int>("QualityId")
                     .HasColumnType("INTEGER");
@@ -576,6 +580,10 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<long?>("LastSubtitleSearch")
                     .HasColumnType("INTEGER");
+
+                b.Property<string>("MediaInfo")
+                    .HasMaxLength(2048)
+                    .HasColumnType("TEXT");
 
                 b.Property<int>("MovieId")
                     .HasColumnType("INTEGER");

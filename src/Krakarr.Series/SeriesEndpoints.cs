@@ -1,9 +1,11 @@
+using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Jobs;
 using Krakarr.Core.Metadata;
 using Krakarr.Data;
 using Krakarr.Downloads;
 using Krakarr.Indexers;
+using Krakarr.Media.Files;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -413,6 +415,18 @@ public static class SeriesEndpoints
                 e.EpisodeFile is { } f ? new EpisodeFileDto(f.Id, f.RelativePath, f.Size, Qualities.FindById(f.QualityId).Name, f.ReleaseGroup, f.DateAdded) : null,
                 progress.TryGetValue(e.Id, out var p) ? p.Progress : null,
                 progress.ContainsKey(e.Id) ? p.Hash : null));
+        });
+
+        // Media info of one episode file, for the episode dialog (kept out of the episode list, which can be long).
+        group.MapGet("/{id:int}/episodefiles/{fileId:int}/mediainfo", async (int id, int fileId, KrakarrDbContext db, ISettingsService settings, CancellationToken ct) =>
+        {
+            var file = await db.EpisodeFiles.AsNoTracking().Where(f => f.Id == fileId && f.SeriesId == id)
+                .Select(f => new { f.MediaInfo, f.SceneName }).FirstOrDefaultAsync(ct);
+            if (file is null) return Results.NotFound();
+            var series = await db.Series.AsNoTracking().Where(s => s.Id == id).Select(s => new { s.Runtime, s.Languages }).FirstAsync(ct);
+            var runtimes = await db.Episodes.AsNoTracking().Where(e => e.EpisodeFileId == fileId).Select(e => e.Runtime).ToListAsync(ct);
+            var wanted = (await settings.GetAsync<LanguageSettings>(ct)).For(series.Languages);
+            return Results.Ok(MediaInfoDto.From(file.MediaInfo, runtimes.Sum(r => r > 0 ? r : series.Runtime), file.SceneName, wanted));
         });
 
         group.MapPut("/{id:int}/seasons/{season:int}", async (int id, int season, MonitorRequest req, KrakarrDbContext db, CancellationToken ct) =>

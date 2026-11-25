@@ -74,7 +74,16 @@ export interface ReleaseInfo {
 export interface SearchResult { release: ReleaseInfo; quality: string; parsedTitle?: string; parsedYear?: number; }
 export interface ReleaseDecision { release: ReleaseInfo; quality: string; qualityWeight: number; approved: boolean; rejections: string[]; languages: string[]; }
 
-export interface MovieFile { id: number; relativePath: string; size: number; quality: string; releaseGroup?: string; dateAdded: string; }
+/** What the file's own headers say (GET movie, GET series/{id}/episodefiles/{fileId}/mediainfo). */
+export interface MediaInfo {
+  durationSeconds?: number | null; videoCodec?: string | null; width: number; height: number; resolution?: string | null;
+  bitDepth?: number | null; dynamicRange?: string | null;
+  audio: { codec?: string | null; channels?: string | null; language?: string | null; languageName?: string | null }[];
+  /** Too short for the runtime, mislabelled resolution, audio in none of the wanted languages. */
+  warnings: string[];
+}
+
+export interface MovieFile { id: number; relativePath: string; size: number; quality: string; releaseGroup?: string; dateAdded: string; mediaInfo?: MediaInfo | null; }
 
 export interface ReleaseDateRef { date: string; country: string; }
 /** A release type's date in the configured region and the earliest worldwide. */
@@ -298,6 +307,13 @@ export interface DownloadClientSettings {
   seedRatioLimit: number; seedTimeLimitMinutes: number; seedLimitAction: SeedLimitAction; enableDht: boolean; enablePortForwarding: boolean;
 }
 export interface AutomationSettings { rssSyncIntervalMinutes: number; searchOnAdd: boolean; }
+
+/** Scheduled backups into /config/Backups. `intervalDays` 0 turns scheduled backups off. */
+export interface BackupSettings { intervalDays: number; retentionCount: number; }
+export type BackupType = 'Scheduled' | 'Manual';
+export interface BackupInfo { name: string; type: BackupType; size: number; created: string; }
+export interface RestoreOutcome { succeeded: boolean; message: string; at: string; }
+export interface BackupList { backups: BackupInfo[]; restorePending: boolean; lastRestore: RestoreOutcome | null; provider: string; }
 
 export interface SystemStatus {
   version: string; runtime: string; os: string; isDocker: boolean; configDirectory: string; downloadDirectory: string;

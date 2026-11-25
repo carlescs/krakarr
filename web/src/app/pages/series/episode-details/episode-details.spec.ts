@@ -49,6 +49,22 @@ describe('EpisodeDetailsDialog', () => {
     expect(text(root)).toContain('Adam Bernstein');
   });
 
+  it("shows the media info read from the episode's file", async () => {
+    const { api, fixture, root } = create(mockApi({
+      episodeDetails: async () => null,
+      episodeFileMediaInfo: async () => ({
+        durationSeconds: 2880, videoCodec: 'AVC', width: 1920, height: 1080, resolution: '1080p', bitDepth: 8, dynamicRange: null,
+        audio: [{ codec: 'AC3', channels: '5.1', language: 'en', languageName: 'English' }], warnings: [],
+      }),
+    }));
+    await settle(fixture);
+
+    expect(api.episodeFileMediaInfo).toHaveBeenCalledWith(5, 70);
+    expect(text(root, '[data-video]')).toBe('AVC · 1920×1080 · 1080p · 8-bit');
+    expect(text(root, '[data-audio]')).toBe('AC3 5.1 · English');
+    expect(text(root, '[data-duration]')).toBe('48 min');
+  });
+
   it('still shows the library data when TMDB has no such episode', async () => {
     const { fixture, root } = create(mockApi({ episodeDetails: async () => null }));
     await settle(fixture);

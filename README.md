@@ -59,7 +59,7 @@ Then open <http://localhost:8787>:
 
 | Path / port | Purpose |
 |---|---|
-| `/config` | Database (`krakarr.db`), settings, torrent fast-resume cache, auth keys |
+| `/config` | Database (`krakarr.db`), settings, torrent fast-resume cache, auth keys, backups (`/config/Backups`) |
 | `/data` | **Both** downloads (`/data/downloads`) and your library (e.g. `/data/media/movies`) |
 | `8787/tcp` | Web UI + REST API |
 | `6881/tcp+udp` | BitTorrent peers / DHT (change in *Settings → Download client*) |
@@ -78,6 +78,21 @@ Then open <http://localhost:8787>:
   `GERMAN`, `iTA`, `PT-BR`, …) and the indexer's `language` attribute. Subtitle tags (`ENG SUBS`, `VOSTFR`) are ignored.
   `MULTi`/`DUAL` releases also count as English. Untagged releases are assumed to be in the indexer's **default
   language** (set per indexer), or English when it has none.
+
+### Media info
+
+- Krakarr reads the **headers** of each video file (Matroska/WebM and MP4/MOV, no media data, no ffmpeg needed) for its
+  video codec, resolution, bit depth and HDR format (HDR10, HLG, Dolby Vision), its audio tracks (codec, channels,
+  language) and its duration. Other containers (AVI, TS…) are read with `ffprobe` when it is installed. Files are read on
+  import, library import and the first rescan after an upgrade, and again when they change on disk.
+- **Quality** takes the resolution from the video itself: a release named 2160p that is really 720p is stored (and
+  judged for upgrades) as 720p. The source (WEB-DL, Bluray…) still comes from the name.
+- **Samples and fakes:** a download whose file is less than half the movie's or episode's runtime is not imported.
+  Mislabelled resolutions and audio in none of the wanted languages are flagged on the movie page and episode dialog
+  (audio language tags are often missing or wrong, so they only warn).
+- **Naming tokens** for file formats: `{MediaInfo VideoCodec}`, `{MediaInfo VideoBitDepth}`,
+  `{MediaInfo VideoDynamicRange}`, `{MediaInfo Resolution}`, `{MediaInfo AudioCodec}`, `{MediaInfo AudioChannels}`,
+  `{MediaInfo AudioLanguages}` and `{MediaInfo Simple}`.
 
 ### TV series
 
@@ -354,6 +369,28 @@ The checks run every 5 minutes and right after settings, root folders, indexers 
 so on, doubling up to 24 hours while it keeps failing. Any successful query, a successful *Test*, or editing the
 indexer clears it. The Indexers page shows which indexers are failing and until when; picking a failing indexer
 explicitly in a manual search still queries it.
+
+### Backups and restore
+
+*Settings → Backups* (admins) makes a zip of the database, the data-protection keys (`/config/keys`) and
+`/config/config.json` into `/config/Backups`. A backup runs weekly by default (set the interval in days, 0 = off) and
+the newest 5 are kept (scheduled and manual together); *Back up now* makes one immediately. The SQLite database is
+copied with `VACUUM INTO`, so backups are consistent while Krakarr runs. Copy the zips off the machine too: a backup on
+the same SD card or disk won't survive it failing.
+
+To restore, pick *Restore* next to a backup or upload a zip with *Restore from file…*. The archive is checked (it must be
+a Krakarr backup for the same database provider) and applied the **next time Krakarr starts**, so restart the container
+afterwards. On startup the database is checked with `PRAGMA quick_check` before anything is replaced; the replaced
+files stay next to the new ones with a `.pre-restore` suffix, and a backup that fails is kept as
+`/config/restore-failed.zip`. The Backups page shows the outcome after the restart.
+
+**PostgreSQL:** backups only hold the settings, keys and `config.json`. Back up the database itself with `pg_dump`,
+e.g. `docker exec postgres pg_dump -U krakarr -Fc krakarr > krakarr.dump`, and restore it with `pg_restore` before
+restoring the Krakarr backup.
+
+The API is `GET /api/v1/system/backups` (list), `POST` (back up now), `GET`/`DELETE /api/v1/system/backups/{name}`,
+`POST /api/v1/system/backups/restore` (zip as the request body), `POST /api/v1/system/backups/{name}/restore` and
+`DELETE /api/v1/system/backups/restore` (cancel a staged restore).
 
 ### Security notes
 

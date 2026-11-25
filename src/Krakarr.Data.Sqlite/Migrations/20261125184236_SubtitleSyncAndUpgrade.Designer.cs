@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Krakarr.Data.Sqlite.Migrations;
 
 [DbContext(typeof(KrakarrDbContext))]
-[Migration("20261125175606_SubtitleSyncAndUpgrade")]
-partial class _20261125175606_SubtitleSyncAndUpgrade
+[Migration("20261125184236_SubtitleSyncAndUpgrade")]
+partial class _20261125184236_SubtitleSyncAndUpgrade
 {
     /// <inheritdoc />
     protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -192,6 +192,10 @@ partial class _20261125175606_SubtitleSyncAndUpgrade
 
                 b.Property<long?>("LastSubtitleSearch")
                     .HasColumnType("INTEGER");
+
+                b.Property<string>("MediaInfo")
+                    .HasMaxLength(2048)
+                    .HasColumnType("TEXT");
 
                 b.Property<int>("QualityId")
                     .HasColumnType("INTEGER");
@@ -574,6 +578,10 @@ partial class _20261125175606_SubtitleSyncAndUpgrade
 
                 b.Property<long?>("LastSubtitleSearch")
                     .HasColumnType("INTEGER");
+
+                b.Property<string>("MediaInfo")
+                    .HasMaxLength(2048)
+                    .HasColumnType("TEXT");
 
                 b.Property<int>("MovieId")
                     .HasColumnType("INTEGER");

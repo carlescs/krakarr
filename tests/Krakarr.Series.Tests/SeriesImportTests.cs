@@ -203,4 +203,65 @@ public sealed class SeriesImportTests : IAsyncLifetime
         Assert.Contains("could not determine the episode", download.ImportMessage);
         Assert.Equal(0, await db.EpisodeFiles.CountAsync(TestContext.Current.CancellationToken));
     }
+
+    /// <summary>Copies a real 2-second clip (HEVC 1920x800 HDR10, Spanish + English audio) into the download.</summary>
+    private void CopyFixture(string relative)
+    {
+        var path = Path.Combine(_root.FullName, "downloads", relative);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "hdr10-hevc.mkv"), path);
+        _engine.Files.Add((path, new FileInfo(path).Length));
+    }
+
+    [Fact]
+    public async Task Reads_media_info_on_import_and_corrects_the_quality()
+    {
+        using (var scope = _services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<ISettingsService>().SaveAsync(new MediaManagementSettings
+            {
+                MinimumVideoFileSizeMb = 0,
+                EpisodeFileFormat = "{Series Title} - S{Season}E{Episode} [{Quality} {MediaInfo VideoCodec} {MediaInfo VideoDynamicRange}][{MediaInfo AudioLanguages}]",
+            }, TestContext.Current.CancellationToken);
+        }
+
+        // Named 2160p, but the video is 1920x800.
+        CopyFixture("Test.Show.S01E01.2160p.WEB-DL.x265-KRK.mkv");
+        await AddDownloadAsync("Test.Show.S01E01.2160p.WEB-DL.x265-KRK", Qualities.WebDl2160.Id);
+
+        await RunImportAsync();
+
+        using var check = _services.CreateScope();
+        var db = check.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        var file = await db.EpisodeFiles.SingleAsync(TestContext.Current.CancellationToken);
+        Assert.Equal(Qualities.WebDl1080.Id, file.QualityId);
+        Assert.Equal(Path.Combine("Season 01", "Test Show - S01E01 [WEBDL-1080p HEVC HDR10][ES+EN].mkv"), file.RelativePath);
+        Assert.Equal("fr+forced", file.EmbeddedSubtitles);
+        var info = Krakarr.Media.Files.MediaInfoSummary.Parse(file.MediaInfo)!;
+        Assert.Equal((1920, 800, 2), (info.Width, info.Height, info.DurationSeconds));
+        var history = await db.History.OrderBy(h => h.Id).LastAsync(TestContext.Current.CancellationToken);
+        Assert.Contains("Named 2160p but the video is 1920x800", history.Message);
+    }
+
+    [Fact]
+    public async Task Refuses_files_far_shorter_than_the_episode()
+    {
+        using (var scope = _services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+            await db.Episodes.Where(e => e.EpisodeNumber == 1).ExecuteUpdateAsync(x => x.SetProperty(e => e.Runtime, 45), TestContext.Current.CancellationToken);
+            await scope.ServiceProvider.GetRequiredService<ISettingsService>()
+                .SaveAsync(new MediaManagementSettings { MinimumVideoFileSizeMb = 0 }, TestContext.Current.CancellationToken);
+        }
+
+        CopyFixture("Test.Show.S01E01.1080p.WEB-DL.x265-KRK.mkv");
+        await AddDownloadAsync("Test.Show.S01E01.1080p.WEB-DL.x265-KRK", Qualities.WebDl1080.Id);
+
+        await RunImportAsync();
+
+        using var check = _services.CreateScope();
+        var download = await check.ServiceProvider.GetRequiredService<KrakarrDbContext>().Downloads.SingleAsync(TestContext.Current.CancellationToken);
+        Assert.False(download.Imported);
+        Assert.Contains("the runtime is 45 min (sample or fake?)", download.ImportMessage);
+    }
 }

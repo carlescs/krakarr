@@ -6,8 +6,8 @@ import { Auth } from './auth';
 import { readNdjson } from './ndjson';
 import type { Passkey, PasskeyCreationOptionsJson, PasskeyCredentialJson, PasskeyRequestOptionsJson } from './passkeys';
 import {
-  AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
-  IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, SubtitleSyncTools, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
+  AuthStatus, AutomationSettings, BackupInfo, BackupList, BackupSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
+  IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, SubtitleSyncTools, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, EpisodeRelease, MediaInfo, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, KeywordLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
   DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus
 } from './models';
@@ -15,6 +15,9 @@ import {
 const API = 'api/v1';
 
 const libraryPath = (mediaType: MediaType) => mediaType === 'Movie' ? 'movies' : 'series';
+
+/** URL that downloads a backup (a plain link: the browser sends the session cookie). */
+export const backupUrl = (name: string) => `${API}/system/backups/${encodeURIComponent(name)}`;
 
 /** Optional library item a manual download is imported into. */
 export interface DownloadLink { movieId?: number; seriesId?: number; }
@@ -38,7 +41,7 @@ export function errorMessage(err: unknown): string {
 export type SettingsMap = {
   general: GeneralSettings; media: MediaManagementSettings; metadata: MetadataSettings;
   downloads: DownloadClientSettings; automation: AutomationSettings; subtitles: SubtitleSettings; languages: LanguageSettings;
-  jellyfin: JellyfinSettings; telemetry: TelemetrySettings;
+  jellyfin: JellyfinSettings; telemetry: TelemetrySettings; backup: BackupSettings;
 };
 
 @Injectable({ providedIn: 'root' })
@@ -121,6 +124,18 @@ export class Api {
   health() { return this.get<HealthReport>('system/health'); }
   /** Runs every health check now (API keys are validated again) and returns the new report. */
   checkHealth() { return this.post<HealthReport>('system/health/check'); }
+
+  // Backups (admin)
+  backups() { return this.get<BackupList>('system/backups'); }
+  createBackup() { return this.post<BackupInfo>('system/backups'); }
+  deleteBackup(name: string) { return this.delete<void>(`system/backups/${encodeURIComponent(name)}`); }
+  /** Uploads a backup zip, sent as the raw body so the server streams it to disk; it is restored on the next start. */
+  uploadBackup(file: Blob) {
+    return firstValueFrom(this.http.post<void>(`${API}/system/backups/restore`, file, { headers: { 'Content-Type': 'application/zip' } }));
+  }
+  /** Restores one of the stored backups on the next start. */
+  restoreBackup(name: string) { return this.post<void>(`system/backups/${encodeURIComponent(name)}/restore`); }
+  cancelRestore() { return this.delete<void>('system/backups/restore'); }
 
   // Settings
   settings<K extends keyof SettingsMap>(section: K) { return this.get<SettingsMap[K]>(`settings/${section}`); }
@@ -286,6 +301,8 @@ export class Api {
   seriesCredits(id: number) { return this.get<Credits>(`series/${id}/credits`); }
   /** TMDB details of a library episode; null when TMDB doesn't know it. */
   episodeDetails(seriesId: number, episodeId: number) { return this.get<EpisodeDetails | null>(`series/${seriesId}/episodes/${episodeId}/details`); }
+  /** Media info read from an episode file; null when it hasn't been read (or couldn't be). */
+  episodeFileMediaInfo(seriesId: number, fileId: number) { return this.get<MediaInfo | null>(`series/${seriesId}/episodefiles/${fileId}/mediainfo`); }
   /** Any TMDB show, whether or not it is in the library. */
   tmdbSeries(tmdbId: number) { return this.get<SeriesDetails>(`series/tmdb/${tmdbId}`); }
   tmdbSeriesRecommendations(tmdbId: number) { return this.get<SeriesLookup[]>(`series/tmdb/${tmdbId}/recommendations`); }

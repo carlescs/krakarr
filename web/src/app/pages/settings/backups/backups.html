@@ -1,0 +1,76 @@
+<div class="space-y-6">
+  @if (list(); as l) {
+    @if (l.restorePending) {
+      <div class="card flex flex-wrap items-center justify-between gap-3 border-amber-500/40 bg-amber-500/10 p-4" data-pending>
+        <p class="text-sm text-amber-200">A backup is ready to restore. <span class="font-medium">Restart Krakarr</span> to apply it; the current files are kept with a <code>.pre-restore</code> suffix.</p>
+        <button type="button" class="btn-secondary whitespace-nowrap px-3 py-1 text-xs" (click)="cancelRestore()">Cancel restore</button>
+      </div>
+    }
+    @if (l.lastRestore; as r) {
+      <p class="rounded px-3 py-2 text-sm" [class]="r.succeeded ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/15 text-rose-300'" data-last-restore>
+        {{ r.message }} ({{ r.at | date: 'medium' }}).
+      </p>
+    }
+  }
+
+  @if (settings(); as s) {
+    <section class="card space-y-4 p-4 sm:p-5">
+      <div>
+        <h2 class="font-semibold text-white">Schedule</h2>
+        <p class="hint">Backups hold the database, the encryption keys and <code>config.json</code>, and are saved in <code>/config/Backups</code>. Copy them somewhere else too: they won't survive a dead disk.</p>
+      </div>
+      <div class="grid gap-4 sm:grid-cols-2">
+        <div><label class="label" for="backup-interval">Back up every (days)</label>
+          <input id="backup-interval" class="input" type="number" min="0" max="365" [(ngModel)]="s.intervalDays" />
+          <p class="hint">0 turns scheduled backups off.</p></div>
+        <div><label class="label" for="backup-retention">Backups to keep</label>
+          <input id="backup-retention" class="input" type="number" min="1" max="100" [(ngModel)]="s.retentionCount" />
+          <p class="hint">Older backups, scheduled or manual, are deleted after each backup.</p></div>
+      </div>
+      <div class="flex justify-end"><button type="button" class="btn-primary" [disabled]="saving()" (click)="save()">{{ saving() ? 'Saving…' : 'Save' }}</button></div>
+    </section>
+  }
+
+  <section class="card p-4 sm:p-5">
+    <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h2 class="font-semibold text-white">Backups</h2>
+        <p class="hint">Restoring replaces the database, keys and settings the next time Krakarr starts.</p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <label class="btn-secondary cursor-pointer whitespace-nowrap" [class.pointer-events-none]="staging()" [class.opacity-50]="staging()">
+          {{ staging() ? 'Uploading…' : 'Restore from file…' }}
+          <input #file type="file" accept=".zip,application/zip" class="hidden" data-upload (change)="upload(file)" />
+        </label>
+        <button type="button" class="btn-primary whitespace-nowrap" [disabled]="creating()" (click)="backUpNow()">{{ creating() ? 'Backing up…' : 'Back up now' }}</button>
+      </div>
+    </div>
+    @if (list()?.provider === 'postgres') {
+      <p class="mb-3 rounded bg-amber-500/10 px-3 py-2 text-sm text-amber-200" data-postgres>
+        With PostgreSQL, backups only hold the settings and keys. Back up the database itself with <code>pg_dump</code>.
+      </p>
+    }
+    <div class="overflow-x-auto">
+      <table class="table">
+        <thead><tr><th>Backup</th><th>Type</th><th class="max-sm:hidden">Size</th><th>Created</th><th></th></tr></thead>
+        <tbody>
+          @for (b of list()?.backups ?? []; track b.name) {
+            <tr [attr.data-backup]="b.name">
+              <td class="font-mono text-xs text-slate-200 wrap-anywhere">{{ b.name }}</td>
+              <td class="text-slate-400">{{ b.type }}</td>
+              <td class="whitespace-nowrap text-slate-400 max-sm:hidden">{{ b.size | bytes }}</td>
+              <td class="whitespace-nowrap text-slate-300">{{ b.created | date: 'medium' }}</td>
+              <td class="whitespace-nowrap text-right">
+                <a class="btn-secondary px-3 py-1 text-xs" [href]="backupUrl(b.name)" download>Download</a>
+                <button type="button" class="btn-secondary ml-1 px-3 py-1 text-xs" [disabled]="staging()" (click)="restore(b)">Restore</button>
+                <button type="button" class="btn-ghost ml-1 px-3 py-1 text-xs text-rose-300" [attr.aria-label]="'Delete ' + b.name" (click)="remove(b)">Delete</button>
+              </td>
+            </tr>
+          } @empty {
+            <tr><td colspan="5" class="text-slate-500">{{ list() ? 'No backups yet.' : 'Loading…' }}</td></tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>

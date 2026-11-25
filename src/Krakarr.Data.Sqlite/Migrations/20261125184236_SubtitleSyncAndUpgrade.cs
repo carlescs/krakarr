@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace Krakarr.Data.Sqlite.Migrations;
 
 /// <inheritdoc />
-public partial class _20261125175606_SubtitleSyncAndUpgrade : Migration
+public partial class _20261125184236_SubtitleSyncAndUpgrade : Migration
 {
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)

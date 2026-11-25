@@ -119,8 +119,10 @@ describe('MovieListPage', () => {
 
   it('shows collections as cards that open the collection', async () => {
     const { api, fixture, el } = await render(movies);
-    type(el, 'select[aria-label="Show"]', 'collection');
+    expect(button(el, 'Movies').getAttribute('aria-pressed')).toBe('true');
+    button(el, 'Collections').click();
     await settle(fixture);
+    expect(button(el, 'Collections').getAttribute('aria-pressed')).toBe('true');
     expect(localStorage.getItem('krakarr.movies.groupBy')).toBe('collection');
     const card = el.querySelector('a[href="/movies/collections/10"]') as HTMLElement;
     expect(text(card)).toContain('Alien Collection');
