@@ -49,9 +49,9 @@
 <!-- The torrent name opens it on the downloads page (staff only: plain users can't open that page). -->
 <ng-template #name let-d>
   @if (auth.isStaff()) {
-    <a [routerLink]="['/downloads']" [queryParams]="{ hash: d.infoHash }" class="min-w-0 flex-1 truncate font-medium text-slate-200 hover:text-accent-300"
+    <a [routerLink]="['/downloads']" [queryParams]="{ hash: d.infoHash }" class="min-w-0 flex-1 truncate font-medium text-slate-200 hover:text-accent-300 max-sm:order-first max-sm:basis-full"
        [title]="d.name + ' — show in Downloads'" data-download-link>{{ d.name }}</a>
   } @else {
-    <span class="min-w-0 flex-1 truncate font-medium text-slate-200" [title]="d.name">{{ d.name }}</span>
+    <span class="min-w-0 flex-1 truncate font-medium text-slate-200 max-sm:order-first max-sm:basis-full" [title]="d.name">{{ d.name }}</span>
   }
 </ng-template>

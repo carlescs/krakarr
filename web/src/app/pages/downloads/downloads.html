@@ -105,7 +105,10 @@
                  (click)="selection.toggle(d.infoHash, $event.shiftKey)" />
           <kr-state-badge [state]="d.state" />
           <button class="min-w-0 text-left font-medium text-slate-100 break-all hover:text-accent-300 max-sm:order-first max-sm:line-clamp-2 max-sm:basis-full sm:flex-1 sm:truncate" [title]="d.name + ' — show details'" (click)="details.set(d)">{{ d.name }}</button>
-          <ng-container *ngTemplateOutlet="mediaLink; context: { $implicit: d }" />
+          @if (d.movieId || d.seriesId) {
+            <!-- On phones the title gets its own line under the torrent name, so the controls stay on one row. -->
+            <div class="flex min-w-0 max-sm:-order-1 max-sm:basis-full"><ng-container *ngTemplateOutlet="mediaLink; context: { $implicit: d }" /></div>
+          }
           @if (d.imported) { <span class="badge bg-emerald-500/15 text-emerald-300">Imported</span> }
           @if (multiClient()) { <span class="badge bg-surface-700 text-slate-300" title="Download client">{{ clientLabel(d.client) }}</span> }
           <span class="badge bg-surface-700 text-slate-300 max-sm:hidden">{{ d.category }}</span>
