@@ -49,6 +49,23 @@ describe('EpisodeDetailsDialog', () => {
     expect(text(root)).toContain('Adam Bernstein');
   });
 
+  it('links a downloaded episode to its Jellyfin page', async () => {
+    const { api, fixture, root } = create(mockApi({ episodeDetails: async () => null, episodeJellyfinLink: async () => ({ url: 'https://tv.example.com/web/#/details?id=ep' }) }));
+    await settle(fixture);
+
+    expect(api.episodeJellyfinLink).toHaveBeenCalledWith(5, 7);
+    expect(root.querySelector('a[data-jellyfin]')?.getAttribute('href')).toBe('https://tv.example.com/web/#/details?id=ep');
+  });
+
+  it('does not look up an episode without a file on Jellyfin', async () => {
+    const { api, fixture, root } = create(mockApi({ episodeDetails: async () => null, episodeJellyfinLink: async () => null }));
+    fixture.componentRef.setInput('episode', { ...episode, episodeFile: undefined });
+    await settle(fixture);
+
+    expect(api.episodeJellyfinLink).not.toHaveBeenCalled();
+    expect(root.querySelector('a[data-jellyfin]')).toBeNull();
+  });
+
   it("shows the media info read from the episode's file", async () => {
     const { api, fixture, root } = create(mockApi({
       episodeDetails: async () => null,

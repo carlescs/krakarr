@@ -292,6 +292,8 @@ export class Api {
   /** The series' Jellyfin page; null (HTTP 204) when Jellyfin isn't set up or doesn't have it. */
   seriesJellyfinLink(id: number) { return this.get<{ url: string } | null>(`series/${id}/jellyfin`); }
   episodes(seriesId: number) { return this.get<Episode[]>(`series/${seriesId}/episodes`); }
+  /** The episode's Jellyfin page; null (HTTP 204) when Jellyfin isn't set up or doesn't have it. */
+  episodeJellyfinLink(seriesId: number, episodeId: number) { return this.get<{ url: string } | null>(`series/${seriesId}/episodes/${episodeId}/jellyfin`); }
   lookupSeries(term: string) { return this.get<SeriesLookup[]>('series/lookup', { term }); }
   addSeries(req: { tmdbId?: number; tvdbId?: number; qualityProfileId: number; rootFolderPath: string; monitor: MonitorMode; seasonFolder: boolean; searchForMissing: boolean; title?: string }) {
     return this.post<Series>('series', req);
