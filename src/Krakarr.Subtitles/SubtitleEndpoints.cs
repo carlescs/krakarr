@@ -26,8 +26,11 @@ public sealed record SubtitleSearchRequest(int? MovieFileId, int? EpisodeFileId,
 public sealed record WantedSubtitleCountsDto(int Searching, int NotFound);
 /// <summary>Movie or episode file to search automatically again; neither retries every file marked "not found".</summary>
 public sealed record SubtitleRetryRequest(int? MovieFileId, int? EpisodeFileId = null);
-public sealed record SubtitleDownloadRequest(int? MovieFileId, int? EpisodeFileId, SubtitleCandidate Candidate, int? Score);
+/// <param name="Manual">Picked by hand from the full list (default): automatic upgrades leave it alone. Best-match downloads send false so a better subtitle can still replace them.</param>
+public sealed record SubtitleDownloadRequest(int? MovieFileId, int? EpisodeFileId, SubtitleCandidate Candidate, int? Score, bool Manual = true);
 public sealed record ScoredSubtitleDto(SubtitleCandidate Candidate, int Score, IReadOnlyList<string> Matches, IReadOnlyList<string> Rejections, bool Acceptable);
+/// <summary>Best subtitle per missing language, even below <c>MinimumScore</c>; downloaded only once the user confirms.</summary>
+public sealed record BestSubtitleMatchesDto(string Label, IReadOnlyList<string> MissingLanguages, int MinimumScore, IReadOnlyList<ScoredSubtitleDto> Results, IReadOnlyList<string> Errors);
 /// <summary>The subtitle languages Krakarr looks for, so detail pages can show which ones a file is missing.</summary>
 public sealed record WantedSubtitleLanguagesDto(bool Enabled, bool UseEmbeddedSubtitles, IReadOnlyList<string> Languages);
 public sealed record WantedSubtitleDto(string MediaType, int? MovieId, int? SeriesId, int? MovieFileId, int? EpisodeFileId, string Label, IReadOnlyList<string> MissingLanguages, DateTimeOffset? NotFound);
@@ -251,13 +254,23 @@ public static class SubtitleEndpoints
             return Results.Ok(new { target.Label, Results = ranked, Errors = errors });
         });
 
+        // Best match per missing language, ignoring the minimum score; the UI asks before downloading each one.
+        group.MapGet("/best-match", async (int? movieFileId, int? episodeFileId, SubtitleService service, CancellationToken ct) =>
+        {
+            var target = await ResolveAsync(service, movieFileId, episodeFileId, ct);
+            if (target is null) return Results.NotFound();
+            var best = await service.BestMatchesAsync(target, ct);
+            return Results.Ok(new BestSubtitleMatchesDto(target.Label, best.MissingLanguages, best.MinimumScore,
+                best.Best.Select(r => new ScoredSubtitleDto(r.Candidate, r.Score, r.Matches, r.Rejections, r.Acceptable)).ToList(), best.Errors));
+        });
+
         group.MapPost("/download", async (SubtitleDownloadRequest req, SubtitleService service, CancellationToken ct) =>
         {
             var target = await ResolveAsync(service, req.MovieFileId, req.EpisodeFileId, ct);
             if (target is null) return Results.NotFound();
             try
             {
-                return Results.Ok(ToDto(await service.DownloadAsync(target, req.Candidate, req.Score, ct: ct, manual: true)));
+                return Results.Ok(ToDto(await service.DownloadAsync(target, req.Candidate, req.Score, ct: ct, manual: req.Manual)));
             }
             catch (SubtitleProviderException ex)
             {

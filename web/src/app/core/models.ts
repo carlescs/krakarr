@@ -356,6 +356,8 @@ export interface SubtitleCandidate {
   hashMatch: boolean; aiTranslated: boolean; trustedUploader: boolean; downloads: number;
 }
 export interface ScoredSubtitle { candidate: SubtitleCandidate; score: number; matches: string[]; rejections: string[]; acceptable: boolean; }
+/** Best subtitle per missing language, even below `minimumScore`; nothing is downloaded until the user confirms. */
+export interface BestSubtitleMatches { label: string; missingLanguages: string[]; minimumScore: number; results: ScoredSubtitle[]; errors: string[]; }
 export interface WantedSubtitle {
   mediaType: 'Movie' | 'Series'; movieId?: number; seriesId?: number; movieFileId?: number; episodeFileId?: number; label: string; missingLanguages: string[];
   /** When every provider came up empty (movie files only); the scheduled search skips the file until it is retried. */

@@ -25,6 +25,9 @@ public sealed record SubtitleTarget
 }
 
 /// <param name="NotFound">When the file was marked "not found" (every provider came up empty, or by hand); automatic searches skip it.</param>
+/// <summary>Best subtitle per missing language, regardless of the minimum score (see <see cref="SubtitleService.BestMatchesAsync"/>).</summary>
+public sealed record BestSubtitleMatches(IReadOnlyList<string> MissingLanguages, int MinimumScore, IReadOnlyList<ScoredSubtitle> Best, IReadOnlyList<string> Errors);
+
 public sealed record WantedSubtitle(SubtitleTarget Target, IReadOnlyList<string> MissingLanguages, DateTimeOffset? NotFound = null);
 
 /// <summary>Column the wanted list is sorted by; <see cref="Default"/> lists movies first, then episodes by series and season.</summary>
@@ -350,6 +353,33 @@ public sealed class SubtitleService(
         if (stillMissing.Count > 0 && parts.Count > 0) summary += $"; still missing {string.Join(", ", stillMissing)}";
         if (errors.Count > 0) summary += $" ({string.Join("; ", errors.Distinct())})";
         return $"{target.Label}: {summary}";
+    }
+
+    /// <summary>
+    /// The best subtitle for each missing wanted language, even when it scores below the minimum automatic downloads
+    /// need; the hearing-impaired, AI-translated and forced rules still apply, and a wrong episode (score 0) never
+    /// qualifies. Nothing is downloaded: the caller confirms each choice and downloads it.
+    /// </summary>
+    public async Task<BestSubtitleMatches> BestMatchesAsync(SubtitleTarget target, CancellationToken ct = default)
+    {
+        var s = await settings.GetAsync<SubtitleSettings>(ct);
+        await SyncDiskAsync(target, ct);
+        var missing = await MissingLanguagesAsync(target, s, ct);
+        var minimum = SubtitleScorer.MinimumScore(target.Video, s);
+        if (missing.Count == 0) return new BestSubtitleMatches(missing, minimum, [], []);
+        if (BackoffUntil(s) is { } until)
+            return new BestSubtitleMatches(missing, minimum, [], [$"Subtitle providers paused until {until.ToLocalTime():g}"]);
+
+        var (candidates, errors) = await SearchProvidersAsync(target, missing, s, ct);
+        var best = new List<ScoredSubtitle>();
+        foreach (var language in missing)
+        {
+            var top = SubtitleScorer.Rank(target.Video, candidates.Where(c => c.Language == language), s, ignoreMinimum: true)
+                .FirstOrDefault(r => r.Acceptable && r.Score > 0);
+            if (top is not null) best.Add(top);
+        }
+
+        return new BestSubtitleMatches(missing, minimum, best, errors);
     }
 
     /// <summary>

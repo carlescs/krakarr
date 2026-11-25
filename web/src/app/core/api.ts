@@ -7,7 +7,7 @@ import { readNdjson } from './ndjson';
 import type { Passkey, PasskeyCreationOptionsJson, PasskeyCredentialJson, PasskeyRequestOptionsJson } from './passkeys';
 import {
   AuthStatus, AutomationSettings, BackupInfo, BackupList, BackupSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
-  IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, SubtitleSyncTools, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, EpisodeRelease, MediaInfo, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
+  IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, BestSubtitleMatches, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, SubtitleSyncTools, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, EpisodeRelease, MediaInfo, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, KeywordLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
   DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus
 } from './models';
@@ -381,8 +381,11 @@ export class Api {
   subtitleCandidates(ref: SubtitleFileRef, language?: string) {
     return this.get<{ label: string; results: ScoredSubtitle[]; errors: string[] }>('subtitles/candidates', { ...ref, language });
   }
-  downloadSubtitle(ref: SubtitleFileRef, candidate: SubtitleCandidate, score: number) {
-    return this.post<SubtitleFile>('subtitles/download', { ...ref, candidate, score });
+  /** Best subtitle per missing language, ignoring the minimum score; downloads nothing. */
+  bestSubtitleMatches(ref: SubtitleFileRef) { return this.get<BestSubtitleMatches>('subtitles/best-match', { ...ref }); }
+  /** manual: picked by hand (automatic upgrades leave it alone); false for best-match picks, which may still be upgraded. */
+  downloadSubtitle(ref: SubtitleFileRef, candidate: SubtitleCandidate, score: number, manual = true) {
+    return this.post<SubtitleFile>('subtitles/download', { ...ref, candidate, score, manual });
   }
   deleteSubtitle(id: number) { return this.delete<void>(`subtitles/${id}`); }
   /** Resyncs a subtitle against the video in the background; the result lands on the subtitle (syncNote). */
