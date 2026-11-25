@@ -20,6 +20,7 @@ public sealed class SeriesImportTests : IAsyncLifetime
     private readonly DirectoryInfo _root = Directory.CreateTempSubdirectory("krakarr-series");
     private readonly FakeEngine _engine = new();
     private ServiceProvider _services = null!;
+    private readonly RecordingNotifier _mediaServers = new();
 
     private sealed class FakeEngine : ITorrentEngine
     {
@@ -60,6 +61,7 @@ public sealed class SeriesImportTests : IAsyncLifetime
         services.AddSingleton<IDownloadService>(unused);
         services.AddSingleton<ITorrentEngine>(_engine);
         services.AddSingleton<IEventHub, NullEventHub>();
+        services.AddSingleton<Krakarr.Core.MediaServers.IMediaServerNotifier>(_mediaServers);
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<SeriesService>();
         services.AddScoped<SeriesImportService>();
@@ -147,6 +149,8 @@ public sealed class SeriesImportTests : IAsyncLifetime
         var history = await db.History.SingleAsync(TestContext.Current.CancellationToken);
         Assert.Equal(HistoryEventType.Imported, history.EventType);
         Assert.StartsWith("Imported S01E01E02E03", history.Message);
+        // One season folder for media servers to rescan, however many episodes landed in it.
+        Assert.Equal([Path.Combine(series.Path, "Season 01")], _mediaServers.Paths.Distinct());
     }
 
     [Fact]

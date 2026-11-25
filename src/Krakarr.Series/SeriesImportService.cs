@@ -3,6 +3,7 @@ using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Events;
 using Krakarr.Core.Jobs;
+using Krakarr.Core.MediaServers;
 using Krakarr.Core.Telemetry;
 using Krakarr.Data;
 using Krakarr.Downloads;
@@ -22,6 +23,7 @@ public sealed class SeriesImportService(
     IFileTransfer fileTransfer,
     ISettingsService settings,
     IEventHub eventHub,
+    IMediaServerNotifier mediaServers,
     ILogger<SeriesImportService> logger) : IScheduledTask
 {
     public string Name => "Import completed series downloads";
@@ -203,6 +205,7 @@ public sealed class SeriesImportService(
 
         await db.SaveChangesAsync(ct);
         logger.LogInformation("Imported {Source} to {Destination} ({Mode})", sourcePath, destination, mode);
+        mediaServers.PathChanged(Path.GetDirectoryName(destination) ?? series.Path);
     }
 
     private Task FinishAsync(Download download, Core.Domain.Series? series, List<Episode> imported, List<string> problems, CancellationToken ct) =>

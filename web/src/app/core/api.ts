@@ -9,7 +9,7 @@ import {
   AuthStatus, AutomationSettings, BackupInfo, BackupList, BackupSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
   IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, BestSubtitleMatches, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, EpisodeRelease, MediaInfo, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, KeywordLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
-  DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus
+  DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, EmbySettings, PlexSettings, MediaServerTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus
 } from './models';
 
 const API = 'api/v1';
@@ -41,7 +41,7 @@ export function errorMessage(err: unknown): string {
 export type SettingsMap = {
   general: GeneralSettings; media: MediaManagementSettings; metadata: MetadataSettings;
   downloads: DownloadClientSettings; automation: AutomationSettings; subtitles: SubtitleSettings; languages: LanguageSettings;
-  jellyfin: JellyfinSettings; telemetry: TelemetrySettings; backup: BackupSettings;
+  jellyfin: JellyfinSettings; emby: EmbySettings; plex: PlexSettings; telemetry: TelemetrySettings; backup: BackupSettings;
 };
 
 @Injectable({ providedIn: 'root' })
@@ -141,7 +141,9 @@ export class Api {
   settings<K extends keyof SettingsMap>(section: K) { return this.get<SettingsMap[K]>(`settings/${section}`); }
   saveSettings<K extends keyof SettingsMap>(section: K, value: SettingsMap[K]) { return this.put<SettingsMap[K]>(`settings/${section}`, value); }
   telemetryStatus() { return this.get<TelemetryStatus>('settings/telemetry/status'); }
-  testJellyfin(settings: JellyfinSettings) { return this.post<JellyfinTestResult>('settings/jellyfin/test', settings); }
+  testJellyfin(settings: JellyfinSettings) { return this.post<MediaServerTestResult>('settings/jellyfin/test', settings); }
+  testEmby(settings: EmbySettings) { return this.post<MediaServerTestResult>('settings/emby/test', settings); }
+  testPlex(settings: PlexSettings) { return this.post<MediaServerTestResult>('settings/plex/test', settings); }
   regenerateApiKey() { return this.post<GeneralSettings>('settings/general/regenerate-api-key'); }
   qualities() { return this.get<Quality[]>('qualities'); }
   qualityProfiles() { return this.get<QualityProfile[]>('qualityprofiles'); }

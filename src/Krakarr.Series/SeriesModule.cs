@@ -1,5 +1,6 @@
 using Krakarr.Core.Health;
 using Krakarr.Core.Jobs;
+using Krakarr.Core.MediaServers;
 using Krakarr.Core.Metadata;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,6 +14,7 @@ public static class SeriesModule
     {
         services.AddTmdbApi();
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IMediaServerNotifier, NullMediaServerNotifier>();
         services.AddHttpClient(TvdbClient.HttpClientName, c =>
         {
             c.BaseAddress = new Uri((configuration["Tvdb:BaseUrl"] ?? "https://api4.thetvdb.com/v4/").TrimEnd('/') + "/");

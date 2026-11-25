@@ -3,6 +3,7 @@ using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Events;
 using Krakarr.Core.Jobs;
+using Krakarr.Core.MediaServers;
 using Krakarr.Core.Telemetry;
 using Krakarr.Data;
 using Krakarr.Downloads;
@@ -21,6 +22,7 @@ public sealed class MovieImportService(
     IFileTransfer fileTransfer,
     ISettingsService settings,
     IEventHub eventHub,
+    IMediaServerNotifier mediaServers,
     ILogger<MovieImportService> logger) : IScheduledTask
 {
     public string Name => "Import completed movie downloads";
@@ -150,6 +152,7 @@ public sealed class MovieImportService(
         engine.MarkImported(download.InfoHash);
 
         logger.LogInformation("Imported {Source} to {Destination} ({Mode})", video.Value.Path, destination, mode);
+        mediaServers.PathChanged(movie.Path);
         await eventHub.PublishAsync(EventNames.MovieUpdated, new { movie.Id }, ct);
         await eventHub.PublishAsync(EventNames.HistoryAdded, entry, ct);
     }
