@@ -11,14 +11,18 @@ public sealed record ProcessResult(int ExitCode, string Output)
     public string LastLine => Output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).LastOrDefault() ?? $"exit code {ExitCode}";
 }
 
-/// <summary>Runs a command-line tool without a shell, keeping only the tail of its output and killing it on timeout.</summary>
+/// <summary>
+/// Runs a command-line tool without a shell, keeping only the tail of its output and killing it on timeout.
+/// <c>onLine</c> sees every line as it's printed (carriage returns end a line too, so progress bars arrive one update
+/// at a time); it runs on the reader thread and must be quick.
+/// </summary>
 public static class ExternalProcess
 {
     private const int MaxOutputLines = 20;
 
     public static async Task<ProcessResult> RunAsync(
         string fileName, IEnumerable<string> arguments, TimeSpan timeout, CancellationToken ct,
-        IReadOnlyDictionary<string, string>? environment = null)
+        IReadOnlyDictionary<string, string>? environment = null, Action<string>? onLine = null)
     {
         var info = new ProcessStartInfo(fileName)
         {
@@ -37,6 +41,7 @@ public static class ExternalProcess
         void Collect(object _, DataReceivedEventArgs e)
         {
             if (string.IsNullOrWhiteSpace(e.Data)) return;
+            onLine?.Invoke(e.Data);
             lock (tail)
             {
                 if (tail.Count == MaxOutputLines) tail.Dequeue();

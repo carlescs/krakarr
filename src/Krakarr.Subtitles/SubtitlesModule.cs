@@ -23,6 +23,8 @@ public static class SubtitlesModule
         services.AddScoped<IHealthCheck, SubtitleHealthCheck>();
         services.AddScheduledTask<SubtitleSearchTask>();
         services.AddSingleton<SubtitleSyncGate>();
+        services.AddSingleton<SubtitleSyncProgress>();
+        services.AddScoped<Krakarr.Core.Notifications.INotificationSource, SubtitleSyncNotificationSource>();
         services.AddScoped<SubtitleSyncService>();
         services.AddScheduledTask<SubtitleSyncTask>();
         return services;

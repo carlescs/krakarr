@@ -290,14 +290,25 @@ public static class SubtitleEndpoints
         });
 
         // Resyncs one subtitle against the video in the background (it can take minutes); the outcome lands on the row.
-        group.MapPost("/{id:int}/sync", async (int id, KrakarrDbContext db, ICommandQueue commands, CancellationToken ct) =>
+        // It shows in the bell as waiting until it starts, then with its progress.
+        group.MapPost("/{id:int}/sync", async (int id, KrakarrDbContext db, SubtitleSyncService sync, SubtitleSyncProgress progress,
+            ICommandQueue commands, CancellationToken ct) =>
         {
-            var path = await db.SubtitleFiles.AsNoTracking().Where(s => s.Id == id).Select(s => s.Path).FirstOrDefaultAsync(ct);
-            if (path is null) return Results.NotFound();
-            var command = commands.Enqueue($"Sync subtitle: {Path.GetFileName(path)}", async (sp, token) =>
+            var row = await db.SubtitleFiles.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (row is null) return Results.NotFound();
+            var (title, link) = await sync.DescribeAsync(row, ct);
+            progress.Queue(id, title, link);
+            var command = commands.Enqueue($"Sync subtitle: {Path.GetFileName(row.Path)}", async (sp, token) =>
             {
-                var result = await sp.GetRequiredService<SubtitleSyncService>().SyncAsync(id, token) ?? throw new KeyNotFoundException("Subtitle not found");
-                return result.Success ? result.Message : throw new InvalidOperationException(result.Message);
+                try
+                {
+                    var result = await sp.GetRequiredService<SubtitleSyncService>().SyncAsync(id, token) ?? throw new KeyNotFoundException("Subtitle not found");
+                    return result.Success ? result.Message : throw new InvalidOperationException(result.Message);
+                }
+                finally
+                {
+                    progress.Finish(id);
+                }
             });
             return Results.Accepted(value: command);
         });

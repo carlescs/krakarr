@@ -430,7 +430,11 @@ export type NotificationSeverity = 'Info' | 'Warning' | 'Error';
 /** An item in the top bar's bell, computed by the server from the current state (see INotificationSource). */
 export interface AppNotification {
   id: string; kind: string; title: string; message?: string | null; link: string; count: number; severity: NotificationSeverity; date?: string | null;
+  /** Set for work in progress; `percent` is null when the work can't tell how far along it is. */
+  progress?: { percent?: number | null } | null;
 }
+/** Live progress of a notification's work (the `notificationProgress` event). */
+export interface NotificationProgressUpdate { id: string; percent?: number | null; message?: string | null; }
 
 /** A library title the signed-in user follows (shows in "My titles"). */
 export interface Subscription { mediaType: MediaType; libraryId: number; title: string; year: number; posterUrl?: string | null; subscribedAt: string; }
