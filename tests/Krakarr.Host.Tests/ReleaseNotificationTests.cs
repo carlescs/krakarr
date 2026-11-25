@@ -156,4 +156,17 @@ public sealed class ReleaseNotificationTests : IClassFixture<KrakarrFactory>
         Assert.False(NotificationEndpoints.IsDismissed(Note(3, day), dismissal)); // another title released today
         Assert.False(NotificationEndpoints.IsDismissed(Note(1, day.AddDays(1)), dismissal)); // a title released tomorrow
     }
+
+    [Fact]
+    public void A_dismissal_matches_a_date_the_database_stored_with_less_precision()
+    {
+        // Health notifications are dated from the clock to the tick; SQLite keeps 0.1 ms and Postgres 1 µs.
+        var since = new DateTimeOffset(2026, 11, 25, 10, 0, 0, TimeSpan.Zero).AddTicks(1_234_567);
+        var stored = since.AddTicks(-(since.Ticks % 1000));
+        var dismissal = new NotificationDismissal { NotificationId = "health.indexers.1", Count = 1, DismissedAt = stored };
+        var n = new Notification("health.indexers.1", "health", "Indexers", null, "/settings/health", Date: since);
+
+        Assert.True(NotificationEndpoints.IsDismissed(n, dismissal));
+        Assert.False(NotificationEndpoints.IsDismissed(n with { Date = since.AddMilliseconds(1) }, dismissal));
+    }
 }

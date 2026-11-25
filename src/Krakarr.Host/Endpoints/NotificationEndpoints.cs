@@ -39,11 +39,20 @@ public static class NotificationEndpoints
         return app;
     }
 
-    /// <summary>True when <paramref name="n"/> has no activity newer than what the user dismissed.</summary>
-    public static bool IsDismissed(Notification n, NotificationDismissal d) =>
-        n.Date is { } date
-            ? d.DismissedAt is { } dismissedAt && (date < dismissedAt || (date == dismissedAt && n.Count <= d.Count))
-            : d.DismissedAt is null && n.Count <= d.Count;
+    /// <summary>
+    /// True when <paramref name="n"/> has no activity newer than what the user dismissed. Dates are compared to the
+    /// millisecond: the database truncates the stored dismissal (SQLite keeps 0.1 ms, Postgres 1 µs), while sources
+    /// such as health checks date notifications from the clock at full precision.
+    /// </summary>
+    public static bool IsDismissed(Notification n, NotificationDismissal d)
+    {
+        if (n.Date is not { } date) return d.DismissedAt is null && n.Count <= d.Count;
+        if (d.DismissedAt is not { } dismissedAt) return false;
+        var (shown, dismissed) = (ToMilliseconds(date), ToMilliseconds(dismissedAt));
+        return shown < dismissed || (shown == dismissed && n.Count <= d.Count);
+    }
+
+    private static DateTimeOffset ToMilliseconds(DateTimeOffset d) => d.AddTicks(-(d.Ticks % TimeSpan.TicksPerMillisecond));
 
     private static async Task<List<Notification>> ActiveAsync(IEnumerable<INotificationSource> sources, NotificationContext context, CancellationToken ct)
     {

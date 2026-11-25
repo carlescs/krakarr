@@ -32,7 +32,7 @@ public interface IHealthCheck
 
 /// <summary>A problem as reported by the API and the notification bell.</summary>
 /// <param name="Id">"{check id}.{problem key}", stable while the problem persists.</param>
-/// <param name="Since">When it was first seen with this severity.</param>
+/// <param name="Since">When it was first seen, or last got more severe.</param>
 public sealed record HealthIssue(string Id, string Check, string CheckName, HealthSeverity Severity, string Message, string? Link, DateTimeOffset Since);
 
 /// <summary>Result of the latest health run.</summary>
