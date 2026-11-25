@@ -100,7 +100,7 @@ describe('SettingsPage', () => {
     expect(text(el)).toContain('Exporting traces, metrics to http://otel:4318 (HTTP)');
   });
 
-  it('saves the general subtitle options from their own card', async () => {
+  it('saves the whole subtitles tab from the footer', async () => {
     const subtitles = {
       enabled: false, languages: ['en'], hearingImpaired: 'PreferNormal', minimumScoreMovies: 70, minimumScoreEpisodes: 80, searchIntervalHours: 24,
       includeAiTranslated: false, useEmbeddedSubtitles: true, openSubtitles: { enabled: true }, subdl: { enabled: true },
@@ -122,8 +122,29 @@ describe('SettingsPage', () => {
     const options = el.querySelector('section.card') as HTMLElement;
     [...options.querySelectorAll('label')].find(l => l.textContent?.includes('Download subtitles automatically'))!.querySelector('input')!.click();
     await settle(fixture);
-    button(options, 'Save').click();
+    expect([...el.querySelectorAll('button')].filter(b => b.textContent?.trim() === 'Save')).toHaveLength(1);
+    button(el, 'Save').click();
     await settle(fixture);
+    expect(api.saveSettings).toHaveBeenCalledTimes(1);
     expect(api.saveSettings).toHaveBeenCalledWith('subtitles', expect.objectContaining({ enabled: true }));
+  });
+
+  it('saves the download client and automation settings together', async () => {
+    const api = setupTest({
+      api: mockApi({
+        settings: async (section: string) => (section === 'downloads' ? { client: 'Embedded', qBittorrent: {} } : section === 'automation' ? { rssSyncIntervalMinutes: 15 } : section === 'languages' ? { preferred: [] } : {}),
+        rootFolders: async () => [], qualityProfiles: async () => [], qualities: async () => [], systemStatus: async () => ({}),
+        saveSettings: async (_: string, value: unknown) => value,
+      }),
+    });
+    const fixture = TestBed.createComponent(SettingsPage);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    button(el, 'Download client').click();
+    await settle(fixture);
+    button(el, 'Save').click();
+    await settle(fixture);
+    expect(api.saveSettings).toHaveBeenCalledWith('downloads', expect.objectContaining({ client: 'Embedded' }));
+    expect(api.saveSettings).toHaveBeenCalledWith('automation', { rssSyncIntervalMinutes: 15 });
   });
 });
