@@ -1,7 +1,7 @@
 import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { Api, errorMessage } from '../../../core/api';
+import { Api, SettingsMap, errorMessage } from '../../../core/api';
 import { BytesPipe } from '../../../core/format';
 import { Events } from '../../../core/events';
 import {
@@ -121,7 +121,19 @@ export class SettingsPage implements OnInit {
   protected readonly testingJellyfin = signal(false);
   protected readonly telemetry = signal<TelemetrySettings | null>(null);
   protected readonly telemetryStatus = signal<TelemetryStatus | null>(null);
-  protected readonly savingTelemetry = signal(false);
+  protected readonly saving = signal(false);
+  /** Tabs whose settings are saved with the footer's Save button, once they have loaded. */
+  protected readonly saveable = computed(() => {
+    switch (this.tab()) {
+      case 'media': return !!this.media();
+      case 'downloads': return !!this.downloads() || !!this.automation();
+      case 'subtitles': return !!this.subtitles();
+      case 'metadata': return !!this.metadata();
+      case 'jellyfin': return !!this.jellyfin();
+      case 'telemetry': return !!this.telemetry();
+      default: return false;
+    }
+  });
   /** Wait after saving before reading the status: the server restarts the exporters in the background. */
   telemetryStatusDelayMs = 1500;
   protected readonly languages = signal<Language[]>([]);
@@ -248,14 +260,33 @@ export class SettingsPage implements OnInit {
     return this.qualities().filter(q => p.allowedQualityIds.includes(q.id)).sort((a, b) => b.weight - a.weight);
   }
 
-  async save<K extends 'media' | 'downloads' | 'automation' | 'metadata' | 'subtitles' | 'jellyfin'>(section: K, value: Parameters<Api['saveSettings']>[1] & object) {
+  /** Saves every section shown on the current tab (the footer's Save button). */
+  async saveTab() {
+    if (this.saving()) return;
+    this.saving.set(true);
     try {
-      await this.api.saveSettings(section, value as never);
-      if (section === 'subtitles') this.subtitleLanguages.load(true).catch(() => {});
+      switch (this.tab()) {
+        case 'media': await this.saveSection('media', this.media()); break;
+        case 'downloads': await Promise.all([this.saveSection('downloads', this.downloads()), this.saveSection('automation', this.automation())]); break;
+        case 'subtitles':
+          await this.saveSection('subtitles', this.subtitles());
+          this.subtitleLanguages.load(true).catch(() => {});
+          break;
+        case 'metadata': await this.saveSection('metadata', this.metadata()); break;
+        case 'jellyfin': await this.saveSection('jellyfin', this.jellyfin()); break;
+        case 'telemetry': await this.saveTelemetry(); return;
+        default: return;
+      }
       this.toasts.success('Settings saved');
     } catch (e) {
       this.toasts.error(errorMessage(e));
+    } finally {
+      this.saving.set(false);
     }
+  }
+
+  private async saveSection<K extends 'media' | 'downloads' | 'automation' | 'metadata' | 'subtitles' | 'jellyfin'>(section: K, value: SettingsMap[K] | null) {
+    if (value) await this.api.saveSettings(section, value);
   }
 
   async saveLanguages() {
@@ -275,18 +306,13 @@ export class SettingsPage implements OnInit {
     t.protocol = protocol;
   }
 
-  async saveTelemetry(settings: TelemetrySettings) {
-    this.savingTelemetry.set(true);
-    try {
-      this.telemetry.set(await this.api.saveSettings('telemetry', settings));
-      this.toasts.success('Settings saved');
-      await new Promise(resolve => setTimeout(resolve, this.telemetryStatusDelayMs));
-      this.telemetryStatus.set(await this.api.telemetryStatus());
-    } catch (e) {
-      this.toasts.error(errorMessage(e));
-    } finally {
-      this.savingTelemetry.set(false);
-    }
+  private async saveTelemetry() {
+    const settings = this.telemetry();
+    if (!settings) return;
+    this.telemetry.set(await this.api.saveSettings('telemetry', settings));
+    this.toasts.success('Settings saved');
+    await new Promise(resolve => setTimeout(resolve, this.telemetryStatusDelayMs));
+    this.telemetryStatus.set(await this.api.telemetryStatus());
   }
 
   async testJellyfin(settings: JellyfinSettings) {
