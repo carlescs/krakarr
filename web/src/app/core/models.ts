@@ -106,6 +106,10 @@ export interface MovieListPage {
 export interface BulkResult { affected: number; errors: string[]; }
 /** A TMDB collection ("The Lord of the Rings Collection") with at least one movie in the library. */
 export interface MovieCollection { id: number; tmdbId: number; name: string; posterUrl?: string | null; }
+/** Collection card (GET /movies/collections): its library movies matching the list filter, and how many are downloaded. */
+export interface MovieCollectionSummary extends MovieCollection { count: number; downloaded: number; }
+/** A collection with its library movies in release order (GET /movies/collections/{id}). */
+export interface MovieCollectionDetails extends MovieCollection { fanartUrl?: string | null; movies: MovieListItem[]; }
 
 export type CalendarEntryKind = 'Movie' | 'Episode';
 export interface CalendarEntry {

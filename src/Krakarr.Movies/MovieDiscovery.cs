@@ -39,6 +39,8 @@ public interface IMovieDiscovery
     /// <summary>Details with cast and key crew, for any TMDB movie.</summary>
     Task<MovieDetails> DetailsAsync(int tmdbId, CancellationToken ct = default);
     Task<Credits> CreditsAsync(int tmdbId, CancellationToken ct = default);
+    /// <summary>Every movie in a TMDB collection, in the order TMDB lists them.</summary>
+    Task<IReadOnlyList<MovieLookup>> CollectionPartsAsync(int collectionTmdbId, CancellationToken ct = default);
 }
 
 public sealed class TmdbMovieDiscovery(TmdbApi api, ISettingsService settings, TimeProvider time) : IMovieDiscovery
@@ -119,6 +121,15 @@ public sealed class TmdbMovieDiscovery(TmdbApi api, ISettingsService settings, T
         return TmdbCredits.Map(await api.GetAsync<TmdbCreditList>(meta, $"3/movie/{tmdbId.ToString(CultureInfo.InvariantCulture)}/credits", ct));
     }
 
+    public async Task<IReadOnlyList<MovieLookup>> CollectionPartsAsync(int collectionTmdbId, CancellationToken ct = default)
+    {
+        var meta = await settings.GetAsync<MetadataSettings>(ct);
+        var result = await api.GetAsync<TmdbCollectionParts>(meta, $"3/collection/{collectionTmdbId.ToString(CultureInfo.InvariantCulture)}", ct);
+        return (result.Parts ?? []).Select(TmdbClient.Map).ToList();
+    }
+
+    private sealed record TmdbCollectionParts([property: System.Text.Json.Serialization.JsonPropertyName("parts")] List<TmdbClient.TmdbMovie>? Parts);
+
     private async Task<IReadOnlyList<MovieLookup>> RelatedAsync(MetadataSettings meta, int tmdbId, string kind, CancellationToken ct)
     {
         var result = await api.GetAsync<TmdbPaged<TmdbClient.TmdbMovie>>(meta, $"3/movie/{tmdbId.ToString(CultureInfo.InvariantCulture)}/{kind}?page=1", ct);
@@ -196,8 +207,23 @@ public static class MovieDiscoveryEndpoints
         group.MapGet("/tmdb/{tmdbId:int}/similar", (int tmdbId, IMovieDiscovery discovery, KrakarrDbContext db, CancellationToken ct) =>
             Run(async () => await MarkLibraryAsync(db, await discovery.SimilarAsync(tmdbId, ct), ct)));
 
+        // Movies of a library collection that are not in the library yet (from TMDB), in release order.
+        group.MapGet("/collections/{id:int}/missing", async (int id, IMovieDiscovery discovery, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            var tmdbId = await db.MovieCollections.AsNoTracking().Where(c => c.Id == id).Select(c => (int?)c.TmdbId).FirstOrDefaultAsync(ct);
+            if (tmdbId is null) return Results.NotFound();
+            return await Run(async () => MissingParts(await MarkLibraryAsync(db, await discovery.CollectionPartsAsync(tmdbId.Value, ct), ct)));
+        });
+
         return app;
     }
+
+    /// <summary>Collection parts not in the library, oldest first; unreleased titles without a date go last.</summary>
+    internal static IReadOnlyList<MovieLookup> MissingParts(IReadOnlyList<MovieLookup> parts) =>
+        parts.Where(p => p.MovieId is null)
+            .DistinctBy(p => p.TmdbId)
+            .OrderBy(p => p.Year == 0 ? 9999 : p.Year).ThenBy(p => p.Title, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     public static MovieList? ParseList(string list) => list.ToLowerInvariant() switch
     {

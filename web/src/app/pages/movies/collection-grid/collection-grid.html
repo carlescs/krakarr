@@ -1,0 +1,57 @@
+@if (error(); as e) {
+  <p class="py-12 text-center text-rose-300">{{ e }}</p>
+} @else if (collections(); as list) {
+  @if (list.length === 0) {
+    <p class="py-12 text-center text-slate-500">
+      {{ q() || filter() !== 'all' ? 'No collection has movies matching the filter.' : 'None of your movies belongs to a collection yet.' }}
+    </p>
+  } @else if (view() === 'table') {
+    <div class="card overflow-x-auto">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Collection</th>
+            <th class="w-28">Movies</th>
+            <th class="w-48 max-sm:hidden">Downloaded</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (c of list; track c.id) {
+            <tr class="h-11">
+              <td class="max-w-0 min-w-40 w-full">
+                <a [routerLink]="['/movies/collections', c.id]" class="block truncate font-medium text-slate-100 hover:text-white">{{ c.name }}</a>
+              </td>
+              <td class="whitespace-nowrap text-slate-400">{{ c.count }}</td>
+              <td class="max-sm:hidden">
+                <div class="flex items-center gap-2">
+                  <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-700">
+                    <div class="h-full rounded-full" [class]="c.downloaded === c.count ? 'bg-emerald-500' : 'bg-accent-500'" [style.width.%]="percent(c)"></div>
+                  </div>
+                  <span class="w-12 text-right text-xs tabular-nums text-slate-400">{{ c.downloaded }} / {{ c.count }}</span>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  } @else {
+    <div [class]="grid">
+      @for (c of list; track c.id) {
+        <a [routerLink]="['/movies/collections', c.id]" class="group min-w-0">
+          <div class="relative overflow-hidden rounded-lg ring-1 ring-surface-700 transition group-hover:ring-accent-500">
+            <kr-poster [url]="c.posterUrl" [title]="c.name" />
+            <span class="badge absolute top-1.5 right-1.5 bg-black/60 text-white backdrop-blur" [title]="c.count + ' movies in the library'">{{ c.count }}</span>
+            <div class="absolute inset-x-0 bottom-0 h-1 bg-surface-700/80">
+              <div class="h-full" [class]="c.downloaded === c.count ? 'bg-emerald-500' : 'bg-accent-500'" [style.width.%]="percent(c)"></div>
+            </div>
+          </div>
+          <div class="mt-1.5 truncate text-xs font-medium text-slate-100 group-hover:text-white sm:mt-2 sm:text-sm" [title]="c.name">{{ c.name }}</div>
+          <div class="truncate text-[11px] text-slate-500 sm:text-xs">{{ c.downloaded }} / {{ c.count }} downloaded</div>
+        </a>
+      }
+    </div>
+  }
+} @else {
+  <kr-poster-grid-skeleton />
+}

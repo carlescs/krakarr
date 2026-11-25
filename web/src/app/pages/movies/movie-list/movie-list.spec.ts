@@ -4,7 +4,8 @@ import { By } from '@angular/platform-browser';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Events } from '../../../core/events';
 import {
-  MovieCollectionGroup,
+  MovieCollectionSummary,
+  MovieFilter,
   MovieListItem,
   MovieListPage as MoviePageDto,
   MovieListQuery,
@@ -23,10 +24,7 @@ const movies = [
 ];
 const collectionNames = new Map<number, string>([[10, 'Alien Collection']]);
 
-function queryMovies(list: MovieListItem[], q: MovieListQuery = {}, activeDownloadIds = new Set<number>()): {
-  items: MovieListItem[];
-  groups?: MovieCollectionGroup[];
-} {
+function queryMovies(list: MovieListItem[], q: MovieListQuery = {}, activeDownloadIds = new Set<number>()): { items: MovieListItem[] } {
   const textFilter = q.q?.toLowerCase().trim() ?? '';
   let result = list.filter(m => {
     if (textFilter) {
@@ -41,32 +39,6 @@ function queryMovies(list: MovieListItem[], q: MovieListQuery = {}, activeDownlo
       default: return true;
     }
   });
-
-  if (q.groupBy === 'collection') {
-    const byCol = new Map<number, MovieListItem[]>();
-    const standalone: MovieListItem[] = [];
-    for (const m of result) {
-      if (m.collectionId != null && collectionNames.has(m.collectionId)) {
-        const bucket = byCol.get(m.collectionId) ?? [];
-        bucket.push(m);
-        byCol.set(m.collectionId, bucket);
-      } else {
-        standalone.push(m);
-      }
-    }
-    const groups: MovieCollectionGroup[] = [];
-    const ordered: MovieListItem[] = [];
-    for (const [colId, items] of [...byCol.entries()].sort(([a], [b]) => (collectionNames.get(a) ?? '').localeCompare(collectionNames.get(b) ?? ''))) {
-      items.sort((a, b) => a.year - b.year || a.title.localeCompare(b.title));
-      groups.push({ key: `c-${colId}`, collectionId: colId, title: collectionNames.get(colId)!, count: items.length, downloaded: items.filter(m => m.hasFile).length });
-      ordered.push(...items);
-    }
-    if (standalone.length > 0) {
-      groups.push({ key: 'other', collectionId: null, title: 'Other movies', count: standalone.length, downloaded: standalone.filter(m => m.hasFile).length });
-      ordered.push(...standalone);
-    }
-    return { items: ordered, groups };
-  }
 
   const dir = q.desc ? -1 : 1;
   if (q.sort === 'year') {
@@ -88,7 +60,7 @@ async function render(list: MovieListItem[], role: UserRole = 'Admin') {
       movies: async (q: MovieListQuery = {}): Promise<MoviePageDto> => {
         const events = TestBed.inject(Events);
         const downloading = new Set(events.downloads().filter(d => d.movieId && !d.imported).map(d => d.movieId!));
-        const { items, groups } = queryMovies(list, q, downloading);
+        const { items } = queryMovies(list, q, downloading);
         const page = q.page ?? 1;
         const pageSize = q.pageSize ?? 60;
         const start = (page - 1) * pageSize;
@@ -98,13 +70,21 @@ async function render(list: MovieListItem[], role: UserRole = 'Admin') {
           pageSize,
           total: items.length,
           libraryTotal: list.length,
-          groups,
         };
       },
       movieIds: async (q: Omit<MovieListQuery, 'page' | 'pageSize'> = {}) => {
         const events = TestBed.inject(Events);
         const downloading = new Set(events.downloads().filter(d => d.movieId && !d.imported).map(d => d.movieId!));
         return queryMovies(list, q, downloading).items.map(m => m.id);
+      },
+      movieCollections: async (q: { q?: string; filter?: MovieFilter } = {}): Promise<MovieCollectionSummary[]> => {
+        const matching = queryMovies(list, q).items.filter(m => m.collectionId != null && collectionNames.has(m.collectionId));
+        return [...collectionNames].flatMap(([id, name]) => {
+          const inCollection = matching.filter(m => m.collectionId === id);
+          return inCollection.length
+            ? [{ id, tmdbId: id * 100, name, count: inCollection.length, downloaded: inCollection.filter(m => m.hasFile).length }]
+            : [];
+        });
       },
       subscriptions: async () => [{ mediaType: 'Movie', libraryId: 3, title: 'Arrival', year: 2016, subscribedAt: '' }],
     }),
@@ -137,17 +117,28 @@ describe('MovieListPage', () => {
     expect(titles(el)).toEqual(['Alien', 'Aliens']);
   });
 
-  it('groups by collection and collapses groups', async () => {
-    const { fixture, el } = await render(movies);
-    type(el, 'select[aria-label="Group by"]', 'collection');
+  it('shows collections as cards that open the collection', async () => {
+    const { api, fixture, el } = await render(movies);
+    type(el, 'select[aria-label="Show"]', 'collection');
     await settle(fixture);
-    expect([...el.querySelectorAll('section h2')].map(h => h.textContent)).toEqual(['Alien Collection', 'Other movies']);
-    expect(text(el)).toContain('1 / 2 downloaded');
     expect(localStorage.getItem('krakarr.movies.groupBy')).toBe('collection');
+    const card = el.querySelector('a[href="/movies/collections/10"]') as HTMLElement;
+    expect(text(card)).toContain('Alien Collection');
+    expect(text(card)).toContain('1 / 2 downloaded');
+    expect(el.querySelector('a[href="/movies/3"]')).toBeNull();
+    expect([...el.querySelectorAll('button')].some(b => b.textContent?.trim() === 'Select')).toBe(false);
 
-    button(el, 'Alien Collection').click();
+    // The list's filter narrows the collections.
+    type(el, 'select', 'unmonitored');
     await settle(fixture);
-    expect(titles(el)).toEqual(['Arrival']);
+    expect(api.movieCollections).toHaveBeenLastCalledWith({ q: undefined, filter: 'unmonitored' });
+    expect(text(el)).toContain('No collection has movies matching the filter.');
+
+    // The table view lists them too.
+    type(el, 'select', 'all');
+    button(el, 'Table').click();
+    await settle(fixture);
+    expect(text(el.querySelector('tbody a[href="/movies/collections/10"]') as HTMLElement)).toBe('Alien Collection');
   });
 
   it('shows live download progress', async () => {
@@ -236,25 +227,6 @@ describe('MovieListPage', () => {
     await settle(fixture);
     expect(api.movieIds).toHaveBeenCalledTimes(1);
     expect(text(el, 'kr-bulk-actions')).toContain('140 selected');
-  });
-
-  it('virtually paginates grouped movie grid views across pages', async () => {
-    localStorage.setItem('krakarr.movies.groupBy', 'collection');
-    // 10 movies in Alien Collection + 70 standalone movies = 80 total (2 pages of 60)
-    const many = [
-      ...Array.from({ length: 10 }, (_, i) => movie({ id: i + 1, title: `Alien ${i + 1}`, year: 1979 + i, collectionId: 10 })),
-      ...Array.from({ length: 70 }, (_, i) => movie({ id: 100 + i, title: `Standalone ${String(i + 1).padStart(2, '0')}`, year: 2020 })),
-    ];
-    const { api, fixture, el } = await render(many);
-    expect(api.movies).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 60, groupBy: 'collection' }));
-    expect([...el.querySelectorAll('section h2')].map(h => h.textContent)).toEqual(['Alien Collection', 'Other movies']);
-
-    // Scroll into page 2 (rows in the Other movies group past index 60).
-    const viewport = fixture.debugElement.query(By.directive(CdkVirtualScrollViewport)).componentInstance as CdkVirtualScrollViewport;
-    viewport.setRenderedRange({ start: 13, end: 18 });
-    await settle(fixture);
-    expect(api.movies).toHaveBeenCalledWith(expect.objectContaining({ page: 2, pageSize: 60, groupBy: 'collection' }));
-    expect(titles(el).some(t => t?.startsWith('Standalone 6'))).toBe(true);
   });
 
   it('guides plain users to Discover when the library is empty', async () => {
