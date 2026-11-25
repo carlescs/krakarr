@@ -20,6 +20,7 @@ import { Auth } from '../../../core/auth';
 import { AccountSettings } from '../account/account';
 import { UsersSettings } from '../users/users';
 import { HealthSettings } from '../health/health';
+import { BackupSettingsPanel } from '../backups/backups';
 
 interface TokenDoc { token: string; description: string; example: string; }
 
@@ -83,11 +84,11 @@ export function buildName(format: string, values: Record<string, string>): strin
   return result.trim().replace(/\.+$/, '').replace(/\s{2,}/g, ' ').trim();
 }
 
-type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'jellyfin' | 'telemetry' | 'health' | 'tasks' | 'users' | 'general' | 'account';
+type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'jellyfin' | 'telemetry' | 'health' | 'tasks' | 'backups' | 'users' | 'general' | 'account';
 
 @Component({
   selector: 'kr-settings',
-  imports: [LanguagePicker, FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings, HealthSettings, SortHeader],
+  imports: [LanguagePicker, FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings, HealthSettings, BackupSettingsPanel, SortHeader],
   templateUrl: './settings.html',
   styleUrl: './settings.scss',
 })
@@ -109,6 +110,7 @@ export class SettingsPage implements OnInit {
     { id: 'telemetry', label: 'Telemetry' },
     { id: 'health', label: 'Health' },
     { id: 'tasks', label: 'Tasks' },
+    { id: 'backups', label: 'Backups' },
     { id: 'users', label: 'Users' },
     { id: 'general', label: 'General' },
     { id: 'account', label: 'Account' },
