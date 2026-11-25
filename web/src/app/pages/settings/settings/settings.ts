@@ -1,6 +1,7 @@
 import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { Api, SettingsMap, errorMessage } from '../../../core/api';
 import { BytesPipe } from '../../../core/format';
 import { Events } from '../../../core/events';
@@ -18,6 +19,7 @@ import { Languages } from '../../../core/languages';
 import { Auth } from '../../../core/auth';
 import { AccountSettings } from '../account/account';
 import { UsersSettings } from '../users/users';
+import { HealthSettings } from '../health/health';
 
 interface TokenDoc { token: string; description: string; example: string; }
 
@@ -67,11 +69,11 @@ export function buildName(format: string, values: Record<string, string>): strin
   return result.trim().replace(/\.+$/, '').replace(/\s{2,}/g, ' ').trim();
 }
 
-type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'jellyfin' | 'telemetry' | 'tasks' | 'users' | 'general' | 'account';
+type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'jellyfin' | 'telemetry' | 'health' | 'tasks' | 'users' | 'general' | 'account';
 
 @Component({
   selector: 'kr-settings',
-  imports: [LanguagePicker, FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings, SortHeader],
+  imports: [LanguagePicker, FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings, HealthSettings, SortHeader],
   templateUrl: './settings.html',
   styleUrl: './settings.scss',
 })
@@ -80,6 +82,7 @@ export class SettingsPage implements OnInit {
   private readonly toasts = inject(Toasts);
   private readonly events = inject(Events);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly route = inject(ActivatedRoute);
 
   protected readonly auth = inject(Auth);
   private readonly adminTabs: { id: Tab; label: string }[] = [
@@ -90,6 +93,7 @@ export class SettingsPage implements OnInit {
     { id: 'metadata', label: 'Metadata' },
     { id: 'jellyfin', label: 'Jellyfin' },
     { id: 'telemetry', label: 'Telemetry' },
+    { id: 'health', label: 'Health' },
     { id: 'tasks', label: 'Tasks' },
     { id: 'users', label: 'Users' },
     { id: 'general', label: 'General' },
@@ -167,6 +171,11 @@ export class SettingsPage implements OnInit {
   private readonly now = signal(Date.now());
 
   async ngOnInit() {
+    // /settings/<tab> opens a tab directly (links from the bell and the health page).
+    this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
+      const wanted = params.get('tab');
+      if (wanted && this.tabs().some(t => t.id === wanted)) this.tab.set(wanted as Tab);
+    });
     if (!this.auth.isAdmin()) return;
     this.events.taskUpdated.pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(t => this.tasks.update(list => list.map(x => (x.id === t.id ? t : x))));

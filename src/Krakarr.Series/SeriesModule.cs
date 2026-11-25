@@ -1,3 +1,4 @@
+using Krakarr.Core.Health;
 using Krakarr.Core.Jobs;
 using Krakarr.Core.Metadata;
 using Microsoft.Extensions.Configuration;
@@ -21,6 +22,7 @@ public static class SeriesModule
         services.AddScoped<ITmdbTvClient, TmdbTvClient>();
         services.AddScoped<ITvdbClient, TvdbClient>();
         services.AddScoped<ISeriesMetadata, SeriesMetadata>();
+        services.AddScoped<IHealthCheck, MetadataHealthCheck>();
         services.AddScoped<ISeriesDiscovery, TmdbSeriesDiscovery>();
         services.AddScoped<SeriesService>();
         services.AddScoped<Downloads.IManualDownloadLinker, SeriesDownloadLinker>();

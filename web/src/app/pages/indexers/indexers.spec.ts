@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
+import { Events } from '../../core/events';
 import { Indexer } from '../../core/models';
 import { button, mockApi, settle, setupTest, text, type } from '../../../testing/test-setup';
 import { IndexersPage } from './indexers';
@@ -95,5 +96,24 @@ describe('IndexersPage', () => {
     await settle(fixture);
     expect(api.importProwlarrIndexers).toHaveBeenCalledWith('http://prowlarr:9696', 'secret', [1]);
     expect(el.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('shows which indexers are failing and refreshes on live updates', async () => {
+    const until = new Date(Date.now() + 10 * 60_000).toISOString();
+    let statuses = [{ indexerId: 3, indexerName: 'Nyaa', failures: 2, disabledUntil: until, lastFailure: until, lastError: 'HTTP 503' }];
+    setupTest({
+      api: mockApi({ indexers: async () => [indexer], languages: async () => ({ all: [], preferred: [] }), indexerStatus: async () => statuses }),
+    });
+    const fixture = TestBed.createComponent(IndexersPage);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(text(el, '[data-failing]')).toContain('Failing skipped until');
+    expect(text(el, '[data-failing]')).toContain('2× HTTP 503');
+    expect(el.querySelector('[data-failing]')?.getAttribute('title')).toContain('Failed 2 times in a row: HTTP 503');
+
+    statuses = [];
+    TestBed.inject(Events).indexerStatusUpdated.next();
+    await settle(fixture);
+    expect(el.querySelector('[data-failing]')).toBeNull();
   });
 });

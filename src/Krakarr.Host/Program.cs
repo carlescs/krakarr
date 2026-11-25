@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Events;
+using Krakarr.Core.Health;
 using Krakarr.Core.Jobs;
 using Krakarr.Data;
 using Krakarr.Data.Postgres;
@@ -79,6 +80,7 @@ builder.Services.AddDbContext<KrakarrDbContext>(options =>
 // ---- Modules -------------------------------------------------------------------------------
 builder.Services.AddKrakarrData();
 builder.Services.AddKrakarrScheduling();
+builder.Services.AddKrakarrHealth();
 builder.Services.AddKrakarrMedia();
 builder.Services.AddKrakarrIndexers();
 builder.Services.AddKrakarrDownloads();
@@ -91,6 +93,7 @@ builder.Services.AddKrakarrTelemetry();
 builder.Services.AddScoped<CalendarService>();
 builder.Services.AddScoped<Krakarr.Core.Notifications.INotificationSource, RequestNotificationSource>();
 builder.Services.AddScoped<Krakarr.Core.Notifications.INotificationSource, ReleaseNotificationSource>();
+builder.Services.AddScoped<Krakarr.Core.Notifications.INotificationSource, HealthNotificationSource>();
 
 // ---- Web: JSON, SignalR, auth --------------------------------------------------------------
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
@@ -202,6 +205,7 @@ app.UseKrakarrStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRoleAccess();
+app.UseHealthRefresh();
 app.UseRateLimiter();
 
 app.MapOpenApi("/api/openapi/{documentName}.json");
@@ -209,6 +213,7 @@ app.MapAuthEndpoints();
 app.MapPasskeyEndpoints();
 app.MapUserEndpoints();
 app.MapSystemEndpoints();
+app.MapHealthEndpoints();
 app.MapDashboardEndpoints();
 app.MapSettingsEndpoints();
 app.MapIndexerEndpoints();

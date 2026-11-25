@@ -27,6 +27,11 @@ export interface Indexer {
   defaultLanguage?: string | null;
 }
 
+/** An indexer that failed its last query; searches skip it until `disabledUntil`. */
+export interface IndexerStatus {
+  indexerId: number; indexerName: string; failures: number; disabledUntil: string; lastFailure: string; lastError: string;
+}
+
 /** An enabled indexer that manual search can target. */
 export interface SearchIndexer { id: number; name: string; }
 
@@ -43,7 +48,8 @@ export interface ProwlarrListResult { success: boolean; message?: string | null;
 export interface ProwlarrImportResult { added: number; updated: number; }
 export interface IndexerError { indexerId: number; indexerName: string; message: string; }
 
-export type IndexerQueryState = 'Pending' | 'Done' | 'Failed';
+/** `Skipped`: not queried because it keeps failing (it backs off; see the Indexers page). */
+export type IndexerQueryState = 'Pending' | 'Done' | 'Failed' | 'Skipped';
 /** How one indexer's query in a search stands: `releases` once done, `message` when it failed, `seconds` once finished. */
 export interface IndexerQueryStatus {
   indexerId: number; indexerName: string; state: IndexerQueryState; releases?: number | null; message?: string | null; seconds?: number | null;
@@ -239,6 +245,14 @@ export interface HistoryItem {
   id: number; eventType: HistoryEventType; date: string; sourceTitle: string; movieId?: number; seriesId?: number;
   indexer?: string; message?: string; quality?: string; language?: string;
 }
+
+export type HealthSeverity = 'Warning' | 'Error';
+/** A problem a health check found; `since` is when it appeared (with this severity). */
+export interface HealthIssue {
+  id: string; check: string; checkName: string; severity: HealthSeverity; message: string; link?: string | null; since: string;
+}
+/** The latest health run; `checkedAt` is null until the first one. */
+export interface HealthReport { checkedAt: string | null; issues: HealthIssue[]; }
 
 export interface ScheduledTaskInfo {
   id: string; name: string; intervalSeconds: number | null; lastRun: string | null; lastDurationSeconds: number | null;

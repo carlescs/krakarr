@@ -110,6 +110,7 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
                 new EpisodeInfo { TvdbId = 72, SeasonNumber = 1, EpisodeNumber = 2, Title = "Renamed", AirDate = new DateOnly(2021, 1, 8) },
             ],
         });
+        public Task LoginAsync(CancellationToken ct = default) => Task.CompletedTask;
     }
 
     private sealed class Unused : IIndexerSearchService, IDownloadService

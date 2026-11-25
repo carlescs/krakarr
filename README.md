@@ -322,6 +322,28 @@ follows a title next to the button. Removing a title (or a user) removes its fol
 - The notification bell tells you when monitored titles you follow are released (movies out on digital or physical
   media) or air (episodes), today or yesterday.
 
+### Health checks
+
+*Settings → Health* (admins) lists setup problems that would otherwise go unnoticed, and each one also shows in the
+admins' notification bell until it is fixed (a dismissed problem comes back if it gets worse):
+
+- Low disk space on the filesystems holding the root folders and the download folder (a warning below 10 % free,
+  at most 50 GB; an error below 2 %, at most 5 GB).
+- Root folders that are missing, read-only, or empty while the library has files there (an unmounted share).
+- Downloads and root folders on different filesystems while hardlinks are on, so imports copy instead.
+- A download client that can't be reached, and a download folder that is missing or read-only.
+- No enabled indexer, or indexers that keep failing.
+- A missing or rejected TMDB or TheTVDB key, and subtitles on without a working provider. Keys are validated against
+  the service when they change, then daily (hourly after a failure); *Check now* validates them again.
+
+The checks run every 5 minutes and right after settings, root folders, indexers or the download client change.
+`GET /api/v1/system/health` returns the same report; `/api/v1/health` stays an anonymous liveness probe.
+
+**Indexer backoff:** an indexer whose query fails is skipped by searches and RSS syncs for 5 minutes, then 10, 20 and
+so on, doubling up to 24 hours while it keeps failing. Any successful query, a successful *Test*, or editing the
+indexer clears it. The Indexers page shows which indexers are failing and until when; picking a failing indexer
+explicitly in a manual search still queries it.
+
 ### Security notes
 
 - **Root folders are the boundary.** Movie and series folders must be directly inside a configured root folder, and

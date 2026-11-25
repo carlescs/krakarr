@@ -35,6 +35,18 @@
             <td>
               <span class="badge" [class]="i.enabled ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-500/15 text-slate-400'">{{ i.enabled ? 'Enabled' : 'Disabled' }}</span>
               @if (i.enableRss) { <span class="badge ml-1 bg-surface-700 max-sm:hidden text-slate-300">RSS</span> }
+              @if (failing().get(i.id); as f) {
+                <div class="mt-1 text-xs" [title]="failureTitle(f)" data-failing>
+                  @if (backingOff().has(i.id)) {
+                    <span class="badge bg-rose-500/15 text-rose-300">Failing</span>
+                    <span class="text-slate-400"> skipped until {{ f.disabledUntil | date: 'short' }}</span>
+                  } @else {
+                    <span class="badge bg-amber-500/15 text-amber-300">Failed</span>
+                    <span class="text-slate-400"> retried on the next search</span>
+                  }
+                  <span class="block max-w-xs truncate text-slate-500">{{ f.failures }}× {{ f.lastError }}</span>
+                </div>
+              }
             </td>
             <td class="text-right"><button class="btn-ghost btn-sm" (click)="edit(i)">Edit</button></td>
           </tr>

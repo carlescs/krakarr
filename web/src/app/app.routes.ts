@@ -46,6 +46,7 @@ export const routes: Routes = [
       { path: 'downloads', canActivate: [roleGuard('Manager')], loadComponent: () => import('./pages/downloads/downloads').then(m => m.DownloadsPage), title: 'Downloads · Krakarr' },
       { path: 'activity', canActivate: [roleGuard('Manager')], loadComponent: () => import('./pages/activity/activity').then(m => m.ActivityPage), title: 'Activity · Krakarr' },
       { path: 'settings', loadComponent: () => import('./pages/settings/settings/settings').then(m => m.SettingsPage), title: 'Settings · Krakarr' },
+      { path: 'settings/:tab', loadComponent: () => import('./pages/settings/settings/settings').then(m => m.SettingsPage), title: 'Settings · Krakarr' },
     ],
   },
   { path: '**', redirectTo: '' },

@@ -1,4 +1,6 @@
 import { TestBed } from '@angular/core/testing';
+import { ActivatedRoute, convertToParamMap } from '@angular/router';
+import { of } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 import { Events } from '../../../core/events';
 import { ScheduledTaskInfo } from '../../../core/models';
@@ -27,7 +29,7 @@ describe('SettingsPage', () => {
     const el = fixture.nativeElement as HTMLElement;
     expect(text(el, 'h1')).toBe('Settings');
     expect([...el.querySelectorAll('h1 + div button')].map(b => b.textContent)).toEqual([
-      'Media management', 'Quality profiles', 'Download client', 'Subtitles', 'Metadata', 'Jellyfin', 'Telemetry', 'Tasks', 'Users', 'General', 'Account',
+      'Media management', 'Quality profiles', 'Download client', 'Subtitles', 'Metadata', 'Jellyfin', 'Telemetry', 'Health', 'Tasks', 'Users', 'General', 'Account',
     ]);
     expect(api.settings).toHaveBeenCalledWith('media');
     expect(api.settings).toHaveBeenCalledWith('general');
@@ -35,6 +37,25 @@ describe('SettingsPage', () => {
     button(el, 'Users').click();
     await settle(fixture);
     expect(el.querySelector('kr-users-settings')).not.toBeNull();
+  });
+
+  it('opens the tab named in the URL', async () => {
+    setupTest({
+      api: mockApi({ health: async () => ({ checkedAt: null, issues: [] }) }),
+      providers: [{ provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ tab: 'health' })) } }],
+    });
+    const fixture = TestBed.createComponent(SettingsPage);
+    await settle(fixture);
+    expect((fixture.nativeElement as HTMLElement).querySelector('kr-health-settings')).not.toBeNull();
+  });
+
+  it('ignores tabs a plain user may not open', async () => {
+    setupTest({ role: 'User', providers: [{ provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ tab: 'health' })) } }] });
+    const fixture = TestBed.createComponent(SettingsPage);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('kr-health-settings')).toBeNull();
+    expect(el.querySelector('kr-account-settings')).not.toBeNull();
   });
 
   it('lists scheduled tasks, runs one and follows live updates', async () => {
