@@ -1,4 +1,5 @@
 using Krakarr.Core.Jobs;
+using Krakarr.Core.MediaServers;
 using Krakarr.Core.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -11,6 +12,7 @@ public static class MoviesServiceCollectionExtensions
     {
         services.AddTmdbApi();
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton<IMediaServerNotifier, NullMediaServerNotifier>();
         services.AddScoped<ITmdbClient, TmdbClient>();
         services.AddScoped<IMovieDiscovery, TmdbMovieDiscovery>();
         services.AddScoped<MovieService>();

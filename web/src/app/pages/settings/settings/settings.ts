@@ -6,7 +6,7 @@ import { Api, SettingsMap, errorMessage } from '../../../core/api';
 import { BytesPipe } from '../../../core/format';
 import { Events } from '../../../core/events';
 import {
-  AutomationSettings, DirectoryListing, Language, SubtitleSettings, SubtitleSyncTools, DownloadClientKind, DownloadClientSettings, DownloadClientTestResult, GeneralSettings, JellyfinSettings, JellyfinTestResult, MediaManagementSettings, MetadataSettings, OtlpProtocol, Quality,
+  AutomationSettings, DirectoryListing, Language, SubtitleSettings, SubtitleSyncTools, DownloadClientKind, DownloadClientSettings, DownloadClientTestResult, GeneralSettings, MediaManagementSettings, MetadataSettings, OtlpProtocol, Quality,
   QualityProfile, RootFolder, ScheduledTaskInfo, SystemStatus, TelemetrySettings, TelemetryStatus,
 } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
@@ -21,6 +21,7 @@ import { AccountSettings } from '../account/account';
 import { UsersSettings } from '../users/users';
 import { HealthSettings } from '../health/health';
 import { BackupSettingsPanel } from '../backups/backups';
+import { MediaServerSettings } from '../media-servers/media-servers';
 
 interface TokenDoc { token: string; description: string; example: string; }
 
@@ -84,11 +85,11 @@ export function buildName(format: string, values: Record<string, string>): strin
   return result.trim().replace(/\.+$/, '').replace(/\s{2,}/g, ' ').trim();
 }
 
-type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'jellyfin' | 'telemetry' | 'health' | 'tasks' | 'backups' | 'users' | 'general' | 'account';
+type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'media-servers' | 'telemetry' | 'health' | 'tasks' | 'backups' | 'users' | 'general' | 'account';
 
 @Component({
   selector: 'kr-settings',
-  imports: [LanguagePicker, FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings, HealthSettings, BackupSettingsPanel, SortHeader],
+  imports: [LanguagePicker, FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings, HealthSettings, BackupSettingsPanel, MediaServerSettings, SortHeader],
   templateUrl: './settings.html',
   styleUrl: './settings.scss',
 })
@@ -106,7 +107,7 @@ export class SettingsPage implements OnInit {
     { id: 'downloads', label: 'Download client' },
     { id: 'subtitles', label: 'Subtitles' },
     { id: 'metadata', label: 'Metadata' },
-    { id: 'jellyfin', label: 'Jellyfin' },
+    { id: 'media-servers', label: 'Media servers' },
     { id: 'telemetry', label: 'Telemetry' },
     { id: 'health', label: 'Health' },
     { id: 'tasks', label: 'Tasks' },
@@ -138,9 +139,6 @@ export class SettingsPage implements OnInit {
   protected readonly subtitles = signal<SubtitleSettings | null>(null);
   /** Which subtitle sync tools the server found (null while loading). */
   protected readonly syncTools = signal<SubtitleSyncTools | null>(null);
-  protected readonly jellyfin = signal<JellyfinSettings | null>(null);
-  protected readonly jellyfinTest = signal<JellyfinTestResult | null>(null);
-  protected readonly testingJellyfin = signal(false);
   protected readonly telemetry = signal<TelemetrySettings | null>(null);
   protected readonly telemetryStatus = signal<TelemetryStatus | null>(null);
   protected readonly saving = signal(false);
@@ -151,7 +149,6 @@ export class SettingsPage implements OnInit {
       case 'downloads': return !!this.downloads() || !!this.automation();
       case 'subtitles': return !!this.subtitles();
       case 'metadata': return !!this.metadata();
-      case 'jellyfin': return !!this.jellyfin();
       case 'telemetry': return !!this.telemetry();
       default: return false;
     }
@@ -215,7 +212,6 @@ export class SettingsPage implements OnInit {
     this.general.set(general);
     this.status.set(status);
     this.api.settings('languages').then(l => this.wantedLanguages = l.preferred, () => {});
-    this.api.settings('jellyfin').then(j => this.jellyfin.set(j), () => {});
     this.api.settings('telemetry').then(t => this.telemetry.set(t), () => {});
     this.api.telemetryStatus().then(s => this.telemetryStatus.set(s), () => {});
     this.languageCatalog.load().catch(() => {});
@@ -304,7 +300,6 @@ export class SettingsPage implements OnInit {
           this.subtitleLanguages.load(true).catch(() => {});
           break;
         case 'metadata': await this.saveSection('metadata', this.metadata()); break;
-        case 'jellyfin': await this.saveSection('jellyfin', this.jellyfin()); break;
         case 'telemetry': await this.saveTelemetry(); return;
         default: return;
       }
@@ -316,7 +311,7 @@ export class SettingsPage implements OnInit {
     }
   }
 
-  private async saveSection<K extends 'media' | 'downloads' | 'automation' | 'metadata' | 'subtitles' | 'jellyfin'>(section: K, value: SettingsMap[K] | null) {
+  private async saveSection<K extends 'media' | 'downloads' | 'automation' | 'metadata' | 'subtitles'>(section: K, value: SettingsMap[K] | null) {
     if (value) await this.api.saveSettings(section, value);
   }
 
@@ -344,13 +339,6 @@ export class SettingsPage implements OnInit {
     this.toasts.success('Settings saved');
     await new Promise(resolve => setTimeout(resolve, this.telemetryStatusDelayMs));
     this.telemetryStatus.set(await this.api.telemetryStatus());
-  }
-
-  async testJellyfin(settings: JellyfinSettings) {
-    this.testingJellyfin.set(true);
-    try { this.jellyfinTest.set(await this.api.testJellyfin(settings)); }
-    catch (e) { this.jellyfinTest.set({ success: false, message: errorMessage(e) }); }
-    finally { this.testingJellyfin.set(false); }
   }
 
   async testClient(settings: DownloadClientSettings) {

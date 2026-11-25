@@ -305,11 +305,11 @@ public static class MovieEndpoints
             return Results.NoContent();
         });
 
-        group.MapDelete("/{id:int}", async (int id, bool? deleteFiles, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
+        group.MapDelete("/{id:int}", async (int id, bool? deleteFiles, KrakarrDbContext db, ITorrentEngine engine, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, CancellationToken ct) =>
         {
             var movie = await db.Movies.Include(m => m.MovieFile).FirstOrDefaultAsync(m => m.Id == id, ct);
             if (movie is null) return Results.NotFound();
-            if (await DeleteAsync(db, engine, movie, deleteFiles == true, ct) is { } error)
+            if (await DeleteAsync(db, engine, mediaServers, movie, deleteFiles == true, ct) is { } error)
                 return Results.Problem(error, statusCode: StatusCodes.Status400BadRequest);
             await MovieService.PruneCollectionsAsync(db, ct);
             return Results.NoContent();
@@ -403,7 +403,7 @@ public static class MovieEndpoints
             return Results.Accepted(value: command);
         });
 
-        group.MapPost("/bulk/delete", async (BulkDeleteRequest req, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
+        group.MapPost("/bulk/delete", async (BulkDeleteRequest req, KrakarrDbContext db, ITorrentEngine engine, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, CancellationToken ct) =>
         {
             if (BulkLimits.Clean(req.Ids) is not { } ids) return Results.Problem(BulkLimits.InvalidMessage, statusCode: 400);
             var (deleted, errors) = (0, new List<string>());
@@ -414,7 +414,7 @@ public static class MovieEndpoints
                 if (movie is null) continue;
                 try
                 {
-                    if (await DeleteAsync(db, engine, movie, req.DeleteFiles, ct) is { } error) errors.Add(error);
+                    if (await DeleteAsync(db, engine, mediaServers, movie, req.DeleteFiles, ct) is { } error) errors.Add(error);
                     else deleted++;
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -485,11 +485,11 @@ public static class MovieEndpoints
             }
         });
 
-        app.MapDelete("/api/v1/moviefiles/{id:int}", async (int id, bool? unmonitor, KrakarrDbContext db, Krakarr.Core.Events.IEventHub eventHub, CancellationToken ct) =>
+        app.MapDelete("/api/v1/moviefiles/{id:int}", async (int id, bool? unmonitor, KrakarrDbContext db, Krakarr.Core.Events.IEventHub eventHub, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, CancellationToken ct) =>
         {
             try
             {
-                return await MovieFileDeletion.DeleteAsync(db, eventHub, id, unmonitor == true, ct) ? Results.NoContent() : Results.NotFound();
+                return await MovieFileDeletion.DeleteAsync(db, eventHub, mediaServers, id, unmonitor == true, ct) ? Results.NoContent() : Results.NotFound();
             }
             catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
             {
@@ -521,7 +521,7 @@ public static class MovieEndpoints
     }
 
     /// <summary>Removes a tracked movie (loaded with its file), and its folder when asked. Returns why not, or null when deleted.</summary>
-    private static async Task<string?> DeleteAsync(KrakarrDbContext db, ITorrentEngine engine, Movie movie, bool deleteFiles, CancellationToken ct)
+    private static async Task<string?> DeleteAsync(KrakarrDbContext db, ITorrentEngine engine, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, Movie movie, bool deleteFiles, CancellationToken ct)
     {
         // Downloads still in progress (or finished but not imported) are useless once the title is gone: remove them
         // and their data first, so a failure leaves the title in place to retry.
@@ -539,6 +539,7 @@ public static class MovieEndpoints
             }
 
             Directory.Delete(movie.Path, recursive: true);
+            mediaServers.PathChanged(movie.Path);
         }
 
         if (movie.MovieFile is { } file)

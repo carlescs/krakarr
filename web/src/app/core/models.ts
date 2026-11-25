@@ -281,8 +281,12 @@ export type SeriesMetadataSource = 'Tmdb' | 'Tvdb';
 /** Scores from OMDb; each is null when the source has none. */
 export interface TitleRatings { imdb: number | null; imdbVotes: number | null; rottenTomatoes: number | null; metacritic: number | null; rottenTomatoesUrl: string | null; }
 export interface MetadataSettings { tmdbApiKey?: string; seriesSource: SeriesMetadataSource; tvdbApiKey?: string; tvdbPin?: string; omdbApiKey?: string; language: string; releaseRegion?: string | null; }
-export interface JellyfinSettings { url?: string | null; apiKey?: string | null; publicUrl?: string | null; }
-export interface JellyfinTestResult { success: boolean; serverName?: string; version?: string; message?: string; }
+/** A library path as Krakarr sees it (from) and as the media server sees it (to). */
+export interface PathMapping { from: string; to: string; }
+export interface JellyfinSettings { url?: string | null; apiKey?: string | null; publicUrl?: string | null; refreshLibrary?: boolean; pathMappings?: PathMapping[]; }
+export interface EmbySettings { url?: string | null; apiKey?: string | null; pathMappings?: PathMapping[]; }
+export interface PlexSettings { url?: string | null; token?: string | null; pathMappings?: PathMapping[]; }
+export interface MediaServerTestResult { success: boolean; serverName?: string; version?: string; message?: string; }
 export type OtlpProtocol = 'Grpc' | 'HttpProtobuf';
 export interface TelemetrySettings {
   enabled: boolean; endpoint?: string | null; protocol: OtlpProtocol; headers?: string | null; serviceName: string; resourceAttributes?: string | null;

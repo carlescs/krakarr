@@ -1,5 +1,6 @@
 using Krakarr.Core.Domain;
 using Krakarr.Core.Events;
+using Krakarr.Core.MediaServers;
 using Krakarr.Data;
 using Krakarr.Media.Files;
 using Microsoft.EntityFrameworkCore;
@@ -14,7 +15,7 @@ public static class EpisodeFileDeletion
     /// them so the next search doesn't fetch them again. Files that can't be deleted stay in the library and are
     /// reported in <see cref="BulkResult.Errors"/>; unknown ids are ignored.
     /// </summary>
-    public static async Task<BulkResult> DeleteAsync(KrakarrDbContext db, IEventHub eventHub, IReadOnlyCollection<int> ids, bool unmonitor, CancellationToken ct)
+    public static async Task<BulkResult> DeleteAsync(KrakarrDbContext db, IEventHub eventHub, IMediaServerNotifier mediaServers, IReadOnlyCollection<int> ids, bool unmonitor, CancellationToken ct)
     {
         var files = await db.EpisodeFiles.AsNoTracking()
             .Where(f => ids.Contains(f.Id))
@@ -38,6 +39,7 @@ public static class EpisodeFileDeletion
                 continue;
             }
 
+            mediaServers.PathChanged(Path.GetDirectoryName(Path.Combine(folders[file.SeriesId], file.RelativePath)) ?? folders[file.SeriesId]);
             var fileId = file.Id;
             await db.Episodes.Where(e => e.EpisodeFileId == fileId).ExecuteUpdateAsync(s =>
             {
