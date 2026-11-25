@@ -26,6 +26,29 @@ describe('NotificationBell', () => {
     expect(el.querySelector('a[href="/indexers"]')).not.toBeNull();
   });
 
+  it('shows a progress bar for work in progress', async () => {
+    setupTest();
+    TestBed.inject(Notifications).items.set([
+      { id: 'subtitles.sync.1', kind: 'subtitle', title: 'Syncing Dune (2021) · English', message: 'Syncing with alass against the audio',
+        count: 1, severity: 'Info', link: '/movies/3', progress: { percent: 42 } },
+      { id: 'subtitles.sync.2', kind: 'subtitle', title: 'Waiting to sync Severance S01E03 · Spanish', message: 'Waiting for its turn',
+        count: 1, severity: 'Info', link: '/series/5', progress: { percent: null } },
+    ] as AppNotification[]);
+    const fixture = TestBed.createComponent(NotificationBell);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    button(el, 'Notifications (2)').click();
+    await settle(fixture);
+
+    const bars = el.querySelectorAll<HTMLElement>('[role="progressbar"]');
+    expect(bars.length).toBe(2);
+    expect(bars[0].getAttribute('aria-valuenow')).toBe('42');
+    expect((bars[0].firstElementChild as HTMLElement).style.width).toBe('42%');
+    expect(text(el)).toContain('42%');
+    expect(bars[1].getAttribute('aria-valuenow')).toBeNull();
+    expect(bars[1].querySelector('.animate-pulse')).not.toBeNull();
+  });
+
   it('says when there is nothing to show', async () => {
     setupTest();
     const fixture = TestBed.createComponent(NotificationBell);

@@ -1,7 +1,7 @@
 import { Injectable, signal } from '@angular/core';
 import { HubConnection, HubConnectionBuilder, HubConnectionState, LogLevel } from '@microsoft/signalr';
 import { Subject } from 'rxjs';
-import { CommandInfo, HistoryItem, ScheduledTaskInfo, TorrentStatus } from './models';
+import { CommandInfo, HistoryItem, NotificationProgressUpdate, ScheduledTaskInfo, TorrentStatus } from './models';
 
 /** Real-time server events over SignalR. */
 @Injectable({ providedIn: 'root' })
@@ -18,6 +18,8 @@ export class Events {
   readonly requestsUpdated = new Subject<void>();
   /** Something a notification source reports may have changed. */
   readonly notificationsUpdated = new Subject<void>();
+  /** Progress of a notification's work changed (e.g. a subtitle sync); staff only. */
+  readonly notificationProgress = new Subject<NotificationProgressUpdate>();
   /** A health run finished (admins refetch the report). */
   readonly healthUpdated = new Subject<void>();
   /** An indexer started or stopped backing off after failures. */
@@ -43,6 +45,7 @@ export class Events {
     this.connection.on('taskUpdated', (t: ScheduledTaskInfo) => this.taskUpdated.next(t));
     this.connection.on('requestsUpdated', () => this.requestsUpdated.next());
     this.connection.on('notificationsUpdated', () => this.notificationsUpdated.next());
+    this.connection.on('notificationProgress', (p: NotificationProgressUpdate) => this.notificationProgress.next(p));
     this.connection.on('healthUpdated', () => this.healthUpdated.next());
     this.connection.on('indexerStatusUpdated', () => this.indexerStatusUpdated.next());
     this.connection.onreconnecting(() => this.connected.set(false));

@@ -18,6 +18,8 @@ public enum NotificationSeverity
 /// <param name="Link">SPA route the notification opens, e.g. "/requests".</param>
 /// <param name="Count">How many things it stands for; the bell shows the sum.</param>
 /// <param name="Date">When the latest of them happened, if known.</param>
+/// <param name="Progress">Set for work in progress (e.g. a subtitle sync): the bell shows a progress bar. Live updates
+/// arrive as <c>EventNames.NotificationProgress</c> events so clients don't refetch every source each time.</param>
 public sealed record Notification(
     string Id,
     string Kind,
@@ -26,7 +28,15 @@ public sealed record Notification(
     string Link,
     int Count = 1,
     NotificationSeverity Severity = NotificationSeverity.Info,
-    DateTimeOffset? Date = null);
+    DateTimeOffset? Date = null,
+    NotificationProgress? Progress = null);
+
+/// <summary>How far along a notification's work is.</summary>
+/// <param name="Percent">0 to 100, or null when the work can't tell (the bar is indeterminate).</param>
+public sealed record NotificationProgress(double? Percent);
+
+/// <summary>Payload of <c>EventNames.NotificationProgress</c>: new progress and message for the notification <paramref name="Id"/>.</summary>
+public sealed record NotificationProgressUpdate(string Id, double? Percent, string? Message);
 
 /// <summary>Who is asking: sources must only return what this user may see.</summary>
 public sealed record NotificationContext(int? UserId, UserRole Role)

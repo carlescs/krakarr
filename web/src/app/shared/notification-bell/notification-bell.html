@@ -28,6 +28,19 @@
               <span class="min-w-0 flex-1">
                 <span class="block text-sm font-medium text-slate-100">{{ n.title }}</span>
                 @if (n.message) { <span class="block text-xs text-slate-400 wrap-anywhere">{{ n.message }}</span> }
+                @if (n.progress; as progress) {
+                  <span class="mt-1.5 flex items-center gap-2">
+                    <span class="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-700" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                          [attr.aria-label]="'Progress of ' + n.title" [attr.aria-valuenow]="progress.percent ?? null">
+                      @if (progress.percent != null) {
+                        <span class="block h-full rounded-full bg-accent-400 transition-[width] duration-500" [style.width.%]="progress.percent"></span>
+                      } @else {
+                        <span class="block h-full w-full animate-pulse rounded-full bg-accent-400/40"></span>
+                      }
+                    </span>
+                    @if (progress.percent != null) { <span class="w-8 text-right text-[11px] tabular-nums text-slate-400">{{ progress.percent }}%</span> }
+                  </span>
+                }
               </span>
             </a>
             <button type="button" class="mt-2 mr-2 rounded p-1.5 text-slate-500 transition hover:bg-surface-700 hover:text-slate-200"

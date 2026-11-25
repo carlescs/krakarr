@@ -57,6 +57,7 @@ public sealed class SubtitleSyncService(
     KrakarrDbContext db,
     ISettingsService settings,
     SubtitleSyncGate gate,
+    SubtitleSyncProgress progress,
     IEventHub eventHub,
     TimeProvider time,
     ILogger<SubtitleSyncService> logger)
@@ -100,20 +101,30 @@ public sealed class SubtitleSyncService(
 
         using var activity = KrakarrTelemetry.ActivitySource.StartActivity("subtitle sync");
         activity?.SetTag("krakarr.subtitle.language", row.Language);
+        var (title, link) = await DescribeAsync(row, ct);
+        progress.Queue(row.Id, title, link);
         SubtitleSyncResult result;
-        await gate.Lock.WaitAsync(ct);
         try
         {
-            result = await SyncCoreAsync(row, ct);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or TimeoutException
-                                       or NotSupportedException or InvalidDataException)
-        {
-            result = new SubtitleSyncResult(false, ex.Message);
+            await gate.Lock.WaitAsync(ct);
+            try
+            {
+                progress.Stage(row.Id, "Looking for a reference");
+                result = await SyncCoreAsync(row, ct);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or TimeoutException
+                                           or NotSupportedException or InvalidDataException)
+            {
+                result = new SubtitleSyncResult(false, ex.Message);
+            }
+            finally
+            {
+                gate.Lock.Release();
+            }
         }
         finally
         {
-            gate.Lock.Release();
+            progress.Finish(row.Id);
         }
 
         activity?.SetTag("krakarr.subtitle.result", result.Message);
@@ -161,11 +172,12 @@ public sealed class SubtitleSyncService(
             var output = Path.Combine(workDir, "synced" + Path.GetExtension(row.Path));
             var against = reference ?? videoPath;
             var againstName = referenceName ?? "the audio";
-            string toolName;
+            var toolName = tools.Alass is not null ? "alass" : "ffsubsync";
+            progress.Stage(row.Id, $"Syncing with {toolName} against {againstName}");
+            void OnLine(string line) => progress.ReportLine(row.Id, line);
             ProcessResult run;
             if (tools.Alass is { } alass)
             {
-                toolName = "alass";
                 Dictionary<string, string>? env = null;
                 if (tools.Ffmpeg is { } ffmpeg)
                 {
@@ -173,14 +185,13 @@ public sealed class SubtitleSyncService(
                     if (SubtitleSyncTools.Locate(Path.Combine(Path.GetDirectoryName(ffmpeg) ?? ".", "ffprobe")) is { } probe) env["ALASS_FFPROBE_PATH"] = probe;
                 }
 
-                run = await ExternalProcess.RunAsync(alass, [against, row.Path, output], timeout, ct, env);
+                run = await ExternalProcess.RunAsync(alass, [against, row.Path, output], timeout, ct, env, OnLine);
             }
             else
             {
-                toolName = "ffsubsync";
                 List<string> args = [against, "-i", row.Path, "-o", output];
                 if (tools.Ffmpeg is { } ffmpeg && Path.GetDirectoryName(ffmpeg) is { Length: > 0 } dir) args.AddRange(["--ffmpeg-path", dir]);
-                run = await ExternalProcess.RunAsync(tools.Ffsubsync!, args, timeout, ct);
+                run = await ExternalProcess.RunAsync(tools.Ffsubsync!, args, timeout, ct, onLine: OnLine);
             }
 
             if (!run.Success || !File.Exists(output) || new FileInfo(output).Length == 0)
@@ -224,6 +235,7 @@ public sealed class SubtitleSyncService(
         }
 
         if (index < 0) return (null, null);
+        progress.Stage(row.Id, "Extracting the subtitle track inside the video");
         var output = Path.Combine(workDir, "reference.srt");
         var run = await ExternalProcess.RunAsync(ffmpeg,
             ["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", videoPath, "-map", $"0:s:{index}", "-c:s", "srt", output], timeout, ct);
@@ -241,6 +253,32 @@ public sealed class SubtitleSyncService(
     public static bool IsTextTrack(string? codec) => codec is not null
         && (codec.StartsWith("S_TEXT/", StringComparison.OrdinalIgnoreCase)
             || codec is "tx3g" or "wvtt" or "text" or "S_SSA" or "S_ASS");
+
+    /// <summary>
+    /// What the bell calls a sync of <paramref name="row"/> ("Dune (2021) · English", "Severance S01E03 · Spanish") and
+    /// the page it links to.
+    /// </summary>
+    public async Task<(string Title, string Link)> DescribeAsync(SubtitleFile row, CancellationToken ct = default)
+    {
+        var language = Languages.Name(row.Language) + (row.Forced ? " (forced)" : "");
+        if (row.MovieFileId is { } mf)
+        {
+            var movie = await db.MovieFiles.AsNoTracking().Where(f => f.Id == mf)
+                .Join(db.Movies.AsNoTracking(), f => f.MovieId, m => m.Id, (f, m) => new { m.Id, m.Title, m.Year }).FirstOrDefaultAsync(ct);
+            return movie is null
+                ? ($"{Path.GetFileName(row.Path)}", "/subtitles")
+                : ($"{movie.Title}{(movie.Year > 0 ? $" ({movie.Year})" : "")} · {language}", $"/movies/{movie.Id}");
+        }
+
+        var file = await db.EpisodeFiles.AsNoTracking().Where(f => f.Id == row.EpisodeFileId)
+            .Join(db.Series.AsNoTracking(), f => f.SeriesId, s => s.Id, (f, s) => new { f.Id, SeriesId = s.Id, s.Title }).FirstOrDefaultAsync(ct);
+        if (file is null) return ($"{Path.GetFileName(row.Path)}", "/subtitles");
+        var episode = await db.Episodes.AsNoTracking().Where(e => e.EpisodeFileId == file.Id)
+            .OrderBy(e => e.SeasonNumber).ThenBy(e => e.EpisodeNumber)
+            .Select(e => new { e.SeasonNumber, e.EpisodeNumber }).FirstOrDefaultAsync(ct);
+        var number = episode is null ? "" : $" S{episode.SeasonNumber:00}E{episode.EpisodeNumber:00}";
+        return ($"{file.Title}{number} · {language}", $"/series/{file.SeriesId}");
+    }
 
     private async Task<string?> VideoPathAsync(SubtitleFile row, CancellationToken ct)
     {

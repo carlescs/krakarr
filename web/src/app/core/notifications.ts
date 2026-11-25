@@ -2,7 +2,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { interval, merge, Subscription } from 'rxjs';
 import { Api } from './api';
 import { Events } from './events';
-import { AppNotification } from './models';
+import { AppNotification, NotificationProgressUpdate } from './models';
 
 /** Some notifications depend on the date (e.g. today's releases), so also refetch now and then without an event. */
 const REFRESH_INTERVAL_MS = 30 * 60 * 1000;
@@ -31,6 +31,7 @@ export class Notifications {
   start() {
     if (this.subscription) return;
     this.subscription = merge(this.events.notificationsUpdated, this.events.requestsUpdated, interval(REFRESH_INTERVAL_MS)).subscribe(() => this.refresh());
+    this.subscription.add(this.events.notificationProgress.subscribe(p => this.applyProgress(p)));
     this.refresh();
   }
 
@@ -38,6 +39,15 @@ export class Notifications {
     this.subscription?.unsubscribe();
     this.subscription = undefined;
     this.items.set([]);
+  }
+
+  /** Updates a notification with work in progress in place; ones not shown (dismissed, or not loaded yet) are left alone. */
+  private applyProgress(update: NotificationProgressUpdate) {
+    this.items.update(items => items.map(n => n.id !== update.id ? n : {
+      ...n,
+      message: update.message ?? n.message,
+      progress: { percent: update.percent ?? null },
+    }));
   }
 
   async refresh() {

@@ -25,6 +25,11 @@ public static class EventNames
     public const string RequestsUpdated = "requestsUpdated";
     /// <summary>What a notification source reports may have changed; clients refetch the notifications. No payload.</summary>
     public const string NotificationsUpdated = "notificationsUpdated";
+    /// <summary>
+    /// Progress of a notification's work changed (<c>NotificationProgressUpdate</c>); clients update it in place. Staff
+    /// only, like the work that reports it.
+    /// </summary>
+    public const string NotificationProgress = "notificationProgress";
     /// <summary>A health run finished; admins refetch the report. No payload: the report holds paths, and managers get staff events too.</summary>
     public const string HealthUpdated = "healthUpdated";
     /// <summary>An indexer's failure backoff started, changed or ended. No payload.</summary>
