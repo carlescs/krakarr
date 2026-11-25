@@ -12,7 +12,9 @@ namespace Krakarr.Subtitles.Sync;
 /// <param name="Link">SPA route of the movie or series.</param>
 /// <param name="Stage">What it's doing now; null while waiting.</param>
 /// <param name="Percent">Progress of the current stage (0 to 100), null when unknown.</param>
-public sealed record SubtitleSyncActivity(int SubtitleId, string Title, string Link, DateTimeOffset Since, string? Stage, double? Percent)
+/// <param name="RemainingSeconds">Estimated time left in the current stage, null until there is enough progress to tell.</param>
+public sealed record SubtitleSyncActivity(int SubtitleId, string Title, string Link, DateTimeOffset Since, string? Stage, double? Percent,
+    double? RemainingSeconds = null)
 {
     public bool Waiting => Stage is null;
 }
@@ -28,6 +30,10 @@ public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvide
     internal const int MaxTracked = 200;
 
     private static readonly TimeSpan MinPublishInterval = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>No estimate before the stage has run this long and got this far: early rates are mostly start-up cost.</summary>
+    private static readonly TimeSpan MinElapsedForEstimate = TimeSpan.FromSeconds(3);
+    private const double MinPercentForEstimate = 1;
 
     private readonly ConcurrentDictionary<int, Entry> _entries = new();
 
@@ -53,7 +59,8 @@ public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvide
         {
             entry.Stage = stage;
             entry.Percent = null;
-            entry.LastPublished = time.GetUtcNow();
+            entry.RemainingSeconds = null;
+            entry.StageStarted = entry.LastPublished = time.GetUtcNow();
         }
 
         Publish(EventNames.NotificationProgress, new NotificationProgressUpdate(NotificationId(subtitleId), null, stage));
@@ -71,9 +78,10 @@ public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvide
             var now = time.GetUtcNow();
             var changed = entry.Percent is not { } last || Math.Floor(last) != Math.Floor(percent);
             entry.Percent = percent;
+            entry.RemainingSeconds = Estimate(now - entry.StageStarted, percent);
             if (!changed || now - entry.LastPublished < MinPublishInterval) return;
             entry.LastPublished = now;
-            update = new NotificationProgressUpdate(NotificationId(subtitleId), Math.Floor(percent), entry.Stage);
+            update = new NotificationProgressUpdate(NotificationId(subtitleId), Math.Floor(percent), entry.Stage, entry.RemainingSeconds);
         }
 
         Publish(EventNames.NotificationProgress, update);
@@ -83,6 +91,17 @@ public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvide
     public void ReportLine(int subtitleId, string line)
     {
         if (ParsePercent(line) is { } percent) Report(subtitleId, percent);
+    }
+
+    /// <summary>
+    /// Seconds left in a stage that took <paramref name="elapsed"/> to reach <paramref name="percent"/>, assuming it keeps
+    /// the same pace. Null too early to tell.
+    /// </summary>
+    public static double? Estimate(TimeSpan elapsed, double percent)
+    {
+        if (percent >= 100) return 0;
+        if (percent < MinPercentForEstimate || elapsed < MinElapsedForEstimate) return null;
+        return Math.Ceiling(elapsed.TotalSeconds * (100 - percent) / percent);
     }
 
     public void Finish(int subtitleId)
@@ -127,11 +146,13 @@ public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvide
     {
         public string? Stage { get; set; }
         public double? Percent { get; set; }
+        public double? RemainingSeconds { get; set; }
+        public DateTimeOffset StageStarted { get; set; }
         public DateTimeOffset LastPublished { get; set; }
 
         public SubtitleSyncActivity Snapshot()
         {
-            lock (this) return new SubtitleSyncActivity(subtitleId, title, link, since, Stage, Percent is { } p ? Math.Floor(p) : null);
+            lock (this) return new SubtitleSyncActivity(subtitleId, title, link, since, Stage, Percent is { } p ? Math.Floor(p) : null, RemainingSeconds);
         }
     }
 }
@@ -146,7 +167,7 @@ public sealed class SubtitleSyncNotificationSource(SubtitleSyncProgress progress
             .Select(a => new Notification(SubtitleSyncProgress.NotificationId(a.SubtitleId), "subtitle",
                 (a.Waiting ? "Waiting to sync " : "Syncing ") + a.Title,
                 a.Stage ?? "Waiting for its turn", a.Link,
-                Date: a.Since, Progress: new NotificationProgress(a.Percent)))
+                Date: a.Since, Progress: new NotificationProgress(a.Percent, a.RemainingSeconds)))
             .ToList();
         return Task.FromResult(notifications);
     }

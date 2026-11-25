@@ -46,7 +46,7 @@ export class Notifications {
     this.items.update(items => items.map(n => n.id !== update.id ? n : {
       ...n,
       message: update.message ?? n.message,
-      progress: { percent: update.percent ?? null },
+      progress: { percent: update.percent ?? null, remainingSeconds: update.remainingSeconds ?? null },
     }));
   }
 

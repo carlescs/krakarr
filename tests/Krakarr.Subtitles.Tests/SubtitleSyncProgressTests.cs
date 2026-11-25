@@ -98,6 +98,44 @@ public sealed class SubtitleSyncProgressTests
         Assert.All(updates, u => Assert.Equal("subtitles.sync.7", u.Id));
     }
 
+    [Theory]
+    [InlineData(10, 25, 30)]     // a quarter in 10 s: 30 s to go
+    [InlineData(20, 50, 20)]
+    [InlineData(7, 33.3, 15)]    // rounded up
+    [InlineData(60, 100, 0)]
+    public void Estimates_the_time_left_at_the_same_pace(int elapsedSeconds, double percent, double expected)
+    {
+        Assert.Equal(expected, SubtitleSyncProgress.Estimate(TimeSpan.FromSeconds(elapsedSeconds), percent));
+    }
+
+    [Theory]
+    [InlineData(2, 50)]   // too soon
+    [InlineData(30, 0.5)] // too little done
+    public void Gives_no_estimate_too_early(int elapsedSeconds, double percent)
+    {
+        Assert.Null(SubtitleSyncProgress.Estimate(TimeSpan.FromSeconds(elapsedSeconds), percent));
+    }
+
+    [Fact]
+    public async Task Reports_the_time_left_in_the_current_stage()
+    {
+        _progress.Queue(7, "Dune (2021) · English", "/movies/3");
+        _clock.Now += TimeSpan.FromMinutes(5); // waiting doesn't count
+        _progress.Stage(7, "Syncing with alass against the audio");
+        _clock.Now += TimeSpan.FromSeconds(20);
+        _progress.Report(7, 40);
+
+        Assert.Equal(30, Assert.Single(_progress.Current).RemainingSeconds);
+        Assert.Equal(30, _hub.Updates()[^1].RemainingSeconds);
+        var shown = await new SubtitleSyncNotificationSource(_progress)
+            .GetAsync(new NotificationContext(1, UserRole.Admin), TestContext.Current.CancellationToken);
+        Assert.Equal(new NotificationProgress(40, 30), Assert.Single(shown).Progress);
+
+        _progress.Stage(7, "Next stage");
+        Assert.Null(Assert.Single(_progress.Current).RemainingSeconds);
+        Assert.Null(_hub.Updates()[^1].RemainingSeconds);
+    }
+
     [Fact]
     public void Untracked_syncs_report_nothing()
     {
