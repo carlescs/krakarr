@@ -54,6 +54,7 @@
         <div><dt class="text-slate-500">Release group</dt><dd class="text-slate-200">{{ f.releaseGroup || '—' }}</dd></div>
         <div><dt class="text-slate-500">Added</dt><dd class="text-slate-200">{{ f.dateAdded | date: 'mediumDate' }}</dd></div>
       </dl>
+      <kr-media-info class="mt-3 border-t border-surface-700 pt-3" [info]="mediaInfo()" />
     </section>
 
     <section class="mt-3 rounded-lg border border-surface-700 p-3" data-subtitles>

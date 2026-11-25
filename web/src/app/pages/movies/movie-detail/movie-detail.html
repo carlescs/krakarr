@@ -82,6 +82,7 @@
         <span class="text-slate-500">Group</span><span>{{ f.releaseGroup || '—' }}</span>
         <span class="text-slate-500">Added</span><span>{{ f.dateAdded | date: 'medium' }}</span>
       </div>
+      <kr-media-info class="mt-3 border-t border-surface-700 pt-3" [info]="f.mediaInfo" />
     </section>
 
     <!-- Subtitles -->

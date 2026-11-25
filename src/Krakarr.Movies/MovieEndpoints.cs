@@ -18,7 +18,8 @@ public sealed record ReleaseDateDto(DateOnly Date, string Country);
 /// <param name="Earliest">Earliest date in any country.</param>
 public sealed record MovieReleaseDto(ReleaseDateType Type, ReleaseDateDto? Region, ReleaseDateDto? Earliest);
 
-public sealed record MovieFileDto(int Id, string RelativePath, long Size, string Quality, string? ReleaseGroup, DateTimeOffset DateAdded);
+public sealed record MovieFileDto(int Id, string RelativePath, long Size, string Quality, string? ReleaseGroup, DateTimeOffset DateAdded,
+    Krakarr.Media.Files.MediaInfoDto? MediaInfo = null);
 
 public sealed record MovieDto
 {
@@ -202,7 +203,9 @@ public static class MovieEndpoints
         group.MapGet("/{id:int}", async (int id, KrakarrDbContext db, ITorrentEngine engine, Krakarr.Data.ISettingsService settings, CancellationToken ct) =>
         {
             var movie = await db.Movies.AsNoTracking().Include(m => m.MovieFile).FirstOrDefaultAsync(m => m.Id == id, ct);
-            return movie is null ? Results.NotFound() : Results.Ok(ToDto(movie, ActiveProgress(engine), await ReleaseRegionAsync(settings, ct)));
+            if (movie is null) return Results.NotFound();
+            var wanted = (await settings.GetAsync<Krakarr.Core.Configuration.LanguageSettings>(ct)).For(movie.Languages);
+            return Results.Ok(ToDto(movie, ActiveProgress(engine), await ReleaseRegionAsync(settings, ct), wanted));
         });
 
         // Library import: scan a root folder for existing movie folders, then import selected ones in place.
@@ -691,7 +694,7 @@ public static class MovieEndpoints
             .Select(t => new MovieReleaseDto(t, ToDto(MovieReleases.ForRegion(dates, t, region)), ToDto(MovieReleases.Earliest(dates, t))))
             .ToList();
 
-    private static MovieDto ToDto(Movie m, IReadOnlyDictionary<int, double> progress, string? region) => new()
+    private static MovieDto ToDto(Movie m, IReadOnlyDictionary<int, double> progress, string? region, IReadOnlyList<string>? wantedLanguages = null) => new()
     {
         Id = m.Id,
         TmdbId = m.TmdbId,
@@ -718,7 +721,8 @@ public static class MovieEndpoints
         Added = m.Added,
         HasFile = m.MovieFile is not null,
         MovieFile = m.MovieFile is { } f
-            ? new MovieFileDto(f.Id, f.RelativePath, f.Size, Qualities.FindById(f.QualityId).Name, f.ReleaseGroup, f.DateAdded)
+            ? new MovieFileDto(f.Id, f.RelativePath, f.Size, Qualities.FindById(f.QualityId).Name, f.ReleaseGroup, f.DateAdded,
+                Krakarr.Media.Files.MediaInfoDto.From(f.MediaInfo, m.Runtime, f.SceneName, wantedLanguages))
             : null,
         DownloadProgress = progress.TryGetValue(m.Id, out var p) ? p : null,
         CollectionId = m.CollectionId,

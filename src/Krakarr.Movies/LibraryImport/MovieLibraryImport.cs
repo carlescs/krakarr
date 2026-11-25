@@ -153,6 +153,9 @@ public sealed class MovieLibraryImport(
 
         var tracked = await db.Movies.FirstAsync(m => m.Id == movie.Id, ct);
         tracked.MovieFileId = movieFile.Id;
+        // Reads the headers too, which may correct the quality.
+        await Krakarr.Subtitles.SubtitleService.SyncMovieFileAsync(db, movie.Path, movieFile, ct);
+        quality = Qualities.FindById(movieFile.QualityId);
         db.History.Add(new HistoryEntry
         {
             EventType = HistoryEventType.Imported,
@@ -161,7 +164,6 @@ public sealed class MovieLibraryImport(
             QualityId = quality.Id,
             Message = "Imported existing file",
         });
-        await Krakarr.Subtitles.SubtitleService.SyncMovieFileAsync(db, movie.Path, movieFile, ct);
         await db.SaveChangesAsync(ct);
         await eventHub.PublishAsync(EventNames.MovieUpdated, new { movie.Id }, ct);
         logger.LogInformation("Library import: {Title} with {File} ({Quality})", movie.Title, movieFile.RelativePath, quality.Name);

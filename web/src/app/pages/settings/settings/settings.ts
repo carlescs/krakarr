@@ -55,6 +55,20 @@ const NAMING_TOKENS: { title: string; usedIn: string; tokens: TokenDoc[] }[] = [
       { token: 'ImdbId', description: 'IMDb id, when known', example: 'tt0386676' },
     ],
   },
+  {
+    title: 'Media info tokens',
+    usedIn: 'Movie and episode file formats. Read from the file itself; empty when it can\'t be read.',
+    tokens: [
+      { token: 'MediaInfo VideoCodec', description: 'Video codec', example: 'HEVC' },
+      { token: 'MediaInfo VideoBitDepth', description: 'Video bit depth', example: '10' },
+      { token: 'MediaInfo VideoDynamicRange', description: 'HDR10, HLG, DV or DV HDR10; empty for SDR', example: 'HDR10' },
+      { token: 'MediaInfo Resolution', description: 'Real resolution of the video', example: '2160p' },
+      { token: 'MediaInfo AudioCodec', description: 'Codec of the first audio track', example: 'EAC3 Atmos' },
+      { token: 'MediaInfo AudioChannels', description: 'Channels of the first audio track', example: '5.1' },
+      { token: 'MediaInfo AudioLanguages', description: 'Tagged audio languages, joined with "+"', example: 'EN+ES' },
+      { token: 'MediaInfo Simple', description: 'Video and audio codec', example: 'HEVC EAC3 Atmos' },
+    ],
+  },
 ];
 
 function sampleValues(tokens: TokenDoc[]): Record<string, string> {
@@ -150,8 +164,8 @@ export class SettingsPage implements OnInit {
   protected readonly testingClient = signal(false);
   protected readonly selectableQualities = computed(() => this.qualities().filter(q => q.id !== 0));
   protected readonly tokenDocs = NAMING_TOKENS;
-  protected readonly sampleMovie = sampleValues(NAMING_TOKENS[0].tokens);
-  protected readonly sampleEpisode = sampleValues(NAMING_TOKENS[1].tokens);
+  protected readonly sampleMovie = { ...sampleValues(NAMING_TOKENS[0].tokens), ...sampleValues(NAMING_TOKENS[2].tokens) };
+  protected readonly sampleEpisode = { ...sampleValues(NAMING_TOKENS[1].tokens), ...sampleValues(NAMING_TOKENS[2].tokens) };
   protected readonly sampleMultiEpisode = { ...this.sampleEpisode, 'Episode': '01-E02', 'Episode Title': 'Pilot + Diversity Day' };
   /** Client-side approximation of the server's FileNameBuilder, for the examples under each format. */
   protected example(format: string, values: Record<string, string>) { return buildName(format ?? '', values); }

@@ -74,7 +74,16 @@ export interface ReleaseInfo {
 export interface SearchResult { release: ReleaseInfo; quality: string; parsedTitle?: string; parsedYear?: number; }
 export interface ReleaseDecision { release: ReleaseInfo; quality: string; qualityWeight: number; approved: boolean; rejections: string[]; languages: string[]; }
 
-export interface MovieFile { id: number; relativePath: string; size: number; quality: string; releaseGroup?: string; dateAdded: string; }
+/** What the file's own headers say (GET movie, GET series/{id}/episodefiles/{fileId}/mediainfo). */
+export interface MediaInfo {
+  durationSeconds?: number | null; videoCodec?: string | null; width: number; height: number; resolution?: string | null;
+  bitDepth?: number | null; dynamicRange?: string | null;
+  audio: { codec?: string | null; channels?: string | null; language?: string | null; languageName?: string | null }[];
+  /** Too short for the runtime, mislabelled resolution, audio in none of the wanted languages. */
+  warnings: string[];
+}
+
+export interface MovieFile { id: number; relativePath: string; size: number; quality: string; releaseGroup?: string; dateAdded: string; mediaInfo?: MediaInfo | null; }
 
 export interface ReleaseDateRef { date: string; country: string; }
 /** A release type's date in the configured region and the earliest worldwide. */

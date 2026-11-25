@@ -246,6 +246,7 @@ public sealed class SeriesService(
                 if (parsed.Quality != Qualities.Unknown) file.QualityId = parsed.Quality.Id;
                 if (parsed.ReleaseGroup is not null) file.ReleaseGroup = parsed.ReleaseGroup;
                 file.EmbeddedSubtitles = null;
+                file.MediaInfo = null; // read again below, which also corrects the quality
                 file.LastSubtitleSearch = null;
                 file.SubtitlesNotFound = null;
                 subtitlesChanged = true;

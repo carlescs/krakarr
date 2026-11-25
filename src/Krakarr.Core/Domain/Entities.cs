@@ -176,7 +176,15 @@ public class MovieCollection
     public string? FanartUrl { get; set; }
 }
 
-public class MovieFile
+/// <summary>What movie and episode files share: the parts of a library file that are read from the file itself.</summary>
+public interface ILibraryFile
+{
+    int QualityId { get; set; }
+    string? EmbeddedSubtitles { get; set; }
+    string? MediaInfo { get; set; }
+}
+
+public class MovieFile : ILibraryFile
 {
     public int Id { get; set; }
     public int MovieId { get; set; }
@@ -193,6 +201,11 @@ public class MovieFile
     /// Subtitle tracks inside the video, as comma-separated "lang[+hi][+forced]" tokens ("" = none, null = not read yet).
     /// </summary>
     public string? EmbeddedSubtitles { get; set; }
+    /// <summary>
+    /// Video, audio and duration read from the file's headers, as compact JSON (<c>MediaInfoSummary</c> in Krakarr.Media;
+    /// "" = nothing could be read, null = not read yet).
+    /// </summary>
+    public string? MediaInfo { get; set; }
     /// <summary>
     /// When a search of every configured provider first found nothing for a missing wanted language, or the user marked
     /// it by hand (null = not marked). The scheduled subtitle search skips marked files; a new or replaced file, or a change of wanted
@@ -286,7 +299,7 @@ public class Episode
 }
 
 /// <summary>A video file in the library holding one or more episodes of the same season.</summary>
-public class EpisodeFile
+public class EpisodeFile : ILibraryFile
 {
     public int Id { get; set; }
     public int SeriesId { get; set; }
@@ -304,6 +317,11 @@ public class EpisodeFile
     /// Subtitle tracks inside the video, as comma-separated "lang[+hi][+forced]" tokens ("" = none, null = not read yet).
     /// </summary>
     public string? EmbeddedSubtitles { get; set; }
+    /// <summary>
+    /// Video, audio and duration read from the file's headers, as compact JSON (<c>MediaInfoSummary</c> in Krakarr.Media;
+    /// "" = nothing could be read, null = not read yet).
+    /// </summary>
+    public string? MediaInfo { get; set; }
     /// <summary>
     /// When the user marked this file "not found" (null = not marked). Unlike movie files, episode files are only marked
     /// by hand: the scheduled subtitle search skips them until retried; a replaced file or a change of wanted languages

@@ -4,5 +4,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Krakarr.Core/Krakarr.Core.csproj" />
+    <InternalsVisibleTo Include="Krakarr.Media.Tests" />
   </ItemGroup>
 </Project>

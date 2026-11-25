@@ -117,29 +117,27 @@ public sealed class SubtitleService(
     }
 
     /// <summary>
-    /// Syncs external subtitle files next to a movie file and reads embedded subtitle tracks when not read yet.
+    /// Syncs external subtitle files next to a movie file, and reads embedded subtitle tracks and media info when not read yet.
     /// Does not save changes so the caller can batch saves.
     /// </summary>
     public static Task<bool> SyncMovieFileAsync(KrakarrDbContext db, string moviePath, MovieFile file, CancellationToken ct = default) =>
-        SyncFileSubtitlesAsync(db, Path.Combine(moviePath, file.RelativePath), file.Id, null,
-            file.EmbeddedSubtitles, v => file.EmbeddedSubtitles = v, ct);
+        SyncFileSubtitlesAsync(db, Path.Combine(moviePath, file.RelativePath), file.Id, null, file, ct);
 
     /// <summary>
-    /// Syncs external subtitle files next to an episode file and reads embedded subtitle tracks when not read yet.
+    /// Syncs external subtitle files next to an episode file, and reads embedded subtitle tracks and media info when not read yet.
     /// Does not save changes so the caller can batch saves.
     /// </summary>
     public static Task<bool> SyncEpisodeFileAsync(KrakarrDbContext db, string seriesPath, EpisodeFile file, CancellationToken ct = default) =>
-        SyncFileSubtitlesAsync(db, Path.Combine(seriesPath, file.RelativePath), null, file.Id,
-            file.EmbeddedSubtitles, v => file.EmbeddedSubtitles = v, ct);
+        SyncFileSubtitlesAsync(db, Path.Combine(seriesPath, file.RelativePath), null, file.Id, file, ct);
 
     private static async Task<bool> SyncFileSubtitlesAsync(
-        KrakarrDbContext db, string videoPath, int? movieFileId, int? episodeFileId,
-        string? currentEmbedded, Action<string> setEmbedded, CancellationToken ct)
+        KrakarrDbContext db, string videoPath, int? movieFileId, int? episodeFileId, ILibraryFile file, CancellationToken ct)
     {
         var changed = false;
-        if (currentEmbedded is null && File.Exists(videoPath))
+        // One read of the headers gives both the media info and the subtitle tracks.
+        if (MediaFileProbe.Probe(videoPath, file) is { } tracks)
         {
-            setEmbedded(EmbeddedSubtitleList.Format(EmbeddedSubtitleList.FromTracks(EmbeddedSubtitles.Read(videoPath))));
+            file.EmbeddedSubtitles ??= EmbeddedSubtitleList.Format(EmbeddedSubtitleList.FromTracks(tracks));
             changed = true;
         }
 
