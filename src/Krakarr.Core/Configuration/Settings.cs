@@ -230,7 +230,7 @@ public sealed record SubtitleSearchState : ISettingsSection
     public string? ProvidersSignature { get; init; }
 }
 
-/// <summary>Optional Jellyfin server; when set, downloaded movies and series link to their Jellyfin page.</summary>
+/// <summary>Optional Jellyfin server; when set, downloaded movies and series link to their Jellyfin page and Jellyfin rescans changed folders.</summary>
 public sealed record JellyfinSettings : ISettingsSection
 {
     /// <summary>Placeholder returned instead of the stored API key; sending it back keeps the stored value.</summary>
@@ -243,9 +243,57 @@ public sealed record JellyfinSettings : ISettingsSection
     public string? ApiKey { get; init; }
     /// <summary>Address the browser opens, when it differs from <see cref="Url"/> (e.g. https://jellyfin.example.com).</summary>
     public string? PublicUrl { get; init; }
+    /// <summary>Ask Jellyfin to rescan a folder right after Krakarr imports, renames or deletes files in it.</summary>
+    public bool RefreshLibrary { get; init; } = true;
+    /// <summary>Translate Krakarr's library paths to the paths Jellyfin sees, when they differ.</summary>
+    public List<PathMapping> PathMappings { get; init; } = [];
 
     [System.Text.Json.Serialization.JsonIgnore]
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(ApiKey);
+}
+
+/// <summary>
+/// A library path as Krakarr sees it (<see cref="From"/>) and the same folder as a media server sees it (<see cref="To"/>),
+/// e.g. <c>/data/movies</c> → <c>/media/movies</c> or <c>D:\Movies</c>.
+/// </summary>
+public sealed record PathMapping
+{
+    public string? From { get; init; }
+    public string? To { get; init; }
+}
+
+/// <summary>Optional Emby server, asked to rescan library folders after imports, renames and deletes.</summary>
+public sealed record EmbySettings : ISettingsSection
+{
+    /// <summary>Placeholder returned instead of the stored API key; sending it back keeps the stored value.</summary>
+    public const string ApiKeyMask = "********";
+    public static string SectionKey => "emby";
+
+    /// <summary>Address Krakarr uses to reach Emby (e.g. http://emby:8096). Empty = integration off.</summary>
+    public string? Url { get; init; }
+    /// <summary>API key from Emby → Settings → Advanced → API Keys.</summary>
+    public string? ApiKey { get; init; }
+    public List<PathMapping> PathMappings { get; init; } = [];
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(ApiKey);
+}
+
+/// <summary>Optional Plex Media Server, asked to rescan the affected library section after imports, renames and deletes.</summary>
+public sealed record PlexSettings : ISettingsSection
+{
+    /// <summary>Placeholder returned instead of the stored token; sending it back keeps the stored value.</summary>
+    public const string TokenMask = "********";
+    public static string SectionKey => "plex";
+
+    /// <summary>Address Krakarr uses to reach Plex (e.g. http://plex:32400). Empty = integration off.</summary>
+    public string? Url { get; init; }
+    /// <summary>An <c>X-Plex-Token</c> of the server owner.</summary>
+    public string? Token { get; init; }
+    public List<PathMapping> PathMappings { get; init; } = [];
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(Token);
 }
 
 /// <summary>Transport of the OTLP exporter.</summary>

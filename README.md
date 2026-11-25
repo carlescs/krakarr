@@ -204,12 +204,20 @@ Nothing is moved or renamed.
 - The **Subtitles** page lists files missing languages. Every movie and episode has a subtitle dialog with
   automatic search, manual search (all candidates with score and reasons) and delete.
 
-### Jellyfin
+### Media servers (Jellyfin, Emby, Plex)
 
-- **Settings → Jellyfin:** enter the URL Krakarr reaches Jellyfin on (e.g. `http://jellyfin:8096`) and an API key
-  (Jellyfin → Dashboard → API Keys). Set a public URL too if browsers open Jellyfin on a different address.
-- Downloaded movies and series then show an **Open in Jellyfin** button, for every user. The title is found on Jellyfin by
-  its TMDB, TheTVDB or IMDb id (falling back to name and year), so the button appears once Jellyfin has scanned it.
+- **Settings → Media servers:** enter the URL Krakarr reaches each server on and its key: a Jellyfin API key
+  (Dashboard → API Keys), an Emby API key (Settings → Advanced → API Keys) or the Plex owner's `X-Plex-Token`. **Test**
+  checks the connection; an empty URL turns a server off.
+- **Library refresh:** after Krakarr imports, upgrades, renames or deletes files, the configured servers rescan just the
+  affected folder instead of waiting for their scheduled scan. Jellyfin and Emby get the folder through
+  `/Library/Media/Updated` (falling back to a full library refresh); Plex refreshes the library section that contains it.
+  Changes are grouped per folder for a few seconds, so a season pack triggers one rescan, not one per episode.
+- **Path mappings:** when a server sees the library under another path (e.g. Krakarr's `/data/tv` is `/media/tv` or
+  `D:\TV` on the server), add a mapping so it gets paths it knows.
+- **Open in Jellyfin:** downloaded movies and series show a button to their Jellyfin page, for every user. The title is
+  found by its TMDB, TheTVDB or IMDb id (falling back to name and year), so the button appears once Jellyfin has scanned
+  it. Set a public URL too if browsers open Jellyfin on a different address.
 
 ### Telemetry (OpenTelemetry)
 

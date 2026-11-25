@@ -46,7 +46,17 @@ public static class SettingsEndpoints
             present: s => string.IsNullOrEmpty(s.ApiKey) ? s : s with { ApiKey = JellyfinSettings.ApiKeyMask },
             validate: s => !IsHttpUrl(s.Url) ? "Jellyfin URL must be an absolute http(s) URL"
                 : !IsHttpUrl(s.PublicUrl) ? "Jellyfin public URL must be an absolute http(s) URL"
-                : null);
+                : ValidateMappings(s.PathMappings));
+
+        MapSection<EmbySettings>(settings, "emby",
+            merge: (current, incoming) => incoming.ApiKey == EmbySettings.ApiKeyMask ? incoming with { ApiKey = current.ApiKey } : incoming,
+            present: s => string.IsNullOrEmpty(s.ApiKey) ? s : s with { ApiKey = EmbySettings.ApiKeyMask },
+            validate: s => !IsHttpUrl(s.Url) ? "Emby URL must be an absolute http(s) URL" : ValidateMappings(s.PathMappings));
+
+        MapSection<PlexSettings>(settings, "plex",
+            merge: (current, incoming) => incoming.Token == PlexSettings.TokenMask ? incoming with { Token = current.Token } : incoming,
+            present: s => string.IsNullOrEmpty(s.Token) ? s : s with { Token = PlexSettings.TokenMask },
+            validate: s => !IsHttpUrl(s.Url) ? "Plex URL must be an absolute http(s) URL" : ValidateMappings(s.PathMappings));
 
         MapSection<TelemetrySettings>(settings, "telemetry",
             merge: (current, incoming) => incoming with
@@ -188,6 +198,12 @@ public static class SettingsEndpoints
     }
 
     /// <summary>True for an empty value or an absolute http(s) URL.</summary>
+    private static string? ValidateMappings(List<PathMapping>? mappings) =>
+        mappings is null ? "Path mappings must be a list"
+            : mappings.Count > 20 ? "Add at most 20 path mappings"
+            : mappings.Any(m => string.IsNullOrWhiteSpace(m.From) || string.IsNullOrWhiteSpace(m.To)) ? "Each path mapping needs both a Krakarr path and a server path"
+            : null;
+
     private static bool IsHttpUrl(string? value) =>
         string.IsNullOrWhiteSpace(value)
         || (Uri.TryCreate(value.Trim(), UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps));

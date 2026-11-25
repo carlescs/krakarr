@@ -286,11 +286,11 @@ public static class SeriesEndpoints
             return Results.NoContent();
         });
 
-        group.MapDelete("/{id:int}", async (int id, bool? deleteFiles, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
+        group.MapDelete("/{id:int}", async (int id, bool? deleteFiles, KrakarrDbContext db, ITorrentEngine engine, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, CancellationToken ct) =>
         {
             var series = await db.Series.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (series is null) return Results.NotFound();
-            return await DeleteAsync(db, engine, series, deleteFiles == true, ct) is { } error
+            return await DeleteAsync(db, engine, mediaServers, series, deleteFiles == true, ct) is { } error
                 ? Results.Problem(error, statusCode: StatusCodes.Status400BadRequest)
                 : Results.NoContent();
         });
@@ -381,7 +381,7 @@ public static class SeriesEndpoints
             return Results.Accepted(value: command);
         });
 
-        group.MapPost("/bulk/delete", async (BulkDeleteRequest req, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
+        group.MapPost("/bulk/delete", async (BulkDeleteRequest req, KrakarrDbContext db, ITorrentEngine engine, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, CancellationToken ct) =>
         {
             if (BulkLimits.Clean(req.Ids) is not { } ids) return Results.Problem(BulkLimits.InvalidMessage, statusCode: 400);
             var (deleted, errors) = (0, new List<string>());
@@ -392,7 +392,7 @@ public static class SeriesEndpoints
                 if (series is null) continue;
                 try
                 {
-                    if (await DeleteAsync(db, engine, series, req.DeleteFiles, ct) is { } error) errors.Add(error);
+                    if (await DeleteAsync(db, engine, mediaServers, series, req.DeleteFiles, ct) is { } error) errors.Add(error);
                     else deleted++;
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -524,17 +524,17 @@ public static class SeriesEndpoints
             return updated > 0 ? Results.NoContent() : Results.NotFound();
         }).WithTags("Series");
 
-        app.MapDelete("/api/v1/episodefiles/{id:int}", async (int id, bool? unmonitor, KrakarrDbContext db, Krakarr.Core.Events.IEventHub eventHub, CancellationToken ct) =>
+        app.MapDelete("/api/v1/episodefiles/{id:int}", async (int id, bool? unmonitor, KrakarrDbContext db, Krakarr.Core.Events.IEventHub eventHub, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, CancellationToken ct) =>
         {
-            var result = await EpisodeFileDeletion.DeleteAsync(db, eventHub, [id], unmonitor == true, ct);
+            var result = await EpisodeFileDeletion.DeleteAsync(db, eventHub, mediaServers, [id], unmonitor == true, ct);
             if (result.Errors.Count > 0) return Results.Problem(result.Errors[0], statusCode: StatusCodes.Status400BadRequest);
             return result.Affected > 0 ? Results.NoContent() : Results.NotFound();
         }).WithTags("Series");
 
-        app.MapPost("/api/v1/episodefiles/bulk/delete", async (DeleteEpisodeFilesRequest req, KrakarrDbContext db, Krakarr.Core.Events.IEventHub eventHub, CancellationToken ct) =>
+        app.MapPost("/api/v1/episodefiles/bulk/delete", async (DeleteEpisodeFilesRequest req, KrakarrDbContext db, Krakarr.Core.Events.IEventHub eventHub, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, CancellationToken ct) =>
         {
             if (BulkLimits.Clean(req.Ids) is not { } ids) return Results.Problem(BulkLimits.InvalidMessage, statusCode: 400);
-            return Results.Ok(await EpisodeFileDeletion.DeleteAsync(db, eventHub, ids.ToList(), req.Unmonitor, ct));
+            return Results.Ok(await EpisodeFileDeletion.DeleteAsync(db, eventHub, mediaServers, ids.ToList(), req.Unmonitor, ct));
         }).WithTags("Series");
 
         app.MapSeriesDiscoveryEndpoints();
@@ -542,7 +542,7 @@ public static class SeriesEndpoints
     }
 
     /// <summary>Removes a tracked series, and its folder when asked. Returns why not, or null when deleted.</summary>
-    private static async Task<string?> DeleteAsync(KrakarrDbContext db, ITorrentEngine engine, Krakarr.Core.Domain.Series series, bool deleteFiles, CancellationToken ct)
+    private static async Task<string?> DeleteAsync(KrakarrDbContext db, ITorrentEngine engine, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, Krakarr.Core.Domain.Series series, bool deleteFiles, CancellationToken ct)
     {
         // Downloads still in progress (or finished but not imported) are useless once the title is gone: remove them
         // and their data first, so a failure leaves the title in place to retry.
@@ -560,6 +560,7 @@ public static class SeriesEndpoints
             }
 
             Directory.Delete(series.Path, recursive: true);
+            mediaServers.PathChanged(series.Path);
         }
 
         await db.Downloads.Where(d => d.SeriesId == id)

@@ -360,38 +360,6 @@
   }
 }
 
-<!-- Jellyfin -->
-@if (tab() === 'jellyfin') {
-  @if (jellyfin(); as j) {
-    <section class="card grid grid-cols-1 gap-4 p-4 sm:p-5 sm:grid-cols-2">
-      <p class="text-sm text-slate-400 sm:col-span-2">Downloaded movies and series get an <span class="text-slate-200">Open in Jellyfin</span> button, for every user. Leave the URL empty to turn it off.</p>
-      <div>
-        <label class="label">URL</label>
-        <input class="input" [(ngModel)]="j.url" placeholder="http://jellyfin:8096" />
-        <p class="hint">How Krakarr reaches Jellyfin.</p>
-      </div>
-      <div>
-        <label class="label">Public URL (optional)</label>
-        <input class="input" [(ngModel)]="j.publicUrl" placeholder="https://jellyfin.example.com" />
-        <p class="hint">What the browser opens, when it differs from the URL above.</p>
-      </div>
-      <div class="sm:col-span-2">
-        <label class="label">API key</label>
-        <input class="input font-mono" type="password" autocomplete="off" [(ngModel)]="j.apiKey" />
-        <p class="hint">Jellyfin → Dashboard → API Keys. Used to find each title in your Jellyfin library.</p>
-      </div>
-      @if (jellyfinTest(); as t) {
-        <div class="rounded-lg px-3 py-2 text-sm wrap-anywhere sm:col-span-2" [class]="t.success ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'">
-          {{ t.success ? 'Connected to ' + (t.serverName || 'Jellyfin') + (t.version ? ' ' + t.version : '') : t.message }}
-        </div>
-      }
-      <div class="flex justify-end gap-2 sm:col-span-2">
-        <button class="btn-secondary" (click)="testJellyfin(j)" [disabled]="testingJellyfin()">{{ testingJellyfin() ? 'Testing…' : 'Test' }}</button>
-      </div>
-    </section>
-  }
-}
-
 <!-- Telemetry -->
 @if (tab() === 'telemetry') {
   @if (telemetry(); as t) {
@@ -475,6 +443,7 @@
 @if (tab() === 'users') { <kr-users-settings /> }
 @if (tab() === 'health') { <kr-health-settings /> }
 @if (tab() === 'backups') { <kr-backup-settings /> }
+@if (tab() === 'media-servers') { <kr-media-server-settings /> }
 
 <!-- Tasks -->
 @if (tab() === 'tasks') {

@@ -1,6 +1,7 @@
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Events;
+using Krakarr.Core.MediaServers;
 using Krakarr.Data;
 using Krakarr.Media;
 using Microsoft.Data.Sqlite;
@@ -58,6 +59,7 @@ public sealed class SeriesOrganizerTests : IAsyncLifetime
     private readonly SqliteConnection _connection = new("Data Source=:memory:");
     private readonly DirectoryInfo _root = Directory.CreateTempSubdirectory("krakarr-organize");
     private ServiceProvider _services = null!;
+    private readonly RecordingNotifier _mediaServers = new();
     private string TvRoot => Path.Combine(_root.FullName, "tv");
 
     public async ValueTask InitializeAsync()
@@ -69,6 +71,7 @@ public sealed class SeriesOrganizerTests : IAsyncLifetime
         services.AddKrakarrData();
         services.AddKrakarrMedia();
         services.AddSingleton<IEventHub, NullEventHub>();
+        services.AddSingleton<IMediaServerNotifier>(_mediaServers);
         services.AddScoped<SeriesOrganizer>();
         _services = services.BuildServiceProvider();
 
@@ -136,6 +139,8 @@ public sealed class SeriesOrganizerTests : IAsyncLifetime
         Assert.Equal(Path.Combine(TvRoot, "Test Show (2021)"), series.Path);
         Assert.False(Directory.Exists(Path.Combine(TvRoot, "test show")));
         Assert.False(Directory.Exists(Path.Combine(series.Path, "misc")), "emptied folders are removed");
+        // Media servers rescan the old and the new folder.
+        Assert.Equal([Path.Combine(TvRoot, "test show"), series.Path], _mediaServers.Paths.Distinct());
 
         var files = await db.EpisodeFiles.OrderBy(f => f.Id).ToListAsync(ct);
         Assert.Equal(Path.Combine("Season 01", "Test Show - S01E01 - Chapter 1 [WEBDL-1080p].mkv"), files[0].RelativePath);
@@ -161,5 +166,15 @@ public sealed class SeriesOrganizerTests : IAsyncLifetime
         var series = await db.Series.AsNoTracking().SingleAsync(ct);
         Assert.Equal(Path.Combine(TvRoot, "test show"), series.Path);
         Assert.True(File.Exists(Path.Combine(series.Path, "Season 01", "Test Show - S01E02 - Chapter 2 [WEBDL-1080p].mkv")));
+    }
+}
+
+internal sealed class RecordingNotifier : IMediaServerNotifier
+{
+    public List<string> Paths { get; } = [];
+
+    public void PathChanged(string path)
+    {
+        lock (Paths) Paths.Add(path);
     }
 }

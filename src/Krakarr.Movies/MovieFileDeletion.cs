@@ -1,5 +1,6 @@
 using Krakarr.Core.Domain;
 using Krakarr.Core.Events;
+using Krakarr.Core.MediaServers;
 using Krakarr.Data;
 using Krakarr.Media.Files;
 using Microsoft.EntityFrameworkCore;
@@ -16,7 +17,7 @@ public static class MovieFileDeletion
     /// <exception cref="InvalidOperationException">The file's path is outside the movie folder.</exception>
     /// <exception cref="IOException">The file could not be deleted; the library is left unchanged.</exception>
     /// <exception cref="UnauthorizedAccessException">The file could not be deleted; the library is left unchanged.</exception>
-    public static async Task<bool> DeleteAsync(KrakarrDbContext db, IEventHub eventHub, int movieFileId, bool unmonitor, CancellationToken ct)
+    public static async Task<bool> DeleteAsync(KrakarrDbContext db, IEventHub eventHub, IMediaServerNotifier mediaServers, int movieFileId, bool unmonitor, CancellationToken ct)
     {
         var file = await db.MovieFiles.AsNoTracking()
             .Where(f => f.Id == movieFileId)
@@ -26,6 +27,7 @@ public static class MovieFileDeletion
         var folder = await db.Movies.AsNoTracking().Where(m => m.Id == file.MovieId).Select(m => m.Path).FirstAsync(ct);
 
         LibraryFiles.DeleteVideo(folder, file.RelativePath);
+        mediaServers.PathChanged(folder);
 
         await db.Movies.Where(m => m.MovieFileId == movieFileId).ExecuteUpdateAsync(s =>
         {
