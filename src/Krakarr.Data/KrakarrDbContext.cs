@@ -155,6 +155,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
         {
             e.Property(x => x.Language).HasMaxLength(16);
             e.Property(x => x.Provider).HasMaxLength(32);
+            e.Property(x => x.SyncNote).HasMaxLength(512);
             e.HasOne<MovieFile>().WithMany().HasForeignKey(x => x.MovieFileId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne<EpisodeFile>().WithMany().HasForeignKey(x => x.EpisodeFileId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => x.MovieFileId);

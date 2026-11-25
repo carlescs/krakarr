@@ -84,7 +84,7 @@ export class SubtitleBestMatch implements OnInit {
     try {
       for (const r of m.results.filter(r => this.selected().has(r.candidate.language))) {
         try {
-          await this.api.downloadSubtitle({ movieFileId: item.movieFileId, episodeFileId: item.episodeFileId }, r.candidate, r.score);
+          await this.api.downloadSubtitle({ movieFileId: item.movieFileId, episodeFileId: item.episodeFileId }, r.candidate, r.score, false);
           this.downloaded++;
           this.changed.emit();
         } catch (e) {

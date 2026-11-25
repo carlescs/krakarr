@@ -21,7 +21,7 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
     {
         public List<SubtitleCandidate> Candidates { get; } = [];
         public List<string> Downloads { get; } = [];
-        public SubtitleQuery? LastQuery { get; private set; }
+        public SubtitleQuery? LastQuery { get; set; }
         public bool Fail { get; set; }
         public string Name => "fake";
         public bool IsConfigured(SubtitleSettings settings) => true;
@@ -58,6 +58,8 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
         services.AddSingleton<IEventHub, NullEventHub>();
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<SubtitleService>();
+        services.AddSingleton<Sync.SubtitleSyncGate>();
+        services.AddScoped<Sync.SubtitleSyncService>();
         _services = services.BuildServiceProvider();
 
         using var scope = _services.CreateScope();
@@ -90,6 +92,13 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
         var service = scope.ServiceProvider.GetRequiredService<SubtitleService>();
         var target = await service.GetMovieTargetAsync(_movieFileId, TestContext.Current.CancellationToken);
         return await service.SearchMissingAsync(target!, TestContext.Current.CancellationToken, upgrade);
+    }
+
+    private async Task SaveSettingsAsync(Func<SubtitleSettings, SubtitleSettings> change)
+    {
+        using var scope = _services.CreateScope();
+        var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
+        await settings.SaveAsync(change(await settings.GetAsync<SubtitleSettings>()));
     }
 
     private async Task<List<SubtitleFile>> RowsAsync()
@@ -144,6 +153,7 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
     [Fact]
     public async Task Upgrade_replaces_present_subtitles_only_with_a_better_score()
     {
+        await SaveSettingsAsync(s => s with { UpgradeDays = 0 });
         _provider.Candidates.Add(C("en-ok", "The.Matrix.1999.1080p.BluRay.x264-OTHER"));
         _provider.Candidates.Add(C("es-best", "The.Matrix.1999.1080p.BluRay.x264-SPARKS", lang: "es"));
         await SearchAsync();
@@ -162,6 +172,111 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
         Assert.Equal("subtitle en-best", await File.ReadAllTextAsync(en.Path, TestContext.Current.CancellationToken));
 
         Assert.Contains("no better subtitles found", await SearchAsync(upgrade: true));
+    }
+
+    [Fact]
+    public async Task Automatic_search_upgrades_recent_subtitles_below_the_upgrade_score()
+    {
+        _provider.Candidates.Add(C("en-ok", "The.Matrix.1999.1080p.BluRay.x264-OTHER")); // 80
+        _provider.Candidates.Add(C("es-best", "The.Matrix.1999.1080p.BluRay.x264-SPARKS", lang: "es")); // 100
+        await SearchAsync();
+
+        // Nothing better yet: the 80 is kept, and the 100 is never searched again.
+        _provider.LastQuery = null;
+        Assert.Contains("no better subtitles found", await SearchAsync());
+        Assert.Equal(["en"], _provider.LastQuery!.Languages);
+
+        _provider.Candidates.Add(C("en-best", "The.Matrix.1999.1080p.BluRay.x264-SPARKS"));
+        Assert.Contains("upgraded en", await SearchAsync());
+        Assert.Equal(100, (await RowsAsync()).Single(r => r.Language == "en").Score);
+        Assert.Contains("all subtitles present", await SearchAsync());
+    }
+
+    [Fact]
+    public async Task Automatic_search_leaves_manual_and_old_subtitles_alone()
+    {
+        _provider.Candidates.Add(C("en-ok", "The.Matrix.1999.1080p.BluRay.x264-OTHER"));
+        _provider.Candidates.Add(C("es-ok", "The.Matrix.1999.1080p.BluRay.x264-OTHER", lang: "es"));
+        await SearchAsync();
+        using (var scope = _services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+            await db.SubtitleFiles.Where(r => r.Language == "en").ExecuteUpdateAsync(x => x.SetProperty(r => r.Manual, true), TestContext.Current.CancellationToken);
+            await db.SubtitleFiles.Where(r => r.Language == "es").ExecuteUpdateAsync(x => x.SetProperty(r => r.DateAdded, DateTimeOffset.UtcNow.AddDays(-8)), TestContext.Current.CancellationToken);
+        }
+
+        _provider.Candidates.Add(C("en-best", "The.Matrix.1999.1080p.BluRay.x264-SPARKS"));
+        _provider.Candidates.Add(C("es-best", "The.Matrix.1999.1080p.BluRay.x264-SPARKS", lang: "es"));
+        Assert.Contains("all subtitles present", await SearchAsync());
+        Assert.Equal(["en-ok", "es-ok"], _provider.Downloads);
+
+        // A search started by hand still upgrades both.
+        Assert.Contains("upgraded en, es", await SearchAsync(upgrade: true));
+    }
+
+    private static string Srt(IEnumerable<double> starts) => string.Concat(starts.Select((t, i) =>
+        $"{i + 1}\n{TimeSpan.FromMilliseconds(t):hh\\:mm\\:ss\\,fff} --> {TimeSpan.FromMilliseconds(t + 1000):hh\\:mm\\:ss\\,fff}\nLine {i}\n\n"));
+
+    private async Task<SubtitleFile> AddSubtitleAsync(string language, int score, string content)
+    {
+        var path = SubtitleService.SubtitlePath(_moviePath, language, false, false, ".srt");
+        await File.WriteAllTextAsync(path, content, TestContext.Current.CancellationToken);
+        using var scope = _services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        var row = new SubtitleFile { MovieFileId = _movieFileId, Language = language, Path = path, Provider = "fake", Score = score };
+        db.SubtitleFiles.Add(row);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        return row;
+    }
+
+    [Fact]
+    public async Task Syncs_against_a_perfect_subtitle_of_the_same_file_without_tools()
+    {
+        // Paths that don't exist: no tool is used, whatever is installed on the machine.
+        await SaveSettingsAsync(s => s with { Sync = new SubtitleSyncSettings { AlassPath = "/none/alass", FfsubsyncPath = "/none/ffsubsync", FfmpegPath = "/none/ffmpeg" } });
+        var random = new Random(3);
+        var starts = new List<double>();
+        for (double t = 2_000; starts.Count < 200; t += 1_500 + random.Next(4_000)) starts.Add(t);
+        await AddSubtitleAsync("en", 100, Srt(starts));
+        var late = await AddSubtitleAsync("es", 70, Srt(starts.Select(t => t + 3_000)));
+
+        using var scope = _services.CreateScope();
+        var sync = scope.ServiceProvider.GetRequiredService<Sync.SubtitleSyncService>();
+        var result = await sync.SyncAsync(late.Id, TestContext.Current.CancellationToken);
+
+        Assert.True(result!.Success, result.Message);
+        Assert.Contains("-3.000 s", result.Message);
+        Assert.Equal(Srt(starts), await File.ReadAllTextAsync(late.Path, TestContext.Current.CancellationToken));
+        var row = (await RowsAsync()).Single(r => r.Language == "es");
+        Assert.NotNull(row.SyncedAt);
+        Assert.Contains("English", row.SyncNote);
+    }
+
+    [Fact]
+    public async Task Sync_without_tools_or_reference_records_why()
+    {
+        await SaveSettingsAsync(s => s with { Sync = new SubtitleSyncSettings { AlassPath = "/none/alass", FfsubsyncPath = "/none/ffsubsync", FfmpegPath = "/none/ffmpeg" } });
+        var row = await AddSubtitleAsync("es", 70, Srt([1_000, 5_000]));
+
+        using var scope = _services.CreateScope();
+        var result = await scope.ServiceProvider.GetRequiredService<Sync.SubtitleSyncService>().SyncAsync(row.Id, TestContext.Current.CancellationToken);
+
+        Assert.False(result!.Success);
+        var stored = (await RowsAsync()).Single();
+        Assert.Null(stored.SyncedAt);
+        Assert.StartsWith("Sync failed: Install alass or ffsubsync", stored.SyncNote);
+    }
+
+    [Fact]
+    public async Task Shifts_a_subtitle_by_hand()
+    {
+        var row = await AddSubtitleAsync("en", 70, Srt([1_000, 5_000]));
+
+        using var scope = _services.CreateScope();
+        var shifted = await scope.ServiceProvider.GetRequiredService<Sync.SubtitleSyncService>().ShiftAsync(row.Id, -750, TestContext.Current.CancellationToken);
+
+        Assert.Equal("Shifted by -750 ms by hand", shifted!.SyncNote);
+        Assert.Equal(Srt([250, 4_250]), await File.ReadAllTextAsync(row.Path, TestContext.Current.CancellationToken));
     }
 
     [Fact]

@@ -8,7 +8,8 @@ namespace Krakarr.Subtitles;
 
 /// <summary>
 /// Searches subtitles for newly imported files (never searched) right away and re-checks files that are still
-/// missing languages every <see cref="SubtitleSettings.SearchIntervalHours"/>, except files marked "not found"
+/// missing languages (or holding a recent low-scoring subtitle worth upgrading) every
+/// <see cref="SubtitleSettings.SearchIntervalHours"/>, except files marked "not found"
 /// (<see cref="Krakarr.Core.Domain.MovieFile.SubtitlesNotFound"/>, <see cref="Krakarr.Core.Domain.EpisodeFile.SubtitlesNotFound"/>). Processes a few files per run to
 /// respect provider quotas.
 /// </summary>
@@ -20,6 +21,7 @@ public sealed class SubtitleSearchTask(
     ILogger<SubtitleSearchTask> logger) : IScheduledTask
 {
     private const int BatchSize = 10;
+    private const int UpgradeBatchSize = 5;
 
     public string Name => "Search missing subtitles";
     public TimeSpan Interval => TimeSpan.FromMinutes(1);
@@ -76,19 +78,49 @@ public sealed class SubtitleSearchTask(
             .OrderBy(f => f.LastSubtitleSearch != null).ThenBy(f => f.LastSubtitleSearch).ThenBy(f => f.Id)
             .Select(f => f.Id).Take(BatchSize).ToListAsync(cancellationToken);
 
-        var processed = 0;
-        foreach (var id in movieFiles)
-        {
-            if (processed++ >= BatchSize || service.BackoffUntil(s) is not null) break;
-            if (await service.GetMovieTargetAsync(id, cancellationToken) is { } target)
-                logger.LogInformation("Subtitles: {Result}", await service.SearchMissingAsync(target, cancellationToken));
-        }
+        HashSet<int> doneMovies = [], doneEpisodes = [];
+        await SearchAsync(s, movieFiles, [], doneMovies, BatchSize, movies: true, cancellationToken);
+        await SearchAsync(s, episodeFiles, [], doneEpisodes, BatchSize - doneMovies.Count, movies: false, cancellationToken);
+        await UpgradeAsync(s, due, doneMovies, doneEpisodes, cancellationToken);
+    }
 
-        foreach (var id in episodeFiles)
+    /// <summary>Searches up to <paramref name="budget"/> of the files, skipping <paramref name="skip"/> and adding the ones searched to <paramref name="done"/>.</summary>
+    private async Task SearchAsync(SubtitleSettings s, IEnumerable<int> ids, HashSet<int> skip, HashSet<int> done, int budget, bool movies, CancellationToken ct)
+    {
+        foreach (var id in ids)
         {
-            if (processed++ >= BatchSize || service.BackoffUntil(s) is not null) break;
-            if (await service.GetEpisodeTargetAsync(id, cancellationToken) is { } target)
-                logger.LogInformation("Subtitles: {Result}", await service.SearchMissingAsync(target, cancellationToken));
+            if (done.Count >= budget || service.BackoffUntil(s) is not null) return;
+            if (skip.Contains(id)) continue;
+            done.Add(id);
+            var target = movies ? await service.GetMovieTargetAsync(id, ct) : await service.GetEpisodeTargetAsync(id, ct);
+            if (target is not null) logger.LogInformation("Subtitles: {Result}", await service.SearchMissingAsync(target, ct));
+            db.ChangeTracker.Clear();
         }
+    }
+
+    /// <summary>
+    /// Files with a recent subtitle scoring below <see cref="SubtitleSettings.UpgradeBelowScore"/> that are due again
+    /// get their own small budget, so a long backlog of files to re-check doesn't push upgrades past their window.
+    /// The search itself decides which languages to upgrade (<see cref="SubtitleUpgrade.Select"/>).
+    /// </summary>
+    private async Task UpgradeAsync(SubtitleSettings s, DateTimeOffset due, HashSet<int> doneMovies, HashSet<int> doneEpisodes, CancellationToken ct)
+    {
+        if (s.UpgradeDays <= 0) return;
+        var since = time.GetUtcNow() - TimeSpan.FromDays(s.UpgradeDays);
+        var candidates = db.SubtitleFiles.AsNoTracking()
+            .Where(x => !x.Forced && !x.Manual && x.Score != null && x.Score < s.UpgradeBelowScore && x.DateAdded >= since
+                        && x.Provider != SubtitleUpgrade.DiskProvider);
+        var movieFiles = await candidates.Where(x => x.MovieFileId != null)
+            .Join(db.MovieFiles.AsNoTracking(), x => x.MovieFileId, f => f.Id, (x, f) => f)
+            .Where(f => f.LastSubtitleSearch == null || f.LastSubtitleSearch < due)
+            .Select(f => f.Id).Distinct().OrderBy(id => id).Take(UpgradeBatchSize).ToListAsync(ct);
+        var episodeFiles = await candidates.Where(x => x.EpisodeFileId != null)
+            .Join(db.EpisodeFiles.AsNoTracking(), x => x.EpisodeFileId, f => f.Id, (x, f) => f)
+            .Where(f => f.LastSubtitleSearch == null || f.LastSubtitleSearch < due)
+            .Select(f => f.Id).Distinct().OrderBy(id => id).Take(UpgradeBatchSize).ToListAsync(ct);
+
+        HashSet<int> upgradedMovies = [], upgradedEpisodes = [];
+        await SearchAsync(s, movieFiles, doneMovies, upgradedMovies, UpgradeBatchSize, movies: true, ct);
+        await SearchAsync(s, episodeFiles, doneEpisodes, upgradedEpisodes, UpgradeBatchSize - upgradedMovies.Count, movies: false, ct);
     }
 }

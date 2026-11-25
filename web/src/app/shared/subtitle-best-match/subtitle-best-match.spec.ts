@@ -36,7 +36,7 @@ describe('SubtitleBestMatch', () => {
 
     button(el, 'Download 1').click();
     await settle(fixture);
-    expect(api.downloadSubtitle).toHaveBeenCalledWith({ movieFileId: 1, episodeFileId: undefined }, low.candidate, 45);
+    expect(api.downloadSubtitle).toHaveBeenCalledWith({ movieFileId: 1, episodeFileId: undefined }, low.candidate, 45, false);
     expect(text(el)).toContain('Best match · 2 of 2');
 
     button(el, 'Skip').click();

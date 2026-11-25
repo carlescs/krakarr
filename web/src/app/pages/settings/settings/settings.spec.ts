@@ -124,7 +124,8 @@ describe('SettingsPage', () => {
   it('saves the whole subtitles tab from the footer', async () => {
     const subtitles = {
       enabled: false, languages: ['en'], hearingImpaired: 'PreferNormal', minimumScoreMovies: 70, minimumScoreEpisodes: 80, searchIntervalHours: 24,
-      includeAiTranslated: false, useEmbeddedSubtitles: true, openSubtitles: { enabled: true }, subdl: { enabled: true },
+      includeAiTranslated: false, useEmbeddedSubtitles: true, upgradeDays: 7, upgradeBelowScore: 90,
+      sync: { automatic: false, belowScore: 90, timeoutSeconds: 300 }, openSubtitles: { enabled: true }, subdl: { enabled: true },
     };
     const api = setupTest({
       api: mockApi({
@@ -132,6 +133,7 @@ describe('SettingsPage', () => {
         subtitleLanguages: async () => [{ code: 'en', name: 'English' }],
         rootFolders: async () => [], qualityProfiles: async () => [], qualities: async () => [], systemStatus: async () => ({}),
         saveSettings: async (_: string, value: unknown) => value,
+        subtitleSyncTools: async () => ({ alass: true, ffsubsync: false, ffmpeg: true }),
       }),
     });
     const fixture = TestBed.createComponent(SettingsPage);
@@ -139,6 +141,9 @@ describe('SettingsPage', () => {
     const el = fixture.nativeElement as HTMLElement;
     button(el, 'Subtitles').click();
     await settle(fixture);
+    expect(text(el, '[data-sync-tools]')).toContain('alass · found');
+    expect(text(el, '[data-sync-tools]')).toContain('ffsubsync · not found');
+    [...el.querySelectorAll('[data-sync-settings] label')].find(l => l.textContent?.includes('Sync new subtitles automatically'))!.querySelector('input')!.click();
 
     const options = el.querySelector('section.card') as HTMLElement;
     [...options.querySelectorAll('label')].find(l => l.textContent?.includes('Download subtitles automatically'))!.querySelector('input')!.click();
@@ -147,7 +152,7 @@ describe('SettingsPage', () => {
     button(el, 'Save').click();
     await settle(fixture);
     expect(api.saveSettings).toHaveBeenCalledTimes(1);
-    expect(api.saveSettings).toHaveBeenCalledWith('subtitles', expect.objectContaining({ enabled: true }));
+    expect(api.saveSettings).toHaveBeenCalledWith('subtitles', expect.objectContaining({ enabled: true, sync: expect.objectContaining({ automatic: true }) }));
   });
 
   it('saves the download client and automation settings together', async () => {

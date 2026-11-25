@@ -6,7 +6,7 @@ import { Api, SettingsMap, errorMessage } from '../../../core/api';
 import { BytesPipe } from '../../../core/format';
 import { Events } from '../../../core/events';
 import {
-  AutomationSettings, DirectoryListing, Language, SubtitleSettings, DownloadClientKind, DownloadClientSettings, DownloadClientTestResult, GeneralSettings, MediaManagementSettings, MetadataSettings, OtlpProtocol, Quality,
+  AutomationSettings, DirectoryListing, Language, SubtitleSettings, SubtitleSyncTools, DownloadClientKind, DownloadClientSettings, DownloadClientTestResult, GeneralSettings, MediaManagementSettings, MetadataSettings, OtlpProtocol, Quality,
   QualityProfile, RootFolder, ScheduledTaskInfo, SystemStatus, TelemetrySettings, TelemetryStatus,
 } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
@@ -137,6 +137,8 @@ export class SettingsPage implements OnInit {
   ];
   protected readonly clientTest = signal<DownloadClientTestResult | null>(null);
   protected readonly subtitles = signal<SubtitleSettings | null>(null);
+  /** Which subtitle sync tools the server found (null while loading). */
+  protected readonly syncTools = signal<SubtitleSyncTools | null>(null);
   protected readonly telemetry = signal<TelemetrySettings | null>(null);
   protected readonly telemetryStatus = signal<TelemetryStatus | null>(null);
   protected readonly saving = signal(false);
@@ -214,7 +216,11 @@ export class SettingsPage implements OnInit {
     this.api.telemetryStatus().then(s => this.telemetryStatus.set(s), () => {});
     this.languageCatalog.load().catch(() => {});
     const [subs, langs] = await Promise.all([this.api.settings('subtitles'), this.api.subtitleLanguages()]);
-    if (subs) subs.subdl ??= { enabled: true };
+    if (subs) {
+      subs.subdl ??= { enabled: true };
+      subs.sync ??= { automatic: false, belowScore: 90, timeoutSeconds: 300 };
+    }
+    this.api.subtitleSyncTools().then(t => this.syncTools.set(t), () => {});
     this.subtitles.set(subs);
     this.languages.set(langs);
   }

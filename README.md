@@ -10,7 +10,7 @@
 | **Prowlarr** – indexer management | `Krakarr.Indexers` | ✅ Torznab/Newznab indexers, import from an existing Prowlarr, capability detection, aggregated search across indexers |
 | **qBittorrent** – torrent client | `Krakarr.Downloads` | ✅ Embedded [MonoTorrent](https://github.com/alanmcgovern/monotorrent) engine: magnets, .torrent files, DHT, speed limits, seeding ratio/time limits, fast-resume — *or* drive an existing qBittorrent (tag-scoped) |
 | **Sonarr** – TV series | `Krakarr.Series` | ✅ TMDB or TheTVDB metadata, seasons/episodes, monitoring, season-pack aware search, RSS sync, rename + hardlink import |
-| **Bazarr** – subtitles | `Krakarr.Subtitles` | ✅ OpenSubtitles.com, wanted languages, hash + release scoring, automatic and manual search |
+| **Bazarr** – subtitles | `Krakarr.Subtitles` | ✅ OpenSubtitles.com, wanted languages, hash + release scoring, automatic and manual search, upgrades, sync |
 | **Seerr** – discovery | `Krakarr.Movies` / `Krakarr.Series` | ✅ Trending, popular, upcoming and top-rated lists, personal recommendations, recommended and similar titles, detail pages for any title, cast and person pages, one-click add, requests with approval |
 
 Everything (API, web UI, torrent engine, schedulers) runs in a single .NET process inside a single Docker container.
@@ -203,6 +203,17 @@ Nothing is moved or renamed.
   **Settings → Subtitles** to download external subtitles anyway.
 - The **Subtitles** page lists files missing languages. Every movie and episode has a subtitle dialog with
   automatic search, manual search (all candidates with score and reasons) and delete.
+- **Upgrades:** for 7 days after a download (configurable), subtitles scoring below 90 are searched again with the
+  regular retry interval and replaced when a higher-scoring one turns up. Subtitles picked by hand or found on disk are kept.
+- **Synchronisation:** a subtitle can be synced against the video from its subtitle list, or automatically after
+  download when it scores below a threshold. The reference is a perfect-score subtitle of the same file, a text
+  subtitle track inside the video, or the audio. [alass](https://github.com/kaegi/alass) or
+  [ffsubsync](https://github.com/smacke/ffsubsync) do the work (plus ffmpeg for the audio and embedded tracks);
+  without them, Krakarr fixes a constant shift or a framerate difference against a reference subtitle. The Docker image
+  ships alass and a slimmed-down ffmpeg/ffprobe (audio decoding and text subtitle tracks only, ~14 MB in all), so syncing
+  works out of the box. ffsubsync isn't included (it needs Python and numpy); outside Docker, install any of the tools on
+  `PATH` or set their paths in **Settings → Subtitles**. Syncs run one at a time with a timeout. Subtitles (SRT, VTT,
+  ASS/SSA) can also be shifted by hand by ± ms.
 
 ### Media servers (Jellyfin, Emby, Plex)
 
@@ -501,7 +512,7 @@ API documentation (OpenAPI) is served at `/api/openapi/v1.json`.
 ## Roadmap
 
 - **Series (Sonarr):** daily and anime (absolute) numbering, wanted view
-- **Subtitles (Bazarr):** more providers (Podnapisi, Addic7ed, …), embedded subtitle detection, per-series language profiles, sync/encoding fixes
+- **Subtitles (Bazarr):** more providers (Podnapisi, Addic7ed, …), embedded subtitle detection, per-series language profiles, encoding fixes
 - **Indexers (Prowlarr):** native tracker definitions (Cardigann-style), per-indexer stats, Torznab proxy for other apps
 - **Downloads:** per-torrent limits, file selection, Usenet (NZB) support
 - Lists (Trakt/IMDb), notifications (including request updates), per-season requests, optional renaming of imported libraries

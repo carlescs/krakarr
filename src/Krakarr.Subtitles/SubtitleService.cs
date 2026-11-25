@@ -178,7 +178,7 @@ public sealed class SubtitleService(
                 HearingImpaired = info.HearingImpaired,
                 Forced = info.Forced,
                 Path = path,
-                Provider = "disk",
+                Provider = SubtitleUpgrade.DiskProvider,
             });
             changed = true;
         }
@@ -264,10 +264,11 @@ public sealed class SubtitleService(
     }
 
     /// <summary>
-    /// Automatic search: downloads the best acceptable subtitle for each missing wanted language.
-    /// With <paramref name="upgrade"/>, languages that already have a subtitle are searched too, and replaced when a
-    /// candidate scores higher than the current one. Subtitles found on disk have no score and are never replaced, and
-    /// languages present only inside the video (see <see cref="SubtitleSettings.UseEmbeddedSubtitles"/>) are not searched.
+    /// Automatic search: downloads the best acceptable subtitle for each missing wanted language, and upgrades recent
+    /// low-scoring downloads (see <see cref="SubtitleUpgrade.Select"/>): they are replaced when a candidate scores higher.
+    /// With <paramref name="upgrade"/>, every language that already has a downloaded subtitle is searched too.
+    /// Subtitles found on disk have no score and are never replaced, and languages present only inside the video
+    /// (see <see cref="SubtitleSettings.UseEmbeddedSubtitles"/>) are not searched.
     /// Returns a short summary for the task log.
     /// </summary>
     public async Task<string> SearchMissingAsync(
@@ -295,7 +296,10 @@ public sealed class SubtitleService(
         var s = await settings.GetAsync<SubtitleSettings>(ct);
         await SyncDiskAsync(target, ct);
         var missing = await MissingLanguagesAsync(target, s, ct);
-        if (missing.Count > 0 || upgrade)
+        // Score to beat per language already present; disk subtitles are left alone.
+        var current = SubtitleUpgrade.Select(await RowsAsync(target, ct), s, time.GetUtcNow(), upgrade)
+            .Where(kv => !missing.Contains(kv.Key)).ToDictionary();
+        if (missing.Count > 0 || current.Count > 0)
         {
             // Don't query providers that asked us to back off, and leave the file due so it is searched once they allow it.
             if (BackoffUntil(s, providers) is { } until)
@@ -303,17 +307,6 @@ public sealed class SubtitleService(
         }
 
         await MarkSearchedAsync(target, ct);
-
-        // Score to beat per language already present (upgrade only); disk subtitles are left alone.
-        var current = new Dictionary<string, int>();
-        if (upgrade)
-        {
-            foreach (var group in (await RowsAsync(target, ct)).Where(r => !r.Forced && s.Languages.Contains(r.Language)).GroupBy(r => r.Language))
-            {
-                if (group.Any(r => r.Provider == "disk")) continue;
-                current[group.Key] = group.Max(r => r.Score ?? 0);
-            }
-        }
 
         var languages = missing.Concat(current.Keys).ToList();
         if (languages.Count == 0)
@@ -414,7 +407,9 @@ public sealed class SubtitleService(
     }
 
     /// <summary>Downloads a subtitle and stores it next to the video as "{video}.{lang}[.hi][.forced].{ext}".</summary>
-    public async Task<SubtitleFile> DownloadAsync(SubtitleTarget target, SubtitleCandidate candidate, int? score, SubtitleSettings? s = null, CancellationToken ct = default)
+    /// <param name="manual">Picked by hand in the interactive search: automatic upgrades leave it alone.</param>
+    public async Task<SubtitleFile> DownloadAsync(SubtitleTarget target, SubtitleCandidate candidate, int? score, SubtitleSettings? s = null, CancellationToken ct = default,
+        bool manual = false)
     {
         s ??= await settings.GetAsync<SubtitleSettings>(ct);
         var provider = Providers.FirstOrDefault(p => p.Name == candidate.Provider)
@@ -451,6 +446,8 @@ public sealed class SubtitleService(
             Provider = candidate.Provider,
             Score = score,
             Release = candidate.ReleaseNames.FirstOrDefault() ?? candidate.FileName,
+            Manual = manual,
+            DateAdded = time.GetUtcNow(),
         };
         db.SubtitleFiles.Add(row);
         var entry = new HistoryEntry

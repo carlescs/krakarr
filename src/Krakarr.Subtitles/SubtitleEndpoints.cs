@@ -2,6 +2,7 @@ using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Jobs;
 using Krakarr.Data;
+using Krakarr.Subtitles.Sync;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -11,7 +12,12 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Krakarr.Subtitles;
 
 public sealed record SubtitleFileDto(int Id, int? MovieFileId, int? EpisodeFileId, string Language, string LanguageName, bool HearingImpaired, bool Forced,
-    string FileName, string Provider, int? Score, string? Release, DateTimeOffset DateAdded);
+    string FileName, string Provider, int? Score, string? Release, DateTimeOffset DateAdded,
+    bool Manual = false, DateTimeOffset? SyncedAt = null, string? SyncNote = null);
+
+/// <summary>Which sync tools were found; with none, subtitles can still be synced against a reference subtitle or shifted by hand.</summary>
+public sealed record SubtitleSyncToolsDto(bool Alass, bool Ffsubsync, bool Ffmpeg);
+public sealed record SubtitleShiftRequest(int OffsetMs);
 
 public sealed record SubtitleProviderDto(string Name, string DisplayName, bool Configured);
 /// <param name="NotFound">Searching all wanted files only: true = only files marked "not found", false = only unmarked files, null = all.</param>
@@ -20,7 +26,8 @@ public sealed record SubtitleSearchRequest(int? MovieFileId, int? EpisodeFileId,
 public sealed record WantedSubtitleCountsDto(int Searching, int NotFound);
 /// <summary>Movie or episode file to search automatically again; neither retries every file marked "not found".</summary>
 public sealed record SubtitleRetryRequest(int? MovieFileId, int? EpisodeFileId = null);
-public sealed record SubtitleDownloadRequest(int? MovieFileId, int? EpisodeFileId, SubtitleCandidate Candidate, int? Score);
+/// <param name="Manual">Picked by hand from the full list (default): automatic upgrades leave it alone. Best-match downloads send false so a better subtitle can still replace them.</param>
+public sealed record SubtitleDownloadRequest(int? MovieFileId, int? EpisodeFileId, SubtitleCandidate Candidate, int? Score, bool Manual = true);
 public sealed record ScoredSubtitleDto(SubtitleCandidate Candidate, int Score, IReadOnlyList<string> Matches, IReadOnlyList<string> Rejections, bool Acceptable);
 /// <summary>Best subtitle per missing language, even below <c>MinimumScore</c>; downloaded only once the user confirms.</summary>
 public sealed record BestSubtitleMatchesDto(string Label, IReadOnlyList<string> MissingLanguages, int MinimumScore, IReadOnlyList<ScoredSubtitleDto> Results, IReadOnlyList<string> Errors);
@@ -263,11 +270,45 @@ public static class SubtitleEndpoints
             if (target is null) return Results.NotFound();
             try
             {
-                return Results.Ok(ToDto(await service.DownloadAsync(target, req.Candidate, req.Score, ct: ct)));
+                return Results.Ok(ToDto(await service.DownloadAsync(target, req.Candidate, req.Score, ct: ct, manual: req.Manual)));
             }
             catch (SubtitleProviderException ex)
             {
                 return Results.Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
+            }
+        });
+
+        group.MapGet("/sync/tools", async (SubtitleSyncService sync, CancellationToken ct) =>
+        {
+            var tools = await sync.ToolsAsync(ct);
+            return new SubtitleSyncToolsDto(tools.Alass is not null, tools.Ffsubsync is not null, tools.Ffmpeg is not null);
+        });
+
+        // Resyncs one subtitle against the video in the background (it can take minutes); the outcome lands on the row.
+        group.MapPost("/{id:int}/sync", async (int id, KrakarrDbContext db, ICommandQueue commands, CancellationToken ct) =>
+        {
+            var path = await db.SubtitleFiles.AsNoTracking().Where(s => s.Id == id).Select(s => s.Path).FirstOrDefaultAsync(ct);
+            if (path is null) return Results.NotFound();
+            var command = commands.Enqueue($"Sync subtitle: {Path.GetFileName(path)}", async (sp, token) =>
+            {
+                var result = await sp.GetRequiredService<SubtitleSyncService>().SyncAsync(id, token) ?? throw new KeyNotFoundException("Subtitle not found");
+                return result.Success ? result.Message : throw new InvalidOperationException(result.Message);
+            });
+            return Results.Accepted(value: command);
+        });
+
+        // Moves every cue by a fixed amount (negative = earlier).
+        group.MapPost("/{id:int}/shift", async (int id, SubtitleShiftRequest req, SubtitleSyncService sync, CancellationToken ct) =>
+        {
+            if (req.OffsetMs == 0 || Math.Abs(req.OffsetMs) > 3_600_000)
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["offsetMs"] = ["Give a shift between -3600000 and 3600000 ms, other than 0"] });
+            try
+            {
+                return await sync.ShiftAsync(id, req.OffsetMs, ct) is { } row ? Results.Ok(ToDto(row)) : Results.NotFound();
+            }
+            catch (Exception ex) when (ex is IOException or NotSupportedException or InvalidDataException or UnauthorizedAccessException)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status422UnprocessableEntity);
             }
         });
 
@@ -299,5 +340,5 @@ public static class SubtitleEndpoints
 
     private static SubtitleFileDto ToDto(SubtitleFile s) => new(
         s.Id, s.MovieFileId, s.EpisodeFileId, s.Language, Languages.Name(s.Language), s.HearingImpaired, s.Forced,
-        Path.GetFileName(s.Path), s.Provider, s.Score, s.Release, s.DateAdded);
+        Path.GetFileName(s.Path), s.Provider, s.Score, s.Release, s.DateAdded, s.Manual, s.SyncedAt, s.SyncNote);
 }
