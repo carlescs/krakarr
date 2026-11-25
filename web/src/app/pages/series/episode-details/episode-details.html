@@ -22,6 +22,9 @@
       <div class="mt-2">
         @if (e.downloadProgress != null) {
           <div class="flex max-w-xs items-center gap-2"><kr-progress class="flex-1" [value]="e.downloadProgress" /><span class="text-xs text-accent-300">{{ e.downloadProgress.toFixed(0) }}%</span></div>
+          @if (auth.isStaff() && e.downloadHash) {
+            <a [routerLink]="['/downloads']" [queryParams]="{ hash: e.downloadHash }" class="mt-1 inline-block text-xs text-slate-400 hover:text-accent-300" data-download-link>Show in Downloads →</a>
+          }
         } @else if (e.episodeFile) {
           <span class="badge bg-emerald-500/15 text-emerald-300">{{ e.episodeFile.quality }}</span>
         } @else if (!e.hasAired) {

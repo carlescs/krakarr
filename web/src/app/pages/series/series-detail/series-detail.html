@@ -53,6 +53,9 @@
     </div>
   </div>
 
+  <!-- Torrents of this series, linked to the downloads page -->
+  <kr-media-downloads [downloads]="downloads()" [labels]="downloadLabels()" />
+
   <!-- Seasons -->
   <div class="space-y-3">
     @for (season of seasonsDesc(); track season.seasonNumber) {
@@ -351,7 +354,13 @@
 <!-- Episode status, shown in its own column on wider screens and under the title on phones. -->
 <ng-template #episodeStatus let-e>
   @if (e.downloadProgress != null) {
-    <div class="flex items-center gap-2"><kr-progress class="flex-1" [value]="e.downloadProgress" /><span class="text-xs text-accent-300">{{ e.downloadProgress.toFixed(0) }}%</span></div>
+    @if (auth.isStaff() && e.downloadHash) {
+      <a [routerLink]="['/downloads']" [queryParams]="{ hash: e.downloadHash }" class="flex items-center gap-2 hover:opacity-80" title="Show the torrent in Downloads" data-episode-download>
+        <kr-progress class="flex-1" [value]="e.downloadProgress" /><span class="text-xs text-accent-300">{{ e.downloadProgress.toFixed(0) }}%</span>
+      </a>
+    } @else {
+      <div class="flex items-center gap-2"><kr-progress class="flex-1" [value]="e.downloadProgress" /><span class="text-xs text-accent-300">{{ e.downloadProgress.toFixed(0) }}%</span></div>
+    }
   } @else if (e.episodeFile; as f) {
     <span class="badge bg-emerald-500/15 text-emerald-300" [title]="(f.size | bytes)">{{ f.quality }}</span>
   } @else if (!e.hasAired) {

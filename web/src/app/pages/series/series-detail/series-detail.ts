@@ -2,7 +2,7 @@ import { Component, DestroyRef, OnInit, computed, effect, inject, input, numberA
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../../core/api';
 import { Auth } from '../../../core/auth';
 import { Events } from '../../../core/events';
@@ -26,6 +26,7 @@ import { SubscribeButton } from '../../../shared/subscribe-button/subscribe-butt
 import { ExternalLinks } from '../../../shared/external-links/external-links';
 import { EpisodeDetailsDialog } from '../episode-details/episode-details';
 import { DeleteFilesDialog } from '../../../shared/delete-files/delete-files';
+import { MediaDownloads } from '../../../shared/media-downloads/media-downloads';
 
 const ICON_SEARCH = 'm21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z';
 const ICON_LIST = 'M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM3.75 12h.007v.008H3.75V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm-.375 5.25h.007v.008H3.75v-.008Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z';
@@ -35,9 +36,27 @@ const ICON_BOOKMARK = 'M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25
 
 interface ReleaseTarget { label: string; season?: number; episodeId?: number; }
 
+/** "S01E01–E03, S02E01": consecutive episodes collapse into a range. */
+export function episodeCodes(episodes: readonly Pick<Episode, 'seasonNumber' | 'episodeNumber'>[]): string {
+  const seasons = new Map<number, number[]>();
+  for (const e of episodes) seasons.set(e.seasonNumber, [...(seasons.get(e.seasonNumber) ?? []), e.episodeNumber]);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return [...seasons].sort(([a], [b]) => a - b).map(([season, numbers]) => {
+    const sorted = [...new Set(numbers)].sort((a, b) => a - b);
+    const runs: string[] = [];
+    for (let i = 0; i < sorted.length;) {
+      let j = i;
+      while (j + 1 < sorted.length && sorted[j + 1] === sorted[j] + 1) j++;
+      runs.push(`E${pad(sorted[i])}` + (j > i ? `–E${pad(sorted[j])}` : ''));
+      i = j + 1;
+    }
+    return `S${pad(season)}` + runs.join(' ');
+  }).join(', ');
+}
+
 @Component({
   selector: 'kr-series-detail',
-  imports: [DeleteFilesDialog, ExternalLinks, EpisodeDetailsDialog, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, IndexerProgress, BytesPipe, AgoPipe, SubtitleManager, SortHeader],
+  imports: [DeleteFilesDialog, MediaDownloads, RouterLink, ExternalLinks, EpisodeDetailsDialog, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, IndexerProgress, BytesPipe, AgoPipe, SubtitleManager, SortHeader],
   templateUrl: './series-detail.html',
   styleUrl: './series-detail.scss',
 })
@@ -95,6 +114,16 @@ export class SeriesDetailPage implements OnInit {
   protected readonly jellyfinUrl = signal<string | null>(null);
   private jellyfinCheckedFor: number | null = null;
   protected readonly episodes = signal<Episode[]>([]);
+  /** Torrents of this series in the download clients (live). */
+  protected readonly downloads = computed(() => this.events.downloads().filter(d => d.seriesId === this.id()));
+  /** Episode codes each active torrent is downloading, from the episodes that point at it. */
+  protected readonly downloadLabels = computed(() => {
+    const byHash = new Map<string, Episode[]>();
+    for (const e of this.episodes()) {
+      if (e.downloadHash) byHash.set(e.downloadHash, [...(byHash.get(e.downloadHash) ?? []), e]);
+    }
+    return new Map([...byHash].map(([hash, eps]) => [hash, episodeCodes(eps)]));
+  });
   protected readonly history = signal<HistoryItem[]>([]);
   protected readonly profiles = signal<QualityProfile[]>([]);
   protected readonly expanded = signal(new Set<number>());

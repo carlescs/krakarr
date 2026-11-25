@@ -1,5 +1,6 @@
 import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../../core/api';
 import { Auth } from '../../../core/auth';
 import { BytesPipe } from '../../../core/format';
@@ -16,7 +17,7 @@ import { SubtitleList } from '../../../shared/subtitle-list/subtitle-list';
  */
 @Component({
   selector: 'kr-episode-details',
-  imports: [Modal, CreditsView, ExternalLinks, Progress, SubtitleList, DatePipe, BytesPipe],
+  imports: [RouterLink, Modal, CreditsView, ExternalLinks, Progress, SubtitleList, DatePipe, BytesPipe],
   templateUrl: './episode-details.html',
   styleUrl: './episode-details.scss',
 })

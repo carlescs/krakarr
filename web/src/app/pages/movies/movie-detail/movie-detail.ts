@@ -6,7 +6,7 @@ import { Router } from '@angular/router';
 import { Api, errorMessage } from '../../../core/api';
 import { Auth } from '../../../core/auth';
 import { Events } from '../../../core/events';
-import { AgoPipe, BytesPipe, DurationPipe, SpeedPipe } from '../../../core/format';
+import { AgoPipe, BytesPipe } from '../../../core/format';
 import { AVAILABILITY_OPTIONS } from '../../../core/calendar';
 import { HistoryItem, MinimumAvailability, Movie, QualityProfile, ReleaseDecision, SubtitleFile } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
@@ -20,18 +20,17 @@ import { SortHeader } from '../../../shared/sort-header/sort-header';
 import { Poster } from '../../../shared/poster/poster';
 import { LibraryCredits } from '../../../shared/library-credits/library-credits';
 import { RelatedTitles } from '../../../shared/related-titles/related-titles';
-import { Progress } from '../../../shared/progress/progress';
-import { StateBadge } from '../../../shared/state-badge/state-badge';
 import { SubtitleManager } from '../../../shared/subtitle-manager/subtitle-manager';
 import { SubtitleList } from '../../../shared/subtitle-list/subtitle-list';
 import { SubscribeButton } from '../../../shared/subscribe-button/subscribe-button';
 import { ExternalLinks } from '../../../shared/external-links/external-links';
 import { MovieReleases } from '../../../shared/movie-releases/movie-releases';
+import { MediaDownloads } from '../../../shared/media-downloads/media-downloads';
 import { DeleteFilesDialog } from '../../../shared/delete-files/delete-files';
 
 @Component({
   selector: 'kr-movie-detail',
-  imports: [DeleteFilesDialog, ExternalLinks, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, MovieReleases, FormsModule, DatePipe, Poster, Progress, Modal, IndexerProgress, StateBadge, SubtitleManager, SubtitleList, SortHeader, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
+  imports: [DeleteFilesDialog, MediaDownloads, ExternalLinks, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, MovieReleases, FormsModule, DatePipe, Poster, Modal, IndexerProgress, SubtitleManager, SubtitleList, SortHeader, BytesPipe, AgoPipe],
   templateUrl: './movie-detail.html',
   styleUrl: './movie-detail.scss',
 })
@@ -78,7 +77,7 @@ export class MovieDetailPage implements OnInit {
   protected readonly availabilityOptions = AVAILABILITY_OPTIONS;
   protected deleteFiles = false;
 
-  protected readonly downloads = computed(() => this.events.downloads().filter(d => d.movieId === this.id() && !d.imported));
+  protected readonly downloads = computed(() => this.events.downloads().filter(d => d.movieId === this.id()));
   protected readonly profileName = computed(() => this.profiles().find(p => p.id === this.movie()?.qualityProfileId)?.name ?? '');
 
   constructor() {

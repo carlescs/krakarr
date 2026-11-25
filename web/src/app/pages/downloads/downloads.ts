@@ -1,10 +1,12 @@
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, Injector, OnDestroy, OnInit, afterNextRender, computed, effect, inject, signal, untracked } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
 import { Events } from '../../core/events';
 import { BytesPipe, DurationPipe, SpeedPipe } from '../../core/format';
-import { BulkDownloadAction, BulkResult, DownloadClientKind, DownloadClientName, DownloadClientStatus, ImportIssue, TorrentStatus } from '../../core/models';
+import { BulkDownloadAction, BulkResult, DownloadClientKind, DownloadClientName, DownloadClientStatus, DownloadMediaInfo, ImportIssue, TorrentStatus } from '../../core/models';
 import { Selection } from '../../core/selection';
 import { Toasts } from '../../core/toast';
 import { MediaLink, MediaLinkPicker, linkFields } from '../../shared/media-link-picker/media-link-picker';
@@ -12,6 +14,10 @@ import { Modal } from '../../shared/modal/modal';
 import { Progress } from '../../shared/progress/progress';
 import { StateBadge } from '../../shared/state-badge/state-badge';
 import { TorrentDetailsDialog } from '../../shared/torrent-details/torrent-details';
+
+// Heroicons outline paths (24x24), as in the sidebar.
+const ICON_FILM = 'M3.375 19.5h17.25M3.375 19.5A1.125 1.125 0 0 1 2.25 18.375V5.625C2.25 5.004 2.754 4.5 3.375 4.5h17.25c.621 0 1.125.504 1.125 1.125v12.75c0 .621-.504 1.125-1.125 1.125M3.375 19.5h1.5m15.75 0h-1.5M6 4.5v15m12-15v15M2.25 9h3.75m12 0h3.75M2.25 15h3.75m12 0h3.75';
+const ICON_TV = 'M6 20.25h12m-7.5-3v3m3-3v3m-10.125-3h17.25c.621 0 1.125-.504 1.125-1.125V4.875c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125Z';
 
 const SHOW_SEEDING_KEY = 'krakarr.downloads.showSeeding';
 const SORT_KEY = 'krakarr.downloads.sort';
@@ -62,6 +68,12 @@ export function sortTorrents(list: readonly TorrentStatus[], { key, desc }: Sort
   });
 }
 
+/** Text of a download's library link: "Arrival (2016)" or "Severance · S01E01–E03". */
+export function mediaLabel(info: DownloadMediaInfo): string {
+  const title = info.year && !info.title.endsWith(`(${info.year})`) ? `${info.title} (${info.year})` : info.title;
+  return info.episodes ? `${title} · ${info.episodes}` : title;
+}
+
 export function clientLabel(kind: DownloadClientKind | DownloadClientName): string {
   return kind === 'QBittorrent' || kind === 'qbittorrent' ? 'qBittorrent' : 'Built-in';
 }
@@ -81,7 +93,7 @@ function readShowSeeding(): boolean {
 
 @Component({
   selector: 'kr-downloads',
-  imports: [FormsModule, RouterLink, Modal, MediaLinkPicker, Progress, StateBadge, TorrentDetailsDialog, BytesPipe, SpeedPipe, DurationPipe],
+  imports: [FormsModule, NgTemplateOutlet, RouterLink, Modal, MediaLinkPicker, Progress, StateBadge, TorrentDetailsDialog, BytesPipe, SpeedPipe, DurationPipe],
   templateUrl: './downloads.html',
   styleUrl: './downloads.scss',
 })
@@ -89,6 +101,15 @@ export class DownloadsPage implements OnInit, OnDestroy {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
   private readonly events = inject(Events);
+  private readonly injector = inject(Injector);
+  private readonly query = toSignal(inject(ActivatedRoute).queryParamMap);
+
+  /** Torrent to scroll to and highlight (`?hash=`), e.g. when coming from a movie or series page. */
+  protected readonly focusHash = computed(() => this.query()?.get('hash')?.toLowerCase() ?? null);
+  /** The movie/series (and episodes) of each linked download, keyed by download id. */
+  protected readonly media = signal(new Map<number, DownloadMediaInfo>());
+  protected readonly mediaLabel = mediaLabel;
+  protected readonly icons = { film: ICON_FILM, tv: ICON_TV };
 
   protected readonly list = computed(() => this.events.downloads());
   protected readonly showSeeding = signal(readShowSeeding());
@@ -135,6 +156,34 @@ export class DownloadsPage implements OnInit, OnDestroy {
     try { return new URLSearchParams(this.magnet().trim().replace(/^magnet:\?/i, '')).get('dn') ?? ''; } catch { return ''; }
   });
   protected deleteData = false;
+
+  /** Ids of the linked downloads on the page; the titles are fetched again only when this set changes. */
+  private readonly linkedIds = computed(() => [
+    ...this.list().filter(d => d.movieId || d.seriesId).map(d => d.id),
+    ...this.importIssues().filter(i => i.movieId || i.seriesId).map(i => i.id),
+  ].sort((a, b) => a - b).join(','));
+
+  constructor() {
+    effect(() => {
+      const ids = this.linkedIds();
+      if (!ids) return;
+      const known = untracked(this.media);
+      if (ids.split(',').every(id => known.has(+id))) return;
+      this.api.downloadMedia().then(list => this.media.set(new Map(list.map(i => [i.id, i])))).catch(() => {});
+    });
+
+    // Open the tab holding the requested torrent and scroll to it, once it is in the list.
+    let focused: string | null = null;
+    effect(() => {
+      const hash = this.focusHash();
+      if (!hash || hash === focused) return;
+      const target = this.list().find(d => d.infoHash.toLowerCase() === hash);
+      if (!target) return;
+      focused = hash;
+      untracked(() => this.showSeeding.set(isFinished(target)));
+      afterNextRender(() => document.getElementById('torrent-' + target.infoHash)?.scrollIntoView({ block: 'center' }), { injector: this.injector });
+    });
+  }
 
   async ngOnInit() {
     const refresh = () => {

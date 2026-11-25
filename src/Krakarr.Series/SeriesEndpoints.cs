@@ -63,7 +63,7 @@ public sealed record EpisodeFileDto(int Id, string RelativePath, long Size, stri
 
 public sealed record EpisodeDto(
     int Id, int SeasonNumber, int EpisodeNumber, int? AbsoluteNumber, string? Title, string? Overview, DateOnly? AirDate, int Runtime,
-    bool Monitored, bool HasAired, EpisodeFileDto? EpisodeFile, double? DownloadProgress);
+    bool Monitored, bool HasAired, EpisodeFileDto? EpisodeFile, double? DownloadProgress, string? DownloadHash = null);
 
 /// <param name="Languages">Wanted audio languages, most preferred first; null = use the global default.</param>
 /// <param name="Title">New display title; null keeps the current one, blank restores the metadata title.</param>
@@ -411,7 +411,8 @@ public static class SeriesEndpoints
             return episodes.Select(e => new EpisodeDto(
                 e.Id, e.SeasonNumber, e.EpisodeNumber, e.AbsoluteNumber, e.Title, e.Overview, e.AirDate, e.Runtime, e.Monitored, e.HasAired(today),
                 e.EpisodeFile is { } f ? new EpisodeFileDto(f.Id, f.RelativePath, f.Size, Qualities.FindById(f.QualityId).Name, f.ReleaseGroup, f.DateAdded) : null,
-                progress.TryGetValue(e.Id, out var p) ? p : null));
+                progress.TryGetValue(e.Id, out var p) ? p.Progress : null,
+                progress.ContainsKey(e.Id) ? p.Hash : null));
         });
 
         group.MapPut("/{id:int}/seasons/{season:int}", async (int id, int season, MonitorRequest req, KrakarrDbContext db, CancellationToken ct) =>
@@ -669,16 +670,22 @@ public static class SeriesEndpoints
             .ThenBy(x => x.Id);
     }
 
-    private static async Task<Dictionary<int, double>> EpisodeProgressAsync(KrakarrDbContext db, ITorrentEngine engine, int seriesId, CancellationToken ct)
+    /// <summary>Per episode being downloaded: the progress of its furthest torrent and that torrent's hash (links to the downloads page).</summary>
+    private static async Task<Dictionary<int, (double Progress, string Hash)>> EpisodeProgressAsync(KrakarrDbContext db, ITorrentEngine engine, int seriesId, CancellationToken ct)
     {
-        var active = engine.GetStatuses().Where(s => s.SeriesId == seriesId && !s.Imported).ToDictionary(s => s.InfoHash, s => s.Progress, StringComparer.OrdinalIgnoreCase);
+        var active = engine.GetStatuses().Where(s => s.SeriesId == seriesId && !s.Imported)
+            .DistinctBy(s => s.InfoHash, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(s => s.InfoHash, s => s.Progress, StringComparer.OrdinalIgnoreCase);
         if (active.Count == 0) return [];
         var rows = await db.Downloads.AsNoTracking().Where(d => d.SeriesId == seriesId && !d.Imported).Select(d => new { d.InfoHash, d.EpisodeIds }).ToListAsync(ct);
-        var result = new Dictionary<int, double>();
+        var result = new Dictionary<int, (double Progress, string Hash)>();
         foreach (var row in rows)
         {
             if (!active.TryGetValue(row.InfoHash, out var p)) continue;
-            foreach (var e in row.EpisodeIds) result[e] = Math.Max(result.GetValueOrDefault(e), p);
+            foreach (var e in row.EpisodeIds)
+            {
+                if (!result.TryGetValue(e, out var current) || p > current.Progress) result[e] = (p, row.InfoHash);
+            }
         }
 
         return result;
