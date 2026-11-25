@@ -22,6 +22,7 @@ public enum NotificationSeverity
 /// <param name="Date">When the latest of them happened, if known.</param>
 /// <param name="Progress">Set for work in progress (e.g. a subtitle sync): the bell shows a progress bar. Live updates
 /// arrive as <c>EventNames.NotificationProgress</c> events so clients don't refetch every source each time.</param>
+/// <param name="Actions">Buttons shown on the notification (e.g. cancel a running sync).</param>
 public sealed record Notification(
     string Id,
     string Kind,
@@ -31,7 +32,11 @@ public sealed record Notification(
     int Count = 1,
     NotificationSeverity Severity = NotificationSeverity.Info,
     DateTimeOffset? Date = null,
-    NotificationProgress? Progress = null);
+    NotificationProgress? Progress = null,
+    IReadOnlyList<NotificationAction>? Actions = null);
+
+/// <summary>A button on a notification. The bell POSTs to <paramref name="Path"/>, which is relative to <c>/api/v1</c>.</summary>
+public sealed record NotificationAction(string Label, string Path);
 
 /// <summary>How far along a notification's work is.</summary>
 /// <param name="Percent">0 to 100, or null when the work can't tell (the bar is indeterminate).</param>

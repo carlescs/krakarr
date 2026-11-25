@@ -260,6 +260,37 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_sync_cancelled_while_waiting_its_turn_stops_and_is_not_retried()
+    {
+        var row = await AddSubtitleAsync("es", 70, Srt([1_000, 5_000]));
+        var gate = _services.GetRequiredService<Sync.SubtitleSyncGate>();
+        var progress = _services.GetRequiredService<Sync.SubtitleSyncProgress>();
+        await gate.Lock.WaitAsync(TestContext.Current.CancellationToken); // another sync is running
+        try
+        {
+            using var scope = _services.CreateScope();
+            var running = scope.ServiceProvider.GetRequiredService<Sync.SubtitleSyncService>().SyncAsync(row.Id, TestContext.Current.CancellationToken);
+            while (progress.Current.Count == 0) await Task.Delay(10, TestContext.Current.CancellationToken);
+
+            Assert.True(progress.Cancel(row.Id));
+            var result = await running.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+
+            Assert.False(result!.Success);
+            Assert.Equal(Sync.SubtitleSyncProgress.CancelledResult, result.Message);
+        }
+        finally
+        {
+            gate.Lock.Release();
+        }
+
+        var stored = (await RowsAsync()).Single();
+        Assert.Equal("Sync cancelled", stored.SyncNote);
+        Assert.Null(stored.SyncedAt);
+        Assert.True(Assert.Single(progress.Current).Cancelled);
+        Assert.False(progress.Cancel(row.Id));
+    }
+
+    [Fact]
     public async Task Sync_without_tools_or_reference_records_why()
     {
         await SaveSettingsAsync(s => s with { Sync = new SubtitleSyncSettings { AlassPath = "/none/alass", FfsubsyncPath = "/none/ffsubsync", FfmpegPath = "/none/ffmpeg" } });

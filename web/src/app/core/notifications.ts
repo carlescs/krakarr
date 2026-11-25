@@ -1,8 +1,9 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { interval, merge, Subscription } from 'rxjs';
-import { Api } from './api';
+import { Api, errorMessage } from './api';
 import { Events } from './events';
-import { AppNotification, NotificationProgressUpdate } from './models';
+import { AppNotification, NotificationAction, NotificationProgressUpdate } from './models';
+import { Toasts } from './toast';
 
 /** Some notifications depend on the date (e.g. today's releases), so also refetch now and then without an event. */
 const REFRESH_INTERVAL_MS = 30 * 60 * 1000;
@@ -16,9 +17,12 @@ const REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 export class Notifications {
   private readonly api = inject(Api);
   private readonly events = inject(Events);
+  private readonly toasts = inject(Toasts);
   private subscription?: Subscription;
 
   readonly items = signal<AppNotification[]>([]);
+  /** Notification ids whose button is being run, to disable it meanwhile. */
+  readonly busy = signal<ReadonlySet<string>>(new Set());
   /** What the bell's badge shows. */
   readonly total = computed(() => this.items().reduce((sum, n) => sum + n.count, 0));
   readonly hasProblems = computed(() => this.items().some(n => n.severity === 'Warning' || n.severity === 'Error'));
@@ -55,6 +59,19 @@ export class Notifications {
       this.items.set(await this.api.notifications());
     } catch {
       // Keep the last known state; the bell is not worth an error toast.
+    }
+  }
+
+  /** Runs a notification's button; the server publishes the change, so the bell refreshes by itself. */
+  async act(n: AppNotification, action: NotificationAction) {
+    this.busy.update(ids => new Set(ids).add(n.id));
+    try {
+      await this.api.notificationAction(action.path);
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+      await this.refresh();
+    } finally {
+      this.busy.update(ids => { const next = new Set(ids); next.delete(n.id); return next; });
     }
   }
 

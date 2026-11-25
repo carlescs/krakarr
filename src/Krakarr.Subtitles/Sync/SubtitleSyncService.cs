@@ -102,15 +102,17 @@ public sealed class SubtitleSyncService(
         using var activity = KrakarrTelemetry.ActivitySource.StartActivity("subtitle sync");
         activity?.SetTag("krakarr.subtitle.language", row.Language);
         var (title, link) = await DescribeAsync(row, ct);
-        progress.Queue(row.Id, title, link);
+        var cancel = progress.Queue(row.Id, title, link);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, cancel);
+        var token = linked.Token;
         SubtitleSyncResult result;
         try
         {
-            await gate.Lock.WaitAsync(ct);
+            await gate.Lock.WaitAsync(token);
             try
             {
                 progress.Stage(row.Id, "Looking for a reference");
-                result = await SyncCoreAsync(row, ct);
+                result = await SyncCoreAsync(row, token);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or TimeoutException
                                            or NotSupportedException or InvalidDataException)
@@ -128,6 +130,15 @@ public sealed class SubtitleSyncService(
             if (result.Success) row.SyncedAt = time.GetUtcNow();
             await db.SaveChangesAsync(ct);
             progress.Complete(row.Id, result.Success, result.Message);
+        }
+        catch (OperationCanceledException) when (cancel.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            // Cancelled from the bell. The note keeps the automatic task from starting it again; a sync by hand still can.
+            result = new SubtitleSyncResult(false, SubtitleSyncProgress.CancelledResult);
+            activity?.SetTag("krakarr.subtitle.result", "cancelled");
+            row.SyncNote = "Sync cancelled";
+            await db.SaveChangesAsync(ct);
+            progress.Complete(row.Id, false, result.Message, cancelled: true);
         }
         finally
         {

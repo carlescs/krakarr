@@ -71,6 +71,33 @@ describe('NotificationBell', () => {
     expect(text(item)).toContain('100%');
   });
 
+  it('runs a notification button such as cancelling a sync', async () => {
+    let finish!: () => void;
+    const api = setupTest({ api: mockApi({ notificationAction: () => new Promise<void>(resolve => (finish = resolve)) }) });
+    TestBed.inject(Notifications).items.set([
+      { id: 'subtitles.sync.1', kind: 'subtitle', title: 'Syncing Dune (2021) · English', message: 'Syncing', count: 1, severity: 'Info',
+        link: '/movies/3', progress: { percent: 10 }, actions: [{ label: 'Cancel', path: 'subtitles/1/sync/cancel' }] },
+      { id: 'requests.pending', kind: 'request', title: '2 pending requests', count: 2, severity: 'Info', link: '/requests' },
+    ] as AppNotification[]);
+    const fixture = TestBed.createComponent(NotificationBell);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    button(el, 'Notifications (3)').click();
+    await settle(fixture);
+    expect(el.querySelectorAll('li')[1].querySelector('.btn-secondary')).toBeNull();
+
+    const cancel = button(el, 'Cancel Syncing Dune (2021) · English');
+    cancel.click();
+    await settle(fixture);
+    expect(api.notificationAction).toHaveBeenCalledWith('subtitles/1/sync/cancel');
+    expect(cancel.disabled).toBe(true);
+    expect(el.querySelector('[role="progressbar"]')).not.toBeNull(); // still open
+
+    finish();
+    await settle(fixture);
+    expect(cancel.disabled).toBe(false);
+  });
+
   it('formats the time left', async () => {
     setupTest();
     const items = TestBed.inject(Notifications).items;

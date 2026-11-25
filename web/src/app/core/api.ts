@@ -248,6 +248,8 @@ export class Api {
   notifications() { return this.get<AppNotification[]>('notifications'); }
   dismissNotification(id: string) { return this.delete<void>(`notifications/${encodeURIComponent(id)}`); }
   dismissAllNotifications() { return this.delete<void>('notifications'); }
+  /** Runs a button on a notification (e.g. cancel a subtitle sync). */
+  notificationAction(path: string) { return this.post<void>(path); }
 
   // Requests: users ask for titles, staff approve (adds them) or decline.
   requests(status?: RequestStatus, page = 1) { return this.get<MediaRequestPage>('requests', { status, page }); }
