@@ -63,4 +63,7 @@ public sealed class SettingsCache
     public bool TryGet(string key, out object value) => _values.TryGetValue(key, out value!);
     public void Set(string key, object value) => _values[key] = value;
     public void RaiseChanged(string key) => Changed?.Invoke(key);
+
+    /// <summary>Forgets every cached section, e.g. after settings were restored from a backup.</summary>
+    public void Clear() => _values.Clear();
 }

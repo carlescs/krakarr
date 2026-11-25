@@ -308,6 +308,13 @@ export interface DownloadClientSettings {
 }
 export interface AutomationSettings { rssSyncIntervalMinutes: number; searchOnAdd: boolean; }
 
+/** Scheduled backups into /config/Backups. `intervalDays` 0 turns scheduled backups off. */
+export interface BackupSettings { intervalDays: number; retentionCount: number; }
+export type BackupType = 'Scheduled' | 'Manual';
+export interface BackupInfo { name: string; type: BackupType; size: number; created: string; }
+export interface RestoreOutcome { succeeded: boolean; message: string; at: string; }
+export interface BackupList { backups: BackupInfo[]; restorePending: boolean; lastRestore: RestoreOutcome | null; provider: string; }
+
 export interface SystemStatus {
   version: string; runtime: string; os: string; isDocker: boolean; configDirectory: string; downloadDirectory: string;
   databaseProvider: string; environmentName: string; startTime: string;

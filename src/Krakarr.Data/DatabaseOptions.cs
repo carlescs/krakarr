@@ -9,4 +9,11 @@ public sealed class DatabaseOptions
 
     /// <summary>Connection string; for SQLite defaults to {config}/krakarr.db.</summary>
     public string? ConnectionString { get; set; }
+
+    /// <summary><see cref="Provider"/> with its aliases folded: "sqlite", "postgres", or the lower-cased value when unknown.</summary>
+    public string ProviderKind => Provider.ToLowerInvariant() switch
+    {
+        "postgres" or "postgresql" or "npgsql" => "postgres",
+        var other => other,
+    };
 }

@@ -58,6 +58,11 @@ public static class SettingsEndpoints
             present: s => string.IsNullOrEmpty(s.Headers) ? s : s with { Headers = TelemetrySettings.HeadersMask },
             validate: s => s.Validate());
 
+        MapSection<BackupSettings>(settings, "backup",
+            validate: s => s.IntervalDays is < 0 or > 365 ? "Backup interval must be between 0 (off) and 365 days"
+                : s.RetentionCount is < 1 or > 100 ? "Keep between 1 and 100 backups"
+                : null);
+
         MapSection<LanguageSettings>(settings, "languages",
             merge: (_, incoming) => incoming with { Preferred = MediaLanguages.Clean(incoming.Preferred) });
 

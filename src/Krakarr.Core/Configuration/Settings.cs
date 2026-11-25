@@ -157,6 +157,22 @@ public sealed record AutomationSettings : ISettingsSection
     public TimeSpan? RssSyncInterval => RssSyncIntervalMinutes > 0 ? TimeSpan.FromMinutes(RssSyncIntervalMinutes) : null;
 }
 
+/// <summary>Scheduled backups of the database, data-protection keys and config files into <c>/config/Backups</c>.</summary>
+public sealed record BackupSettings : ISettingsSection
+{
+    public static string SectionKey => "backup";
+
+    /// <summary>Days between scheduled backups; 0 turns scheduled backups off ("Back up now" still works).</summary>
+    public int IntervalDays { get; init; } = 7;
+
+    /// <summary>How many backups to keep (scheduled and manual together); older ones are deleted after each backup.</summary>
+    public int RetentionCount { get; init; } = 5;
+
+    /// <summary>Time between scheduled backups, or <c>null</c> when they are off.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public TimeSpan? Interval => IntervalDays > 0 ? TimeSpan.FromDays(IntervalDays) : null;
+}
+
 public enum HearingImpairedMode
 {
     /// <summary>Use normal subtitles when available, hearing-impaired ones otherwise.</summary>
