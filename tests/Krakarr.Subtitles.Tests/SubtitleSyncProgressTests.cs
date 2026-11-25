@@ -137,6 +137,74 @@ public sealed class SubtitleSyncProgressTests
     }
 
     [Fact]
+    public async Task A_finished_sync_shows_green_when_it_worked_and_red_when_it_did_not()
+    {
+        _progress.Queue(1, "Dune (2021) · English", "/movies/3");
+        _progress.Queue(2, "Severance S01E03 · Spanish", "/series/5");
+        _progress.Stage(1, "Syncing with alass against the audio");
+        _progress.Report(1, 60);
+        _clock.Now += TimeSpan.FromMinutes(2);
+        _progress.Complete(1, true, "Synced with alass against the audio");
+        _progress.Complete(2, false, "The video file was not found");
+        _progress.Finish(1); // what callers do after: keeps the outcome
+
+        var shown = await new SubtitleSyncNotificationSource(_progress)
+            .GetAsync(new NotificationContext(1, UserRole.Manager), TestContext.Current.CancellationToken);
+        Assert.Collection(shown,
+            n =>
+            {
+                Assert.Equal("subtitles.sync.1", n.Id);
+                Assert.Equal("Synced Dune (2021) · English", n.Title);
+                Assert.Equal("Synced with alass against the audio", n.Message);
+                Assert.Equal(NotificationSeverity.Success, n.Severity);
+                Assert.Equal(new NotificationProgress(100), n.Progress);
+                Assert.Equal(_clock.Now, n.Date);
+            },
+            n =>
+            {
+                Assert.Equal("Could not sync Severance S01E03 · Spanish", n.Title);
+                Assert.Equal("The video file was not found", n.Message);
+                Assert.Equal(NotificationSeverity.Error, n.Severity);
+                Assert.Null(n.Progress);
+            });
+    }
+
+    [Fact]
+    public void A_finished_sync_ignores_late_progress_and_is_replaced_by_a_new_sync()
+    {
+        _progress.Queue(1, "Dune (2021) · English", "/movies/3");
+        _progress.Complete(1, false, "boom");
+        _progress.Stage(1, "late");
+        _progress.Report(1, 50);
+        Assert.Null(Assert.Single(_progress.Current).Stage);
+
+        _progress.Queue(1, "Dune (2021) · English", "/movies/3");
+        var again = Assert.Single(_progress.Current);
+        Assert.True(again.Waiting);
+        Assert.Null(again.Finished);
+    }
+
+    [Fact]
+    public void Finished_syncs_expire_and_are_capped()
+    {
+        _progress.Queue(1, "Old", "/movies/1");
+        _progress.Complete(1, true, "Synced");
+        _clock.Now += SubtitleSyncProgress.KeepFinished + TimeSpan.FromSeconds(1);
+        Assert.Empty(_progress.Current);
+
+        for (var i = 0; i < SubtitleSyncProgress.MaxFinished + 5; i++)
+        {
+            _progress.Queue(i, $"Sub {i}", "/subtitles");
+            _clock.Now += TimeSpan.FromSeconds(1);
+            _progress.Complete(i, true, "Synced");
+        }
+
+        var kept = _progress.Current;
+        Assert.Equal(SubtitleSyncProgress.MaxFinished, kept.Count);
+        Assert.DoesNotContain(kept, a => a.SubtitleId < 5); // the oldest went first
+    }
+
+    [Fact]
     public void Untracked_syncs_report_nothing()
     {
         _progress.Stage(9, "Syncing");

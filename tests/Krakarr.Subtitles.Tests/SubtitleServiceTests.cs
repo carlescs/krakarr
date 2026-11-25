@@ -251,7 +251,9 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
         var row = (await RowsAsync()).Single(r => r.Language == "es");
         Assert.NotNull(row.SyncedAt);
         Assert.Contains("English", row.SyncNote);
-        Assert.Empty(_services.GetRequiredService<Sync.SubtitleSyncProgress>().Current);
+        var done = Assert.Single(_services.GetRequiredService<Sync.SubtitleSyncProgress>().Current);
+        Assert.True(done.Succeeded);
+        Assert.Equal(result.Message, done.Result);
         var (title, link) = await sync.DescribeAsync(row, TestContext.Current.CancellationToken);
         Assert.Equal("The Matrix (1999) · Spanish", title);
         Assert.StartsWith("/movies/", link);

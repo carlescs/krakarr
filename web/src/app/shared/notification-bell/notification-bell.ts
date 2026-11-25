@@ -37,7 +37,8 @@ export class NotificationBell {
   }
 
   protected tone(n: AppNotification) {
-    return n.severity === 'Error' ? 'text-rose-400' : n.severity === 'Warning' ? 'text-amber-400' : 'text-accent-300';
+    return n.severity === 'Error' ? 'text-rose-400' : n.severity === 'Warning' ? 'text-amber-400'
+      : n.severity === 'Success' ? 'text-emerald-400' : 'text-accent-300';
   }
 
   /** Estimated time left as "45 s left", "3 min left" or "1 h 5 min left"; empty without an estimate. */

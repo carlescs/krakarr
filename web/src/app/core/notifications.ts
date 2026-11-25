@@ -21,7 +21,7 @@ export class Notifications {
   readonly items = signal<AppNotification[]>([]);
   /** What the bell's badge shows. */
   readonly total = computed(() => this.items().reduce((sum, n) => sum + n.count, 0));
-  readonly hasProblems = computed(() => this.items().some(n => n.severity !== 'Info'));
+  readonly hasProblems = computed(() => this.items().some(n => n.severity === 'Warning' || n.severity === 'Error'));
 
   /** Count of one notification by id (e.g. "requests.pending"), for badges elsewhere. */
   count(id: string): number {

@@ -49,6 +49,28 @@ describe('NotificationBell', () => {
     expect(bars[1].querySelector('.animate-pulse')).not.toBeNull();
   });
 
+  it('shows a finished sync in green', async () => {
+    setupTest();
+    TestBed.inject(Notifications).items.set([
+      { id: 'subtitles.sync.1', kind: 'subtitle', title: 'Synced Dune (2021) · English', message: 'Synced with alass against the audio',
+        count: 1, severity: 'Success', link: '/movies/3', progress: { percent: 100 } },
+    ] as AppNotification[]);
+    const fixture = TestBed.createComponent(NotificationBell);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    const bell = button(el, 'Notifications (1)');
+    expect(bell.querySelector('.bg-rose-400')).toBeNull();
+    bell.click();
+    await settle(fixture);
+
+    const item = el.querySelector('li')!;
+    expect(item.classList).toContain('bg-emerald-500/10');
+    expect(item.querySelector('svg')!.classList).toContain('text-emerald-400');
+    expect(item.querySelector('.text-emerald-300')!.textContent).toContain('Synced Dune (2021) · English');
+    expect(item.querySelector('[role="progressbar"] .bg-emerald-400')).not.toBeNull();
+    expect(text(item)).toContain('100%');
+  });
+
   it('formats the time left', async () => {
     setupTest();
     const items = TestBed.inject(Notifications).items;

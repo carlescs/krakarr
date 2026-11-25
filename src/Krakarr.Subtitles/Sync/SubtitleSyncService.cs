@@ -121,17 +121,19 @@ public sealed class SubtitleSyncService(
             {
                 gate.Lock.Release();
             }
+
+            activity?.SetTag("krakarr.subtitle.result", result.Message);
+            var note = result.Success ? result.Message : "Sync failed: " + result.Message;
+            row.SyncNote = note.Length > 512 ? note[..512] : note;
+            if (result.Success) row.SyncedAt = time.GetUtcNow();
+            await db.SaveChangesAsync(ct);
+            progress.Complete(row.Id, result.Success, result.Message);
         }
         finally
         {
-            progress.Finish(row.Id);
+            progress.Finish(row.Id); // cancelled or failed to save: no outcome to show
         }
 
-        activity?.SetTag("krakarr.subtitle.result", result.Message);
-        var note = result.Success ? result.Message : "Sync failed: " + result.Message;
-        row.SyncNote = note.Length > 512 ? note[..512] : note;
-        if (result.Success) row.SyncedAt = time.GetUtcNow();
-        await db.SaveChangesAsync(ct);
         if (result.Success) logger.LogInformation("Synced {Subtitle}: {Result}", Path.GetFileName(row.Path), result.Message);
         else logger.LogWarning("Could not sync {Subtitle}: {Result}", Path.GetFileName(row.Path), result.Message);
         await PublishAsync(row, ct);
