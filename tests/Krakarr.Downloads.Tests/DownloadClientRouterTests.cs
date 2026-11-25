@@ -171,6 +171,27 @@ public sealed class DownloadClientRouterTests : IAsyncLifetime
         }
     }
 
+    [Fact]
+    public async Task Health_check_reports_clients_that_are_not_working()
+    {
+        var check = new DownloadClientHealthCheck(_router);
+        Assert.Empty(await check.CheckAsync(TestContext.Current.CancellationToken));
+
+        // The selected client failing stops downloads: an error.
+        _qbt.LastError = "Connection refused";
+        var error = Assert.Single(await check.CheckAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(Krakarr.Core.Health.HealthSeverity.Error, error.Severity);
+        Assert.Contains("qBittorrent is not working", error.Message);
+        Assert.Contains("Connection refused", error.Message);
+
+        // A previous client that still owns downloads: a warning; once it owns none, it doesn't matter.
+        _qbt.LastError = null;
+        _embedded.LastError = "Port in use";
+        Assert.Equal(Krakarr.Core.Health.HealthSeverity.Warning, Assert.Single(await check.CheckAsync(TestContext.Current.CancellationToken)).Severity);
+        _embedded.IsActive = false;
+        Assert.Empty(await check.CheckAsync(TestContext.Current.CancellationToken));
+    }
+
     private sealed class FakeClient(DownloadClientKind kind, string name) : IDownloadClientImpl
     {
         public List<string> Calls { get; } = [];
@@ -179,8 +200,8 @@ public sealed class DownloadClientRouterTests : IAsyncLifetime
         public string? StaleHash { get; set; }
         public DownloadClientKind Kind => kind;
         public string Name => name;
-        public bool IsActive => true;
-        public string? LastError => null;
+        public bool IsActive { get; set; } = true;
+        public string? LastError { get; set; }
 
         public Task<DownloadClientTestResult> TestAsync(DownloadClientSettings settings, CancellationToken ct = default) =>
             Task.FromResult(new DownloadClientTestResult(true, null, null));

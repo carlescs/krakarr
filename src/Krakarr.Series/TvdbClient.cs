@@ -13,6 +13,9 @@ public interface ITvdbClient
 {
     Task<IReadOnlyList<SeriesLookup>> SearchAsync(string query, CancellationToken ct = default);
     Task<SeriesInfo> GetSeriesAsync(int tvdbId, CancellationToken ct = default);
+
+    /// <summary>Logs in with the configured API key and PIN; throws <see cref="MetadataException"/> when that fails.</summary>
+    Task LoginAsync(CancellationToken ct = default);
 }
 
 /// <summary>TheTVDB v4 client (optional series metadata source): search, series details (with translations and artwork) and the default episode order.</summary>
@@ -21,6 +24,9 @@ public sealed class TvdbClient(IHttpClientFactory httpClientFactory, ISettingsSe
     public const string HttpClientName = "tvdb";
     private static readonly SemaphoreSlim TokenLock = new(1, 1);
     private static (string Key, string Token, DateTimeOffset Expires)? _token;
+
+    public async Task LoginAsync(CancellationToken ct = default) =>
+        await GetTokenAsync(httpClientFactory.CreateClient(HttpClientName), force: true, ct);
 
     public async Task<IReadOnlyList<SeriesLookup>> SearchAsync(string query, CancellationToken ct = default)
     {
@@ -171,7 +177,7 @@ public sealed class TvdbClient(IHttpClientFactory httpClientFactory, ISettingsSe
                 if (response.StatusCode == HttpStatusCode.Unauthorized && attempt == 0) continue; // token expired
                 if (!response.IsSuccessStatusCode)
                 {
-                    throw new MetadataException($"TheTVDB request failed with HTTP {(int)response.StatusCode}");
+                    throw new MetadataException($"TheTVDB request failed with HTTP {(int)response.StatusCode}", response.StatusCode);
                 }
 
                 return await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
@@ -199,7 +205,7 @@ public sealed class TvdbClient(IHttpClientFactory httpClientFactory, ISettingsSe
             using var response = await http.PostAsJsonAsync("login", body, ct);
             if (!response.IsSuccessStatusCode)
             {
-                throw new MetadataException($"TheTVDB login failed (HTTP {(int)response.StatusCode}); check the API key/PIN");
+                throw new MetadataException($"TheTVDB login failed (HTTP {(int)response.StatusCode}); check the API key/PIN", response.StatusCode);
             }
 
             using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);

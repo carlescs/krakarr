@@ -33,6 +33,9 @@ public static class IndexerEndpoints
         group.MapGet("/", async (KrakarrDbContext db, CancellationToken ct) =>
             await db.Indexers.AsNoTracking().OrderBy(i => i.Priority).ThenBy(i => i.Name).ToListAsync(ct));
 
+        // Indexers that failed their last query and how long searches skip them.
+        group.MapGet("/status", (IndexerBackoff backoff) => backoff.All);
+
         group.MapGet("/{id:int}", async (int id, KrakarrDbContext db, CancellationToken ct) =>
             await db.Indexers.FindAsync([id], ct) is { } indexer ? Results.Ok(indexer) : Results.NotFound());
 
@@ -50,7 +53,7 @@ public static class IndexerEndpoints
             return Results.Created($"/api/v1/indexers/{input.Id}", input);
         });
 
-        group.MapPut("/{id:int}", async (int id, Indexer input, KrakarrDbContext db, CancellationToken ct) =>
+        group.MapPut("/{id:int}", async (int id, Indexer input, KrakarrDbContext db, IndexerBackoff backoff, CancellationToken ct) =>
         {
             if (Validate(input) is { } problem) return problem;
             var existing = await db.Indexers.FindAsync([id], ct);
@@ -69,21 +72,25 @@ public static class IndexerEndpoints
             existing.MinimumSeeders = input.MinimumSeeders;
             existing.DefaultLanguage = NormalizeLanguage(input.DefaultLanguage);
             await db.SaveChangesAsync(ct);
+            backoff.Reset(id); // the fix may be in the new settings, so give it a fresh start
             return Results.Ok(existing);
         });
 
-        group.MapDelete("/{id:int}", async (int id, KrakarrDbContext db, CancellationToken ct) =>
+        group.MapDelete("/{id:int}", async (int id, KrakarrDbContext db, IndexerBackoff backoff, CancellationToken ct) =>
         {
             var deleted = await db.Indexers.Where(i => i.Id == id).ExecuteDeleteAsync(ct);
+            backoff.Reset(id);
             return deleted > 0 ? Results.NoContent() : Results.NotFound();
         });
 
-        group.MapPost("/test", async (Indexer input, ITorznabClient client, CancellationToken ct) =>
+        // Tests a (possibly unsaved) configuration. Testing a saved indexer successfully ends its failure backoff.
+        group.MapPost("/test", async (Indexer input, ITorznabClient client, IndexerBackoff backoff, CancellationToken ct) =>
         {
             try
             {
                 var caps = await client.GetCapabilitiesAsync(input, forceRefresh: true, ct);
                 await client.SearchAsync(input, new SearchCriteria { Rss = true, Limit = 5 }, ct);
+                if (input.Id > 0) backoff.Reset(input.Id);
                 return Results.Ok(new IndexerTestResult(true, null, caps));
             }
             catch (Exception ex) when (ex is IndexerException or HttpRequestException or TaskCanceledException)

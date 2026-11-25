@@ -9,7 +9,7 @@ import {
   AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
   IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, KeywordLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
-  DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo,
+  DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus
 } from './models';
 
 const API = 'api/v1';
@@ -118,6 +118,9 @@ export class Api {
   tasks() { return this.get<ScheduledTaskInfo[]>('system/tasks'); }
   dashboard() { return this.get<DashboardStats>('dashboard'); }
   runTask(id: string) { return this.post<void>(`system/tasks/${encodeURIComponent(id)}/run`); }
+  health() { return this.get<HealthReport>('system/health'); }
+  /** Runs every health check now (API keys are validated again) and returns the new report. */
+  checkHealth() { return this.post<HealthReport>('system/health/check'); }
 
   // Settings
   settings<K extends keyof SettingsMap>(section: K) { return this.get<SettingsMap[K]>(`settings/${section}`); }
@@ -138,6 +141,8 @@ export class Api {
   indexers() { return this.get<Indexer[]>('indexers'); }
   saveIndexer(i: Indexer) { return i.id ? this.put<Indexer>(`indexers/${i.id}`, i) : this.post<Indexer>('indexers', i); }
   deleteIndexer(id: number) { return this.delete<void>(`indexers/${id}`); }
+  /** Indexers backing off after failures. */
+  indexerStatus() { return this.get<IndexerStatus[]>('indexers/status'); }
   testIndexer(i: Indexer) { return this.post<IndexerTestResult>('indexers/test', i); }
   indexerCapabilities(i: Indexer) { return this.post<IndexerTestResult>('indexers/capabilities', i); }
   prowlarrIndexers(url: string, apiKey: string) { return this.post<ProwlarrListResult>('indexers/prowlarr/list', { url, apiKey }); }

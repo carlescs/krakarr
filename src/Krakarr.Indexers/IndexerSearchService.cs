@@ -15,11 +15,12 @@ public sealed record IndexerSearchResult(IReadOnlyList<ReleaseInfo> Releases, IR
 
 public sealed record IndexerError(int IndexerId, string IndexerName, string Message);
 
-public enum IndexerQueryState { Pending, Done, Failed }
+/// <summary><c>Skipped</c>: not queried because it kept failing (see <see cref="IndexerBackoff"/>).</summary>
+public enum IndexerQueryState { Pending, Done, Failed, Skipped }
 
 /// <summary>Where one indexer's query stands during (and after) a search.</summary>
 /// <param name="Releases">Releases it returned (after the minimum seeders filter), once done.</param>
-/// <param name="Message">Why it failed.</param>
+/// <param name="Message">Why it failed, or why it was skipped.</param>
 /// <param name="Seconds">How long the query took, once finished.</param>
 public sealed record IndexerQueryStatus(int IndexerId, string IndexerName, IndexerQueryState State, int? Releases = null, string? Message = null, double? Seconds = null);
 
@@ -27,13 +28,16 @@ public sealed record IndexerQueryStatus(int IndexerId, string IndexerName, Index
 public sealed record IndexerQueryResult(IndexerQueryStatus Status, IReadOnlyList<ReleaseInfo> Releases);
 
 /// <summary>A search in flight.</summary>
-/// <param name="Indexers">Every indexer being queried, all pending.</param>
-/// <param name="Results">One item per indexer as soon as its query finishes (successfully or not), in completion order.</param>
+/// <param name="Indexers">Every indexer of the search: pending, or skipped while it backs off after failures.</param>
+/// <param name="Results">One item per queried indexer as soon as its query finishes (successfully or not), in completion order.</param>
 public sealed record IndexerSearchRun(IReadOnlyList<IndexerQueryStatus> Indexers, IAsyncEnumerable<IndexerQueryResult> Results);
 
 public interface IIndexerSearchService
 {
-    /// <summary>Queries the enabled indexers in parallel and waits for all of them.</summary>
+    /// <summary>
+    /// Queries the enabled indexers in parallel and waits for all of them. Indexers backing off after failures are
+    /// skipped unless <paramref name="indexerIds"/> names them.
+    /// </summary>
     Task<IndexerSearchResult> SearchAsync(SearchCriteria criteria, IReadOnlyCollection<int>? indexerIds = null, CancellationToken ct = default);
 
     /// <summary>
@@ -44,7 +48,7 @@ public interface IIndexerSearchService
 }
 
 /// <summary>Fans a search out across all enabled indexers and merges the results.</summary>
-public sealed class IndexerSearchService(KrakarrDbContext db, ITorznabClient client, ILogger<IndexerSearchService> logger) : IIndexerSearchService
+public sealed class IndexerSearchService(KrakarrDbContext db, ITorznabClient client, IndexerBackoff backoff, ILogger<IndexerSearchService> logger) : IIndexerSearchService
 {
     private static readonly TimeSpan QueryTimeout = TimeSpan.FromSeconds(60);
 
@@ -80,7 +84,13 @@ public sealed class IndexerSearchService(KrakarrDbContext db, ITorznabClient cli
             query = query.Where(i => indexerIds.Contains(i.Id));
         }
 
-        var indexers = await query.ToListAsync(ct);
+        var all = await query.ToListAsync(ct);
+
+        // Indexers that keep failing are left out of automatic and all-indexer searches; picking one explicitly
+        // still queries it, so the user can see whether it works again.
+        var explicitlyChosen = indexerIds is { Count: > 0 };
+        var skipped = explicitlyChosen ? [] : all.Where(i => backoff.IsDisabled(i.Id)).ToList();
+        var indexers = all.Except(skipped).ToList();
 
         // Ends when the last indexer answers, not when this method returns. Started after the query so the
         // indexer queries below are its children.
@@ -96,6 +106,7 @@ public sealed class IndexerSearchService(KrakarrDbContext db, ITorznabClient cli
             activity.SetTag("krakarr.search.season", criteria.Season);
             activity.SetTag("krakarr.search.episode", criteria.Episode);
             activity.SetTag("krakarr.search.indexers", indexers.Count);
+            activity.SetTag("krakarr.search.indexers_skipped", skipped.Count);
         }
 
         // Holds at most one item per indexer.
@@ -104,7 +115,10 @@ public sealed class IndexerSearchService(KrakarrDbContext db, ITorznabClient cli
         _ = CompleteAsync();
 
         return new IndexerSearchRun(
-            indexers.Select(i => new IndexerQueryStatus(i.Id, i.Name, IndexerQueryState.Pending)).ToList(),
+            all.Select(i => skipped.Contains(i)
+                    ? new IndexerQueryStatus(i.Id, i.Name, IndexerQueryState.Skipped, Message: SkippedMessage(backoff.Get(i.Id)))
+                    : new IndexerQueryStatus(i.Id, i.Name, IndexerQueryState.Pending))
+                .ToList(),
             channel.Reader.ReadAllAsync(ct));
 
         async Task CompleteAsync()
@@ -125,6 +139,10 @@ public sealed class IndexerSearchService(KrakarrDbContext db, ITorznabClient cli
         }
     }
 
+    private static string SkippedMessage(IndexerStatus? status) => status is null
+        ? "Skipped after failing"
+        : $"Skipped after failing {status.Failures} time(s) in a row ({status.LastError}); retried after {status.DisabledUntil:u}";
+
     private async Task QueryAsync(Indexer indexer, SearchCriteria criteria, string kind, ChannelWriter<IndexerQueryResult> results, CancellationToken ct)
     {
         await Task.Yield(); // run every indexer's query in parallel, not the first part of each one in turn
@@ -143,6 +161,7 @@ public sealed class IndexerSearchService(KrakarrDbContext db, ITorznabClient cli
             KrakarrTelemetry.IndexerReleases.Add(kept.Count,
                 new KeyValuePair<string, object?>(KrakarrTelemetry.IndexerTag, indexer.Name),
                 new KeyValuePair<string, object?>(KrakarrTelemetry.SearchKindTag, kind));
+            backoff.Reset(indexer.Id);
             results.TryWrite(new IndexerQueryResult(
                 new IndexerQueryStatus(indexer.Id, indexer.Name, IndexerQueryState.Done, kept.Count, Seconds: Stopwatch.GetElapsedTime(started).TotalSeconds),
                 kept));
@@ -154,6 +173,7 @@ public sealed class IndexerSearchService(KrakarrDbContext db, ITorznabClient cli
             // The caller's token isn't cancelled (see the filter), so a cancellation here is a timeout.
             var message = ex is OperationCanceledException ? $"Timed out after {QueryTimeout.TotalSeconds:0} seconds" : ex.Message;
             logger.LogWarning("Search on {Indexer} failed: {Message}", indexer.Name, message);
+            backoff.RecordFailure(indexer.Id, indexer.Name, message);
             results.TryWrite(new IndexerQueryResult(
                 new IndexerQueryStatus(indexer.Id, indexer.Name, IndexerQueryState.Failed, Message: message, Seconds: Stopwatch.GetElapsedTime(started).TotalSeconds),
                 []));

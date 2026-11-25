@@ -9,7 +9,14 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Krakarr.Core.Metadata;
 
-public class MetadataException(string message) : Exception(message);
+public class MetadataException(string message, HttpStatusCode? statusCode = null) : Exception(message)
+{
+    /// <summary>The HTTP status the metadata source answered with, when it answered with an error.</summary>
+    public HttpStatusCode? StatusCode { get; } = statusCode;
+
+    /// <summary>True when the source rejected the API key (HTTP 401 or 403).</summary>
+    public bool IsAuthenticationFailure => StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden;
+}
 
 /// <summary>The metadata source has no such title, season or episode (HTTP 404).</summary>
 public sealed class MetadataNotFoundException(string message) : MetadataException(message);
@@ -71,7 +78,7 @@ public sealed class TmdbApi(IHttpClientFactory httpClientFactory, IConfiguration
 
             if (!response.IsSuccessStatusCode)
             {
-                throw new MetadataException($"TMDB request failed with HTTP {(int)response.StatusCode}");
+                throw new MetadataException($"TMDB request failed with HTTP {(int)response.StatusCode}", response.StatusCode);
             }
 
             try

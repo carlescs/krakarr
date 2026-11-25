@@ -19,6 +19,7 @@ public static class RoleAccess
         "/api/v1/downloads/client",
         "/api/v1/system/status",
         "/api/v1/system/tasks",
+        "/api/v1/system/health",
     ];
 
     /// <summary>Readable by managers (they pick them when adding titles or searching subtitles), changed/tested only by admins.</summary>

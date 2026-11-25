@@ -47,6 +47,7 @@ public class SeriesMetadataTests
             Calls.Add($"get {tvdbId}");
             return Task.FromResult(new SeriesInfo { TvdbId = tvdbId, Title = "TVDB" });
         }
+        public Task LoginAsync(CancellationToken ct = default) => Task.CompletedTask;
     }
 
     private static (SeriesMetadata Metadata, Tmdb Tmdb, Tvdb Tvdb) Create(SeriesMetadataSource source)

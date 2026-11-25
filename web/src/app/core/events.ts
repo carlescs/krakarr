@@ -18,6 +18,10 @@ export class Events {
   readonly requestsUpdated = new Subject<void>();
   /** Something a notification source reports may have changed. */
   readonly notificationsUpdated = new Subject<void>();
+  /** A health run finished (admins refetch the report). */
+  readonly healthUpdated = new Subject<void>();
+  /** An indexer started or stopped backing off after failures. */
+  readonly indexerStatusUpdated = new Subject<void>();
 
   private connection?: HubConnection;
 
@@ -39,6 +43,8 @@ export class Events {
     this.connection.on('taskUpdated', (t: ScheduledTaskInfo) => this.taskUpdated.next(t));
     this.connection.on('requestsUpdated', () => this.requestsUpdated.next());
     this.connection.on('notificationsUpdated', () => this.notificationsUpdated.next());
+    this.connection.on('healthUpdated', () => this.healthUpdated.next());
+    this.connection.on('indexerStatusUpdated', () => this.indexerStatusUpdated.next());
     this.connection.onreconnecting(() => this.connected.set(false));
     this.connection.onreconnected(() => this.connected.set(true));
     this.connection.onclose(() => this.connected.set(false));

@@ -1,3 +1,4 @@
+using Krakarr.Core.Health;
 using Krakarr.Core.Jobs;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -18,6 +19,7 @@ public static class SubtitlesModule
         services.AddScoped<ISubtitleProvider, OpenSubtitlesProvider>();
         services.AddScoped<ISubtitleProvider, SubdlProvider>();
         services.AddScoped<SubtitleService>();
+        services.AddScoped<IHealthCheck, SubtitleHealthCheck>();
         services.AddScheduledTask<SubtitleSearchTask>();
         return services;
     }

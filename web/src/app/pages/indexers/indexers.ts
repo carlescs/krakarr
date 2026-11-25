@@ -1,7 +1,10 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../../core/api';
-import { Indexer, IndexerCategory, IndexerTestResult, ProwlarrIndexer } from '../../core/models';
+import { Events } from '../../core/events';
+import { Indexer, IndexerCategory, IndexerStatus, IndexerTestResult, ProwlarrIndexer } from '../../core/models';
 import { Languages } from '../../core/languages';
 import { Toasts } from '../../core/toast';
 import { CategoryPicker } from '../../shared/category-picker/category-picker';
@@ -19,7 +22,7 @@ const blankIndexer = (): Indexer => ({
 
 @Component({
   selector: 'kr-indexers',
-  imports: [FormsModule, Modal, CategoryPicker, SortHeader],
+  imports: [DatePipe, FormsModule, Modal, CategoryPicker, SortHeader],
   templateUrl: './indexers.html',
   styleUrl: './indexers.scss',
 })
@@ -27,7 +30,17 @@ export class IndexersPage implements OnInit {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
   protected readonly languages = inject(Languages);
+  private readonly events = inject(Events);
+  private readonly destroyRef = inject(DestroyRef);
   protected readonly indexers = signal<Indexer[]>([]);
+  /** Indexers that failed their last query, by id; searches skip them until `disabledUntil`. */
+  protected readonly failing = signal(new Map<number, IndexerStatus>());
+  /** Ticks so "skipped until" turns into "retried on the next search" without a reload. */
+  private readonly now = signal(Date.now());
+  protected readonly backingOff = computed(() => {
+    const now = this.now();
+    return new Set([...this.failing().values()].filter(s => Date.parse(s.disabledUntil) > now).map(s => s.indexerId));
+  });
   protected readonly sort = new TableSort(this.indexers, {
     name: i => i.name,
     protocol: i => i.protocol,
@@ -52,10 +65,26 @@ export class IndexersPage implements OnInit {
 
   ngOnInit() {
     this.load();
+    this.loadStatus();
+    this.events.indexerStatusUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.loadStatus());
+    const tick = setInterval(() => this.now.set(Date.now()), 30_000);
+    this.destroyRef.onDestroy(() => clearInterval(tick));
     this.languages.load().catch(() => {});
   }
 
   private async load() { this.indexers.set(await this.api.indexers()); }
+
+  private async loadStatus() {
+    try {
+      this.failing.set(new Map((await this.api.indexerStatus()).map(s => [s.indexerId, s])));
+    } catch {
+      // The table still works without it.
+    }
+  }
+
+  protected failureTitle(s: IndexerStatus) {
+    return `Failed ${s.failures} time${s.failures === 1 ? '' : 's'} in a row: ${s.lastError}. A successful test or search clears this.`;
+  }
 
   protected parseCats(v: string) { return v.split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)); }
 
@@ -102,6 +131,7 @@ export class IndexersPage implements OnInit {
       const result = await this.api.testIndexer(f);
       this.test.set(result);
       if (result.success && result.capabilities) this.applyCategories(f, result.capabilities.categories);
+      if (result.success && f.id) this.loadStatus(); // a successful test ends the indexer's backoff
     }
     catch (e) { this.test.set({ success: false, message: errorMessage(e) }); }
     finally { this.testing.set(false); }

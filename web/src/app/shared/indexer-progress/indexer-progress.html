@@ -15,6 +15,7 @@
               @switch (s.state) {
                 @case ('Done') { <span class="opacity-80"> {{ s.releases ?? 0 }}</span> }
                 @case ('Failed') { <span aria-label="failed">✕</span> }
+                @case ('Skipped') { <span aria-label="skipped">–</span> }
                 @default { <span aria-label="searching">…</span> }
               }
             </span>
