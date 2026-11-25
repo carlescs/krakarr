@@ -166,6 +166,7 @@ public sealed class MovieService(
                     var parsedGroup = ReleaseParser.Parse(fileName).ReleaseGroup ?? ReleaseParser.Parse(folderName).ReleaseGroup;
                     if (parsedGroup is not null) existing.ReleaseGroup = parsedGroup;
                     existing.EmbeddedSubtitles = null;
+                    existing.MediaInfo = null; // read again below, which also corrects the quality
                     existing.LastSubtitleSearch = null;
                     existing.SubtitlesNotFound = null;
                     subtitlesChanged = true;
@@ -217,17 +218,18 @@ public sealed class MovieService(
 
                 movie.MovieFileId = movieFile.Id;
                 movie.MovieFile = movieFile;
+                // Reads the headers too, which may correct the quality.
+                await SubtitleService.SyncMovieFileAsync(db, movie.Path, movieFile, ct);
                 var imported = new HistoryEntry
                 {
                     EventType = HistoryEventType.Imported,
                     SourceTitle = Path.GetFileName(source),
                     MovieId = movie.Id,
-                    QualityId = quality.Id,
+                    QualityId = movieFile.QualityId,
                     Message = "Imported existing file",
                 };
                 db.History.Add(imported);
                 historyEntries.Add(imported);
-                await SubtitleService.SyncMovieFileAsync(db, movie.Path, movieFile, ct);
                 subtitlesChanged = true;
             }
         }

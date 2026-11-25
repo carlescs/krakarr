@@ -56,10 +56,13 @@ public static partial class ReleaseParser
     public static Quality ParseQuality(string name)
     {
         var text = Separators().Replace(StripExtension(name), " ");
-        var resolution = ParseResolution(text);
+        var resolution = ResolutionIn(text);
         var source = ParseSource(text);
         return Qualities.Find(source, resolution);
     }
+
+    /// <summary>Resolution written in the name (2160, 1080, 720, 576, 480), or 0 when it names none.</summary>
+    public static int ParseResolution(string name) => ResolutionIn(Separators().Replace(StripExtension(name), " "));
 
     /// <summary>Normalized video codec ("x264", "x265", "xvid", "av1") or null.</summary>
     public static string? ParseVideoCodec(string name)
@@ -177,7 +180,7 @@ public static partial class ReleaseParser
         return sp.Success ? (int.Parse(sp.Groups["season"].Value, CultureInfo.InvariantCulture), []) : (null, []);
     }
 
-    private static int ParseResolution(string text)
+    private static int ResolutionIn(string text)
     {
         if (R2160().IsMatch(text)) return 2160;
         if (R1080().IsMatch(text)) return 1080;

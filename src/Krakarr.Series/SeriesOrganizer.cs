@@ -143,7 +143,8 @@ public sealed class SeriesOrganizer(KrakarrDbContext db, ISettingsService settin
         if (episodes.Count == 0) return null;
         var extension = Path.GetExtension(file.RelativePath);
         var fileName = media.RenameFiles
-            ? SeriesNaming.BuildEpisodeFileName(series, episodes, Qualities.FindById(file.QualityId), file.ReleaseGroup, media.EpisodeFileFormat, extension)
+            ? SeriesNaming.BuildEpisodeFileName(series, episodes, Qualities.FindById(file.QualityId), file.ReleaseGroup, media.EpisodeFileFormat, extension,
+                MediaInfoSummary.Parse(file.MediaInfo))
             : Path.GetFileName(file.RelativePath);
         return series.SeasonFolder ? Path.Combine(SeriesNaming.BuildSeasonFolder(file.SeasonNumber, media.SeasonFolderFormat), fileName) : fileName;
     }

@@ -79,6 +79,21 @@ Then open <http://localhost:8787>:
   `MULTi`/`DUAL` releases also count as English. Untagged releases are assumed to be in the indexer's **default
   language** (set per indexer), or English when it has none.
 
+### Media info
+
+- Krakarr reads the **headers** of each video file (Matroska/WebM and MP4/MOV, no media data, no ffmpeg needed) for its
+  video codec, resolution, bit depth and HDR format (HDR10, HLG, Dolby Vision), its audio tracks (codec, channels,
+  language) and its duration. Other containers (AVI, TS…) are read with `ffprobe` when it is installed. Files are read on
+  import, library import and the first rescan after an upgrade, and again when they change on disk.
+- **Quality** takes the resolution from the video itself: a release named 2160p that is really 720p is stored (and
+  judged for upgrades) as 720p. The source (WEB-DL, Bluray…) still comes from the name.
+- **Samples and fakes:** a download whose file is less than half the movie's or episode's runtime is not imported.
+  Mislabelled resolutions and audio in none of the wanted languages are flagged on the movie page and episode dialog
+  (audio language tags are often missing or wrong, so they only warn).
+- **Naming tokens** for file formats: `{MediaInfo VideoCodec}`, `{MediaInfo VideoBitDepth}`,
+  `{MediaInfo VideoDynamicRange}`, `{MediaInfo Resolution}`, `{MediaInfo AudioCodec}`, `{MediaInfo AudioChannels}`,
+  `{MediaInfo AudioLanguages}` and `{MediaInfo Simple}`.
+
 ### TV series
 
 - **Metadata** comes from the *Series metadata source* in *Settings → Metadata*: **TMDB** (default, same key as movies) or

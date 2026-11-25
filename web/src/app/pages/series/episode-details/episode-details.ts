@@ -4,12 +4,13 @@ import { RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../../core/api';
 import { Auth } from '../../../core/auth';
 import { BytesPipe } from '../../../core/format';
-import { Episode, EpisodeDetails, SubtitleFile } from '../../../core/models';
+import { Episode, EpisodeDetails, MediaInfo, SubtitleFile } from '../../../core/models';
 import { Modal } from '../../../shared/modal/modal';
 import { CreditsView } from '../../../shared/credits/credits';
 import { ExternalLinks } from '../../../shared/external-links/external-links';
 import { Progress } from '../../../shared/progress/progress';
 import { SubtitleList } from '../../../shared/subtitle-list/subtitle-list';
+import { MediaInfoView } from '../../../shared/media-info/media-info';
 
 /**
  * Dialog with everything about one library episode: what the library stores (file, subtitles, status) plus TMDB's
@@ -17,7 +18,7 @@ import { SubtitleList } from '../../../shared/subtitle-list/subtitle-list';
  */
 @Component({
   selector: 'kr-episode-details',
-  imports: [RouterLink, Modal, CreditsView, ExternalLinks, Progress, SubtitleList, DatePipe, BytesPipe],
+  imports: [RouterLink, Modal, CreditsView, ExternalLinks, Progress, SubtitleList, MediaInfoView, DatePipe, BytesPipe],
   templateUrl: './episode-details.html',
   styleUrl: './episode-details.scss',
 })
@@ -42,6 +43,9 @@ export class EpisodeDetailsDialog {
   protected readonly details = signal<EpisodeDetails | null>(null);
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
+  /** Media info of the episode's file (null while loading, when there is no file or it couldn't be read). */
+  protected readonly mediaInfo = signal<MediaInfo | null>(null);
+  private readonly fileId = computed(() => this.episode().episodeFile?.id);
 
   protected readonly code = computed(() => {
     const e = this.episode();
@@ -57,6 +61,22 @@ export class EpisodeDetailsDialog {
       const seriesId = this.seriesId(), episodeId = this.episode().id;
       untracked(() => this.load(seriesId, episodeId));
     });
+    // The file's media info, only when the file changes (a computed id ignores refreshes of the same episode).
+    effect(() => {
+      const seriesId = this.seriesId(), fileId = this.fileId();
+      untracked(() => this.loadMediaInfo(seriesId, fileId));
+    });
+  }
+
+  private async loadMediaInfo(seriesId: number, fileId: number | undefined) {
+    this.mediaInfo.set(null);
+    if (fileId == null) return;
+    try {
+      const info = await this.api.episodeFileMediaInfo(seriesId, fileId);
+      if (fileId === this.episode().episodeFile?.id) this.mediaInfo.set(info ?? null);
+    } catch {
+      // Optional detail: the dialog works without it.
+    }
   }
 
   private async load(seriesId: number, episodeId: number) {

@@ -8,6 +8,7 @@ using Krakarr.Data;
 using Krakarr.Downloads;
 using Krakarr.Media.Files;
 using Krakarr.Media.Parsing;
+using Krakarr.Subtitles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -78,6 +79,16 @@ public sealed class MovieImportService(
             quality = ReleaseParser.ParseQuality(Path.GetFileName(video.Value.Path));
         }
 
+        // The headers tell the real resolution and length: a fake "2160p" is judged as what it is, and samples are refused.
+        var mediaInfo = MediaInfoReader.Read(video.Value.Path);
+        var summary = MediaInfoSummary.From(mediaInfo);
+        quality = MediaInfoChecks.Correct(quality, summary);
+        if (MediaInfoChecks.TooShort(summary, movie.Runtime) is { } tooShort)
+        {
+            await FailAsync(download, $"Import failed: {tooShort}", ct);
+            return;
+        }
+
         if (movie.MovieFile is { } existingFile && Qualities.FindById(existingFile.QualityId).Weight > quality.Weight)
         {
             await FailAsync(download, $"Import failed: existing file ({Qualities.FindById(existingFile.QualityId).Name}) is better", ct);
@@ -86,7 +97,7 @@ public sealed class MovieImportService(
 
         var ext = Path.GetExtension(video.Value.Path);
         var fileName = media.RenameFiles
-            ? MovieNaming.BuildFileName(movie, media.MovieFileFormat, quality, parsed.ReleaseGroup, ext)
+            ? MovieNaming.BuildFileName(movie, media.MovieFileFormat, quality, parsed.ReleaseGroup, ext, summary)
             : Path.GetFileName(video.Value.Path);
         var destination = Path.Combine(movie.Path, fileName);
 
@@ -116,6 +127,8 @@ public sealed class MovieImportService(
             QualityId = quality.Id,
             ReleaseGroup = parsed.ReleaseGroup,
             SceneName = download.Name,
+            MediaInfo = MediaInfoSummary.Serialize(summary),
+            EmbeddedSubtitles = EmbeddedSubtitleList.Format(EmbeddedSubtitleList.FromTracks(mediaInfo.Subtitles)),
         };
         db.MovieFiles.Add(movieFile);
         await db.SaveChangesAsync(ct);
@@ -130,7 +143,7 @@ public sealed class MovieImportService(
             MovieId = movie.Id,
             QualityId = quality.Id,
             Indexer = download.IndexerName,
-            Message = $"{mode} → {destination}",
+            Message = $"{mode} → {destination}" + Warnings(summary, download.Name, (await settings.GetAsync<LanguageSettings>(ct)).For(movie.Languages)),
         };
         db.History.Add(entry);
         await db.SaveChangesAsync(ct);
@@ -139,6 +152,14 @@ public sealed class MovieImportService(
         logger.LogInformation("Imported {Source} to {Destination} ({Mode})", video.Value.Path, destination, mode);
         await eventHub.PublishAsync(EventNames.MovieUpdated, new { movie.Id }, ct);
         await eventHub.PublishAsync(EventNames.HistoryAdded, entry, ct);
+    }
+
+    /// <summary>Media info warnings worth keeping in the history entry (mislabelled resolution, unwanted audio).</summary>
+    private static string Warnings(MediaInfoSummary? summary, string releaseName, IReadOnlyList<string> wantedLanguages)
+    {
+        var warnings = new[] { MediaInfoChecks.Mislabelled(summary, releaseName), MediaInfoChecks.UnwantedAudio(summary, wantedLanguages) }
+            .OfType<string>().ToList();
+        return warnings.Count > 0 ? " · " + string.Join("; ", warnings) : string.Empty;
     }
 
     private async Task<(string Path, long Length)?> FindMainVideoFileAsync(Download download, int minSizeMb, CancellationToken ct)
