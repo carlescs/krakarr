@@ -201,8 +201,32 @@ public sealed record SubtitleSettings : ISettingsSection
     public bool IncludeAiTranslated { get; init; }
     /// <summary>Count subtitle tracks inside the video file (MKV, MP4) as present, so they are not searched again.</summary>
     public bool UseEmbeddedSubtitles { get; init; } = true;
+    /// <summary>
+    /// For this many days after a subtitle is downloaded, keep looking for a better one while its score is below
+    /// <see cref="UpgradeBelowScore"/>, and replace it when one scores higher. 0 = never upgrade automatically.
+    /// Subtitles picked by hand or found on disk are never replaced automatically.
+    /// </summary>
+    public int UpgradeDays { get; init; } = 7;
+    public int UpgradeBelowScore { get; init; } = 90;
+    public SubtitleSyncSettings Sync { get; init; } = new();
     public OpenSubtitlesSettings OpenSubtitles { get; init; } = new();
     public SubdlSettings Subdl { get; init; } = new();
+}
+
+/// <summary>
+/// Resynchronising subtitles against the video with external tools (alass or ffsubsync, plus ffmpeg to read the
+/// audio or a subtitle track inside the video). Every tool is optional; empty paths are looked up on PATH.
+/// </summary>
+public sealed record SubtitleSyncSettings
+{
+    /// <summary>Sync newly downloaded subtitles scoring below <see cref="BelowScore"/> automatically.</summary>
+    public bool Automatic { get; init; }
+    public int BelowScore { get; init; } = 90;
+    /// <summary>A sync taking longer than this is stopped.</summary>
+    public int TimeoutSeconds { get; init; } = 300;
+    public string? AlassPath { get; init; }
+    public string? FfsubsyncPath { get; init; }
+    public string? FfmpegPath { get; init; }
 }
 
 /// <summary>Internal bookkeeping: the language set and providers the subtitle search last ran with.</summary>

@@ -310,9 +310,18 @@ export type HearingImpairedMode = 'PreferNormal' | 'PreferHearingImpaired' | 'Ex
 export interface SubtitleSettings {
   enabled: boolean; languages: string[]; hearingImpaired: HearingImpairedMode; minimumScoreMovies: number; minimumScoreEpisodes: number;
   searchIntervalHours: number; includeAiTranslated: boolean; useEmbeddedSubtitles: boolean;
+  /** Days after download during which subtitles scoring below upgradeBelowScore are replaced by better ones (0 = off). */
+  upgradeDays: number; upgradeBelowScore: number;
+  sync: SubtitleSyncSettings;
   openSubtitles: { enabled: boolean; apiKey?: string; username?: string; password?: string };
   subdl: { enabled: boolean; apiKey?: string };
 }
+/** Resyncing subtitles with alass or ffsubsync (and ffmpeg); empty paths are looked up on PATH. */
+export interface SubtitleSyncSettings {
+  automatic: boolean; belowScore: number; timeoutSeconds: number; alassPath?: string | null; ffsubsyncPath?: string | null; ffmpegPath?: string | null;
+}
+/** Which sync tools the server found. */
+export interface SubtitleSyncTools { alass: boolean; ffsubsync: boolean; ffmpeg: boolean; }
 export interface Language { code: string; name: string; }
 /** Wanted audio languages, most preferred first; empty = any language. */
 export interface LanguageSettings { preferred: string[]; }
@@ -321,6 +330,10 @@ export interface SubtitleFile {
   id: number; movieFileId?: number; episodeFileId?: number; language: string; languageName: string; hearingImpaired: boolean; forced: boolean;
   /** provider 'embedded' = a track inside the video file (id 0, cannot be deleted). */
   fileName: string; provider: string; score?: number; release?: string; dateAdded: string;
+  /** Picked by hand: automatic upgrades leave it alone. */
+  manual?: boolean;
+  /** When it was last synced or shifted, and how that went (also set when a sync failed). */
+  syncedAt?: string | null; syncNote?: string | null;
 }
 export interface SubtitleCandidate {
   provider: string; payload: string; language: string; releaseNames: string[]; fileName?: string; hearingImpaired: boolean; forced: boolean;

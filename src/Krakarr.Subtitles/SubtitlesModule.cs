@@ -1,5 +1,6 @@
 using Krakarr.Core.Health;
 using Krakarr.Core.Jobs;
+using Krakarr.Subtitles.Sync;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Http.Resilience;
@@ -21,6 +22,9 @@ public static class SubtitlesModule
         services.AddScoped<SubtitleService>();
         services.AddScoped<IHealthCheck, SubtitleHealthCheck>();
         services.AddScheduledTask<SubtitleSearchTask>();
+        services.AddSingleton<SubtitleSyncGate>();
+        services.AddScoped<SubtitleSyncService>();
+        services.AddScheduledTask<SubtitleSyncTask>();
         return services;
     }
 }

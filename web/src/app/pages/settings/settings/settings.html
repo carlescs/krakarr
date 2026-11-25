@@ -277,6 +277,33 @@
         <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="st.useEmbeddedSubtitles" /> Count subtitles inside the video file (MKV, MP4) as present</label>
         <p class="hint">Score: 100 for a file-hash match; otherwise title, year or season/episode, source, resolution, release group and codec of the subtitle's release are compared with your file.</p>
       </section>
+      <section class="card space-y-4 p-4 sm:p-5">
+        <h2 class="font-semibold text-white">Upgrades</h2>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div><label class="label">Look for better subtitles for (days)</label><input class="input" type="number" min="0" [(ngModel)]="st.upgradeDays" /></div>
+          <div><label class="label">While the score is below</label><input class="input" type="number" min="0" max="100" [(ngModel)]="st.upgradeBelowScore" /></div>
+        </div>
+        <p class="hint">After a download, the subtitle is searched again every “retry” interval and replaced when a higher-scoring one turns up. 0 days = never. Subtitles picked by hand or found next to the video are kept.</p>
+      </section>
+      <section class="card space-y-4 p-4 sm:p-5" data-sync-settings>
+        <h2 class="font-semibold text-white">Synchronisation</h2>
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="st.sync.automatic" /> Sync new subtitles automatically</label>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div><label class="label">When the score is below</label><input class="input" type="number" min="0" max="100" [(ngModel)]="st.sync.belowScore" /></div>
+          <div><label class="label">Stop a sync after (seconds)</label><input class="input" type="number" min="30" max="3600" [(ngModel)]="st.sync.timeoutSeconds" /></div>
+          <div><label class="label">alass</label><input class="input font-mono" placeholder="alass-cli on PATH" [(ngModel)]="st.sync.alassPath" /></div>
+          <div><label class="label">ffsubsync</label><input class="input font-mono" placeholder="ffsubsync on PATH" [(ngModel)]="st.sync.ffsubsyncPath" /></div>
+          <div><label class="label">ffmpeg</label><input class="input font-mono" placeholder="ffmpeg on PATH" [(ngModel)]="st.sync.ffmpegPath" /></div>
+        </div>
+        @if (syncTools(); as tools) {
+          <div class="flex flex-wrap gap-1.5 text-xs" data-sync-tools>
+            @for (tool of [{ name: 'alass', found: tools.alass }, { name: 'ffsubsync', found: tools.ffsubsync }, { name: 'ffmpeg', found: tools.ffmpeg }]; track tool.name) {
+              <span class="badge" [class]="tool.found ? 'bg-emerald-500/15 text-emerald-300' : 'bg-surface-700 text-slate-400'">{{ tool.name }} · {{ tool.found ? 'found' : 'not found' }}</span>
+            }
+          </div>
+        }
+        <p class="hint">Subtitles are lined up with a perfect-score subtitle of the same file, a text subtitle track inside the video (needs ffmpeg) or the audio (needs alass or ffsubsync, plus ffmpeg). Without alass or ffsubsync only a constant shift or a framerate difference can be fixed. Syncs run one at a time; each subtitle is synced automatically once, within two days of its download, and can be synced or shifted by hand from its subtitle list.</p>
+      </section>
       <section class="card grid grid-cols-1 gap-4 p-4 sm:p-5 sm:grid-cols-2">
         <div class="flex items-center justify-between sm:col-span-2">
           <h2 class="font-semibold text-white">OpenSubtitles.com</h2>

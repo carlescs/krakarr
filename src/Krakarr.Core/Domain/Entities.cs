@@ -329,6 +329,12 @@ public class SubtitleFile
     public int? Score { get; set; }
     public string? Release { get; set; }
     public DateTimeOffset DateAdded { get; set; } = DateTimeOffset.UtcNow;
+    /// <summary>Picked by hand in the interactive search; automatic upgrades leave it alone.</summary>
+    public bool Manual { get; set; }
+    /// <summary>When the subtitle was last resynchronised against the video (automatically or by hand).</summary>
+    public DateTimeOffset? SyncedAt { get; set; }
+    /// <summary>How the last sync went (reference and tool, or why it failed); automatic sync skips rows that have one.</summary>
+    public string? SyncNote { get; set; }
 }
 
 public enum DownloadState
