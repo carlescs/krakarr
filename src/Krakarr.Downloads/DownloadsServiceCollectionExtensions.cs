@@ -27,6 +27,7 @@ public static class DownloadsServiceCollectionExtensions
         services.AddScoped<IDownloadService, DownloadService>();
         services.AddScoped<ManualDownloadLinks>();
         services.AddScoped<ImportIssues>();
+        services.AddScoped<DownloadMedia>();
         services.AddHttpClient(DownloadService.HttpClientName, c =>
             {
                 c.Timeout = TimeSpan.FromSeconds(60);

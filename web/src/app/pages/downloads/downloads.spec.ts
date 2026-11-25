@@ -1,9 +1,10 @@
 import { TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Events } from '../../core/events';
 import { TorrentStatus } from '../../core/models';
 import { button, mockApi, settle, setupTest, text, type } from '../../../testing/test-setup';
-import { DownloadsPage, isFinished, sortTorrents } from './downloads';
+import { DownloadsPage, isFinished, mediaLabel, sortTorrents } from './downloads';
 
 const torrent = (t: Partial<TorrentStatus>): TorrentStatus => ({
   id: 1, infoHash: 'h1', name: 'Alien.1979.1080p', state: 'Downloading', progress: 42, size: 1024, downloaded: 0, uploaded: 0, downloadRate: 0, uploadRate: 0,
@@ -11,10 +12,11 @@ const torrent = (t: Partial<TorrentStatus>): TorrentStatus => ({
 });
 const torrents = [torrent({ movieId: 3 }), torrent({ id: 2, infoHash: 'h2', name: 'Dark.S01', state: 'Seeding', progress: 100, seriesId: 4 })];
 
-async function render(extra: Record<string, (...args: never[]) => unknown> = {}) {
+async function render(extra: Record<string, (...args: never[]) => unknown> = {}, url?: string) {
   const api = setupTest({
     api: mockApi({ downloadClientStatus: async () => ({ kind: 'BuiltIn' }), downloads: async () => torrents, ...extra }),
   });
+  if (url) await TestBed.inject(Router).navigateByUrl(url);
   const fixture = TestBed.createComponent(DownloadsPage);
   await settle(fixture);
   return { api, fixture, el: fixture.nativeElement as HTMLElement };
@@ -75,6 +77,28 @@ describe('DownloadsPage', () => {
     await settle(fixture);
     expect(api.dismissImportIssue).toHaveBeenCalledWith(8);
     expect(text(el)).not.toContain('needs attention');
+  });
+
+  it('names the movie or series of each download and links to it', async () => {
+    const { api, el } = await render({
+      downloadMedia: async () => [{ id: 1, movieId: 3, title: 'Alien', year: 1979 }, { id: 2, seriesId: 4, title: 'Dark', year: 2017, episodes: 'S01E01–E03' }],
+    });
+    expect(api.downloadMedia).toHaveBeenCalledTimes(1);
+    const link = el.querySelector('a[data-media-link]') as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('/movies/3');
+    expect(text(link)).toBe('Alien (1979)');
+  });
+
+  it('formats media labels', () => {
+    expect(mediaLabel({ id: 1, title: 'Alien', year: 1979 })).toBe('Alien (1979)');
+    expect(mediaLabel({ id: 1, title: 'Doctor Who (2005)', year: 2005, episodes: 'S01E01' })).toBe('Doctor Who (2005) · S01E01');
+    expect(mediaLabel({ id: 1, title: 'Untitled' })).toBe('Untitled');
+  });
+
+  it('opens the tab of the torrent named in the URL and highlights it', async () => {
+    const { el } = await render({}, '/?hash=H2');
+    expect(text(el)).toContain('Dark.S01');
+    expect(el.querySelector('[data-focused]')?.id).toBe('torrent-h2');
   });
 
   it('only treats complete torrents as finished', () => {

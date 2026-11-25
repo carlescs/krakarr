@@ -39,8 +39,7 @@
             <p class="mt-1 text-xs text-rose-300 wrap-anywhere">{{ i.message }}</p>
             @if (!i.inClient) { <p class="mt-1 text-xs text-slate-500">No longer in the download client.</p> }
           </div>
-          @if (i.movieId) { <a [routerLink]="['/movies', i.movieId]" class="badge bg-accent-500/15 text-accent-300 hover:bg-accent-500/25">Movie</a> }
-          @if (i.seriesId) { <a [routerLink]="['/series', i.seriesId]" class="badge bg-violet-500/15 text-violet-300 hover:bg-violet-500/25">Series</a> }
+          <ng-container *ngTemplateOutlet="mediaLink; context: { $implicit: i }" />
           <div class="flex gap-2">
             @if (i.inClient && i.completedAt) {
               <button type="button" class="btn-secondary btn-sm" [disabled]="issueBusy() !== null" (click)="resolveIssue(i, 'retry')"
@@ -97,18 +96,16 @@
   <div class="space-y-2">
     @for (d of visible(); track d.infoHash) {
       @let checked = selection.has(d.infoHash);
-      <div class="card p-3 sm:p-4" [class.ring-1]="checked" [class.ring-accent-500/60]="checked" [class.bg-accent-500/5]="checked">
+      @let focused = focusHash() === d.infoHash.toLowerCase();
+      <div class="card scroll-mt-32 p-3 sm:p-4" [id]="'torrent-' + d.infoHash" [attr.data-focused]="focused || null"
+           [class.ring-1]="checked && !focused" [class.ring-accent-500/60]="checked && !focused" [class.bg-accent-500/5]="checked"
+           [class.ring-2]="focused" [class.ring-accent-400]="focused">
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5 sm:gap-x-3">
           <input type="checkbox" class="size-4 shrink-0 accent-accent-500 pointer-coarse:size-5" [attr.aria-label]="'Select ' + d.name" [checked]="checked"
                  (click)="selection.toggle(d.infoHash, $event.shiftKey)" />
           <kr-state-badge [state]="d.state" />
           <button class="min-w-0 text-left font-medium text-slate-100 break-all hover:text-accent-300 max-sm:order-first max-sm:line-clamp-2 max-sm:basis-full sm:flex-1 sm:truncate" [title]="d.name + ' — show details'" (click)="details.set(d)">{{ d.name }}</button>
-          @if (d.movieId) {
-            <a [routerLink]="['/movies', d.movieId]" class="badge bg-accent-500/15 text-accent-300 hover:bg-accent-500/25">Movie</a>
-          }
-          @if (d.seriesId) {
-            <a [routerLink]="['/series', d.seriesId]" class="badge bg-violet-500/15 text-violet-300 hover:bg-violet-500/25">Series</a>
-          }
+          <ng-container *ngTemplateOutlet="mediaLink; context: { $implicit: d }" />
           @if (d.imported) { <span class="badge bg-emerald-500/15 text-emerald-300">Imported</span> }
           @if (multiClient()) { <span class="badge bg-surface-700 text-slate-300" title="Download client">{{ clientLabel(d.client) }}</span> }
           <span class="badge bg-surface-700 text-slate-300 max-sm:hidden">{{ d.category }}</span>
@@ -190,3 +187,19 @@
     </ng-container>
   </kr-modal>
 }
+
+<!-- Link from a download (or failed import) to its movie or series, named once the titles are loaded. -->
+<ng-template #mediaLink let-d>
+  @let info = media().get(d.id);
+  @if (d.movieId) {
+    <a [routerLink]="['/movies', d.movieId]" class="badge max-w-full gap-1 sm:max-w-xs bg-accent-500/15 text-accent-300 hover:bg-accent-500/25"
+       [title]="info ? 'Movie: ' + mediaLabel(info) : 'Open the movie'" data-media-link>
+      <svg class="size-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons.film" /></svg><span class="truncate">{{ info ? mediaLabel(info) : 'Movie' }}</span>
+    </a>
+  } @else if (d.seriesId) {
+    <a [routerLink]="['/series', d.seriesId]" class="badge max-w-full gap-1 sm:max-w-xs bg-violet-500/15 text-violet-300 hover:bg-violet-500/25"
+       [title]="info ? 'Series: ' + mediaLabel(info) : 'Open the series'" data-media-link>
+      <svg class="size-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons.tv" /></svg><span class="truncate">{{ info ? mediaLabel(info) : 'Series' }}</span>
+    </a>
+  }
+</ng-template>

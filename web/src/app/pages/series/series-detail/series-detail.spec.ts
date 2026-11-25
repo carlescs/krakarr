@@ -7,7 +7,7 @@ import { Api } from '../../../core/api';
 import { Auth } from '../../../core/auth';
 import { Events } from '../../../core/events';
 import { Toasts } from '../../../core/toast';
-import { SeriesDetailPage } from './series-detail';
+import { SeriesDetailPage, episodeCodes } from './series-detail';
 
 describe('SeriesDetailPage', () => {
   it('reloads and resets per-title state when the id input changes', async () => {
@@ -184,5 +184,11 @@ describe('SeriesDetailPage', () => {
     await page.filesDeleted();
     expect(page.fileDeletion()).toBeNull();
     expect(api.series).toHaveBeenCalledWith(1);
+  });
+
+  it('collapses consecutive episodes into ranges, per season', () => {
+    const e = (seasonNumber: number, episodeNumber: number) => ({ seasonNumber, episodeNumber });
+    expect(episodeCodes([e(1, 2), e(1, 1), e(1, 3), e(1, 5), e(2, 1)])).toBe('S01E01–E03 E05, S02E01');
+    expect(episodeCodes([e(3, 7)])).toBe('S03E07');
   });
 });

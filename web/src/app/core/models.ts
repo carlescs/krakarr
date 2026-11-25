@@ -197,6 +197,8 @@ export interface EpisodeFile { id: number; relativePath: string; size: number; q
 export interface Episode {
   id: number; seasonNumber: number; episodeNumber: number; absoluteNumber?: number; title?: string; overview?: string; airDate?: string; runtime: number;
   monitored: boolean; hasAired: boolean; episodeFile?: EpisodeFile; downloadProgress?: number;
+  /** Info hash of the torrent downloading this episode (links to the downloads page). */
+  downloadHash?: string;
 }
 /** TMDB's page for one library episode: still, score, guest stars and crew. */
 export interface EpisodeDetails {
@@ -217,6 +219,12 @@ export interface TorrentStatus {
   importMessage?: string; errorMessage?: string;
   /** The client that owns the torrent. */
   client: DownloadClientName;
+}
+/** The library item a download belongs to (`GET downloads/media`), keyed by the download id. */
+export interface DownloadMediaInfo {
+  id: number; movieId?: number; seriesId?: number; title: string; year?: number;
+  /** Episode codes the download should contain, e.g. "S01E01–E03" (series only). */
+  episodes?: string;
 }
 /** A download whose automatic import failed. */
 export interface ImportIssue {
