@@ -13,7 +13,7 @@ describe('Notifications', () => {
   it('sums counts and refetches when a source changes', async () => {
     const responses = [[note('requests.pending', 2)], [note('requests.pending', 1), note('health.disk', 1, 'Warning')]];
     const api = { notifications: vi.fn(async () => responses.shift() ?? []) };
-    const events = { notificationsUpdated: new Subject<void>(), requestsUpdated: new Subject<void>() };
+    const events = { notificationsUpdated: new Subject<void>(), requestsUpdated: new Subject<void>(), resynced: new Subject<void>() };
     TestBed.configureTestingModule({ providers: [{ provide: Api, useValue: api }, { provide: Events, useValue: events }] });
     const notifications = TestBed.inject(Notifications);
 
@@ -40,7 +40,7 @@ describe('Notifications', () => {
       dismissNotification: vi.fn(async () => undefined),
       dismissAllNotifications: vi.fn(async () => undefined),
     };
-    const events = { notificationsUpdated: new Subject<void>(), requestsUpdated: new Subject<void>() };
+    const events = { notificationsUpdated: new Subject<void>(), requestsUpdated: new Subject<void>(), resynced: new Subject<void>() };
     TestBed.configureTestingModule({ providers: [{ provide: Api, useValue: api }, { provide: Events, useValue: events }] });
     const notifications = TestBed.inject(Notifications);
 

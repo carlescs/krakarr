@@ -11,7 +11,7 @@ const task = (id: string, state: BackgroundTask['state'], extra: Partial<Backgro
   ({ id, kind: 'subtitle', title: `Sync ${id}`, link: '/movies/1', state, queued: '2026-11-26T10:00:00Z', canCancel: state === 'Waiting' || state === 'Running', ...extra });
 
 function setup(api: Record<string, unknown>) {
-  const events = { backgroundTasksUpdated: new Subject<void>(), backgroundTaskProgress: new Subject<BackgroundTaskProgress>() };
+  const events = { backgroundTasksUpdated: new Subject<void>(), resynced: new Subject<void>(), backgroundTaskProgress: new Subject<BackgroundTaskProgress>() };
   const toasts = { error: vi.fn() };
   TestBed.configureTestingModule({
     providers: [{ provide: Api, useValue: api }, { provide: Events, useValue: events }, { provide: Toasts, useValue: toasts }],
@@ -38,6 +38,19 @@ describe('BackgroundTasks', () => {
     events.backgroundTasksUpdated.next();
     expect(api.backgroundTasks).toHaveBeenCalledTimes(2);
     expect(tasks.items()).toEqual([]);
+  });
+
+  it('refetches after the connection comes back, so a task that finished meanwhile does not look stuck', async () => {
+    const responses = [[task('a', 'Running')], [task('a', 'Succeeded')]];
+    const api = { backgroundTasks: vi.fn(async () => responses.shift() ?? []) };
+    const { tasks, events } = setup(api);
+    tasks.start();
+    await vi.waitFor(() => expect(tasks.active()).toBe(1));
+
+    events.resynced.next();
+    await vi.waitFor(() => expect(tasks.finished()).toBe(1));
+    expect(tasks.active()).toBe(0);
+    tasks.stop();
   });
 
   it('applies progress in place to running tasks only', async () => {
