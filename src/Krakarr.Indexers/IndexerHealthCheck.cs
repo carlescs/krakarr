@@ -6,10 +6,13 @@ namespace Krakarr.Indexers;
 
 /// <summary>
 /// No enabled indexer, or indexers that keep failing (from <see cref="IndexerBackoff"/>, no network calls). Failing
-/// indexers are summed up in a single "failing" problem, so the bell shows one notification however many are down.
+/// indexers are summed up in a single "failing" problem, so the bell shows one notification however many are down, and
+/// at most once per <see cref="NotifyEvery"/>: indexers often fail, recover and fail again.
 /// </summary>
 public sealed class IndexerHealthCheck(KrakarrDbContext db, IndexerBackoff backoff, TimeProvider time) : IHealthCheck
 {
+    public static readonly TimeSpan NotifyEvery = TimeSpan.FromDays(1);
+
     public string Id => "indexers";
     public string Name => "Indexers";
 
@@ -46,6 +49,6 @@ public sealed class IndexerHealthCheck(KrakarrDbContext db, IndexerBackoff backo
             message = $"{lead}: {string.Join("; ", details)}.";
         }
 
-        return [new HealthProblem("failing", severity, message, "/indexers", failing.Count)];
+        return [new HealthProblem("failing", severity, message, "/indexers", failing.Count, NotifyEvery)];
     }
 }

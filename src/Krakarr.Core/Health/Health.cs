@@ -11,7 +11,10 @@ public enum HealthSeverity
 /// <param name="Link">SPA route where the user can fix it, e.g. "/indexers".</param>
 /// <param name="Count">How many things the problem stands for when it sums up several (e.g. failing indexers), so the
 /// bell counts them and a dismissed problem comes back when more of them fail.</param>
-public sealed record HealthProblem(string Key, HealthSeverity Severity, string Message, string? Link = null, int Count = 1);
+/// <param name="NotifyEvery">For problems that come and go (indexers that fail, recover and fail again): the bell
+/// brings the problem back at most once per this interval, however often it reappears or gets worse in between.</param>
+public sealed record HealthProblem(string Key, HealthSeverity Severity, string Message, string? Link = null, int Count = 1,
+    TimeSpan? NotifyEvery = null);
 
 /// <summary>
 /// One aspect of the setup that can be broken without anything failing loudly (disk space, root folders, the download
@@ -34,10 +37,13 @@ public interface IHealthCheck
 
 /// <summary>A problem as reported by the API and the notification bell.</summary>
 /// <param name="Id">"{check id}.{problem key}", stable while the problem persists.</param>
-/// <param name="Since">When it was first seen, or last got worse (more severe, or a higher <paramref name="Count"/>).</param>
+/// <param name="Since">When it was first seen, or last got worse (more severe, or a higher <paramref name="Count"/>). With
+/// <paramref name="NotifyEvery"/>, it moves at most once per that interval, so the bell brings the problem back no more
+/// often.</param>
 /// <param name="Count">See <see cref="HealthProblem.Count"/>.</param>
+/// <param name="NotifyEvery">See <see cref="HealthProblem.NotifyEvery"/>.</param>
 public sealed record HealthIssue(string Id, string Check, string CheckName, HealthSeverity Severity, string Message, string? Link,
-    DateTimeOffset Since, int Count = 1);
+    DateTimeOffset Since, int Count = 1, TimeSpan? NotifyEvery = null);
 
 /// <summary>Result of the latest health run.</summary>
 /// <param name="CheckedAt">When the last run finished; null before the first one.</param>

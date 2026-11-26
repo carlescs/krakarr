@@ -28,6 +28,13 @@ public sealed class HealthMonitor(
     private readonly SemaphoreSlim _gate = new(1, 1);
     private volatile HealthReport _current = HealthReport.Empty;
 
+    /// <summary>
+    /// When each problem with <see cref="HealthProblem.NotifyEvery"/> was last brought back to the bell, kept after it
+    /// goes away so one that flaps doesn't come back on every return. Only touched under <see cref="_gate"/>; entries go
+    /// once their interval is over, so it holds a handful of ids at most.
+    /// </summary>
+    private readonly Dictionary<string, (DateTimeOffset At, TimeSpan Every)> _notified = [];
+
     public HealthReport Current => _current;
 
     public void RequestCheck()
@@ -116,9 +123,21 @@ public sealed class HealthMonitor(
                     // as an indexer recovering, is not.
                     var count = Math.Max(1, p.Count);
                     var since = before.TryGetValue(id, out var old) && old.Severity >= p.Severity && old.Count >= count ? old.Since : now;
-                    issues.Add(new HealthIssue(id, check.Id, check.Name, p.Severity, p.Message, p.Link, since, count));
+                    if (p.NotifyEvery is { } every && every > TimeSpan.Zero)
+                    {
+                        // Throttled: reappearing or getting worse within the interval keeps the last notified time.
+                        if (since == now && _notified.TryGetValue(id, out var last) && now - last.At < every) since = last.At;
+                        if (since == now) _notified[id] = (now, every);
+                    }
+
+                    issues.Add(new HealthIssue(id, check.Id, check.Name, p.Severity, p.Message, p.Link, since, count, p.NotifyEvery));
                 }
             }
+        }
+
+        foreach (var (id, _) in _notified.Where(e => now - e.Value.At >= e.Value.Every).ToList())
+        {
+            _notified.Remove(id);
         }
 
         // Errors first, then in check order (the order the checks were registered).

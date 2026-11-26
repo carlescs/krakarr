@@ -49,7 +49,7 @@ public static class NotificationEndpoints
         if (n.Date is not { } date) return d.DismissedAt is null && n.Count <= d.Count;
         if (d.DismissedAt is not { } dismissedAt) return false;
         var (shown, dismissed) = (ToMilliseconds(date), ToMilliseconds(dismissedAt));
-        return shown < dismissed || (shown == dismissed && n.Count <= d.Count);
+        return shown < dismissed || (shown == dismissed && (n.Count <= d.Count || !n.CountRenotifies));
     }
 
     private static DateTimeOffset ToMilliseconds(DateTimeOffset d) => d.AddTicks(-(d.Ticks % TimeSpan.TicksPerMillisecond));
