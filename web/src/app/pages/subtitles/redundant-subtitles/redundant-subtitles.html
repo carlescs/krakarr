@@ -1,0 +1,58 @@
+<section class="card">
+  <div class="flex flex-wrap items-center gap-3 border-b border-surface-700 px-5 py-3">
+    <h2 class="mr-auto text-sm font-semibold uppercase tracking-wide text-slate-400">
+      Already embedded <span class="ml-1 font-normal normal-case text-slate-500">{{ total() }}</span>
+    </h2>
+  </div>
+  <p class="border-b border-surface-700 px-5 py-3 text-sm text-slate-400">
+    Downloaded subtitles in a language the video already has as an embedded track (forced matched with forced).
+    You can usually delete them.
+  </p>
+  @if (loading()) {
+    <p class="px-5 py-8 text-sm text-slate-500">Loading…</p>
+  } @else if (items().length === 0) {
+    <p class="px-5 py-8 text-sm text-slate-500">No downloaded subtitle duplicates an embedded track.</p>
+  } @else {
+    <table class="table">
+      <thead>
+        <tr>
+          <th class="max-sm:hidden">Type</th>
+          <th>Title</th>
+          <th>Subtitle</th>
+          <th class="max-md:hidden">Embedded</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (r of items(); track r.id) {
+          <tr>
+            <td class="max-sm:hidden"><span class="badge" [class]="r.mediaType === 'Movie' ? 'bg-accent-500/15 text-accent-300' : 'bg-violet-500/15 text-violet-300'">{{ r.mediaType === 'Movie' ? 'Movie' : 'Episode' }}</span></td>
+            <td class="w-full max-w-0">
+              <a class="block truncate hover:text-accent-300" [routerLink]="r.movieId ? ['/movies', r.movieId] : ['/series', r.seriesId]" [title]="r.label">{{ r.label }}</a>
+              <div class="truncate text-xs text-slate-500" [title]="r.fileName">{{ r.fileName }}</div>
+            </td>
+            <td class="whitespace-nowrap">
+              <span class="badge bg-rose-500/15 text-rose-300" [title]="describe(r)">{{ r.language }}@if (r.forced) { forced }@if (r.hearingImpaired) { SDH }</span>
+              <div class="mt-0.5 text-xs text-slate-500" [title]="'Added ' + (r.dateAdded | date: 'medium')">{{ r.provider }}</div>
+            </td>
+            <td class="whitespace-nowrap max-md:hidden">
+              @for (e of r.embedded; track $index) {
+                <span class="badge mr-1" [title]="describe(e)"
+                      [class]="e.language.toLowerCase() === r.language.toLowerCase() && e.forced === r.forced ? 'bg-emerald-500/15 text-emerald-300' : 'bg-surface-700 text-slate-400'">{{ embeddedLabel(e) }}</span>
+              }
+            </td>
+            <td class="whitespace-nowrap text-right">
+              <button class="btn-ghost btn-sm text-rose-300" (click)="remove(r)" [disabled]="deleting().has(r.id)"
+                      [attr.aria-label]="'Delete ' + r.fileName">Delete</button>
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+    @if (items().length < total()) {
+      <div class="border-t border-surface-700 px-5 py-3 text-center">
+        <button class="btn-secondary btn-sm" (click)="more()" [disabled]="loadingMore()">Show more ({{ total() - items().length }} left)</button>
+      </div>
+    }
+  }
+</section>

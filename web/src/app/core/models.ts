@@ -374,6 +374,14 @@ export type WantedSubtitleQuery = { notFound?: boolean; sort?: WantedSubtitleSor
 export interface WantedSubtitlePage {
   items: WantedSubtitle[]; page: number; pageSize: number; total: number; libraryTotal: number; searching: number; notFound: number;
 }
+export interface EmbeddedSubtitle { language: string; languageName: string; hearingImpaired: boolean; forced: boolean; }
+/** An external subtitle in a language the video already has as an embedded track (same forced flag). */
+export interface RedundantSubtitle {
+  id: number; mediaType: 'Movie' | 'Series'; movieId?: number | null; seriesId?: number | null; movieFileId?: number | null; episodeFileId?: number | null;
+  label: string; language: string; languageName: string; hearingImpaired: boolean; forced: boolean; fileName: string; provider: string; dateAdded: string;
+  embedded: EmbeddedSubtitle[];
+}
+export interface RedundantSubtitlePage { items: RedundantSubtitle[]; offset: number; limit: number; total: number; }
 /** The subtitle languages Krakarr looks for (Settings › Subtitles). */
 export interface WantedSubtitleLanguages { enabled: boolean; useEmbeddedSubtitles: boolean; languages: string[]; }
 export interface SubtitleProvider { name: string; displayName: string; configured: boolean; }

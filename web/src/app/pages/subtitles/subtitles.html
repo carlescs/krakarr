@@ -1,5 +1,6 @@
 <div class="mb-6 flex flex-wrap items-center gap-3">
   <h1 class="page-title mr-auto">Subtitles</h1>
+  @if (tab() === 'wanted') {
   <div class="flex items-center gap-2" [class.max-sm:w-full]="availableProviders().length > 0">
     @if (availableProviders().length > 0) {
       <kr-multi-picker class="min-w-0 flex-1 sm:w-48 sm:flex-none"
@@ -9,6 +10,15 @@
     }
     <button class="btn-primary shrink-0" (click)="searchAll()" [disabled]="!ready() || total() === 0">Search all missing</button>
   </div>
+  }
+</div>
+
+<div class="mb-4 inline-flex rounded-lg border border-surface-700 bg-surface-900 p-0.5" role="tablist" aria-label="Subtitles">
+  @for (t of tabs; track t.id) {
+    <button type="button" class="rounded-md px-3 py-1.5 text-sm font-medium transition" [title]="t.title"
+            [class]="tab() === t.id ? 'bg-surface-700 text-white' : 'text-slate-400 hover:text-slate-200'"
+            role="tab" [attr.aria-selected]="tab() === t.id" (click)="tab.set(t.id)">{{ t.label }}</button>
+  }
 </div>
 
 @if (settings(); as s) {
@@ -26,6 +36,9 @@
   }
 }
 
+@if (tab() === 'redundant') {
+  <kr-redundant-subtitles />
+} @else {
 <section class="card">
   <div class="flex flex-wrap items-center gap-3 border-b border-surface-700 px-5 py-3">
     <h2 class="mr-auto text-sm font-semibold uppercase tracking-wide text-slate-400">
@@ -120,6 +133,7 @@
     <button class="btn-ghost btn-sm" (click)="manage.set(w)">Manual</button>
   </ng-template>
 </section>
+}
 
 @if (manage(); as w) {
   <kr-subtitle-manager [fileRef]="{ movieFileId: w.movieFileId, episodeFileId: w.episodeFileId }" [label]="w.label"

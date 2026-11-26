@@ -1,5 +1,6 @@
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
+using Krakarr.Core.Events;
 using Krakarr.Core.Jobs;
 using Krakarr.Data;
 using Krakarr.Subtitles.Sync;
@@ -36,6 +37,13 @@ public sealed record WantedSubtitleLanguagesDto(bool Enabled, bool UseEmbeddedSu
 public sealed record WantedSubtitleDto(string MediaType, int? MovieId, int? SeriesId, int? MovieFileId, int? EpisodeFileId, string Label, IReadOnlyList<string> MissingLanguages, DateTimeOffset? NotFound);
 /// <summary>A page of the wanted list. <c>Total</c> counts the selected filter, <c>LibraryTotal</c> every wanted file.</summary>
 public sealed record WantedSubtitlePageDto(IReadOnlyList<WantedSubtitleDto> Items, int Page, int PageSize, int Total, int LibraryTotal, int Searching, int NotFound);
+
+public sealed record EmbeddedSubtitleDto(string Language, string LanguageName, bool HearingImpaired, bool Forced);
+/// <summary>An external subtitle in a language the video already has as an embedded track; it can usually be deleted.</summary>
+public sealed record RedundantSubtitleDto(int Id, string MediaType, int? MovieId, int? SeriesId, int? MovieFileId, int? EpisodeFileId, string Label,
+    string Language, string LanguageName, bool HearingImpaired, bool Forced, string FileName, string Provider, DateTimeOffset DateAdded,
+    IReadOnlyList<EmbeddedSubtitleDto> Embedded);
+public sealed record RedundantSubtitlePageDto(IReadOnlyList<RedundantSubtitleDto> Items, int Offset, int Limit, int Total);
 
 public static class SubtitleEndpoints
 {
@@ -122,6 +130,19 @@ public static class SubtitleEndpoints
             var items = result.Items.Select(w => new WantedSubtitleDto(
                 w.Target.MediaType.ToString(), w.Target.MovieId, w.Target.SeriesId, w.Target.MovieFileId, w.Target.EpisodeFileId, w.Target.Label, w.MissingLanguages, w.NotFound)).ToList();
             return new WantedSubtitlePageDto(items, p, size, result.Total, result.Searching + result.NotFound, result.Searching, result.NotFound);
+        });
+
+        // External subtitles that duplicate an embedded track (same language and forced flag), sorted by title.
+        group.MapGet("/redundant", async (int? offset, int? limit, SubtitleService service, CancellationToken ct) =>
+        {
+            var skip = Math.Max(0, offset ?? 0);
+            var size = Math.Clamp(limit ?? 100, 1, 500);
+            var result = await service.RedundantPageAsync(skip, size, ct);
+            var items = result.Items.Select(r => new RedundantSubtitleDto(
+                r.Id, r.MediaType.ToString(), r.MovieId, r.SeriesId, r.MovieFileId, r.EpisodeFileId, r.Label,
+                r.Language, Languages.Name(r.Language), r.HearingImpaired, r.Forced, Path.GetFileName(r.Path), r.Provider, r.DateAdded,
+                r.Embedded.Select(e => new EmbeddedSubtitleDto(e.Language, Languages.Name(e.Language), e.HearingImpaired, e.Forced)).ToList())).ToList();
+            return new RedundantSubtitlePageDto(items, skip, size, result.Total);
         });
 
         group.MapGet("/wanted/counts", async (SubtitleService service, CancellationToken ct) =>
@@ -334,13 +355,17 @@ public static class SubtitleEndpoints
             }
         });
 
-        group.MapDelete("/{id:int}", async (int id, KrakarrDbContext db, CancellationToken ct) =>
+        group.MapDelete("/{id:int}", async (int id, KrakarrDbContext db, IEventHub events, CancellationToken ct) =>
         {
             var row = await db.SubtitleFiles.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (row is null) return Results.NotFound();
             if (File.Exists(row.Path)) File.Delete(row.Path);
             db.SubtitleFiles.Remove(row);
             await db.SaveChangesAsync(ct);
+            // Detail pages and other open lists refresh; they match on the movie or series id.
+            var movieId = row.MovieFileId is { } mf ? await db.MovieFiles.Where(f => f.Id == mf).Select(f => (int?)f.MovieId).FirstOrDefaultAsync(ct) : null;
+            var seriesId = row.EpisodeFileId is { } ef ? await db.EpisodeFiles.Where(f => f.Id == ef).Select(f => (int?)f.SeriesId).FirstOrDefaultAsync(ct) : null;
+            await events.PublishAsync(EventNames.SubtitlesUpdated, new { MovieId = movieId, SeriesId = seriesId }, ct);
             return Results.NoContent();
         });
 

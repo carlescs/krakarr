@@ -283,4 +283,26 @@ describe('SubtitlesPage', () => {
     await settle(fixture);
     expect(api.searchSubtitles).toHaveBeenLastCalledWith({ providers: ['subdl'], notFound: false });
   });
+
+  it('switches to the tab of downloaded subtitles a video already has embedded', async () => {
+    const api = setupTest({
+      api: mockApi({
+        settings: async () => settings,
+        subtitleLanguages: async () => [{ code: 'es', name: 'Spanish' }],
+        wantedSubtitles: list,
+        redundantSubtitles: async () => ({ items: [], offset: 0, limit: 100, total: 0 }),
+      }),
+    });
+    const fixture = TestBed.createComponent(SubtitlesPage);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('kr-redundant-subtitles')).toBeNull();
+
+    button(el, 'Already embedded').click();
+    await settle(fixture);
+    expect(el.querySelector('kr-redundant-subtitles')).not.toBeNull();
+    expect(api.redundantSubtitles).toHaveBeenCalled();
+    expect(el.textContent).not.toContain('Search all missing');
+    expect(el.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim()).toBe('Already embedded');
+  });
 });
