@@ -92,6 +92,9 @@ describe('SubtitleList', () => {
 
     button(el, 'Subtitle timing').click();
     await settle(fixture);
+    const manual = el.querySelector('[data-manual-timing]') as HTMLDetailsElement;
+    expect(manual.open).toBe(false);
+    manual.open = true;
     button(el, '−1 s').click();
     button(el, '+0.1 s').click();
     await settle(fixture);

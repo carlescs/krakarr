@@ -23,41 +23,61 @@
     @for (s of sorted(); track $index) {
       <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2" data-subtitle>
         <span class="min-w-32 font-medium text-slate-100">{{ label(s) }}</span>
-        <span class="badge" [class]="embedded(s) ? 'bg-surface-700 text-slate-300' : 'bg-violet-500/15 text-violet-300'">{{ embedded(s) ? 'Embedded' : source(s) }}</span>
-        @if (s.score != null) { <span class="badge" [class]="scoreClass(s.score)" title="Match score">{{ s.score }}</span> }
-        @if (s.manual) { <span class="badge bg-surface-700 text-slate-300" title="Picked by hand: automatic upgrades leave it alone">Manual</span> }
-        @if (s.syncNote) {
-          @if (s.syncedAt) {
-            <span class="badge bg-sky-500/15 text-sky-300" [title]="s.syncNote" data-synced>Synced</span>
-          } @else {
-            <span class="badge bg-rose-500/15 text-rose-300" [title]="s.syncNote" data-sync-failed>Sync failed</span>
+        <span class="flex flex-wrap items-center gap-x-3 gap-y-1 max-sm:order-1 max-sm:basis-full">
+          <span class="badge" [class]="embedded(s) ? 'bg-surface-700 text-slate-300' : 'bg-violet-500/15 text-violet-300'">{{ embedded(s) ? 'Embedded' : source(s) }}</span>
+          @if (s.score != null) { <span class="badge" [class]="scoreClass(s.score)" title="Match score">{{ s.score }}</span> }
+          @if (s.manual) { <span class="badge bg-surface-700 text-slate-300" title="Picked by hand: automatic upgrades leave it alone">Manual</span> }
+          @if (s.syncNote) {
+            @if (s.syncedAt) {
+              <span class="badge bg-sky-500/15 text-sky-300" [title]="s.syncNote" data-synced>Synced</span>
+            } @else {
+              <span class="badge bg-rose-500/15 text-rose-300" [title]="s.syncNote" data-sync-failed>Sync failed</span>
+            }
           }
-        }
-        <span class="min-w-0 flex-1 truncate font-mono text-xs text-slate-500 max-sm:order-1 max-sm:basis-full"
+        </span>
+        <span class="min-w-0 flex-1 truncate font-mono text-xs text-slate-500 max-sm:order-2 max-sm:basis-full"
               [title]="s.release ? s.release + ' · ' + s.fileName : s.fileName">{{ s.release || s.fileName }}</span>
-        @if (!embedded(s)) { <span class="text-xs text-slate-500" [title]="s.dateAdded">{{ s.dateAdded | ago }}</span> }
-        @if (deletable() && !embedded(s)) {
-          <button class="-m-1 p-1 text-slate-500 hover:text-white" (click)="toggleTiming(s)" aria-label="Subtitle timing"
-                  [title]="'Sync or shift ' + s.fileName" [attr.aria-expanded]="timing() === s.id">
-            <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
-          </button>
-          <button class="-m-1 p-1 text-slate-500 hover:text-rose-300 disabled:opacity-40" (click)="remove(s)" [disabled]="deleting() === s.id"
-                  aria-label="Delete subtitle" [title]="'Delete ' + s.fileName">
-            <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
-          </button>
-        }
+        <span class="ml-auto flex shrink-0 items-center gap-3">
+          @if (!embedded(s)) { <span class="text-xs text-slate-500" [title]="s.dateAdded">{{ s.dateAdded | ago }}</span> }
+          @if (deletable() && !embedded(s)) {
+            <button class="-m-1 p-1 text-slate-500 hover:text-white" (click)="toggleTiming(s)" aria-label="Subtitle timing"
+                    [title]="'Fix the timing of ' + s.fileName" [attr.aria-expanded]="timing() === s.id">
+              <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+            </button>
+            <button class="-m-1 p-1 text-slate-500 hover:text-rose-300 disabled:opacity-40" (click)="remove(s)" [disabled]="deleting() === s.id"
+                    aria-label="Delete subtitle" [title]="'Delete ' + s.fileName">
+              <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+            </button>
+          }
+        </span>
         @if (timing() === s.id) {
-          <div class="order-2 flex basis-full flex-wrap items-center gap-2 rounded-lg bg-surface-800/60 p-2" data-timing>
-            <button class="btn-secondary btn-sm" (click)="sync(s)" [disabled]="busy()" title="Line it up with the audio or a subtitle track inside the video">Sync with video</button>
-            <span class="text-xs text-slate-500">or shift</span>
-            <button class="btn-ghost btn-sm" (click)="nudge(-1000)">−1 s</button>
-            <button class="btn-ghost btn-sm" (click)="nudge(-100)">−0.1 s</button>
-            <input class="input w-28 py-1 text-right font-mono text-xs" type="number" step="100" [(ngModel)]="offset" aria-label="Shift in milliseconds" />
-            <span class="text-xs text-slate-500">ms</span>
-            <button class="btn-ghost btn-sm" (click)="nudge(100)">+0.1 s</button>
-            <button class="btn-ghost btn-sm" (click)="nudge(1000)">+1 s</button>
-            <button class="btn-primary btn-sm" (click)="shift(s)" [disabled]="busy() || !offset">Shift</button>
-            <p class="basis-full text-xs text-slate-500">Negative values show the subtitles earlier.</p>
+          <div class="order-3 basis-full space-y-2 rounded-lg bg-surface-800/60 p-3" data-timing>
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <button class="btn-primary btn-sm" (click)="sync(s)" [disabled]="busy()">
+                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
+                Sync with video
+              </button>
+              <span class="text-xs text-slate-400">Lines the subtitle up with the video automatically.</span>
+            </div>
+            <details class="group text-xs" data-manual-timing>
+              <summary class="flex cursor-pointer select-none list-none items-center gap-1 text-slate-500 hover:text-slate-300 [&::-webkit-details-marker]:hidden">
+                <svg class="size-3 transition-transform group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+                Advanced: shift by hand
+              </summary>
+              <!-- Desktop: one line. Phone: the box and Shift first, then the four nudge buttons spread out. -->
+              <div class="mt-2 flex flex-wrap items-center gap-2">
+                <span class="text-slate-500 max-sm:hidden">Earlier</span>
+                <button class="btn-ghost btn-sm max-sm:order-1 max-sm:flex-1" (click)="nudge(-1000)">−1 s</button>
+                <button class="btn-ghost btn-sm max-sm:order-1 max-sm:flex-1" (click)="nudge(-100)">−0.1 s</button>
+                <input class="input w-24 py-1 text-right font-mono text-xs max-sm:flex-1" type="number" step="0.1" [(ngModel)]="seconds" aria-label="Shift in seconds" />
+                <button class="btn-ghost btn-sm max-sm:order-1 max-sm:flex-1" (click)="nudge(100)">+0.1 s</button>
+                <button class="btn-ghost btn-sm max-sm:order-1 max-sm:flex-1" (click)="nudge(1000)">+1 s</button>
+                <span class="text-slate-500 max-sm:hidden">Later</span>
+                <button class="btn-secondary btn-sm" (click)="shift(s)" [disabled]="busy() || !offsetMs()">Shift</button>
+                <span class="basis-full sm:hidden" aria-hidden="true"></span>
+                <p class="order-2 basis-full text-slate-500 sm:hidden">Negative values show the subtitles earlier.</p>
+              </div>
+            </details>
           </div>
         }
       </li>

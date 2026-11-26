@@ -32,8 +32,8 @@ export class SubtitleList implements OnInit {
   /** The subtitle whose timing tools are open. */
   protected readonly timing = signal<number | null>(null);
   protected readonly busy = signal(false);
-  /** Shift to apply, in milliseconds (negative = earlier). */
-  protected offset = 0;
+  /** Shift to apply, in seconds (negative = earlier). */
+  protected seconds = 0;
 
   /** Embedded tracks after external files, each group by language. */
   protected readonly sorted = computed(() => [...this.files()].sort((a, b) =>
@@ -58,20 +58,23 @@ export class SubtitleList implements OnInit {
   }
 
   protected toggleTiming(s: SubtitleFile) {
-    this.offset = 0;
+    this.seconds = 0;
     this.timing.set(this.timing() === s.id ? null : s.id);
   }
 
-  protected nudge(ms: number) { this.offset = Math.round((Number(this.offset) || 0) + ms); }
+  /** The shift in whole milliseconds. */
+  protected offsetMs() { return Math.round((Number(this.seconds) || 0) * 1000); }
+
+  protected nudge(ms: number) { this.seconds = (this.offsetMs() + ms) / 1000; }
 
   async shift(s: SubtitleFile) {
-    const offset = Math.round(Number(this.offset) || 0);
+    const offset = this.offsetMs();
     if (offset === 0) return;
     this.busy.set(true);
     try {
       await this.api.shiftSubtitle(s.id, offset);
-      this.toasts.success(`Shifted ${subtitleLabel(s)} subtitle by ${offset > 0 ? '+' : ''}${offset} ms`);
-      this.offset = 0;
+      this.toasts.success(`Shifted ${subtitleLabel(s)} subtitle by ${offset > 0 ? '+' : ''}${offset / 1000} s`);
+      this.seconds = 0;
       this.changed.emit();
     } catch (e) {
       this.toasts.error(errorMessage(e));
