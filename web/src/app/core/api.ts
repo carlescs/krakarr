@@ -9,7 +9,7 @@ import {
   AuthStatus, AutomationSettings, BackupInfo, BackupList, BackupSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
   IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, BestSubtitleMatches, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, SubtitleSyncTools, RedundantSubtitlePage, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, EpisodeRelease, MediaInfo, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, KeywordLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
-  DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, EmbySettings, PlexSettings, MediaServerTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus
+  DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, EmbySettings, PlexSettings, MediaServerTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, BackgroundTask, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus
 } from './models';
 
 const API = 'api/v1';
@@ -248,8 +248,14 @@ export class Api {
   notifications() { return this.get<AppNotification[]>('notifications'); }
   dismissNotification(id: string) { return this.delete<void>(`notifications/${encodeURIComponent(id)}`); }
   dismissAllNotifications() { return this.delete<void>('notifications'); }
-  /** Runs a button on a notification (e.g. cancel a subtitle sync). */
-  notificationAction(path: string) { return this.post<void>(path); }
+
+  // Background tasks (the tasks menu in the top bar): long-running work such as subtitle syncs, the caller's own (plus automatic ones for staff).
+  backgroundTasks() { return this.get<BackgroundTask[]>('system/background-tasks'); }
+  cancelBackgroundTask(id: string) { return this.post<void>(`system/background-tasks/${encodeURIComponent(id)}/cancel`); }
+  /** Hides a finished task. */
+  dismissBackgroundTask(id: string) { return this.delete<void>(`system/background-tasks/${encodeURIComponent(id)}`); }
+  /** Hides every finished task. */
+  dismissFinishedBackgroundTasks() { return this.delete<void>('system/background-tasks'); }
 
   // Requests: users ask for titles, staff approve (adds them) or decline.
   requests(status?: RequestStatus, page = 1) { return this.get<MediaRequestPage>('requests', { status, page }); }

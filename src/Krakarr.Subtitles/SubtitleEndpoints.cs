@@ -311,14 +311,14 @@ public static class SubtitleEndpoints
         });
 
         // Resyncs one subtitle against the video in the background (it can take minutes); the outcome lands on the row.
-        // It shows in the bell as waiting until it starts, then with its progress.
-        group.MapPost("/{id:int}/sync", async (int id, KrakarrDbContext db, SubtitleSyncService sync, SubtitleSyncProgress progress,
+        // It shows in the tasks menu of whoever asked for it, as waiting until it starts, then with its progress.
+        group.MapPost("/{id:int}/sync", async (int id, HttpContext http, KrakarrDbContext db, SubtitleSyncService sync, SubtitleSyncProgress progress,
             ICommandQueue commands, CancellationToken ct) =>
         {
             var row = await db.SubtitleFiles.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct);
             if (row is null) return Results.NotFound();
             var (title, link) = await sync.DescribeAsync(row, ct);
-            var cancel = progress.Queue(id, title, link);
+            var cancel = progress.Queue(id, title, link, MediaSubscriptions.GetUserId(http.User));
             var command = commands.Enqueue($"Sync subtitle: {Path.GetFileName(row.Path)}", async (sp, token) =>
             {
                 try
@@ -335,10 +335,6 @@ public static class SubtitleEndpoints
             });
             return Results.Accepted(value: command);
         });
-
-        // Stops a waiting or running sync (the Cancel button on its notification).
-        group.MapPost("/{id:int}/sync/cancel", (int id, SubtitleSyncProgress progress) =>
-            progress.Cancel(id) ? Results.NoContent() : Results.NotFound());
 
         // Moves every cue by a fixed amount (negative = earlier).
         group.MapPost("/{id:int}/shift", async (int id, SubtitleShiftRequest req, SubtitleSyncService sync, CancellationToken ct) =>

@@ -389,6 +389,7 @@ public static class SchedulingServiceCollectionExtensions
 {
     public static IServiceCollection AddKrakarrScheduling(this IServiceCollection services)
     {
+        services.AddSingleton<BackgroundTasks>();
         services.AddSingleton<CommandQueue>();
         services.AddSingleton<ICommandQueue>(sp => sp.GetRequiredService<CommandQueue>());
         services.AddHostedService(sp => sp.GetRequiredService<CommandQueue>());

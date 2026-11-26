@@ -169,6 +169,9 @@ public sealed class DownloadClientRouterTests : IAsyncLifetime
             Last = (IReadOnlyList<TorrentStatus>)payload!;
             return Task.CompletedTask;
         }
+
+        public Task PublishToUserAsync(int userId, string eventName, object? payload, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 
     [Fact]

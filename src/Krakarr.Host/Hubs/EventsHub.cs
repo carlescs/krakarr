@@ -32,4 +32,8 @@ public sealed class SignalREventHub(IHubContext<EventsHub> hub) : IEventHub
     public Task PublishAsync(string eventName, object? payload, CancellationToken cancellationToken = default) =>
         (PublicEvents.Contains(eventName) ? hub.Clients.All : hub.Clients.Group(EventsHub.StaffGroup))
             .SendAsync(eventName, payload, cancellationToken);
+
+    /// <summary>SignalR's user id is the sign-in's NameIdentifier claim, i.e. the Krakarr user id.</summary>
+    public Task PublishToUserAsync(int userId, string eventName, object? payload, CancellationToken cancellationToken = default) =>
+        hub.Clients.User(userId.ToString(System.Globalization.CultureInfo.InvariantCulture)).SendAsync(eventName, payload, cancellationToken);
 }

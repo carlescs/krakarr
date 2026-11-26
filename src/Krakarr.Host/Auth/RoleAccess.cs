@@ -37,6 +37,7 @@ public static class RoleAccess
         "/api/v1/auth",
         "/api/v1/health",
         "/api/v1/notifications", // each source filters by role
+        "/api/v1/system/background-tasks", // each user sees the tasks they started
         "/hubs",
     ];
 
