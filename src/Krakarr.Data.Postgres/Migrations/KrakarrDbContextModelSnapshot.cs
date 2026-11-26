@@ -17,7 +17,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261125184243_SubtitleSyncAndUpgrade";
+    public override string LastMigrationId => "20261126170306_RereadHevcMediaInfo";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
