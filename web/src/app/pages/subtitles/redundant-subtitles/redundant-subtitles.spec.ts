@@ -68,4 +68,24 @@ describe('RedundantSubtitles', () => {
     expect(el.querySelector('a[href="/movies/3"]')).not.toBeNull();
     expect(el.textContent).not.toContain('Show more');
   });
+
+  it('keeps rows appended by "Show more" when an older reload finishes after it', async () => {
+    const api = setupTest({ api: mockApi({ redundantSubtitles: async () => ({ items: [rows[0]], offset: 0, limit: 100, total: 2 }) }) });
+    const fixture = TestBed.createComponent(RedundantSubtitles);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+
+    let finishReload!: () => void;
+    api.redundantSubtitles.mockImplementation(({ offset }) => offset === 0
+      ? new Promise(resolve => { finishReload = () => resolve({ items: [rows[0]], offset: 0, limit: 100, total: 2 }); })
+      : Promise.resolve({ items: [rows[1]], offset, limit: 100, total: 2 }));
+    const reload = fixture.componentInstance.load();
+    button(el, 'Show more').click();
+    await settle(fixture);
+    finishReload();
+    await reload;
+    await settle(fixture);
+    expect(el.querySelector('a[href="/movies/3"]')).not.toBeNull();
+    expect(el.querySelector('a[href="/series/4"]')).not.toBeNull();
+  });
 });

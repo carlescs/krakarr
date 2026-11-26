@@ -1,5 +1,6 @@
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
+using Krakarr.Core.Events;
 using Krakarr.Core.Jobs;
 using Krakarr.Data;
 using Krakarr.Subtitles.Sync;
@@ -354,13 +355,17 @@ public static class SubtitleEndpoints
             }
         });
 
-        group.MapDelete("/{id:int}", async (int id, KrakarrDbContext db, CancellationToken ct) =>
+        group.MapDelete("/{id:int}", async (int id, KrakarrDbContext db, IEventHub events, CancellationToken ct) =>
         {
             var row = await db.SubtitleFiles.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (row is null) return Results.NotFound();
             if (File.Exists(row.Path)) File.Delete(row.Path);
             db.SubtitleFiles.Remove(row);
             await db.SaveChangesAsync(ct);
+            // Detail pages and other open lists refresh; they match on the movie or series id.
+            var movieId = row.MovieFileId is { } mf ? await db.MovieFiles.Where(f => f.Id == mf).Select(f => (int?)f.MovieId).FirstOrDefaultAsync(ct) : null;
+            var seriesId = row.EpisodeFileId is { } ef ? await db.EpisodeFiles.Where(f => f.Id == ef).Select(f => (int?)f.SeriesId).FirstOrDefaultAsync(ct) : null;
+            await events.PublishAsync(EventNames.SubtitlesUpdated, new { MovieId = movieId, SeriesId = seriesId }, ct);
             return Results.NoContent();
         });
 

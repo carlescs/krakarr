@@ -746,9 +746,12 @@ public sealed class SubtitleService(
     {
         var matches = new List<RedundantKey>();
 
+        // The SQL filter (the language code appears in the embedded list) drops most rows before they are loaded;
+        // Covers then checks the exact token and forced flag. Codes are canonical on both sides, so case matches.
         var movieRows = await db.SubtitleFiles.AsNoTracking()
             .Join(db.MovieFiles.AsNoTracking().Where(f => f.EmbeddedSubtitles != null && f.EmbeddedSubtitles != ""),
                 s => s.MovieFileId, f => (int?)f.Id, (s, f) => new { s.Id, s.Language, s.Forced, f.EmbeddedSubtitles, f.MovieId })
+            .Where(x => x.EmbeddedSubtitles!.Contains(x.Language))
             .Join(db.Movies.AsNoTracking(), x => x.MovieId, m => m.Id, (x, m) => new { x.Id, x.Language, x.Forced, x.EmbeddedSubtitles, m.SortTitle, m.Year })
             .ToListAsync(ct);
         foreach (var row in movieRows)
@@ -756,20 +759,27 @@ public sealed class SubtitleService(
                 matches.Add(new RedundantKey(row.Id, row.SortTitle, row.Year, 0, row.Language));
         movieRows = null;
 
-        var seriesTitles = await db.Series.AsNoTracking().Select(x => new { x.Id, x.SortTitle }).ToDictionaryAsync(x => x.Id, x => x.SortTitle, ct);
         var episodeRows = await db.SubtitleFiles.AsNoTracking()
             .Join(db.EpisodeFiles.AsNoTracking().Where(f => f.EmbeddedSubtitles != null && f.EmbeddedSubtitles != ""),
                 s => s.EpisodeFileId, f => (int?)f.Id,
-                (s, f) => new
-                {
-                    s.Id, s.Language, s.Forced, f.EmbeddedSubtitles, f.SeriesId, f.SeasonNumber,
-                    Episode = db.Episodes.Where(e => e.EpisodeFileId == f.Id).Min(e => (int?)e.EpisodeNumber),
-                })
+                (s, f) => new { s.Id, s.Language, s.Forced, f.EmbeddedSubtitles, FileId = f.Id, f.SeriesId, f.SeasonNumber })
+            .Where(x => x.EmbeddedSubtitles!.Contains(x.Language))
             .ToListAsync(ct);
-        foreach (var row in episodeRows)
-            if (EmbeddedSubtitleList.Covers(row.EmbeddedSubtitles, row.Language, row.Forced))
-                matches.Add(new RedundantKey(row.Id, seriesTitles.GetValueOrDefault(row.SeriesId, ""), row.SeasonNumber, row.Episode ?? 0, row.Language));
+        var episodeMatches = episodeRows.Where(r => EmbeddedSubtitleList.Covers(r.EmbeddedSubtitles, r.Language, r.Forced))
+            .Select(r => (r.Id, r.Language, r.FileId, r.SeriesId, r.SeasonNumber)).ToList();
         episodeRows = null;
+        if (episodeMatches.Count > 0)
+        {
+            // Episode numbers (for sorting) only for the matching files, a chunk at a time.
+            var episodeNumbers = new Dictionary<int, int>();
+            foreach (var chunk in episodeMatches.Select(m => m.FileId).Distinct().Chunk(500))
+                foreach (var n in await db.Episodes.AsNoTracking().Where(e => e.EpisodeFileId != null && chunk.Contains(e.EpisodeFileId.Value))
+                             .GroupBy(e => e.EpisodeFileId!.Value).Select(g => new { g.Key, Episode = g.Min(e => e.EpisodeNumber) }).ToListAsync(ct))
+                    episodeNumbers[n.Key] = n.Episode;
+            var seriesTitles = await db.Series.AsNoTracking().Select(x => new { x.Id, x.SortTitle }).ToDictionaryAsync(x => x.Id, x => x.SortTitle, ct);
+            foreach (var m in episodeMatches)
+                matches.Add(new RedundantKey(m.Id, seriesTitles.GetValueOrDefault(m.SeriesId, ""), m.SeasonNumber, episodeNumbers.GetValueOrDefault(m.FileId), m.Language));
+        }
 
         matches.Sort((a, b) =>
         {
