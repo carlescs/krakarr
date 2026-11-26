@@ -81,10 +81,12 @@ Then open <http://localhost:8787>:
 
 ### Media info
 
-- Krakarr reads the **headers** of each video file (Matroska/WebM and MP4/MOV, no media data, no ffmpeg needed) for its
-  video codec, resolution, bit depth and HDR format (HDR10, HLG, Dolby Vision), its audio tracks (codec, channels,
-  language) and its duration. Other containers (AVI, TS…) are read with `ffprobe` when it is installed. Files are read on
-  import, library import and the first rescan after an upgrade, and again when they change on disk.
+- Krakarr reads the **headers** of each video file (Matroska/WebM and MP4/MOV, no ffmpeg needed) for its video codec,
+  resolution, bit depth and HDR format (HDR10, HDR10+, HLG, Dolby Vision), its audio tracks (codec, channels, language)
+  and its duration. For HEVC and AVC it also reads the parameter sets (bit depth and transfer characteristics the
+  container may not repeat) and the start of the first frame (at most 64 KB), where HDR10+ metadata lives. Other
+  containers (AVI, TS…) are read with `ffprobe`, which the Docker image ships (outside Docker, when it is on `PATH`).
+  Files are read on import, library import and the first rescan after an upgrade, and again when they change on disk.
 - **Quality** takes the resolution from the video itself: a release named 2160p that is really 720p is stored (and
   judged for upgrades) as 720p. The source (WEB-DL, Bluray…) still comes from the name.
 - **Samples and fakes:** a download whose file is less than half the movie's or episode's runtime is not imported.

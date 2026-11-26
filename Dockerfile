@@ -26,7 +26,8 @@ COPY --from=web /src/src/Krakarr.Host/wwwroot /app/wwwroot
 
 # ---- 3. Subtitle sync tools ----------------------------------------------------------------
 # alass, plus an ffmpeg/ffprobe built with only what syncing needs (demuxing, audio decoding, text subtitle tracks):
-# a few MB instead of the hundreds a full ffmpeg brings. Cross-compiled natively for the target, on the runtime's
+# a few MB instead of the hundreds a full ffmpeg brings. The video parsers (no decoders) let ffprobe report the size and
+# pixel format of containers whose headers don't carry them (MPEG-TS, AVI) for media info. Cross-compiled natively for the target, on the runtime's
 # Ubuntu release so the glibc matches.
 FROM --platform=$BUILDPLATFORM ubuntu:26.04 AS tools
 ARG TARGETARCH
@@ -53,7 +54,7 @@ RUN read arch triple _ < /target \
        --disable-everything --disable-autodetect --disable-network --disable-doc --disable-debug --disable-ffplay \
        --enable-protocol=file,pipe \
        --enable-demuxer=matroska,mov,avi,mpegts,mpegps,asf,flv,ogg,wav \
-       --enable-parser=aac,aac_latm,ac3,dca,flac,mlp,mpegaudio,opus,vorbis \
+       --enable-parser=aac,aac_latm,ac3,dca,flac,mlp,mpegaudio,opus,vorbis,h264,hevc,mpegvideo,mpeg4video \
        --enable-decoder=aac,aac_latm,ac3,eac3,dca,truehd,mlp,mp2,mp3,opus,vorbis,flac,alac,wmav2,wmapro \
        --enable-decoder=pcm_s16le,pcm_s24le,pcm_s32le,pcm_f32le,pcm_s16be,pcm_bluray,pcm_dvd \
        --enable-decoder=ass,ssa,subrip,srt,webvtt,movtext,text \

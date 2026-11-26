@@ -6,7 +6,8 @@ namespace Krakarr.Media.Files;
 
 /// <summary>
 /// Fallback for containers the header reader doesn't know (AVI, MPEG-TS…): runs <c>ffprobe</c> when it is on the PATH.
-/// The official image doesn't ship it, so this is a no-op there. Output is bounded and the process is killed after a timeout.
+/// The official image ships a slimmed-down ffprobe (the subtitle sync build, with video parsers but no video decoders),
+/// enough for codecs, sizes, bit depth and audio tracks. Output is bounded and the process is killed after a timeout.
 /// </summary>
 internal static class Ffprobe
 {
