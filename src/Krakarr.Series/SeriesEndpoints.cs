@@ -51,7 +51,7 @@ public sealed record SeriesDto
 /// <summary>Row of the library grid. Counts follow <see cref="SeriesDto"/> (regular seasons only).</summary>
 public sealed record SeriesListItemDto(
     int Id, string Title, int Year, string? PosterUrl, SeriesStatus Status, bool Monitored,
-    int EpisodeCount, int EpisodeFileCount, DateOnly? NextAiring, int DownloadingCount);
+    int EpisodeCount, int EpisodeFileCount, DateOnly? NextAiring, int DownloadingCount, string? Network);
 
 /// <summary>One page of the series library list.</summary>
 public sealed record SeriesListPageDto(
@@ -119,13 +119,13 @@ public static class SeriesEndpoints
                         .ToListAsync(ct);
                     items = rows.Select(s => new SeriesListItemDto(
                         s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored,
-                        s.EpisodeCount, s.EpisodeFileCount, s.NextAiring, downloading.GetValueOrDefault(s.Id))).ToList();
+                        s.EpisodeCount, s.EpisodeFileCount, s.NextAiring, downloading.GetValueOrDefault(s.Id), s.Network)).ToList();
                 }
                 else
                 {
                     var list = await SortSeries(filtered, sortKey, desc == true)
                         .Skip(skip).Take(size)
-                        .Select(s => new { s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored })
+                        .Select(s => new { s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored, s.Network })
                         .ToListAsync(ct);
                     var pageIds = list.Select(s => s.Id).ToList();
                     // Aggregate episode counts in SQL for only the shows on this page.
@@ -145,7 +145,7 @@ public static class SeriesEndpoints
                         var c = counts.GetValueOrDefault(s.Id);
                         return new SeriesListItemDto(
                             s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored,
-                            c?.EpisodeCount ?? 0, c?.EpisodeFileCount ?? 0, c?.NextAiring, downloading.GetValueOrDefault(s.Id));
+                            c?.EpisodeCount ?? 0, c?.EpisodeFileCount ?? 0, c?.NextAiring, downloading.GetValueOrDefault(s.Id), s.Network);
                     }).ToList();
                 }
             }
@@ -608,6 +608,7 @@ public static class SeriesEndpoints
         public string? PosterUrl { get; init; }
         public SeriesStatus Status { get; init; }
         public bool Monitored { get; init; }
+        public string? Network { get; init; }
         public int EpisodeCount { get; init; }
         public int EpisodeFileCount { get; init; }
         public DateOnly? NextAiring { get; init; }
@@ -622,7 +623,8 @@ public static class SeriesEndpoints
         if (!string.IsNullOrWhiteSpace(q))
         {
             var term = q.Trim().ToLowerInvariant();
-            query = query.Where(s => s.Title.ToLower().Contains(term));
+            // The network matches too, so "netflix" lists the Netflix shows.
+            query = query.Where(s => s.Title.ToLower().Contains(term) || (s.Network != null && s.Network.ToLower().Contains(term)));
             isFiltered = true;
         }
 
@@ -663,6 +665,12 @@ public static class SeriesEndpoints
                     : query.OrderBy(s => s.Year == 0 ? 1 : 0).ThenBy(s => s.Year))
                 .ThenBy(s => s.SortTitle)
                 .ThenBy(s => s.Id),
+            // Shows without a network always go last.
+            "network" => (desc
+                    ? query.OrderBy(s => s.Network == null ? 1 : 0).ThenByDescending(s => s.Network)
+                    : query.OrderBy(s => s.Network == null ? 1 : 0).ThenBy(s => s.Network))
+                .ThenBy(s => s.SortTitle)
+                .ThenBy(s => s.Id),
             "status" => (desc
                     ? query.OrderByDescending(s => s.Status == SeriesStatus.Ended ? 1 : 0)
                     : query.OrderBy(s => s.Status == SeriesStatus.Ended ? 1 : 0))
@@ -685,6 +693,7 @@ public static class SeriesEndpoints
             PosterUrl = s.PosterUrl,
             Status = s.Status,
             Monitored = s.Monitored,
+            Network = s.Network,
             EpisodeCount = s.Episodes.Count(e => e.SeasonNumber > 0 && (e.EpisodeFileId != null || (e.Monitored && e.AirDate != null && e.AirDate <= today))),
             EpisodeFileCount = s.Episodes.Count(e => e.SeasonNumber > 0 && e.EpisodeFileId != null),
             NextAiring = s.Episodes.Where(e => e.SeasonNumber > 0 && e.AirDate > today).Min(e => e.AirDate),

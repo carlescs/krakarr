@@ -6,7 +6,7 @@ import { Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../../core/api';
 import { Auth } from '../../../core/auth';
 import { Events } from '../../../core/events';
-import { AgoPipe, BytesPipe } from '../../../core/format';
+import { AgoPipe, BytesPipe, airsOn } from '../../../core/format';
 import { Episode, EpisodeRelease, HistoryItem, OrganizePreview, QualityProfile, SeasonInfo, Series, SubtitleFile } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
 import { ReleaseSearch } from '../../../core/indexer-search';
@@ -72,6 +72,7 @@ export class SeriesDetailPage implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly icons = { search: ICON_SEARCH, list: ICON_LIST, bookmark: ICON_BOOKMARK, cc: ICON_CC, trash: ICON_TRASH };
+  protected readonly airsOn = airsOn;
   protected readonly subtitles = signal<SubtitleFile[]>([]);
   protected readonly subtitleEpisode = signal<Episode | null>(null);
   /** Language the subtitle dialog searches first (a missing one that was clicked); null = every missing language. */

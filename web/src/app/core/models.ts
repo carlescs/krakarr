@@ -197,10 +197,10 @@ export interface Series {
 /** Row of the series grid (GET /series). */
 export interface SeriesListItem {
   id: number; title: string; year: number; posterUrl?: string | null; status: SeriesStatus; monitored: boolean;
-  episodeCount: number; episodeFileCount: number; nextAiring?: string | null; downloadingCount: number;
+  episodeCount: number; episodeFileCount: number; nextAiring?: string | null; downloadingCount: number; network?: string | null;
 }
 export type SeriesFilter = 'all' | 'following' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
-export type SeriesSortKey = 'title' | 'year' | 'status' | 'episodes' | 'nextAiring';
+export type SeriesSortKey = 'title' | 'year' | 'network' | 'status' | 'episodes' | 'nextAiring';
 export interface SeriesListQuery {
   page?: number; pageSize?: number; q?: string; filter?: SeriesFilter; sort?: SeriesSortKey; desc?: boolean;
 }

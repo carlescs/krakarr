@@ -1,6 +1,6 @@
 <div class="mb-6 flex flex-wrap items-center gap-3">
   <h1 class="page-title mr-auto max-sm:basis-full">Series <span class="ml-1 text-base font-normal text-slate-500">@if (!loading()) { {{ libraryTotal() }} }</span></h1>
-  <input class="input min-w-0 flex-1 sm:w-56 sm:flex-none" placeholder="Filter…" type="search" [ngModel]="query()" (ngModelChange)="query.set($event)" />
+  <input class="input min-w-0 flex-1 sm:w-56 sm:flex-none" placeholder="Filter by title or network…" type="search" [ngModel]="query()" (ngModelChange)="query.set($event)" />
   <select class="input w-36 sm:w-40" [ngModel]="filter()" (ngModelChange)="filter.set($event)">
     <option value="all">All</option>
     <option value="following">Following</option>
@@ -63,6 +63,7 @@
               </th>
               <th krSort="title" [krSortBy]="sort">Title</th>
               <th class="max-sm:hidden" krSort="year" [krSortBy]="sort">Year</th>
+              <th class="max-lg:hidden" krSort="network" [krSortBy]="sort">Network</th>
               <th class="max-md:hidden" krSort="status" [krSortBy]="sort">Status</th>
               <th krSort="episodes" [krSortBy]="sort">Episodes</th>
               <th class="max-lg:hidden" krSort="nextAiring" [krSortBy]="sort">Next airing</th>
@@ -84,6 +85,7 @@
                   </div>
                 </td>
                 <td class="whitespace-nowrap text-slate-400 max-sm:hidden">{{ s.year || '—' }}</td>
+                <td class="max-w-40 truncate whitespace-nowrap text-slate-400 max-lg:hidden" [title]="s.network ?? ''">{{ s.network || '—' }}</td>
                 <td class="whitespace-nowrap text-slate-400 max-md:hidden">{{ s.status }}</td>
                 <td class="min-w-28">
                   <div class="flex items-center gap-2">
@@ -97,7 +99,7 @@
                   @if (following().has(s.id)) { <span class="badge bg-accent-500/15 text-accent-300">Following</span> }
                 </td>
               } @else {
-                <td colspan="7"><div class="h-4 w-48 animate-pulse rounded bg-surface-800"></div></td>
+                <td colspan="8"><div class="h-4 w-48 animate-pulse rounded bg-surface-800"></div></td>
               }
             </tr>
           </tbody>
@@ -128,7 +130,7 @@
                 }
               </div>
               <kr-progress class="mt-2" [value]="percent(s)" [color]="progressColor(s)" />
-              <div class="mt-1.5 truncate text-xs font-medium text-slate-100 group-hover:text-white sm:text-sm">{{ s.title }}</div>
+              <div class="mt-1.5 truncate text-xs font-medium text-slate-100 group-hover:text-white sm:text-sm" [title]="s.network ? s.title + ' · ' + s.network : s.title">{{ s.title }}</div>
               <div class="flex justify-between gap-1 text-[11px] text-slate-500 sm:text-xs">
                 <span class="truncate">{{ s.episodeFileCount }}/{{ s.episodeCount }}<span class="max-sm:hidden"> episodes</span></span>
                 @if (s.nextAiring) { <span class="whitespace-nowrap" [title]="'Next airing'">{{ s.nextAiring | date: 'MMM d' }}</span> }

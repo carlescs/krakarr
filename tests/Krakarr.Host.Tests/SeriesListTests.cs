@@ -82,9 +82,9 @@ public sealed class SeriesListTests : IClassFixture<KrakarrFactory>
             await db.SaveChangesAsync(ct);
 
             var profile = await db.QualityProfiles.MinAsync(p => p.Id, ct);
-            var dark = new Krakarr.Core.Domain.Series { TmdbId = 81, Title = "Dark", SortTitle = "dark", Year = 2017, Status = SeriesStatus.Ended, Path = "/tv/dark", QualityProfileId = profile };
+            var dark = new Krakarr.Core.Domain.Series { TmdbId = 81, Title = "Dark", SortTitle = "dark", Year = 2017, Network = "Netflix", Status = SeriesStatus.Ended, Path = "/tv/dark", QualityProfileId = profile };
             var lost = new Krakarr.Core.Domain.Series { TmdbId = 82, Title = "Lost", SortTitle = "lost", Year = 2004, Status = SeriesStatus.Ended, Monitored = false, Path = "/tv/lost", QualityProfileId = profile };
-            var severance = new Krakarr.Core.Domain.Series { TmdbId = 83, Title = "Severance", SortTitle = "severance", Year = 2022, Status = SeriesStatus.Continuing, Path = "/tv/severance", QualityProfileId = profile };
+            var severance = new Krakarr.Core.Domain.Series { TmdbId = 83, Title = "Severance", SortTitle = "severance", Year = 2022, Network = "Apple TV+", Status = SeriesStatus.Continuing, Path = "/tv/severance", QualityProfileId = profile };
             db.Series.AddRange(dark, lost, severance);
             await db.SaveChangesAsync(ct);
 
@@ -131,12 +131,24 @@ public sealed class SeriesListTests : IClassFixture<KrakarrFactory>
         var search = await client.GetFromJsonAsync<JsonElement>("/api/v1/series?q=lo", ct);
         Assert.Equal(["Lost"], search.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("title").GetString()));
 
+        // The filter also matches the network, which the list returns.
+        var byNetworkName = await client.GetFromJsonAsync<JsonElement>("/api/v1/series?q=netflix", ct);
+        var netflix = Assert.Single(byNetworkName.GetProperty("items").EnumerateArray());
+        Assert.Equal("Dark", netflix.GetProperty("title").GetString());
+        Assert.Equal("Netflix", netflix.GetProperty("network").GetString());
+
         // Sorting (including episode completion ratio and nextAiring with nulls last)
         var byEpisodes = await client.GetFromJsonAsync<JsonElement>("/api/v1/series?sort=episodes", ct);
         Assert.Equal(["Lost", "Severance", "Dark"], byEpisodes.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("title").GetString()));
 
         var byNextAiring = await client.GetFromJsonAsync<JsonElement>("/api/v1/series?sort=nextAiring", ct);
         Assert.Equal(["Severance", "Dark", "Lost"], byNextAiring.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("title").GetString()));
+
+        // Network: shows without one go last in either direction.
+        var byNetwork = await client.GetFromJsonAsync<JsonElement>("/api/v1/series?sort=network", ct);
+        Assert.Equal(["Severance", "Dark", "Lost"], byNetwork.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("title").GetString()));
+        var byNetworkDesc = await client.GetFromJsonAsync<JsonElement>("/api/v1/series?sort=network&desc=true", ct);
+        Assert.Equal(["Dark", "Severance", "Lost"], byNetworkDesc.GetProperty("items").EnumerateArray().Select(x => x.GetProperty("title").GetString()));
 
         // Matching ids
         var ids = await client.GetFromJsonAsync<int[]>("/api/v1/series/ids?sort=episodes", ct) ?? [];
