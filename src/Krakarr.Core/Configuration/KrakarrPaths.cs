@@ -16,6 +16,8 @@ public sealed class KrakarrPaths
     public string ConfigFile => Path.Combine(ConfigDirectory, "config.json");
     /// <summary>A validated backup waiting to be restored on the next start.</summary>
     public string PendingRestoreFile => Path.Combine(ConfigDirectory, "restore-pending.zip");
+    /// <summary>A switch to another database, carried out on the next start.</summary>
+    public string PendingDatabaseSwitchFile => Path.Combine(ConfigDirectory, "database-switch.json");
 
     public void EnsureCreated()
     {

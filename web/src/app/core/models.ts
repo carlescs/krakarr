@@ -321,6 +321,27 @@ export interface BackupInfo { name: string; type: BackupType; size: number; crea
 export interface RestoreOutcome { succeeded: boolean; message: string; at: string; }
 export interface BackupList { backups: BackupInfo[]; restorePending: boolean; lastRestore: RestoreOutcome | null; provider: string; }
 
+/** Switching Krakarr to another database: the tables are copied on the next start. */
+export type DatabaseProvider = 'sqlite' | 'postgres';
+/** Where to switch to: server fields for PostgreSQL, a file name in the config folder for SQLite. */
+export interface DatabaseTargetRequest {
+  provider: DatabaseProvider; host?: string; port?: number | null; database?: string; username?: string; password?: string; file?: string;
+}
+export interface DatabaseTestResult { ok: boolean; empty: boolean; message: string; }
+/** An environment variable to set by hand when environment variables choose the database. */
+export interface EnvironmentSetting { name: string; value: string; }
+export interface TableCopy { table: string; rows: number; truncated: number; }
+export interface DatabaseSwitchOutcome { succeeded: boolean; message: string; at: string; tables: TableCopy[]; }
+export interface DatabaseInfo {
+  provider: DatabaseProvider; location: string;
+  /** Database settings fixed by environment variables: Krakarr can't change them itself. */
+  pinned: string[];
+  pending: { provider: DatabaseProvider; location: string; created: string } | null;
+  pendingEnvironment: EnvironmentSetting[] | null;
+  lastSwitch: DatabaseSwitchOutcome | null;
+}
+export interface DatabaseSwitchStaged { message: string; environment: EnvironmentSetting[]; }
+
 export interface SystemStatus {
   version: string; runtime: string; os: string; isDocker: boolean; configDirectory: string; downloadDirectory: string;
   databaseProvider: string; environmentName: string; startTime: string;

@@ -6,11 +6,10 @@ using Krakarr.Core.Events;
 using Krakarr.Core.Health;
 using Krakarr.Core.Jobs;
 using Krakarr.Data;
-using Krakarr.Data.Postgres;
-using Krakarr.Data.Sqlite;
 using Krakarr.Downloads;
 using Krakarr.Host.Auth;
 using Krakarr.Host.Backups;
+using Krakarr.Host.Database;
 using Krakarr.Host.Auth.Passkeys;
 using Krakarr.Host.Endpoints;
 using Krakarr.Host.Hosting;
@@ -61,32 +60,41 @@ if (string.IsNullOrEmpty(builder.Configuration["ASPNETCORE_URLS"]) && string.IsN
 
 // ---- Database ------------------------------------------------------------------------------
 DatabaseOptions ReadDatabaseOptions() => builder.Configuration.GetSection(DatabaseOptions.SectionName).Get<DatabaseOptions>() ?? new DatabaseOptions();
-string SqliteConnectionString(DatabaseOptions o) => o.ConnectionString ?? $"Data Source={Path.Combine(configDir, "krakarr.db")}";
 
 // A backup staged from the UI is restored now, before anything opens the database or reads the keys.
 var restoreOutcome = BackupRestore.ApplyPending(
     paths,
     ReadDatabaseOptions().ProviderKind,
-    () => BackupRestore.SqliteFile(SqliteConnectionString(ReadDatabaseOptions())),
+    () => DatabaseTarget.From(ReadDatabaseOptions(), configDir).SqliteFile(),
     () => ((IConfigurationRoot)builder.Configuration).Reload());
+
+// Then a switch to another database staged from the UI: the tables are copied before anything else opens either one.
+DatabaseSwitchOutcome? switchOutcome = null;
+using (var startupLogs = LoggerFactory.Create(b => b.AddConfiguration(builder.Configuration.GetSection("Logging")).AddSimpleConsole()))
+{
+    var configured = DatabaseTarget.From(ReadDatabaseOptions(), configDir);
+    var switched = await DatabaseSwitch.ApplyPendingAsync(
+        paths, configured, DatabaseSwitch.PinnedSettings(builder.Configuration, paths.ConfigFile), startupLogs.CreateLogger("Krakarr.Database"));
+    if (switched is not null)
+    {
+        switchOutcome = switched.Outcome;
+        if (switched.Use != configured)
+        {
+            // config.json already points at the new database for later starts; this one uses it straight away.
+            builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{DatabaseOptions.SectionName}:{nameof(DatabaseOptions.Provider)}"] = switched.Use.Provider,
+                [$"{DatabaseOptions.SectionName}:{nameof(DatabaseOptions.ConnectionString)}"] = switched.Use.ConnectionString,
+            });
+        }
+    }
+}
 
 builder.Services.Configure<DatabaseOptions>(builder.Configuration.GetSection(DatabaseOptions.SectionName));
 var dbOptions = ReadDatabaseOptions();
-builder.Services.AddDbContext<KrakarrDbContext>(options =>
-{
-    switch (dbOptions.ProviderKind)
-    {
-        case "postgres":
-            options.UseKrakarrPostgres(dbOptions.ConnectionString
-                ?? throw new InvalidOperationException("Database:ConnectionString is required for PostgreSQL"));
-            break;
-        case "sqlite":
-            options.UseKrakarrSqlite(SqliteConnectionString(dbOptions));
-            break;
-        default:
-            throw new InvalidOperationException($"Unknown database provider '{dbOptions.Provider}' (use sqlite or postgres)");
-    }
-});
+var database = DatabaseTarget.From(dbOptions, configDir);
+builder.Services.AddDbContext<KrakarrDbContext>(options => database.Configure(options));
+builder.Services.AddKrakarrDatabaseSwitch(new DatabaseSwitchStatus(database, switchOutcome));
 
 // ---- Modules -------------------------------------------------------------------------------
 builder.Services.AddKrakarrData();
@@ -253,6 +261,7 @@ app.MapMediaServerEndpoints();
 app.MapRatingsEndpoints();
 app.MapTelemetryEndpoints();
 app.MapBackupEndpoints();
+app.MapDatabaseEndpoints();
 app.MapHub<EventsHub>("/hubs/events");
 app.MapKrakarrSpa(urlBase);
 

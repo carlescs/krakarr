@@ -10,7 +10,7 @@ import {
   IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, BestSubtitleMatches, SubtitleCandidate, SubtitleCandidates, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, SubtitleSyncTools, RedundantSubtitlePage, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, EpisodeRelease, MediaInfo, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, KeywordLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
   DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, EmbySettings, PlexSettings, MediaServerTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, BackgroundTask, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus,
-  AlternateTitle, AlternateTitleInput
+  AlternateTitle, AlternateTitleInput, DatabaseInfo, DatabaseTargetRequest, DatabaseTestResult, DatabaseSwitchStaged
 } from './models';
 
 const API = 'api/v1';
@@ -137,6 +137,14 @@ export class Api {
   /** Restores one of the stored backups on the next start. */
   restoreBackup(name: string) { return this.post<void>(`system/backups/${encodeURIComponent(name)}/restore`); }
   cancelRestore() { return this.delete<void>('system/backups/restore'); }
+
+  // Database switch (admin)
+  database() { return this.get<DatabaseInfo>('system/database'); }
+  /** Connects to the database and checks it holds no Krakarr data; changes nothing. */
+  testDatabase(target: DatabaseTargetRequest) { return this.post<DatabaseTestResult>('system/database/test', target); }
+  /** Stages the switch: the tables are copied into the new database on the next start. */
+  switchDatabase(target: DatabaseTargetRequest) { return this.post<DatabaseSwitchStaged>('system/database/switch', target); }
+  cancelDatabaseSwitch() { return this.delete<void>('system/database/switch'); }
 
   // Settings
   settings<K extends keyof SettingsMap>(section: K) { return this.get<SettingsMap[K]>(`settings/${section}`); }
