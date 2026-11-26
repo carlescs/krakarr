@@ -5,7 +5,7 @@ import { button, mockApi, settle, setupTest, text, type } from '../../../../test
 import { DatabaseSettings } from './database';
 
 const info = (overrides: Partial<DatabaseInfo> = {}): DatabaseInfo => ({
-  provider: 'sqlite', location: '/config/krakarr.db', pinned: [], pending: null, pendingEnvironment: null, lastSwitch: null, ...overrides,
+  provider: 'sqlite', location: '/config/krakarr.db', pinned: [], pending: null, pendingEnvironment: null, lastSwitch: null, oldDatabase: null, ...overrides,
 });
 
 async function render(api = mockApi({ database: async () => info() })) {
@@ -85,6 +85,21 @@ describe('DatabaseSettings', () => {
     expect(confirm.mock.calls[0][0]).toContain('deleted');
     expect(api.switchDatabase).toHaveBeenCalledWith(expect.objectContaining({ deleteSource: true }));
     expect(text(el, '[data-delete-pending]')).toContain('/config/krakarr.db');
+  });
+
+  it('deletes the old SQLite file left behind by a switch', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    let current = info({ provider: 'postgres', location: 'krakarr@db:5432/krakarr',
+      oldDatabase: { file: '/config/krakarr.db', size: 2048, switchedAt: '2026-11-26T10:00:00Z' } });
+    const api = mockApi({ database: async () => current, deleteOldDatabase: async () => { current = { ...current, oldDatabase: null }; } });
+    const { el, fixture } = await render(api);
+    expect(text(el, '[data-old-database]')).toContain('/config/krakarr.db');
+    expect(text(el, '[data-old-database]')).toContain('PostgreSQL');
+
+    button(el, 'Delete old database').click();
+    await settle(fixture);
+    expect(api.deleteOldDatabase).toHaveBeenCalled();
+    expect(el.querySelector('[data-old-database]')).toBeNull();
   });
 
   it('only offers to delete the old database when leaving SQLite', async () => {

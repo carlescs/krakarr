@@ -2,6 +2,7 @@ import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../../../core/api';
+import { BytesPipe } from '../../../core/format';
 import { DatabaseInfo, DatabaseProvider, DatabaseTargetRequest, DatabaseTestResult } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
 
@@ -13,7 +14,7 @@ const PROVIDER_NAMES: Record<DatabaseProvider, string> = { sqlite: 'SQLite', pos
  */
 @Component({
   selector: 'kr-database-settings',
-  imports: [DatePipe, DecimalPipe, FormsModule],
+  imports: [BytesPipe, DatePipe, DecimalPipe, FormsModule],
   templateUrl: './database.html',
   styleUrl: './database.scss',
 })
@@ -28,6 +29,7 @@ export class DatabaseSettings implements OnInit {
   protected readonly test = signal<DatabaseTestResult | null>(null);
   protected readonly testing = signal(false);
   protected readonly staging = signal(false);
+  protected readonly deletingOld = signal(false);
   protected readonly canSwitch = computed(() => !!this.test()?.ok && !!this.test()?.empty);
   /** Delete the current SQLite file once the copy has succeeded. Off by default: the file is the way back. */
   protected readonly deleteSource = signal(false);
@@ -90,6 +92,22 @@ export class DatabaseSettings implements OnInit {
       this.toasts.error(errorMessage(e));
     } finally {
       this.staging.set(false);
+    }
+  }
+
+  /** Deletes the SQLite file left behind once the switch has proven itself. */
+  async deleteOld() {
+    const old = this.info()?.oldDatabase;
+    if (!old || !confirm(`Delete ${old.file}? Only a backup can bring it back.`)) return;
+    this.deletingOld.set(true);
+    try {
+      await this.api.deleteOldDatabase();
+      this.toasts.success('Old database deleted');
+      await this.reload();
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+    } finally {
+      this.deletingOld.set(false);
     }
   }
 

@@ -16,6 +16,9 @@ namespace Krakarr.Host.Database;
 public sealed record DatabaseSwitchPlan(DatabaseTarget Source, DatabaseTarget Target, DateTimeOffset Created, bool DeleteSource = false);
 
 /// <summary>Result of the switch done at start-up, shown on the Database page until the next restart.</summary>
+/// <summary>The SQLite file Krakarr ran on before a successful switch, kept until it's deleted from the Database page.</summary>
+public sealed record OldDatabase(string File, DateTimeOffset SwitchedAt);
+
 public sealed record DatabaseSwitchOutcome(bool Succeeded, string Message, DateTimeOffset At, IReadOnlyList<TableCopy> Tables);
 
 /// <summary>Holds the outcome of the switch done at start-up, if any, and the database Krakarr runs on.</summary>
@@ -132,34 +135,77 @@ public static class DatabaseSwitch
 
         var rows = tables.Sum(t => t.Rows);
         var truncated = tables.Sum(t => t.Truncated);
-        var message = $"Switched to {plan.Target.Describe()}: copied {rows:N0} rows in {tables.Count} tables. "
-            + (plan.DeleteSource && plan.Source.SqliteFile() is { } oldFile
-                ? DeleteSqliteFile(oldFile, logger)
-                : $"The old database ({plan.Source.Describe()}) was left as it was.");
+        var message = $"Switched to {plan.Target.Describe()}: copied {rows:N0} rows in {tables.Count} tables. ";
+        if (plan.Source.SqliteFile() is { } oldFile)
+        {
+            var error = plan.DeleteSource ? TryDeleteSqliteFile(oldFile) : null;
+            if (plan.DeleteSource && error is null)
+            {
+                message += $"The old database ({oldFile}) was deleted.";
+            }
+            else
+            {
+                // Remember it, so the Database page can offer to delete it once the new database has proven itself.
+                WriteOldDatabase(paths, new OldDatabase(oldFile, DateTimeOffset.UtcNow));
+                message += error is null
+                    ? $"The old database ({oldFile}) was left as it was; delete it from this page once you're happy with the switch."
+                    : $"The old database ({oldFile}) could not be deleted ({error}); try again from this page.";
+                if (error is not null) logger.LogWarning("Could not delete the old database {File}: {Error}", oldFile, error);
+            }
+        }
+        else
+        {
+            message += $"The old database ({plan.Source.Describe()}) was left as it was.";
+        }
+
         if (truncated > 0) message += $" {truncated:N0} values longer than their column allows were shortened.";
         logger.LogWarning("{Message}", message);
         return new Result(new DatabaseSwitchOutcome(true, message, DateTimeOffset.UtcNow, tables), plan.Target);
     }
 
-    /// <summary>Deletes the old SQLite database with its -wal and -shm files, once the copy is done. Returns what happened.</summary>
-    private static string DeleteSqliteFile(string file, ILogger logger)
+    /// <summary>The files of a SQLite database: the file itself and its -wal and -shm.</summary>
+    public static IEnumerable<string> SqliteFiles(string file) => [file, file + "-wal", file + "-shm"];
+
+    /// <summary>Deletes a SQLite database with its -wal and -shm files. Returns null, or why it couldn't.</summary>
+    public static string? TryDeleteSqliteFile(string file)
     {
         // Pooled connections keep the files open (and on Windows, locked).
         Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
         try
         {
-            foreach (var path in new[] { file, file + "-wal", file + "-shm" })
+            foreach (var path in SqliteFiles(file))
             {
                 if (File.Exists(path)) File.Delete(path);
             }
 
-            return $"The old database ({file}) was deleted.";
+            return null;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            logger.LogWarning(ex, "Could not delete the old database {File}", file);
-            return $"The old database ({file}) could not be deleted ({ex.Message}); delete it by hand.";
+            return ex.Message;
         }
+    }
+
+    public static OldDatabase? ReadOldDatabase(KrakarrPaths paths)
+    {
+        if (!File.Exists(paths.OldDatabaseFile)) return null;
+        try
+        {
+            using var stream = File.OpenRead(paths.OldDatabaseFile);
+            return JsonSerializer.Deserialize<OldDatabase>(stream, Json);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static void WriteOldDatabase(KrakarrPaths paths, OldDatabase old) =>
+        File.WriteAllBytes(paths.OldDatabaseFile, JsonSerializer.SerializeToUtf8Bytes(old, Json));
+
+    public static void ForgetOldDatabase(KrakarrPaths paths)
+    {
+        if (File.Exists(paths.OldDatabaseFile)) File.Delete(paths.OldDatabaseFile);
     }
 
     private static Result Fail(KrakarrPaths paths, DatabaseTarget configured, string error)

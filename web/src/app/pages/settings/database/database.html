@@ -33,6 +33,20 @@
       }
     </section>
 
+    @if (i.oldDatabase; as old) {
+      <section class="card flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5" data-old-database>
+        <div class="min-w-0">
+          <h2 class="font-semibold text-white">Old SQLite database</h2>
+          <p class="font-mono text-xs text-slate-400 wrap-anywhere">{{ old.file }} · {{ old.size | bytes }}</p>
+          <p class="hint">Krakarr has run on {{ providerNames[i.provider] }} since {{ old.switchedAt | date: 'medium' }}. Once you've checked
+            your library, users and settings are all there, delete the old file to free the space.</p>
+        </div>
+        <button type="button" class="btn-danger whitespace-nowrap" [disabled]="deletingOld()" (click)="deleteOld()">
+          {{ deletingOld() ? 'Deleting…' : 'Delete old database' }}
+        </button>
+      </section>
+    }
+
     @if (i.pending; as p) {
       <section class="card space-y-3 border-amber-500/40 bg-amber-500/10 p-4 sm:p-5" data-pending>
         <div class="flex flex-wrap items-start justify-between gap-3">

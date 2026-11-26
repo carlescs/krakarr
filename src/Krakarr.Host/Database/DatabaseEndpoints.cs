@@ -41,7 +41,38 @@ public sealed class DatabaseSwitchService(KrakarrPaths paths, DatabaseSwitchStat
             },
             PendingEnvironment = plan is null ? null : EnvironmentFor(plan.Target),
             LastSwitch = status.Last,
+            OldDatabase = OldDatabaseInfo(),
         };
+    }
+
+    /// <summary>The SQLite file left behind by a switch, while it still exists and Krakarr runs elsewhere.</summary>
+    private object? OldDatabaseInfo()
+    {
+        if (DatabaseSwitch.ReadOldDatabase(paths) is not { } old || !File.Exists(old.File) || InUse(old.File)) return null;
+        var size = DatabaseSwitch.SqliteFiles(old.File).Where(File.Exists).Sum(f => new FileInfo(f).Length);
+        return new { old.File, Size = size, old.SwitchedAt };
+    }
+
+    /// <summary>Krakarr runs on the file, or a staged switch reads or writes it.</summary>
+    private bool InUse(string file)
+    {
+        var plan = DatabaseSwitch.ReadPlan(paths);
+        return status.Current.SqliteFile() == file || plan?.Source.SqliteFile() == file || plan?.Target.SqliteFile() == file;
+    }
+
+    /// <summary>Deletes the SQLite file Krakarr used before the switch. Returns null, or why it didn't.</summary>
+    public (int Status, string Error)? DeleteOldDatabase()
+    {
+        if (DatabaseSwitch.ReadOldDatabase(paths) is not { } old || !File.Exists(old.File))
+        {
+            DatabaseSwitch.ForgetOldDatabase(paths);
+            return (StatusCodes.Status404NotFound, "There is no old database to delete");
+        }
+
+        if (InUse(old.File)) return (StatusCodes.Status409Conflict, "Krakarr is using that database, or a staged switch is");
+        if (DatabaseSwitch.TryDeleteSqliteFile(old.File) is { } error) return (StatusCodes.Status409Conflict, $"Could not delete {old.File}: {error}");
+        DatabaseSwitch.ForgetOldDatabase(paths);
+        return null;
     }
 
     /// <summary>The database a request describes, or why it can't be used.</summary>
@@ -197,6 +228,10 @@ public static class DatabaseEndpoints
         });
 
         group.MapDelete("/switch", (KrakarrPaths paths) => DatabaseSwitch.CancelPlan(paths) ? Results.NoContent() : Results.NotFound());
+
+        // The SQLite file left behind by a switch, deleted once the user is happy with the new database.
+        group.MapDelete("/old", (DatabaseSwitchService service) =>
+            service.DeleteOldDatabase() is { } failed ? Results.Problem(failed.Error, statusCode: failed.Status) : Results.NoContent());
 
         return app;
     }

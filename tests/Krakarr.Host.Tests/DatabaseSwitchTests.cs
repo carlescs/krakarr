@@ -246,9 +246,10 @@ public sealed class DatabaseSwitchStartupTests : IDisposable
             Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(_paths.ConfigFile));
         }
 
-        // The old database is untouched.
+        // The old database is untouched, and remembered so the Database page can offer to delete it.
         await using var old = _source.CreateContext();
         Assert.Equal(1, await old.Movies.CountAsync(ct));
+        Assert.Equal(_source.SqliteFile(), DatabaseSwitch.ReadOldDatabase(_paths)?.File);
     }
 
     [Fact]
@@ -266,6 +267,7 @@ public sealed class DatabaseSwitchStartupTests : IDisposable
         Assert.False(File.Exists(file));
         Assert.False(File.Exists(file + "-wal"));
         Assert.False(File.Exists(file + "-shm"));
+        Assert.Null(DatabaseSwitch.ReadOldDatabase(_paths));
         await DatabaseCopyTests.AssertCopiedAsync(_target, ct);
     }
 
@@ -439,6 +441,37 @@ public sealed class DatabaseEndpointTests(KrakarrFactory factory) : IClassFixtur
 
         Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync("/api/v1/system/database/switch", ct)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync("/api/v1/system/database/switch", ct)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Deletes_the_sqlite_file_left_behind_by_a_switch_but_never_the_one_in_use()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = await AdminAsync(ct);
+        var recordFile = Path.Combine(factory.ConfigDirectory, "database-old.json");
+        void Remember(string file) => File.WriteAllText(recordFile, JsonSerializer.Serialize(new { file, switchedAt = DateTimeOffset.UtcNow }));
+
+        // The database Krakarr runs on is never offered, nor deleted.
+        var current = Path.Combine(factory.ConfigDirectory, "krakarr.db");
+        Remember(current);
+        var info = await client.GetFromJsonAsync<JsonElement>("/api/v1/system/database", ct);
+        Assert.Equal(JsonValueKind.Null, info.GetProperty("oldDatabase").ValueKind);
+        Assert.Equal(HttpStatusCode.Conflict, (await client.DeleteAsync("/api/v1/system/database/old", ct)).StatusCode);
+        Assert.True(File.Exists(current));
+
+        var old = Path.Combine(factory.ConfigDirectory, "old.db");
+        File.WriteAllBytes(old, new byte[4096]);
+        File.WriteAllBytes(old + "-wal", new byte[1024]);
+        Remember(old);
+        info = await client.GetFromJsonAsync<JsonElement>("/api/v1/system/database", ct);
+        Assert.Equal(old, info.GetProperty("oldDatabase").GetProperty("file").GetString());
+        Assert.Equal(5120, info.GetProperty("oldDatabase").GetProperty("size").GetInt64());
+
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync("/api/v1/system/database/old", ct)).StatusCode);
+        Assert.False(File.Exists(old));
+        Assert.False(File.Exists(old + "-wal"));
+        Assert.False(File.Exists(recordFile));
+        Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync("/api/v1/system/database/old", ct)).StatusCode);
     }
 
     [Fact]

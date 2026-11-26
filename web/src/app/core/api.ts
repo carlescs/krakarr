@@ -145,6 +145,8 @@ export class Api {
   /** Stages the switch: the tables are copied into the new database on the next start. */
   switchDatabase(target: DatabaseTargetRequest) { return this.post<DatabaseSwitchStaged>('system/database/switch', target); }
   cancelDatabaseSwitch() { return this.delete<void>('system/database/switch'); }
+  /** Deletes the SQLite file left behind by a switch. */
+  deleteOldDatabase() { return this.delete<void>('system/database/old'); }
 
   // Settings
   settings<K extends keyof SettingsMap>(section: K) { return this.get<SettingsMap[K]>(`settings/${section}`); }

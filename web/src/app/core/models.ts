@@ -342,6 +342,8 @@ export interface DatabaseInfo {
   pending: { provider: DatabaseProvider; location: string; created: string; deleteSource: string | null } | null;
   pendingEnvironment: EnvironmentSetting[] | null;
   lastSwitch: DatabaseSwitchOutcome | null;
+  /** The SQLite file Krakarr used before a successful switch, while it still exists. */
+  oldDatabase: { file: string; size: number; switchedAt: string } | null;
 }
 export interface DatabaseSwitchStaged { message: string; environment: EnvironmentSetting[]; }
 
