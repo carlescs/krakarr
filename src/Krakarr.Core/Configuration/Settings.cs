@@ -47,6 +47,11 @@ public sealed record MetadataSettings : ISettingsSection
     public string Language { get; init; } = "en-US";
     /// <summary>Country (ISO 3166-1 alpha-2) whose movie release dates the calendar prefers; empty = earliest worldwide.</summary>
     public string? ReleaseRegion { get; init; }
+    /// <summary>
+    /// Read scene names and scene season/episode numbering from TheXEM (thexem.info) when series are refreshed. Numbering
+    /// applies only with TheTVDB as <see cref="SeriesSource"/>, because XEM maps TheTVDB's order; scene names always help.
+    /// </summary>
+    public bool SceneMapping { get; init; }
 }
 
 /// <summary>Audio languages releases must have to be grabbed. Movies and series use these unless they set their own.</summary>

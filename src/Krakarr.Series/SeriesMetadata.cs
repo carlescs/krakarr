@@ -51,6 +51,13 @@ public sealed record SeriesInfo
     public string? ImdbId { get; init; }
     public DateOnly? FirstAired { get; init; }
     public IReadOnlyList<EpisodeInfo> Episodes { get; init; } = [];
+    /// <summary>Language the show was made in (<see cref="Core.Domain.MediaLanguages"/> code), when known.</summary>
+    public string? OriginalLanguage { get; init; }
+    /// <summary>
+    /// Original name, translations, alternative titles and aliases in every language. The caller picks the ones to keep
+    /// (<see cref="Media.Parsing.AlternateTitles.Select"/>).
+    /// </summary>
+    public IReadOnlyList<Core.Domain.AlternateTitleInfo> AlternateTitles { get; init; } = [];
 }
 
 /// <summary>Ids a series is known by; at least one is set.</summary>

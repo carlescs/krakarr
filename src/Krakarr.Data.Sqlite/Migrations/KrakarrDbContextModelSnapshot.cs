@@ -15,12 +15,52 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261126170301_RereadHevcMediaInfo";
+    public override string LastMigrationId => "20261126172015_AlternateTitlesAndSceneMapping";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
 #pragma warning disable 612, 618
         modelBuilder.HasAnnotation("ProductVersion", "11.0.0");
+
+        modelBuilder.Entity("Krakarr.Core.Domain.AlternateTitle", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Language")
+                    .HasMaxLength(16)
+                    .HasColumnType("TEXT");
+
+                b.Property<int?>("MovieId")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("NormalizedTitle")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("TEXT");
+
+                b.Property<int?>("SeriesId")
+                    .HasColumnType("INTEGER");
+
+                b.Property<int>("Source")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Title")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.HasIndex("MovieId");
+
+                b.HasIndex("NormalizedTitle");
+
+                b.HasIndex("SeriesId");
+
+                b.ToTable("AlternateTitles");
+            });
 
         modelBuilder.Entity("Krakarr.Core.Domain.Download", b =>
             {
@@ -147,6 +187,12 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("TEXT");
 
                 b.Property<int>("Runtime")
+                    .HasColumnType("INTEGER");
+
+                b.Property<int?>("SceneEpisodeNumber")
+                    .HasColumnType("INTEGER");
+
+                b.Property<int?>("SceneSeasonNumber")
                     .HasColumnType("INTEGER");
 
                 b.Property<int>("SeasonNumber")
@@ -961,6 +1007,19 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("UserPasskeys");
             });
 
+        modelBuilder.Entity("Krakarr.Core.Domain.AlternateTitle", b =>
+            {
+                b.HasOne("Krakarr.Core.Domain.Movie", null)
+                    .WithMany("AlternateTitles")
+                    .HasForeignKey("MovieId")
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasOne("Krakarr.Core.Domain.Series", null)
+                    .WithMany("AlternateTitles")
+                    .HasForeignKey("SeriesId")
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
         modelBuilder.Entity("Krakarr.Core.Domain.Episode", b =>
             {
                 b.HasOne("Krakarr.Core.Domain.EpisodeFile", "EpisodeFile")
@@ -1109,8 +1168,15 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Navigation("User");
             });
 
+        modelBuilder.Entity("Krakarr.Core.Domain.Movie", b =>
+            {
+                b.Navigation("AlternateTitles");
+            });
+
         modelBuilder.Entity("Krakarr.Core.Domain.Series", b =>
             {
+                b.Navigation("AlternateTitles");
+
                 b.Navigation("Episodes");
 
                 b.Navigation("Seasons");

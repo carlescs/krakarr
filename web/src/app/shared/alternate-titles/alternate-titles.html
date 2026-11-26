@@ -1,0 +1,38 @@
+<label class="label">Alternate titles</label>
+@if (!loaded()) {
+  <p class="hint">Loading…</p>
+} @else if (error(); as message) {
+  <p class="text-sm text-red-400">{{ message }}</p>
+} @else {
+  @if (others().length > 0) {
+    <ul class="mb-3 flex flex-wrap gap-1.5" aria-label="Titles from the metadata source">
+      @for (t of visibleOthers(); track t.id) {
+        <li class="rounded bg-slate-800 px-2 py-0.5 text-xs text-slate-300">
+          {{ t.title }}
+          @if (t.language) { <span class="text-slate-500">· {{ languages.name(t.language) }}</span> }
+          @if (sourceLabel(t); as label) { <span class="text-accent-400">· {{ label }}</span> }
+        </li>
+      }
+      @if (others().length > 8 && !showAll()) {
+        <li><button type="button" class="text-xs text-accent-400 hover:underline" (click)="showAll.set(true)">+{{ others().length - 8 }} more</button></li>
+      }
+    </ul>
+  }
+  <div class="space-y-2">
+    @for (row of rows(); track $index; let i = $index) {
+      <div class="flex gap-2">
+        <input class="input flex-1" maxlength="200" placeholder="Title" [ngModel]="row.title" (ngModelChange)="setTitle(i, $event)" aria-label="Alternate title" />
+        <select class="input w-40" [ngModel]="row.language ?? ''" (ngModelChange)="setLanguage(i, $event)" aria-label="Title language">
+          <option value="">Any indexer</option>
+          @for (l of languages.all(); track l.code) { <option [value]="l.code">{{ l.name }}</option> }
+        </select>
+        <button type="button" class="btn-ghost btn-sm" (click)="remove(i)" aria-label="Remove title">✕</button>
+      </div>
+    }
+  </div>
+  <button type="button" class="btn-secondary btn-sm mt-2" (click)="add()">Add title</button>
+  <p class="hint">
+    Releases named by any of these titles are accepted, and indexers that can't search by id are also searched with the titles in their language.
+    Titles without a language are searched on every such indexer.
+  </p>
+}

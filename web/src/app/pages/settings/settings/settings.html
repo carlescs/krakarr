@@ -379,6 +379,13 @@
         <div class="max-w-xs"><label class="label">TheTVDB subscriber PIN (optional)</label><input class="input" [(ngModel)]="m.tvdbPin" /></div>
       }
       <div>
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="m.sceneMapping" /> Use TheXEM scene mapping for series</label>
+        <p class="hint">
+          Reads the names and season/episode numbers scene releases use (often different for anime) from thexem.info when series refresh.
+          Scene numbering only applies with TheTVDB as the series source, because TheXEM maps TheTVDB's episode order; scene names always help.
+        </p>
+      </div>
+      <div>
         <label class="label">OMDb API key (optional)</label>
         <input class="input font-mono" type="password" autocomplete="off" [(ngModel)]="m.omdbApiKey" />
         <p class="hint">Free at omdbapi.com. Shows IMDb, Rotten Tomatoes and Metacritic scores on movie and series pages.</p>
