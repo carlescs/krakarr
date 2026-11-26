@@ -48,11 +48,12 @@ jobs:
         with:
           fetch-depth: 0
       # Scans the whole git history (not just the working tree), so a secret that was committed
-      # and later deleted still fails the build. Rules and allowlist: .gitleaks.toml.
-      - name: Gitleaks
+      # and later deleted still fails the build. Uses Betterleaks' built-in rules (stable v1 line;
+      # v2 is still in release candidates).
+      - name: Betterleaks
         run: |
-          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo" -w /repo ghcr.io/gitleaks/gitleaks:v8.28.0 \
-            git --config .gitleaks.toml --redact --verbose --no-banner .
+          docker run --rm -v "$PWD:/repo" -w /repo ghcr.io/betterleaks/betterleaks:v1.10.1 \
+            git --redact -v .
 
   backend:
     name: Backend (.NET)
