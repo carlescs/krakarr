@@ -19,20 +19,44 @@ describe('Notifications', () => {
     const notifications = TestBed.inject(Notifications);
 
     notifications.start();
-    await vi.waitFor(() => expect(notifications.total()).toBe(2));
+    await vi.waitFor(() => expect(notifications.tray('bell').total()).toBe(2));
     expect(notifications.count('requests.pending')).toBe(2);
-    expect(notifications.hasProblems()).toBe(false);
+    expect(notifications.tray('bell').hasProblems()).toBe(false);
 
     events.notificationsUpdated.next();
     await vi.waitFor(() => expect(notifications.items().length).toBe(2));
-    expect(notifications.total()).toBe(2);
+    expect(notifications.tray('bell').total()).toBe(2);
     expect(notifications.count('requests.pending')).toBe(1);
-    expect(notifications.hasProblems()).toBe(true);
+    expect(notifications.tray('bell').hasProblems()).toBe(true);
 
     notifications.stop();
     events.requestsUpdated.next();
     expect(api.notifications).toHaveBeenCalledTimes(2);
-    expect(notifications.total()).toBe(0);
+    expect(notifications.tray('bell').total()).toBe(0);
+  });
+
+  it('splits notifications by tray and dismisses one tray at a time', async () => {
+    const sync = (id: string, severity: AppNotification['severity'], progress: AppNotification['progress']): AppNotification =>
+      ({ id, kind: 'subtitle', title: id, link: '/movies/1', count: 1, severity, progress, tray: 'subtitleSync' });
+    const api = {
+      notifications: vi.fn(async () => [note('requests.pending', 2), sync('subtitles.sync.1', 'Info', { percent: 5 }), sync('subtitles.sync.2', 'Error', null)]),
+      dismissAllNotifications: vi.fn(async () => undefined),
+    };
+    TestBed.configureTestingModule({ providers: [{ provide: Api, useValue: api }] });
+    const notifications = TestBed.inject(Notifications);
+
+    await notifications.refresh();
+    expect(notifications.tray('bell').items().map(n => n.id)).toEqual(['requests.pending']);
+    expect(notifications.tray('bell').total()).toBe(2);
+    expect(notifications.tray('bell').hasProblems()).toBe(false);
+    expect(notifications.tray('subtitleSync').total()).toBe(2);
+    expect(notifications.tray('subtitleSync').hasProblems()).toBe(true);
+    expect(notifications.tray('subtitleSync').busy()).toBe(true);
+
+    await notifications.dismissAll('subtitleSync');
+    expect(api.dismissAllNotifications).toHaveBeenCalledWith('subtitleSync');
+    expect(notifications.items().map(n => n.id)).toEqual(['requests.pending']);
+    expect(notifications.tray('subtitleSync').busy()).toBe(false);
   });
 
   it('dismisses one or all notifications and reloads on failure', async () => {
@@ -51,7 +75,7 @@ describe('Notifications', () => {
     expect(notifications.items().map(n => n.id)).toEqual(['releases.movies']);
 
     await notifications.dismissAll();
-    expect(api.dismissAllNotifications).toHaveBeenCalled();
+    expect(api.dismissAllNotifications).toHaveBeenCalledWith('bell');
     expect(notifications.items()).toEqual([]);
 
     api.dismissNotification.mockRejectedValueOnce(new Error('boom'));

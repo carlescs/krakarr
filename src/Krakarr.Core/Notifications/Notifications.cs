@@ -23,6 +23,7 @@ public enum NotificationSeverity
 /// <param name="Progress">Set for work in progress (e.g. a subtitle sync): the bell shows a progress bar. Live updates
 /// arrive as <c>EventNames.NotificationProgress</c> events so clients don't refetch every source each time.</param>
 /// <param name="Actions">Buttons shown on the notification (e.g. cancel a running sync).</param>
+/// <param name="Tray">Which icon in the top bar lists it (<see cref="NotificationTrays"/>); the bell by default.</param>
 public sealed record Notification(
     string Id,
     string Kind,
@@ -33,7 +34,18 @@ public sealed record Notification(
     NotificationSeverity Severity = NotificationSeverity.Info,
     DateTimeOffset? Date = null,
     NotificationProgress? Progress = null,
-    IReadOnlyList<NotificationAction>? Actions = null);
+    IReadOnlyList<NotificationAction>? Actions = null,
+    string Tray = NotificationTrays.Bell);
+
+/// <summary>The icons in the top bar that list notifications. Each has its own badge, panel and "Dismiss all".</summary>
+public static class NotificationTrays
+{
+    /// <summary>The bell: everything that has no tray of its own.</summary>
+    public const string Bell = "bell";
+
+    /// <summary>Subtitle syncs waiting, running or just finished.</summary>
+    public const string SubtitleSync = "subtitleSync";
+}
 
 /// <summary>A button on a notification. The bell POSTs to <paramref name="Path"/>, which is relative to <c>/api/v1</c>.</summary>
 public sealed record NotificationAction(string Label, string Path);

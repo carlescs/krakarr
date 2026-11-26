@@ -154,6 +154,7 @@ public sealed class SubtitleSyncProgressTests
             n =>
             {
                 Assert.Equal("subtitles.sync.1", n.Id);
+                Assert.Equal(NotificationTrays.SubtitleSync, n.Tray);
                 Assert.Equal("Synced Dune (2021) · English", n.Title);
                 Assert.Equal("Synced with alass against the audio", n.Message);
                 Assert.Equal(NotificationSeverity.Success, n.Severity);

@@ -445,7 +445,11 @@ export interface AppNotification {
   progress?: { percent?: number | null; remainingSeconds?: number | null } | null;
   /** Buttons on the notification; each POSTs to its `path` (relative to /api/v1). */
   actions?: NotificationAction[] | null;
+  /** Which icon in the top bar lists it; missing means the bell. */
+  tray?: NotificationTray;
 }
+/** The icons in the top bar that list notifications (NotificationTrays on the server). */
+export type NotificationTray = 'bell' | 'subtitleSync';
 export interface NotificationAction { label: string; path: string; }
 /** Live progress of a notification's work (the `notificationProgress` event). */
 export interface NotificationProgressUpdate { id: string; percent?: number | null; message?: string | null; remainingSeconds?: number | null; }

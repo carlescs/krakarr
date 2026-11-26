@@ -2,7 +2,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { interval, merge, Subscription } from 'rxjs';
 import { Api, errorMessage } from './api';
 import { Events } from './events';
-import { AppNotification, NotificationAction, NotificationProgressUpdate } from './models';
+import { AppNotification, NotificationAction, NotificationProgressUpdate, NotificationTray } from './models';
 import { Toasts } from './toast';
 
 /** Some notifications depend on the date (e.g. today's releases), so also refetch now and then without an event. */
@@ -20,12 +20,30 @@ export class Notifications {
   private readonly toasts = inject(Toasts);
   private subscription?: Subscription;
 
+  /** Every notification, whichever tray lists it. */
   readonly items = signal<AppNotification[]>([]);
   /** Notification ids whose button is being run, to disable it meanwhile. */
   readonly busy = signal<ReadonlySet<string>>(new Set());
-  /** What the bell's badge shows. */
-  readonly total = computed(() => this.items().reduce((sum, n) => sum + n.count, 0));
-  readonly hasProblems = computed(() => this.items().some(n => n.severity === 'Warning' || n.severity === 'Error'));
+  private readonly trays = {
+    bell: this.trayState('bell'),
+    subtitleSync: this.trayState('subtitleSync'),
+  } satisfies Record<NotificationTray, unknown>;
+
+  /** One tray's notifications, the sum its badge shows and whether any of them is a problem. */
+  tray(tray: NotificationTray) {
+    return this.trays[tray];
+  }
+
+  private trayState(tray: NotificationTray) {
+    const items = computed(() => this.items().filter(n => (n.tray ?? 'bell') === tray));
+    return {
+      items,
+      total: computed(() => items().reduce((sum, n) => sum + n.count, 0)),
+      hasProblems: computed(() => items().some(n => n.severity === 'Warning' || n.severity === 'Error')),
+      /** Waiting or running work (progress still going), as opposed to outcomes. */
+      busy: computed(() => items().some(n => n.progress != null && n.severity === 'Info')),
+    };
+  }
 
   /** Count of one notification by id (e.g. "requests.pending"), for badges elsewhere. */
   count(id: string): number {
@@ -84,10 +102,11 @@ export class Notifications {
     }
   }
 
-  async dismissAll() {
-    this.items.set([]);
+  /** Dismisses everything in one tray. */
+  async dismissAll(tray: NotificationTray = 'bell') {
+    this.items.update(items => items.filter(n => (n.tray ?? 'bell') !== tray));
     try {
-      await this.api.dismissAllNotifications();
+      await this.api.dismissAllNotifications(tray);
     } catch {
       await this.refresh();
     }

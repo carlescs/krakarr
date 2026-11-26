@@ -154,7 +154,41 @@ describe('NotificationBell', () => {
 
     button(el, 'Dismiss all').click();
     await settle(fixture);
-    expect(api.dismissAllNotifications).toHaveBeenCalled();
+    expect(api.dismissAllNotifications).toHaveBeenCalledWith('bell');
     expect(text(el)).toContain("You're all caught up.");
+  });
+
+  it('lists subtitle syncs in their own tray, hidden while empty', async () => {
+    const api = setupTest({ api: mockApi({ dismissAllNotifications: async () => undefined }) });
+    const notifications = TestBed.inject(Notifications);
+    notifications.items.set([
+      { id: 'requests.pending', kind: 'request', title: '2 pending requests', count: 2, severity: 'Info', link: '/requests' },
+    ] as AppNotification[]);
+    const fixture = TestBed.createComponent(NotificationBell);
+    fixture.componentRef.setInput('tray', 'subtitleSync');
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.classList).toContain('hidden');
+
+    notifications.items.update(items => [...items,
+      { id: 'subtitles.sync.1', kind: 'subtitle', title: 'Syncing Dune (2021) · English', message: 'Syncing', count: 1, severity: 'Info',
+        link: '/movies/3', progress: { percent: 10 }, tray: 'subtitleSync' },
+    ] as AppNotification[]);
+    await settle(fixture);
+    expect(el.classList).not.toContain('hidden');
+    const icon = button(el, 'Subtitle syncs (1)');
+    expect(icon.querySelector('svg')!.classList).toContain('animate-spin');
+
+    icon.click();
+    await settle(fixture);
+    expect(text(el)).toContain('Syncing Dune (2021) · English');
+    expect(text(el)).not.toContain('2 pending requests');
+
+    button(el, 'Dismiss all').click();
+    await settle(fixture);
+    expect(api.dismissAllNotifications).toHaveBeenCalledWith('subtitleSync');
+    expect(text(el)).toContain('No subtitle syncs.');
+    expect(el.classList).not.toContain('hidden'); // stays while open
+    expect(notifications.count('requests.pending')).toBe(2);
   });
 });

@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Krakarr.Subtitles.Sync;
 
-/// <summary>A subtitle waiting for, going through or just done with a sync, as shown in the notification bell.</summary>
+/// <summary>A subtitle waiting for, going through or just done with a sync, as shown in the subtitle sync tray of the top bar.</summary>
 /// <param name="Title">What is synced, e.g. "Dune (2021) · English".</param>
 /// <param name="Link">SPA route of the movie or series.</param>
 /// <param name="Stage">What it's doing now; null while waiting.</param>
@@ -26,11 +26,11 @@ public sealed record SubtitleSyncActivity(int SubtitleId, string Title, string L
 }
 
 /// <summary>
-/// Syncs waiting, running or recently finished, for the notification bell. Finished syncs stay for
+/// Syncs waiting, running or recently finished, for the subtitle sync tray in the top bar. Finished syncs stay for
 /// <see cref="KeepFinished"/> (at most <see cref="MaxFinished"/> of them) so the outcome can be seen. Start and end publish
 /// <see cref="EventNames.NotificationsUpdated"/>;
 /// progress in between goes out as <see cref="EventNames.NotificationProgress"/>, at most a few times a second per sync,
-/// so open bells update in place without refetching every notification source.
+/// so open trays update in place without refetching every notification source.
 /// </summary>
 public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvider time, ILogger<SubtitleSyncProgress> logger)
 {
@@ -283,14 +283,14 @@ public sealed partial class SubtitleSyncProgress(IEventHub eventHub, TimeProvide
 
 /// <summary>
 /// Staff: one notification per subtitle sync that is waiting or running, with its progress, then with its outcome: green
-/// when it worked, red when it didn't.
+/// when it worked, red when it didn't. They go to their own tray (<see cref="NotificationTrays.SubtitleSync"/>), not the bell.
 /// </summary>
 public sealed class SubtitleSyncNotificationSource(SubtitleSyncProgress progress) : INotificationSource
 {
     public Task<IReadOnlyList<Notification>> GetAsync(NotificationContext context, CancellationToken ct = default)
     {
         if (!context.IsStaff) return Task.FromResult<IReadOnlyList<Notification>>([]);
-        IReadOnlyList<Notification> notifications = progress.Current.Select(ToNotification).ToList();
+        IReadOnlyList<Notification> notifications = progress.Current.Select(a => ToNotification(a) with { Tray = NotificationTrays.SubtitleSync }).ToList();
         return Task.FromResult(notifications);
     }
 
