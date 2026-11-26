@@ -64,15 +64,18 @@
                 <svg class="size-3 transition-transform group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
                 Advanced: shift by hand
               </summary>
+              <!-- Desktop: one line. Phone: the box and Shift first, then the four nudge buttons spread out. -->
               <div class="mt-2 flex flex-wrap items-center gap-2">
-                <span class="text-slate-500">Earlier</span>
-                <button class="btn-ghost btn-sm" (click)="nudge(-1000)">−1 s</button>
-                <button class="btn-ghost btn-sm" (click)="nudge(-100)">−0.1 s</button>
-                <input class="input w-24 py-1 text-right font-mono text-xs" type="number" step="0.1" [(ngModel)]="seconds" aria-label="Shift in seconds" />
-                <button class="btn-ghost btn-sm" (click)="nudge(100)">+0.1 s</button>
-                <button class="btn-ghost btn-sm" (click)="nudge(1000)">+1 s</button>
-                <span class="text-slate-500">Later</span>
+                <span class="text-slate-500 max-sm:hidden">Earlier</span>
+                <button class="btn-ghost btn-sm max-sm:order-1 max-sm:flex-1" (click)="nudge(-1000)">−1 s</button>
+                <button class="btn-ghost btn-sm max-sm:order-1 max-sm:flex-1" (click)="nudge(-100)">−0.1 s</button>
+                <input class="input w-24 py-1 text-right font-mono text-xs max-sm:flex-1" type="number" step="0.1" [(ngModel)]="seconds" aria-label="Shift in seconds" />
+                <button class="btn-ghost btn-sm max-sm:order-1 max-sm:flex-1" (click)="nudge(100)">+0.1 s</button>
+                <button class="btn-ghost btn-sm max-sm:order-1 max-sm:flex-1" (click)="nudge(1000)">+1 s</button>
+                <span class="text-slate-500 max-sm:hidden">Later</span>
                 <button class="btn-secondary btn-sm" (click)="shift(s)" [disabled]="busy() || !offsetMs()">Shift</button>
+                <span class="basis-full sm:hidden" aria-hidden="true"></span>
+                <p class="order-2 basis-full text-slate-500 sm:hidden">Negative values show the subtitles earlier.</p>
               </div>
             </details>
           </div>
