@@ -6,10 +6,13 @@ using Npgsql;
 
 namespace Krakarr.Host.Database;
 
-/// <summary>The database to switch to, as the UI asks for it: server fields for PostgreSQL, a file name for SQLite.</summary>
+/// <summary>
+/// The database to switch to, as the UI asks for it: server fields for PostgreSQL, a file name for SQLite. With
+/// <see cref="DeleteSource"/>, the current SQLite file is deleted once the data has been copied.
+/// </summary>
 public sealed record DatabaseTargetRequest(
     string Provider, string? Host = null, int? Port = null, string? Database = null, string? Username = null, string? Password = null,
-    string? File = null);
+    string? File = null, bool DeleteSource = false);
 
 public sealed record DatabaseTestResult(bool Ok, bool Empty, string Message);
 
@@ -31,7 +34,11 @@ public sealed class DatabaseSwitchService(KrakarrPaths paths, DatabaseSwitchStat
             status.Current.Provider,
             Location = status.Current.Describe(),
             Pinned,
-            Pending = plan is null ? null : new { plan.Target.Provider, Location = plan.Target.Describe(), plan.Created },
+            Pending = plan is null ? null : new
+            {
+                plan.Target.Provider, Location = plan.Target.Describe(), plan.Created,
+                DeleteSource = plan.DeleteSource ? plan.Source.SqliteFile() : null,
+            },
             PendingEnvironment = plan is null ? null : EnvironmentFor(plan.Target),
             LastSwitch = status.Last,
         };
@@ -125,11 +132,14 @@ public sealed class DatabaseSwitchService(KrakarrPaths paths, DatabaseSwitchStat
     }
 
     /// <summary>Tests the database and, when it's usable, stages the switch for the next start.</summary>
-    public async Task<(DatabaseTestResult Test, IReadOnlyList<EnvironmentSetting> Environment)> StageAsync(DatabaseTarget target, CancellationToken ct)
+    /// <param name="deleteSource">Delete the current SQLite file after the copy (ignored on PostgreSQL).</param>
+    public async Task<(DatabaseTestResult Test, IReadOnlyList<EnvironmentSetting> Environment)> StageAsync(
+        DatabaseTarget target, bool deleteSource, CancellationToken ct)
     {
         var test = await TestAsync(target, ct);
         if (!test.Ok || !test.Empty) return (test, []);
-        DatabaseSwitch.WritePlan(paths, new DatabaseSwitchPlan(status.Current, target, DateTimeOffset.UtcNow));
+        deleteSource &= status.Current.SqliteFile() is not null;
+        DatabaseSwitch.WritePlan(paths, new DatabaseSwitchPlan(status.Current, target, DateTimeOffset.UtcNow, deleteSource));
         return (test, EnvironmentFor(target));
     }
 
@@ -181,7 +191,7 @@ public static class DatabaseEndpoints
         {
             var (target, error) = service.Resolve(request);
             if (target is null) return Results.Problem(error, statusCode: StatusCodes.Status400BadRequest);
-            var (test, environment) = await service.StageAsync(target, ct);
+            var (test, environment) = await service.StageAsync(target, request.DeleteSource, ct);
             if (!test.Ok || !test.Empty) return Results.Problem(test.Message, statusCode: StatusCodes.Status400BadRequest);
             return Results.Accepted(value: new { test.Message, Environment = environment });
         });

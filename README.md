@@ -421,7 +421,8 @@ The API is `GET /api/v1/system/backups` (list), `POST` (back up now), `GET`/`DEL
 (a PostgreSQL server, or a SQLite file in `/config`), *Test connection*, then *Switch on next restart*. On the next start,
 before anything else opens the database, Krakarr migrates both databases to the current schema, copies every table
 (in one transaction, in batches, keeping ids), checks the row counts and points `config.json` at the new database. The
-previous `config.json` is kept as `config.json.pre-switch` and the old database is left untouched. If the copy fails,
+previous `config.json` is kept as `config.json.pre-switch` and the old database is left untouched, unless you tick
+*Delete the SQLite file* when leaving SQLite: then the file goes once the copy has succeeded. If the copy fails,
 nothing changes: Krakarr keeps running on the old database and the page shows why.
 
 - The new database must be empty. Krakarr creates a missing PostgreSQL database if the user may create databases.

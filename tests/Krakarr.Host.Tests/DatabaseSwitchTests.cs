@@ -252,6 +252,38 @@ public sealed class DatabaseSwitchStartupTests : IDisposable
     }
 
     [Fact]
+    public async Task Deletes_the_old_sqlite_file_once_the_copy_succeeded_when_asked()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await DatabaseCopyTests.SeedAsync(_source, ct);
+        DatabaseSwitch.WritePlan(_paths, new DatabaseSwitchPlan(_source, _target, DateTimeOffset.UtcNow, DeleteSource: true));
+
+        var result = await ApplyAsync(_source);
+
+        Assert.True(result!.Outcome.Succeeded, result.Outcome.Message);
+        Assert.Contains("was deleted", result.Outcome.Message);
+        var file = _source.SqliteFile()!;
+        Assert.False(File.Exists(file));
+        Assert.False(File.Exists(file + "-wal"));
+        Assert.False(File.Exists(file + "-shm"));
+        await DatabaseCopyTests.AssertCopiedAsync(_target, ct);
+    }
+
+    [Fact]
+    public async Task Keeps_the_old_sqlite_file_when_the_copy_fails_even_if_asked_to_delete_it()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await DatabaseCopyTests.SeedAsync(_source, ct);
+        await DatabaseCopyTests.SeedAsync(_target, ct);
+        DatabaseSwitch.WritePlan(_paths, new DatabaseSwitchPlan(_source, _target, DateTimeOffset.UtcNow, DeleteSource: true));
+
+        var result = await ApplyAsync(_source);
+
+        Assert.False(result!.Outcome.Succeeded);
+        Assert.True(File.Exists(_source.SqliteFile()));
+    }
+
+    [Fact]
     public async Task Refuses_a_database_that_already_holds_data_and_stays_on_the_old_one()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -397,10 +429,13 @@ public sealed class DatabaseEndpointTests(KrakarrFactory factory) : IClassFixtur
         Assert.True(result.GetProperty("empty").GetBoolean());
         Assert.False(File.Exists(Path.Combine(factory.ConfigDirectory, "moved.db"))); // testing creates nothing
 
-        var staged = await client.PostAsJsonAsync("/api/v1/system/database/switch", new { provider = "sqlite", file = "moved.db" }, ct);
+        var staged = await client.PostAsJsonAsync("/api/v1/system/database/switch", new { provider = "sqlite", file = "moved.db", deleteSource = true }, ct);
         Assert.Equal(HttpStatusCode.Accepted, staged.StatusCode);
         info = await client.GetFromJsonAsync<JsonElement>("/api/v1/system/database", ct);
-        Assert.Equal(Path.Combine(factory.ConfigDirectory, "moved.db"), info.GetProperty("pending").GetProperty("location").GetString());
+        var pending = info.GetProperty("pending");
+        Assert.Equal(Path.Combine(factory.ConfigDirectory, "moved.db"), pending.GetProperty("location").GetString());
+        Assert.Equal(Path.Combine(factory.ConfigDirectory, "krakarr.db"), pending.GetProperty("deleteSource").GetString());
+        Assert.True(File.Exists(Path.Combine(factory.ConfigDirectory, "krakarr.db"))); // nothing is deleted before the restart
 
         Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync("/api/v1/system/database/switch", ct)).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync("/api/v1/system/database/switch", ct)).StatusCode);

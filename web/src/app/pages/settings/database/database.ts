@@ -29,6 +29,8 @@ export class DatabaseSettings implements OnInit {
   protected readonly testing = signal(false);
   protected readonly staging = signal(false);
   protected readonly canSwitch = computed(() => !!this.test()?.ok && !!this.test()?.empty);
+  /** Delete the current SQLite file once the copy has succeeded. Off by default: the file is the way back. */
+  protected readonly deleteSource = signal(false);
 
   async ngOnInit() {
     try {
@@ -73,10 +75,13 @@ export class DatabaseSettings implements OnInit {
   async stage() {
     if (!this.canSwitch()) return;
     const name = PROVIDER_NAMES[this.form().provider];
-    if (!confirm(`Switch to ${name}? Krakarr copies all its data into the new database the next time it starts.`)) return;
+    const deleting = this.info()?.provider === 'sqlite' && this.deleteSource()
+      ? ' Once the copy succeeds, the SQLite file is deleted and can only come back from a backup.' : '';
+    if (!confirm(`Switch to ${name}? Krakarr copies all its data into the new database the next time it starts.${deleting}`)) return;
     this.staging.set(true);
     try {
-      await this.api.switchDatabase(this.request());
+      const leavingSqlite = this.info()?.provider === 'sqlite';
+      await this.api.switchDatabase({ ...this.request(), deleteSource: leavingSqlite && this.deleteSource() });
       this.toasts.success('Switch ready. Restart Krakarr to copy the data.');
       this.test.set(null);
       this.form.update(f => ({ ...f, password: '' }));

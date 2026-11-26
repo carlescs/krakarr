@@ -53,8 +53,12 @@
           <li><span class="font-medium">Restart Krakarr</span>{{ i.pendingEnvironment?.length ? ' (recreate the container so it picks up the new variables)' : '' }}.
             On start it copies every table into the new database, checks the row counts and switches over. With a large library this
             takes a minute or two.</li>
-          <li>Come back to this page to see the outcome. The old database is left as it was; if anything goes wrong, Krakarr keeps
-            running on it.</li>
+          <li>Come back to this page to see the outcome. If anything goes wrong, Krakarr keeps running on the old database.
+            @if (p.deleteSource) {
+              <span data-delete-pending>Once the copy succeeds, <code class="wrap-anywhere">{{ p.deleteSource }}</code> is deleted.</span>
+            } @else {
+              The old database is left as it was.
+            }</li>
         </ol>
       </section>
     } @else {
@@ -112,6 +116,13 @@
         <div class="space-y-2">
           <h3 class="text-sm font-medium text-slate-200">3. Switch</h3>
           <p class="hint">Krakarr copies the data the next time it starts, then uses the new database from then on.</p>
+          @if (i.provider === 'sqlite') {
+            <label class="flex items-start gap-2 text-sm">
+              <input id="db-delete-source" type="checkbox" class="mt-0.5 accent-accent-500" [ngModel]="deleteSource()" (ngModelChange)="deleteSource.set($event)" />
+              <span>Delete the SQLite file (<code class="wrap-anywhere">{{ i.location }}</code>) once the data is copied
+                <span class="hint block">Only after the copy and the row counts check out. Without the file, a backup is the only way back.</span></span>
+            </label>
+          }
           <button type="button" class="btn-primary" [disabled]="!canSwitch() || staging()" (click)="stage()">
             {{ staging() ? 'Preparing…' : 'Switch on next restart' }}
           </button>

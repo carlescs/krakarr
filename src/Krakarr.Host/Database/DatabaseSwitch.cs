@@ -12,7 +12,8 @@ using Npgsql;
 namespace Krakarr.Host.Database;
 
 /// <summary>A switch to another database, staged from the UI and carried out on the next start.</summary>
-public sealed record DatabaseSwitchPlan(DatabaseTarget Source, DatabaseTarget Target, DateTimeOffset Created);
+/// <param name="DeleteSource">Delete the old SQLite file once the copy has succeeded.</param>
+public sealed record DatabaseSwitchPlan(DatabaseTarget Source, DatabaseTarget Target, DateTimeOffset Created, bool DeleteSource = false);
 
 /// <summary>Result of the switch done at start-up, shown on the Database page until the next restart.</summary>
 public sealed record DatabaseSwitchOutcome(bool Succeeded, string Message, DateTimeOffset At, IReadOnlyList<TableCopy> Tables);
@@ -132,10 +133,33 @@ public static class DatabaseSwitch
         var rows = tables.Sum(t => t.Rows);
         var truncated = tables.Sum(t => t.Truncated);
         var message = $"Switched to {plan.Target.Describe()}: copied {rows:N0} rows in {tables.Count} tables. "
-            + $"The old database ({plan.Source.Describe()}) was left as it was.";
+            + (plan.DeleteSource && plan.Source.SqliteFile() is { } oldFile
+                ? DeleteSqliteFile(oldFile, logger)
+                : $"The old database ({plan.Source.Describe()}) was left as it was.");
         if (truncated > 0) message += $" {truncated:N0} values longer than their column allows were shortened.";
         logger.LogWarning("{Message}", message);
         return new Result(new DatabaseSwitchOutcome(true, message, DateTimeOffset.UtcNow, tables), plan.Target);
+    }
+
+    /// <summary>Deletes the old SQLite database with its -wal and -shm files, once the copy is done. Returns what happened.</summary>
+    private static string DeleteSqliteFile(string file, ILogger logger)
+    {
+        // Pooled connections keep the files open (and on Windows, locked).
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        try
+        {
+            foreach (var path in new[] { file, file + "-wal", file + "-shm" })
+            {
+                if (File.Exists(path)) File.Delete(path);
+            }
+
+            return $"The old database ({file}) was deleted.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            logger.LogWarning(ex, "Could not delete the old database {File}", file);
+            return $"The old database ({file}) could not be deleted ({ex.Message}); delete it by hand.";
+        }
     }
 
     private static Result Fail(KrakarrPaths paths, DatabaseTarget configured, string error)

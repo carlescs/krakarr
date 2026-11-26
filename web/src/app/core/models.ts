@@ -326,6 +326,8 @@ export type DatabaseProvider = 'sqlite' | 'postgres';
 /** Where to switch to: server fields for PostgreSQL, a file name in the config folder for SQLite. */
 export interface DatabaseTargetRequest {
   provider: DatabaseProvider; host?: string; port?: number | null; database?: string; username?: string; password?: string; file?: string;
+  /** Delete the current SQLite file once the data has been copied (only when leaving SQLite). */
+  deleteSource?: boolean;
 }
 export interface DatabaseTestResult { ok: boolean; empty: boolean; message: string; }
 /** An environment variable to set by hand when environment variables choose the database. */
@@ -336,7 +338,8 @@ export interface DatabaseInfo {
   provider: DatabaseProvider; location: string;
   /** Database settings fixed by environment variables: Krakarr can't change them itself. */
   pinned: string[];
-  pending: { provider: DatabaseProvider; location: string; created: string } | null;
+  /** `deleteSource`: the SQLite file deleted after the copy, or null to keep it. */
+  pending: { provider: DatabaseProvider; location: string; created: string; deleteSource: string | null } | null;
   pendingEnvironment: EnvironmentSetting[] | null;
   lastSwitch: DatabaseSwitchOutcome | null;
 }

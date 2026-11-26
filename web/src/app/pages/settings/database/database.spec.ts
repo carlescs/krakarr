@@ -38,7 +38,7 @@ describe('DatabaseSettings', () => {
       database: async () => current,
       testDatabase: async () => ({ ok: true, empty: true, message: 'Connected to PostgreSQL 17. The database is empty.' }),
       switchDatabase: async () => {
-        current = info({ pending: { provider: 'postgres', location: 'krakarr@db:5432/krakarr', created: '2026-11-26T10:00:00Z' } });
+        current = info({ pending: { provider: 'postgres', location: 'krakarr@db:5432/krakarr', created: '2026-11-26T10:00:00Z', deleteSource: null } });
         return { message: 'ok', environment: [] };
       },
     });
@@ -57,9 +57,39 @@ describe('DatabaseSettings', () => {
 
     button(el, 'Switch on next restart').click();
     await settle(fixture);
-    expect(api.switchDatabase).toHaveBeenCalledWith(target);
+    expect(api.switchDatabase).toHaveBeenCalledWith({ ...target, deleteSource: false });
     expect(text(el, '[data-pending]')).toContain('Restart Krakarr');
+    expect(text(el, '[data-pending]')).toContain('left as it was');
     expect(el.querySelector('[data-assistant]')).toBeNull();
+  });
+
+  it('can delete the SQLite file once the data is copied', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    let current = info();
+    const api = mockApi({
+      database: async () => current,
+      testDatabase: async () => ({ ok: true, empty: true, message: 'empty' }),
+      switchDatabase: async () => {
+        current = info({ pending: { provider: 'postgres', location: 'krakarr@db:5432/krakarr', created: '2026-11-26T10:00:00Z', deleteSource: '/config/krakarr.db' } });
+        return { message: 'ok', environment: [] };
+      },
+    });
+    const { el, fixture } = await render(api);
+    const box = el.querySelector('#db-delete-source') as HTMLInputElement;
+    box.click();
+    await settle(fixture);
+    button(el, 'Test connection').click();
+    await settle(fixture);
+    button(el, 'Switch on next restart').click();
+    await settle(fixture);
+    expect(confirm.mock.calls[0][0]).toContain('deleted');
+    expect(api.switchDatabase).toHaveBeenCalledWith(expect.objectContaining({ deleteSource: true }));
+    expect(text(el, '[data-delete-pending]')).toContain('/config/krakarr.db');
+  });
+
+  it('only offers to delete the old database when leaving SQLite', async () => {
+    const { el } = await render(mockApi({ database: async () => info({ provider: 'postgres', location: 'krakarr@db:5432/krakarr' }) }));
+    expect(el.querySelector('#db-delete-source')).toBeNull();
   });
 
   it('needs a new test after the form changes, and an empty database to switch', async () => {
@@ -81,7 +111,7 @@ describe('DatabaseSettings', () => {
   it('lists the environment variables to set, and cancels the switch', async () => {
     let current = info({
       pinned: ['Database__Provider'],
-      pending: { provider: 'postgres', location: 'krakarr@db:5432/krakarr', created: '2026-11-26T10:00:00Z' },
+      pending: { provider: 'postgres', location: 'krakarr@db:5432/krakarr', created: '2026-11-26T10:00:00Z', deleteSource: null },
       pendingEnvironment: [{ name: 'Database__Provider', value: 'postgres' }, { name: 'Database__ConnectionString', value: 'Host=db;Password=<password>' }],
     });
     const api = mockApi({ database: async () => current, cancelDatabaseSwitch: async () => { current = info(); } });
