@@ -40,6 +40,20 @@ jobs:
           fi
           node scripts/release/lint-commits.mjs --range "$range"
 
+  secrets:
+    name: Secrets scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Scans the whole git history (not just the working tree), so a secret that was committed
+      # and later deleted still fails the build. Rules and allowlist: .gitleaks.toml.
+      - name: Gitleaks
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo" -w /repo ghcr.io/gitleaks/gitleaks:v8.28.0 \
+            git --config .gitleaks.toml --redact --verbose --no-banner .
+
   backend:
     name: Backend (.NET)
     runs-on: ubuntu-latest

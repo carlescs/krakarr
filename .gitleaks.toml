@@ -1,0 +1,21 @@
+# Secret scanning config for gitleaks (run by the "Secrets scan" CI job).
+# Local run: docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/repo" -w /repo ghcr.io/gitleaks/gitleaks:v8.28.0 git --config .gitleaks.toml --redact .
+title = "Krakarr gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fixed credentials used only by the test suite"
+paths = [
+  '''(^|/)package-lock\.json$''',
+]
+stopwords = [
+  "correct-horse",
+  "password-123",
+  "wrong-password",
+  "brand-new-pass",
+  "another-pass",
+  "not-it-at-all",
+  "test-setup-token",
+]
