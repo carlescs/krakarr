@@ -312,12 +312,6 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
         var declined = (await BellAsync(frank, "requests.declined"))!.Value;
         Assert.Equal(1, declined.GetProperty("count").GetInt32());
         Assert.Equal("Movie 3002", declined.GetProperty("message").GetString());
-        Assert.Equal("bell", declined.GetProperty("tray").GetString());
-
-        // Dismissing another tray leaves the bell alone, request results included.
-        Assert.Equal(HttpStatusCode.NoContent, (await frank.DeleteAsync("/api/v1/notifications?tray=subtitleSync", Ct)).StatusCode);
-        Assert.NotNull(await BellAsync(frank, "requests.declined"));
-        Assert.NotNull(await BellAsync(frank, "requests.mine"));
 
         // Dismiss all clears every notification in the caller's bell without touching other users'.
         await CreateAsync(grace, "Movie", 3004);

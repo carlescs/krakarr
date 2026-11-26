@@ -133,7 +133,7 @@ public sealed class SubtitleSyncService(
         }
         catch (OperationCanceledException) when (cancel.IsCancellationRequested && !ct.IsCancellationRequested)
         {
-            // Cancelled from the bell. The note keeps the automatic task from starting it again; a sync by hand still can.
+            // Cancelled from the tasks menu. The note keeps the automatic task from starting it again; a sync by hand still can.
             result = new SubtitleSyncResult(false, SubtitleSyncProgress.CancelledResult);
             activity?.SetTag("krakarr.subtitle.result", "cancelled");
             row.SyncNote = "Sync cancelled";

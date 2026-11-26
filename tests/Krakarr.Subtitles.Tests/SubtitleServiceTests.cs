@@ -59,6 +59,7 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<SubtitleService>();
         services.AddSingleton<Sync.SubtitleSyncGate>();
+        services.AddSingleton<Krakarr.Core.Jobs.BackgroundTasks>();
         services.AddSingleton<Sync.SubtitleSyncProgress>();
         services.AddScoped<Sync.SubtitleSyncService>();
         _services = services.BuildServiceProvider();
@@ -251,9 +252,9 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
         var row = (await RowsAsync()).Single(r => r.Language == "es");
         Assert.NotNull(row.SyncedAt);
         Assert.Contains("English", row.SyncNote);
-        var done = Assert.Single(_services.GetRequiredService<Sync.SubtitleSyncProgress>().Current);
-        Assert.True(done.Succeeded);
-        Assert.Equal(result.Message, done.Result);
+        var done = Assert.Single(_services.GetRequiredService<Krakarr.Core.Jobs.BackgroundTasks>().Current);
+        Assert.Equal(Krakarr.Core.Jobs.BackgroundTaskState.Succeeded, done.State);
+        Assert.Equal(result.Message, done.Message);
         var (title, link) = await sync.DescribeAsync(row, TestContext.Current.CancellationToken);
         Assert.Equal("The Matrix (1999) · Spanish", title);
         Assert.StartsWith("/movies/", link);
@@ -265,12 +266,13 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
         var row = await AddSubtitleAsync("es", 70, Srt([1_000, 5_000]));
         var gate = _services.GetRequiredService<Sync.SubtitleSyncGate>();
         var progress = _services.GetRequiredService<Sync.SubtitleSyncProgress>();
+        var tasks = _services.GetRequiredService<Krakarr.Core.Jobs.BackgroundTasks>();
         await gate.Lock.WaitAsync(TestContext.Current.CancellationToken); // another sync is running
         try
         {
             using var scope = _services.CreateScope();
             var running = scope.ServiceProvider.GetRequiredService<Sync.SubtitleSyncService>().SyncAsync(row.Id, TestContext.Current.CancellationToken);
-            while (progress.Current.Count == 0) await Task.Delay(10, TestContext.Current.CancellationToken);
+            while (tasks.Current.Count == 0) await Task.Delay(10, TestContext.Current.CancellationToken);
 
             Assert.True(progress.Cancel(row.Id));
             var result = await running.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
@@ -286,7 +288,7 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
         var stored = (await RowsAsync()).Single();
         Assert.Equal("Sync cancelled", stored.SyncNote);
         Assert.Null(stored.SyncedAt);
-        Assert.True(Assert.Single(progress.Current).Cancelled);
+        Assert.Equal(Krakarr.Core.Jobs.BackgroundTaskState.Cancelled, Assert.Single(tasks.Current).State);
         Assert.False(progress.Cancel(row.Id));
     }
 

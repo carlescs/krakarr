@@ -436,23 +436,26 @@ export interface ApproveRequestOptions {
   title?: string;
 }
 
-/** `Success` is for work that finished well (shown in green). */
-export type NotificationSeverity = 'Success' | 'Info' | 'Warning' | 'Error';
+export type NotificationSeverity = 'Info' | 'Warning' | 'Error';
 /** An item in the top bar's bell, computed by the server from the current state (see INotificationSource). */
 export interface AppNotification {
   id: string; kind: string; title: string; message?: string | null; link: string; count: number; severity: NotificationSeverity; date?: string | null;
-  /** Set for work in progress; `percent` is null when the work can't tell how far along it is, `remainingSeconds` until there is an estimate. */
-  progress?: { percent?: number | null; remainingSeconds?: number | null } | null;
-  /** Buttons on the notification; each POSTs to its `path` (relative to /api/v1). */
-  actions?: NotificationAction[] | null;
-  /** Which icon in the top bar lists it; missing means the bell. */
-  tray?: NotificationTray;
 }
-/** The icons in the top bar that list notifications (NotificationTrays on the server). */
-export type NotificationTray = 'bell' | 'subtitleSync';
-export interface NotificationAction { label: string; path: string; }
-/** Live progress of a notification's work (the `notificationProgress` event). */
-export interface NotificationProgressUpdate { id: string; percent?: number | null; message?: string | null; remainingSeconds?: number | null; }
+
+export type BackgroundTaskState = 'Waiting' | 'Running' | 'Cancelling' | 'Succeeded' | 'Failed' | 'Cancelled';
+/** Long-running work (e.g. a subtitle sync) in the tasks menu of the top bar; staff only. */
+export interface BackgroundTask {
+  id: string; kind: string; title: string; link?: string | null; state: BackgroundTaskState;
+  /** What it's doing now while running; the outcome once finished. */
+  message?: string | null;
+  /** Progress of the current stage (0 to 100), null when it can't tell. */
+  percent?: number | null;
+  /** Estimated time left in the current stage, null until there is enough progress to tell. */
+  remainingSeconds?: number | null;
+  queued: string; started?: string | null; finished?: string | null; canCancel: boolean;
+}
+/** Live progress of a background task (the `backgroundTaskProgress` event). */
+export interface BackgroundTaskProgress { id: string; percent?: number | null; message?: string | null; remainingSeconds?: number | null; }
 
 /** A library title the signed-in user follows (shows in "My titles"). */
 export interface Subscription { mediaType: MediaType; libraryId: number; title: string; year: number; posterUrl?: string | null; subscribedAt: string; }

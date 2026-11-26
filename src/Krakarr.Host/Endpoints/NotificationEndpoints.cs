@@ -30,9 +30,8 @@ public static class NotificationEndpoints
                 .OrderByDescending(n => n.Severity).ThenByDescending(n => n.Date ?? DateTimeOffset.MinValue).ToList());
         });
 
-        // Dismiss all, or (with ?tray=) all of one icon's notifications.
-        group.MapDelete("/", (string? tray, HttpContext http, KrakarrDbContext db, IEnumerable<INotificationSource> sources, IEventHub events, CancellationToken ct) =>
-            DismissAsync(http, db, sources, events, null, ct, tray));
+        group.MapDelete("/", (HttpContext http, KrakarrDbContext db, IEnumerable<INotificationSource> sources, IEventHub events, CancellationToken ct) =>
+            DismissAsync(http, db, sources, events, null, ct));
 
         group.MapDelete("/{id}", (string id, HttpContext http, KrakarrDbContext db, IEnumerable<INotificationSource> sources, IEventHub events, CancellationToken ct) =>
             DismissAsync(http, db, sources, events, id, ct));
@@ -68,23 +67,21 @@ public static class NotificationEndpoints
     }
 
     private static async Task<IResult> DismissAsync(HttpContext http, KrakarrDbContext db, IEnumerable<INotificationSource> sources,
-        IEventHub events, string? id, CancellationToken ct, string? tray = null)
+        IEventHub events, string? id, CancellationToken ct)
     {
         if (http.User.GetUserId() is not { } userId) return Results.NoContent();
         var changed = 0;
 
         // Result notifications come from MediaRequest.ResultUnseen; clearing that flag dismisses the handled requests
         // themselves so a later approval or decline reports only the new ones.
-        // Request results live in the bell.
-        var bell = tray is null or NotificationTrays.Bell;
-        if (bell && id is null or "requests.approved")
+        if (id is null or "requests.approved")
         {
             changed += await db.MediaRequests
                 .Where(r => r.RequestedById == userId && r.ResultUnseen && r.Status == RequestStatus.Approved)
                 .ExecuteUpdateAsync(s => s.SetProperty(r => r.ResultUnseen, false), ct);
         }
 
-        if (bell && id is null or "requests.declined")
+        if (id is null or "requests.declined")
         {
             changed += await db.MediaRequests
                 .Where(r => r.RequestedById == userId && r.ResultUnseen && r.Status == RequestStatus.Declined)
@@ -94,7 +91,6 @@ public static class NotificationEndpoints
         var context = new NotificationContext(userId, http.User.GetRole());
         var target = (await ActiveAsync(sources, context, ct))
             .Where(n => id is null || n.Id == id)
-            .Where(n => tray is null || n.Tray == tray)
             .ToList();
         if (target.Count > 0)
         {

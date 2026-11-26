@@ -311,7 +311,7 @@ public static class SubtitleEndpoints
         });
 
         // Resyncs one subtitle against the video in the background (it can take minutes); the outcome lands on the row.
-        // It shows in the bell as waiting until it starts, then with its progress.
+        // It shows in the tasks menu as waiting until it starts, then with its progress.
         group.MapPost("/{id:int}/sync", async (int id, KrakarrDbContext db, SubtitleSyncService sync, SubtitleSyncProgress progress,
             ICommandQueue commands, CancellationToken ct) =>
         {
@@ -335,10 +335,6 @@ public static class SubtitleEndpoints
             });
             return Results.Accepted(value: command);
         });
-
-        // Stops a waiting or running sync (the Cancel button on its notification).
-        group.MapPost("/{id:int}/sync/cancel", (int id, SubtitleSyncProgress progress) =>
-            progress.Cancel(id) ? Results.NoContent() : Results.NotFound());
 
         // Moves every cue by a fixed amount (negative = earlier).
         group.MapPost("/{id:int}/shift", async (int id, SubtitleShiftRequest req, SubtitleSyncService sync, CancellationToken ct) =>

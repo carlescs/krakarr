@@ -52,7 +52,9 @@
           <span class="truncate font-semibold text-white">{{ current()?.label ?? 'Krakarr' }}</span>
         </a>
         <div class="flex-1"></div>
-        <kr-notification-bell tray="subtitleSync" />
+        @if (auth.isStaff()) {
+          <kr-background-tasks />
+        }
         <kr-notification-bell />
         <a routerLink="/settings" class="hidden text-sm text-slate-400 hover:text-white sm:inline" title="Your account">{{ auth.status()?.username }}</a>
         <button class="btn-ghost btn-sm" (click)="logout()" [title]="'Sign out ' + (auth.status()?.username ?? '')">Sign out</button>

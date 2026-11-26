@@ -30,6 +30,9 @@ public sealed class RoleAccessTests
     [InlineData("POST", "/hubs/events/negotiate", UserRole.User)]
     [InlineData("GET", "/movies/5", UserRole.User)] // SPA routes
     [InlineData("POST", "/api/v1/movies", UserRole.Manager)]
+    [InlineData("GET", "/api/v1/system/background-tasks", UserRole.Manager)]
+    [InlineData("POST", "/api/v1/system/background-tasks/subtitles.sync.4/cancel", UserRole.Manager)]
+    [InlineData("DELETE", "/api/v1/system/background-tasks", UserRole.Manager)]
     [InlineData("DELETE", "/api/v1/movies/5", UserRole.Manager)]
     [InlineData("GET", "/api/v1/movies/5/releases", UserRole.Manager)]
     [InlineData("GET", "/api/v1/movies/lookup", UserRole.User)]

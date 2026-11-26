@@ -32,6 +32,18 @@ public static class SystemEndpoints
 
         group.MapGet("/commands", (ICommandQueue commands) => commands.Recent);
 
+        // Long-running work (e.g. subtitle syncs) for the tasks menu in the top bar: waiting, running and recently finished.
+        group.MapGet("/background-tasks", (BackgroundTasks tasks) => tasks.Current);
+        group.MapPost("/background-tasks/{id}/cancel", (string id, BackgroundTasks tasks) =>
+            tasks.Cancel(id) ? Results.NoContent() : Results.NotFound());
+        group.MapDelete("/background-tasks/{id}", (string id, BackgroundTasks tasks) =>
+            tasks.Dismiss(id) ? Results.NoContent() : Results.NotFound());
+        group.MapDelete("/background-tasks", (BackgroundTasks tasks) =>
+        {
+            tasks.DismissFinished();
+            return Results.NoContent();
+        });
+
         group.MapGet("/tasks", (IScheduledTaskManager tasks) => tasks.GetTasks());
         group.MapPost("/tasks/{id}/run", (string id, IScheduledTaskManager tasks) => tasks.Trigger(id) switch
         {
