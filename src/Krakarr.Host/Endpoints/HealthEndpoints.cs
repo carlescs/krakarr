@@ -61,7 +61,7 @@ public sealed class HealthNotificationSource(IHealthMonitor health) : INotificat
         IReadOnlyList<Notification> notifications = health.Current.Issues
             .Select(i => new Notification("health." + i.Id, "health", i.CheckName, i.Message, "/settings/health", i.Count,
                 Severity: i.Severity == HealthSeverity.Error ? NotificationSeverity.Error : NotificationSeverity.Warning,
-                Date: i.Since))
+                Date: i.Since, CountRenotifies: i.NotifyEvery is null))
             .ToList();
         return Task.FromResult(notifications);
     }

@@ -109,6 +109,53 @@ public sealed class HealthMonitorTests
     }
 
     [Fact]
+    public async Task A_throttled_problem_comes_back_at_most_once_per_interval()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var monitor = Monitor();
+        var day = TimeSpan.FromDays(1);
+        HealthProblem Failing(int count, HealthSeverity severity = HealthSeverity.Warning) =>
+            new("failing", severity, $"{count} failing", Count: count, NotifyEvery: day);
+
+        _check.Problems = [Failing(1)];
+        var first = Assert.Single((await monitor.CheckNowAsync(ct)).Issues);
+        Assert.Equal(_time.GetUtcNow(), first.Since);
+
+        // Recovers, fails again, gets worse: all within the day, so the bell keeps the first time.
+        _time.Advance(TimeSpan.FromHours(1));
+        _check.Problems = [];
+        await monitor.CheckNowAsync(ct);
+        _time.Advance(TimeSpan.FromHours(1));
+        _check.Problems = [Failing(1)];
+        Assert.Equal(first.Since, Assert.Single((await monitor.CheckNowAsync(ct)).Issues).Since);
+        _time.Advance(TimeSpan.FromHours(1));
+        _check.Problems = [Failing(2, HealthSeverity.Error)];
+        var worse = Assert.Single((await monitor.CheckNowAsync(ct)).Issues);
+        Assert.Equal((2, HealthSeverity.Error, first.Since), (worse.Count, worse.Severity, worse.Since));
+
+        // A dismissal of the first notification still covers it, despite the higher count.
+        var n = Assert.Single(await new HealthNotificationSource(monitor).GetAsync(new NotificationContext(1, UserRole.Admin), ct));
+        var dismissal = new NotificationDismissal { UserId = 1, NotificationId = n.Id, Count = 1, DismissedAt = first.Since };
+        Assert.True(NotificationEndpoints.IsDismissed(n, dismissal));
+
+        // Still there a day later without getting worse: stays dismissed.
+        _time.Advance(day);
+        Assert.Equal(first.Since, Assert.Single((await monitor.CheckNowAsync(ct)).Issues).Since);
+
+        // Worse after the interval: back in the bell.
+        _check.Problems = [Failing(3, HealthSeverity.Error)];
+        var later = Assert.Single((await monitor.CheckNowAsync(ct)).Issues);
+        Assert.Equal(_time.GetUtcNow(), later.Since);
+
+        // Gone and back after another day: back in the bell too.
+        _check.Problems = [];
+        await monitor.CheckNowAsync(ct);
+        _time.Advance(day);
+        _check.Problems = [Failing(1)];
+        Assert.Equal(_time.GetUtcNow(), Assert.Single((await monitor.CheckNowAsync(ct)).Issues).Since);
+    }
+
+    [Fact]
     public async Task Tells_clients_to_refresh_the_bell_only_when_problems_change()
     {
         var ct = TestContext.Current.CancellationToken;
