@@ -83,16 +83,19 @@ public sealed class IndexerBackoffTests
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         Assert.Empty(await check.CheckAsync(TestContext.Current.CancellationToken));
 
-        // One of two failing: a warning; all of them: an error, since nothing can be found.
+        // One of two failing: a warning; all of them: an error, since nothing can be found. Either way a single
+        // problem, so the bell shows one notification for every failing indexer.
         _backoff.RecordFailure(a.Id, "A", "timeout");
         var one = Assert.Single(await check.CheckAsync(TestContext.Current.CancellationToken));
-        Assert.Equal(HealthSeverity.Warning, one.Severity);
+        Assert.Equal(("failing", HealthSeverity.Warning, 1), (one.Key, one.Severity, one.Count));
         Assert.Contains("A failed 1 time(s) in a row: timeout", one.Message);
         Assert.Equal("/indexers", one.Link);
 
         _backoff.RecordFailure(b.Id, "B", "HTTP 401");
-        var both = await check.CheckAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(2, both.Count);
-        Assert.All(both, p => Assert.Equal(HealthSeverity.Error, p.Severity));
+        var both = Assert.Single(await check.CheckAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(("failing", HealthSeverity.Error, 2), (both.Key, both.Severity, both.Count));
+        Assert.StartsWith("All 2 indexers are failing", both.Message);
+        Assert.Contains("A (1 failure(s): timeout;", both.Message);
+        Assert.Contains("B (1 failure(s): HTTP 401;", both.Message);
     }
 }

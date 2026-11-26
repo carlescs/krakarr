@@ -82,6 +82,30 @@ public sealed class HealthMonitorTests
     }
 
     [Fact]
+    public async Task A_problem_standing_for_more_things_is_new_again()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var monitor = Monitor();
+
+        _check.Problems = [new HealthProblem("failing", HealthSeverity.Warning, "A is failing", Count: 1)];
+        var one = Assert.Single((await monitor.CheckNowAsync(ct)).Issues);
+        Assert.Equal(1, one.Count);
+
+        _time.Advance(TimeSpan.FromMinutes(5));
+        _check.Problems = [new HealthProblem("failing", HealthSeverity.Warning, "A and B are failing", Count: 2)];
+        var two = Assert.Single((await monitor.CheckNowAsync(ct)).Issues);
+        Assert.Equal((2, _time.GetUtcNow()), (two.Count, two.Since)); // another failure: back in the bell
+
+        _time.Advance(TimeSpan.FromMinutes(5));
+        _check.Problems = [new HealthProblem("failing", HealthSeverity.Warning, "B is failing", Count: 1)];
+        var fewer = Assert.Single((await monitor.CheckNowAsync(ct)).Issues);
+        Assert.Equal((1, two.Since), (fewer.Count, fewer.Since)); // one recovered: stays dismissed
+
+        var n = Assert.Single(await new HealthNotificationSource(monitor).GetAsync(new NotificationContext(1, UserRole.Admin), ct));
+        Assert.Equal(1, n.Count);
+    }
+
+    [Fact]
     public async Task Tells_clients_to_refresh_the_bell_only_when_problems_change()
     {
         var ct = TestContext.Current.CancellationToken;

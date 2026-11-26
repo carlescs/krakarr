@@ -9,7 +9,9 @@ public enum HealthSeverity
 /// <summary>A problem a health check found.</summary>
 /// <param name="Key">Identifies the problem within its check and stays the same while it persists (e.g. the path of a root folder).</param>
 /// <param name="Link">SPA route where the user can fix it, e.g. "/indexers".</param>
-public sealed record HealthProblem(string Key, HealthSeverity Severity, string Message, string? Link = null);
+/// <param name="Count">How many things the problem stands for when it sums up several (e.g. failing indexers), so the
+/// bell counts them and a dismissed problem comes back when more of them fail.</param>
+public sealed record HealthProblem(string Key, HealthSeverity Severity, string Message, string? Link = null, int Count = 1);
 
 /// <summary>
 /// One aspect of the setup that can be broken without anything failing loudly (disk space, root folders, the download
@@ -32,8 +34,10 @@ public interface IHealthCheck
 
 /// <summary>A problem as reported by the API and the notification bell.</summary>
 /// <param name="Id">"{check id}.{problem key}", stable while the problem persists.</param>
-/// <param name="Since">When it was first seen, or last got more severe.</param>
-public sealed record HealthIssue(string Id, string Check, string CheckName, HealthSeverity Severity, string Message, string? Link, DateTimeOffset Since);
+/// <param name="Since">When it was first seen, or last got worse (more severe, or a higher <paramref name="Count"/>).</param>
+/// <param name="Count">See <see cref="HealthProblem.Count"/>.</param>
+public sealed record HealthIssue(string Id, string Check, string CheckName, HealthSeverity Severity, string Message, string? Link,
+    DateTimeOffset Since, int Count = 1);
 
 /// <summary>Result of the latest health run.</summary>
 /// <param name="CheckedAt">When the last run finished; null before the first one.</param>

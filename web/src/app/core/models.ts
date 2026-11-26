@@ -259,6 +259,8 @@ export type HealthSeverity = 'Warning' | 'Error';
 /** A problem a health check found; `since` is when it appeared (with this severity). */
 export interface HealthIssue {
   id: string; check: string; checkName: string; severity: HealthSeverity; message: string; link?: string | null; since: string;
+  /** How many things the problem sums up (e.g. failing indexers). */
+  count?: number;
 }
 /** The latest health run; `checkedAt` is null until the first one. */
 export interface HealthReport { checkedAt: string | null; issues: HealthIssue[]; }
