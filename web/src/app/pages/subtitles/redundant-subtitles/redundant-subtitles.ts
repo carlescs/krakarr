@@ -6,6 +6,7 @@ import { RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../../core/api';
 import { Events } from '../../../core/events';
 import { EmbeddedSubtitle, RedundantSubtitle } from '../../../core/models';
+import { Selection } from '../../../core/selection';
 import { Toasts } from '../../../core/toast';
 
 /** Rows loaded per "Show more"; a reload asks for everything shown so far, in slices of the endpoint's limit. */
@@ -33,6 +34,9 @@ export class RedundantSubtitles implements OnInit {
   protected readonly loadingMore = signal(false);
   /** Ids being deleted, so their button can't be pressed twice. */
   protected readonly deleting = signal<ReadonlySet<number>>(new Set());
+  /** Rows picked for a bulk delete; only rows still listed count, so reloads drop deleted ones. */
+  protected readonly selection = new Selection<RedundantSubtitle>(this.items);
+  protected readonly bulkDeleting = signal(false);
   /** Bumped by every load and "Show more", so a response that a newer request overtook is dropped. */
   private generation = 0;
 
@@ -95,6 +99,33 @@ export class RedundantSubtitles implements OnInit {
       this.toasts.error(errorMessage(e));
     } finally {
       this.deleting.update(s => { const next = new Set(s); next.delete(row.id); return next; });
+    }
+  }
+
+  /** Deletes every selected subtitle in one request, after confirming. */
+  async removeSelected() {
+    const ids = this.selection.selected();
+    if (ids.length === 0 || this.bulkDeleting()) return;
+    const noun = ids.length === 1 ? 'subtitle' : 'subtitles';
+    if (!confirm(`Delete ${ids.length} downloaded ${noun}? Their videos already have an embedded track in the same language. The files are removed from disk.`)) return;
+    this.bulkDeleting.set(true);
+    try {
+      const result = await this.api.deleteSubtitles(ids);
+      // Rows whose file couldn't be removed are still on the server; a reload shows exactly what is left.
+      if (result.errors.length === 0) {
+        const gone = new Set(ids);
+        this.items.update(list => list.filter(r => !gone.has(r.id)));
+        this.total.update(n => Math.max(0, n - result.affected));
+        this.toasts.success(`Deleted ${result.affected} ${result.affected === 1 ? 'subtitle' : 'subtitles'}`);
+      } else {
+        this.toasts.error(`Deleted ${result.affected}; ${result.errors.length} failed: ${result.errors.slice(0, 3).join(' · ')}`);
+        await this.load();
+      }
+      this.selection.clear();
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+    } finally {
+      this.bulkDeleting.set(false);
     }
   }
 

@@ -369,7 +369,74 @@ public static class SubtitleEndpoints
             return Results.NoContent();
         });
 
+        group.MapPost("/bulk/delete", async (BulkIdsRequest req, KrakarrDbContext db, IEventHub events, CancellationToken ct) =>
+        {
+            if (BulkLimits.Clean(req.Ids) is not { } ids) return Results.Problem("Select between 1 and " + BulkLimits.MaxIds + " subtitles.", statusCode: 400);
+            return Results.Ok(await DeleteManyAsync(db, events, ids, ct));
+        });
+
         return app;
+    }
+
+    /// <summary>Subtitle rows loaded and deleted per round trip of a bulk delete.</summary>
+    private const int DeleteChunk = 200;
+
+    /// <summary>Above this many affected titles, a bulk delete publishes one untargeted update instead of one per title.</summary>
+    private const int MaxTargetedEvents = 20;
+
+    /// <summary>Deletes external subtitle files and their rows, a chunk at a time; a file that can't be removed keeps its row.</summary>
+    private static async Task<BulkResult> DeleteManyAsync(KrakarrDbContext db, IEventHub events, IReadOnlyList<int> ids, CancellationToken ct)
+    {
+        var (deleted, errors) = (0, new List<string>());
+        var movieFileIds = new HashSet<int>();
+        var episodeFileIds = new HashSet<int>();
+        foreach (var chunk in ids.Chunk(DeleteChunk))
+        {
+            var rows = await db.SubtitleFiles.AsNoTracking().Where(s => chunk.Contains(s.Id))
+                .Select(s => new { s.Id, s.Path, s.MovieFileId, s.EpisodeFileId }).ToListAsync(ct);
+            var removed = new List<int>(rows.Count);
+            foreach (var row in rows)
+            {
+                try
+                {
+                    if (File.Exists(row.Path)) File.Delete(row.Path);
+                    removed.Add(row.Id);
+                    if (row.MovieFileId is { } mf) movieFileIds.Add(mf);
+                    if (row.EpisodeFileId is { } ef) episodeFileIds.Add(ef);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    errors.Add($"{Path.GetFileName(row.Path)}: {ex.Message}");
+                }
+            }
+
+            if (removed.Count > 0) deleted += await db.SubtitleFiles.Where(s => removed.Contains(s.Id)).ExecuteDeleteAsync(ct);
+        }
+
+        if (deleted > 0)
+        {
+            // Detail pages match on the movie or series id; open lists reload on any update.
+            var movieIds = new HashSet<int>();
+            foreach (var chunk in movieFileIds.Chunk(DeleteChunk))
+                movieIds.UnionWith(await db.MovieFiles.Where(f => chunk.Contains(f.Id)).Select(f => f.MovieId).Distinct().ToListAsync(ct));
+            var seriesIds = new HashSet<int>();
+            foreach (var chunk in episodeFileIds.Chunk(DeleteChunk))
+                seriesIds.UnionWith(await db.EpisodeFiles.Where(f => chunk.Contains(f.Id)).Select(f => f.SeriesId).Distinct().ToListAsync(ct));
+
+            if (movieIds.Count + seriesIds.Count > MaxTargetedEvents)
+            {
+                await events.PublishAsync(EventNames.SubtitlesUpdated, new { MovieId = (int?)null, SeriesId = (int?)null }, ct);
+            }
+            else
+            {
+                foreach (var movieId in movieIds)
+                    await events.PublishAsync(EventNames.SubtitlesUpdated, new { MovieId = (int?)movieId, SeriesId = (int?)null }, ct);
+                foreach (var seriesId in seriesIds)
+                    await events.PublishAsync(EventNames.SubtitlesUpdated, new { MovieId = (int?)null, SeriesId = (int?)seriesId }, ct);
+            }
+        }
+
+        return new BulkResult(deleted, errors);
     }
 
     private static Task<SubtitleTarget?> ResolveAsync(SubtitleService service, int? movieFileId, int? episodeFileId, CancellationToken ct) =>

@@ -3,6 +3,13 @@
     <h2 class="mr-auto text-sm font-semibold uppercase tracking-wide text-slate-400">
       Already embedded <span class="ml-1 font-normal normal-case text-slate-500">{{ total() }}</span>
     </h2>
+    @if (selection.count() > 0) {
+      <div class="flex items-center gap-2" role="toolbar" aria-label="Bulk actions">
+        <span class="text-sm font-medium text-white" aria-live="polite">{{ selection.count() }} selected</span>
+        <button type="button" class="btn-ghost btn-sm" (click)="selection.clear()" [disabled]="bulkDeleting()">Clear</button>
+        <button type="button" class="btn-danger btn-sm" (click)="removeSelected()" [disabled]="bulkDeleting()">Delete selected</button>
+      </div>
+    }
   </div>
   <p class="border-b border-surface-700 px-5 py-3 text-sm text-slate-400">
     Downloaded subtitles in a language the video already has as an embedded track (forced matched with forced).
@@ -16,6 +23,11 @@
     <table class="table">
       <thead>
         <tr>
+          <th class="w-10">
+            <input type="checkbox" class="size-4 accent-accent-500 align-middle"
+                   [attr.aria-label]="items().length < total() ? 'Select all ' + items().length + ' shown' : 'Select all'"
+                   [checked]="selection.all()" [indeterminate]="selection.count() > 0 && !selection.all()" (change)="selection.toggleAll()" />
+          </th>
           <th class="max-sm:hidden">Type</th>
           <th>Title</th>
           <th>Subtitle</th>
@@ -25,7 +37,12 @@
       </thead>
       <tbody>
         @for (r of items(); track r.id) {
-          <tr>
+          @let checked = selection.has(r.id);
+          <tr [class.bg-accent-500/10]="checked">
+            <td>
+              <input type="checkbox" class="size-4 accent-accent-500 align-middle" [attr.aria-label]="'Select ' + r.fileName" [checked]="checked"
+                     (click)="selection.toggle(r.id, $event.shiftKey)" />
+            </td>
             <td class="max-sm:hidden"><span class="badge" [class]="r.mediaType === 'Movie' ? 'bg-accent-500/15 text-accent-300' : 'bg-violet-500/15 text-violet-300'">{{ r.mediaType === 'Movie' ? 'Movie' : 'Episode' }}</span></td>
             <td class="w-full max-w-0">
               <a class="block truncate hover:text-accent-300" [routerLink]="r.movieId ? ['/movies', r.movieId] : ['/series', r.seriesId]" [title]="r.label">{{ r.label }}</a>
