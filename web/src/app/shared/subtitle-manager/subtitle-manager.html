@@ -10,7 +10,7 @@
 
   <section data-find>
     <div class="mb-3 flex flex-wrap items-center gap-2">
-      <h3 class="mr-auto text-xs font-semibold uppercase tracking-wide text-slate-400">Find subtitles</h3>
+      <h3 class="mr-auto text-xs font-semibold uppercase tracking-wide text-slate-400 max-sm:basis-full">Find subtitles</h3>
       <select class="input min-w-0 flex-1 py-1.5 text-sm sm:w-64 sm:flex-none" aria-label="Languages to search"
               [ngModel]="scope()" (ngModelChange)="searchIn($event)" [disabled]="!filesLoaded()">
         @if (!scope()) { <option value="" disabled>Pick a language…</option> }
@@ -46,7 +46,7 @@
           Top pick found for <span class="font-medium text-white">{{ topPickNames() }}</span>.
           <span class="text-xs text-slate-400">The best match per language@if (minimumScore() !== null) {, even below the minimum score of {{ minimumScore() }}}.</span>
         </p>
-        <button class="btn-primary btn-sm" (click)="downloadTopPicks()" [disabled]="downloading() !== null">
+        <button class="btn-primary btn-sm max-sm:w-full" (click)="downloadTopPicks()" [disabled]="downloading() !== null">
           Download {{ topPicks().length === 1 ? 'top pick' : topPicks().length + ' top picks' }}
         </button>
       </div>

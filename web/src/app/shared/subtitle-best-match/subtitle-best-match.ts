@@ -40,7 +40,8 @@ export class SubtitleBestMatch implements OnInit {
   /** The language whose other results are open, with those results. */
   protected readonly alternatives = signal<{ language: string; loading: boolean; results: ScoredSubtitle[]; errors: string[] } | null>(null);
   protected readonly downloading = signal(false);
-  protected readonly progress = computed(() => Math.round((this.index() / Math.max(1, this.items().length)) * 100));
+  /** Share of the files reached so far, counting the one on screen. */
+  protected readonly progress = computed(() => Math.round((Math.min(this.index() + 1, this.items().length) / Math.max(1, this.items().length)) * 100));
   private downloaded = 0;
   private markedNotFound = 0;
 

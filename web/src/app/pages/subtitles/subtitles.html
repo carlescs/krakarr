@@ -91,7 +91,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr *cdkVirtualFor="let index of dataSource; trackBy: trackRow" [style.height.px]="rowHeight()">
+          <tr *cdkVirtualFor="let index of dataSource; trackBy: trackRow" class="[&>td]:py-1.5" [style.height.px]="rowHeight()">
             @if (wantedAt(index); as w) {
               <td class="max-sm:hidden"><span class="badge" [class]="w.mediaType === 'Movie' ? 'bg-accent-500/15 text-accent-300' : 'bg-violet-500/15 text-violet-300'">{{ w.mediaType === 'Movie' ? 'Movie' : 'Episode' }}</span></td>
               <td class="w-full max-w-0">

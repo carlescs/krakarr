@@ -28,9 +28,9 @@ type WantedRow = WantedSubtitle & { id: number };
 type WantedListQuery = Omit<WantedSubtitleQuery, 'notFound'> & { filter: WantedFilter };
 type WantedPageRows = Omit<WantedSubtitlePage, 'items'> & { items: WantedRow[] };
 
-/** Table rows are a fixed height so the list can be virtualized: one line on wider screens, title plus badges on phones. */
+/** Table rows are a fixed height so the list can be virtualized: one line on wider screens, title plus badges and touch-sized buttons on phones. */
 const ROW_HEIGHT = 44;
-const MOBILE_ROW_HEIGHT = 64;
+const MOBILE_ROW_HEIGHT = 76;
 const SM_BREAKPOINT = 640;
 
 /** Files one "best match for all" run walks through (the wanted endpoint's page size limit). */
