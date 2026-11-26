@@ -62,7 +62,7 @@ describe('TitlePreviewPage', () => {
       requestFor: async () => ({ id: 1, requestedBy: 'kim' }),
     });
     const { el } = await render('series', api, 'User');
-    expect(text(el)).toContain('Netflix');
+    expect(text(el)).toContain('Aired on Netflix');
     expect(text(el)).toContain('26 episodes');
     expect(text(el)).toContain('Specials');
     expect(text(el)).toContain('Season 1');

@@ -12,7 +12,7 @@ const show = (s: Partial<SeriesListItem>): SeriesListItem => ({
 });
 const shows = [
   show({ id: 1, title: 'Severance', episodeFileCount: 4, downloadingCount: 2 }),
-  show({ id: 2, title: 'Dark', status: 'Ended' }),
+  show({ id: 2, title: 'Dark', status: 'Ended', network: 'Netflix' }),
   show({ id: 3, title: 'Lost', status: 'Ended', monitored: false, episodeFileCount: 0 }),
 ];
 
@@ -80,6 +80,7 @@ describe('SeriesListPage', () => {
     const rows = () => [...el.querySelectorAll('tbody a')].map(a => a.textContent);
     expect(rows()).toEqual(['Severance', 'Dark', 'Lost']);
     expect(text(el, 'tbody tr')).toContain('4/10');
+    expect(text(el, 'tbody')).toContain('Netflix');
 
     button(el, 'Episodes').click();
     await settle(fixture);

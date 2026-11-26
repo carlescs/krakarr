@@ -4,6 +4,7 @@ import { Title } from '@angular/platform-browser';
 import { Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
 import { Auth } from '../../core/auth';
+import { airsOn } from '../../core/format';
 import { CastMember, CrewMember, DiscoverItem, MediaRequest, MovieDetails, MovieRelease, SeasonSummary, SeriesDetails } from '../../core/models';
 import { CreditsView } from '../../shared/credits/credits';
 import { DiscoverAdd } from '../../shared/discover-add/discover-add';
@@ -124,7 +125,7 @@ function fromMovie(d: MovieDetails): Preview {
 function fromSeries(d: SeriesDetails): Preview {
   const s = d.show;
   const facts: string[] = [];
-  if (s.network) facts.push(s.network);
+  if (s.network) facts.push(airsOn(s.network, s.status));
   if (d.runtime) facts.push(`${d.runtime} min`);
   if (s.status) facts.push(s.status);
   if (d.episodeCount) facts.push(`${d.episodeCount} episodes`);

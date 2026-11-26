@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatBytes, formatDuration } from './format';
+import { airsOn, formatBytes, formatDuration } from './format';
 
 describe('format', () => {
   it('formats bytes', () => {
@@ -7,6 +7,13 @@ describe('format', () => {
     expect(formatBytes(1023)).toBe('1023 B');
     expect(formatBytes(1536)).toBe('1.5 KB');
     expect(formatBytes(8 * 1024 ** 3)).toBe('8.0 GB');
+  });
+
+  it('says where a show airs or aired', () => {
+    expect(airsOn('Netflix', 'Continuing')).toBe('Airs on Netflix');
+    expect(airsOn('Apple TV+', 'Upcoming')).toBe('Airs on Apple TV+');
+    expect(airsOn('AMC', 'Ended')).toBe('Aired on AMC');
+    expect(airsOn(null, 'Ended')).toBe('');
   });
 
   it('formats durations', () => {

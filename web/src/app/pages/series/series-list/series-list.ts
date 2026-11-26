@@ -76,6 +76,7 @@ export class SeriesListPage {
     {
       title: 'source',
       year: s => s.year || null,
+      network: s => s.network ?? null,
       status: s => s.status === 'Ended',
       episodes: s => this.percent(s),
       nextAiring: s => (s.nextAiring ? Date.parse(s.nextAiring) : null),

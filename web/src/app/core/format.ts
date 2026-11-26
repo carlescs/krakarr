@@ -27,6 +27,12 @@ export function relativeTime(iso: string | null | undefined): string {
   return new Date(iso).toLocaleDateString();
 }
 
+/** Where a show airs: "Airs on Netflix", or "Aired on AMC" once it has ended. Empty without a network. */
+export function airsOn(network: string | null | undefined, status: string | null | undefined): string {
+  if (!network) return '';
+  return `${status === 'Ended' ? 'Aired' : 'Airs'} on ${network}`;
+}
+
 @Pipe({ name: 'bytes' })
 export class BytesPipe implements PipeTransform {
   transform(value: number | null | undefined, decimals = 1) { return formatBytes(value, decimals); }

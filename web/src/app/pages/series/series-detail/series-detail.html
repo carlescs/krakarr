@@ -8,7 +8,7 @@
       <div class="min-w-0 flex-1">
         <h1 class="text-2xl font-bold tracking-tight text-white sm:text-3xl">{{ s.title }} @if (s.year && !s.title.endsWith('(' + s.year + ')')) { <span class="font-normal text-slate-400">({{ s.year }})</span> }</h1>
         <div class="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-400">
-          @if (s.network) { <span>{{ s.network }}</span><span>·</span> }
+          @if (s.network) { <span>{{ airsOn(s.network, s.status) }}</span><span>·</span> }
           @if (s.runtime) { <span>{{ s.runtime }} min</span><span>·</span> }
           <span>{{ s.status }}</span>
           @if (s.nextAiring) { <span>·</span><span>Next: {{ s.nextAiring | date: 'mediumDate' }}</span> }
