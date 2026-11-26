@@ -4,9 +4,6 @@
 # - the commented-out example POSTGRES_PASSWORD in docker-compose.yml
 # - the "New password" label in the users settings page
 # Keep this list narrow: a filter that evaluates to true discards the finding.
-[extend]
-useDefault = true
-
 filter = '''
 finding["rule_id"] == "generic-password" && filter.matchesAny(attributes["path"], [
   `^tests/`,
@@ -16,3 +13,7 @@ finding["rule_id"] == "generic-password" && filter.matchesAny(attributes["path"]
   `^web/src/app/pages/settings/users\.ts$`
 ])
 '''
+
+# Must come after the top-level keys: everything below a table header belongs to that table.
+[extend]
+useDefault = true
