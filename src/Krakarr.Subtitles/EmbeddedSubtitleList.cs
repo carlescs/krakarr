@@ -46,4 +46,8 @@ public static class EmbeddedSubtitleList
 
     /// <summary>Languages with a non-forced embedded subtitle.</summary>
     public static IEnumerable<string> FullLanguages(string? value) => Parse(value).Where(s => !s.Forced).Select(s => s.Language);
+
+    /// <summary>Whether an embedded track has the language (ignoring case and the hearing-impaired flag) and the same forced flag.</summary>
+    public static bool Covers(string? value, string language, bool forced) =>
+        Parse(value).Any(s => s.Forced == forced && string.Equals(s.Language, language, StringComparison.OrdinalIgnoreCase));
 }

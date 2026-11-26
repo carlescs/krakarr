@@ -611,6 +611,46 @@ public sealed class SubtitleServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Lists_external_subtitles_that_duplicate_an_embedded_track()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using (var scope = _services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+            await db.MovieFiles.ExecuteUpdateAsync(x => x.SetProperty(f => f.EmbeddedSubtitles, "en+hi,es+forced"), ct);
+            await db.Movies.ExecuteUpdateAsync(x => x.SetProperty(m => m.SortTitle, "matrix"), ct);
+            var series = new Series { Title = "Andor", SortTitle = "andor", Year = 2022, Path = Path.Combine(_root.FullName, "Andor"), QualityProfileId = await db.QualityProfiles.MinAsync(p => p.Id, ct) };
+            db.Series.Add(series);
+            await db.SaveChangesAsync(ct);
+            var episodeFile = new EpisodeFile { SeriesId = series.Id, SeasonNumber = 1, RelativePath = "Season 01/Andor - S01E03.mkv", QualityId = 17, EmbeddedSubtitles = "fr" };
+            db.EpisodeFiles.Add(episodeFile);
+            await db.SaveChangesAsync(ct);
+            db.Episodes.Add(new Episode { SeriesId = series.Id, SeasonNumber = 1, EpisodeNumber = 3, EpisodeFileId = episodeFile.Id });
+            db.SubtitleFiles.AddRange(
+                new SubtitleFile { MovieFileId = _movieFileId, Language = "en", Path = "/m/matrix.en.srt", Provider = "fake" },              // embedded en (hi still counts)
+                new SubtitleFile { MovieFileId = _movieFileId, Language = "es", Path = "/m/matrix.es.srt", Provider = "fake" },              // only a forced es track
+                new SubtitleFile { MovieFileId = _movieFileId, Language = "es", Forced = true, Path = "/m/matrix.es.forced.srt", Provider = "disk" },
+                new SubtitleFile { EpisodeFileId = episodeFile.Id, Language = "fr", Path = "/s/andor.fr.srt", Provider = "fake" },
+                new SubtitleFile { EpisodeFileId = episodeFile.Id, Language = "de", Path = "/s/andor.de.srt", Provider = "fake" });
+            await db.SaveChangesAsync(ct);
+        }
+
+        using (var scope = _services.CreateScope())
+        {
+            var service = scope.ServiceProvider.GetRequiredService<SubtitleService>();
+            var all = await service.RedundantPageAsync(0, 10, ct);
+            Assert.Equal(3, all.Total);
+            Assert.Equal(["Andor S01E03 fr", "The Matrix (1999) en", "The Matrix (1999) es"], all.Items.Select(r => $"{r.Label} {r.Language}"));
+            Assert.True(all.Items[2].Forced);
+            Assert.Equal(["en", "es"], all.Items[1].Embedded.Select(e => e.Language));
+
+            var second = await service.RedundantPageAsync(2, 2, ct);
+            Assert.Equal(3, second.Total);
+            Assert.Equal(["/m/matrix.es.forced.srt"], second.Items.Select(r => r.Path));
+        }
+    }
+
+    [Fact]
     public async Task Filters_search_and_backoff_to_selected_providers()
     {
         var ct = TestContext.Current.CancellationToken;

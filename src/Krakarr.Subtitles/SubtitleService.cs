@@ -36,6 +36,13 @@ public enum WantedSort { Default, Type, Title, Missing }
 /// <summary>One page of the wanted list, with the total for the filter and the totals per filter.</summary>
 public sealed record WantedPage(IReadOnlyList<WantedSubtitle> Items, int Total, int Searching, int NotFound);
 
+/// <summary>An external subtitle in a language the video already carries as an embedded track (same forced flag).</summary>
+public sealed record RedundantSubtitle(int Id, MediaType MediaType, int? MovieId, int? SeriesId, int? MovieFileId, int? EpisodeFileId, string Label,
+    string Language, bool HearingImpaired, bool Forced, string Path, string Provider, DateTimeOffset DateAdded, IReadOnlyList<EmbeddedSubtitle> Embedded);
+
+/// <summary>A slice of the subtitles that duplicate an embedded track, with the total.</summary>
+public sealed record RedundantPage(IReadOnlyList<RedundantSubtitle> Items, int Total);
+
 /// <summary>Finds, scores, downloads and tracks external subtitles for library files.</summary>
 public sealed class SubtitleService(
     KrakarrDbContext db,
@@ -727,4 +734,83 @@ public sealed class SubtitleService(
                 yield return new WantedFile(MediaType.Series, file.Id, missing, file.SubtitlesNotFound, seriesTitles.GetValueOrDefault(file.SeriesId, ""), file.SeasonNumber, episode);
         }
     }
+
+    // ---- Redundant ----------------------------------------------------------------------------
+
+    /// <summary>
+    /// External subtitles in a language the video already has as an embedded track (forced matching forced), sorted by
+    /// title then language. The whole list is built from slim rows; only the requested rows are loaded in full. An offset
+    /// (rather than a page) lets the UI append exactly what follows the rows it shows after deleting some of them.
+    /// </summary>
+    public async Task<RedundantPage> RedundantPageAsync(int offset, int limit, CancellationToken ct = default)
+    {
+        var matches = new List<RedundantKey>();
+
+        var movieRows = await db.SubtitleFiles.AsNoTracking()
+            .Join(db.MovieFiles.AsNoTracking().Where(f => f.EmbeddedSubtitles != null && f.EmbeddedSubtitles != ""),
+                s => s.MovieFileId, f => (int?)f.Id, (s, f) => new { s.Id, s.Language, s.Forced, f.EmbeddedSubtitles, f.MovieId })
+            .Join(db.Movies.AsNoTracking(), x => x.MovieId, m => m.Id, (x, m) => new { x.Id, x.Language, x.Forced, x.EmbeddedSubtitles, m.SortTitle, m.Year })
+            .ToListAsync(ct);
+        foreach (var row in movieRows)
+            if (EmbeddedSubtitleList.Covers(row.EmbeddedSubtitles, row.Language, row.Forced))
+                matches.Add(new RedundantKey(row.Id, row.SortTitle, row.Year, 0, row.Language));
+        movieRows = null;
+
+        var seriesTitles = await db.Series.AsNoTracking().Select(x => new { x.Id, x.SortTitle }).ToDictionaryAsync(x => x.Id, x => x.SortTitle, ct);
+        var episodeRows = await db.SubtitleFiles.AsNoTracking()
+            .Join(db.EpisodeFiles.AsNoTracking().Where(f => f.EmbeddedSubtitles != null && f.EmbeddedSubtitles != ""),
+                s => s.EpisodeFileId, f => (int?)f.Id,
+                (s, f) => new
+                {
+                    s.Id, s.Language, s.Forced, f.EmbeddedSubtitles, f.SeriesId, f.SeasonNumber,
+                    Episode = db.Episodes.Where(e => e.EpisodeFileId == f.Id).Min(e => (int?)e.EpisodeNumber),
+                })
+            .ToListAsync(ct);
+        foreach (var row in episodeRows)
+            if (EmbeddedSubtitleList.Covers(row.EmbeddedSubtitles, row.Language, row.Forced))
+                matches.Add(new RedundantKey(row.Id, seriesTitles.GetValueOrDefault(row.SeriesId, ""), row.SeasonNumber, row.Episode ?? 0, row.Language));
+        episodeRows = null;
+
+        matches.Sort((a, b) =>
+        {
+            var c = string.CompareOrdinal(a.SortTitle, b.SortTitle);
+            if (c == 0) c = a.Number1.CompareTo(b.Number1);
+            if (c == 0) c = a.Number2.CompareTo(b.Number2);
+            if (c == 0) c = string.CompareOrdinal(a.Language, b.Language);
+            return c != 0 ? c : a.Id.CompareTo(b.Id);
+        });
+
+        var ids = matches.Skip(offset).Take(limit).Select(m => m.Id).ToList();
+        var rows = await db.SubtitleFiles.AsNoTracking().Where(s => ids.Contains(s.Id)).ToListAsync(ct);
+        var movieFileIds = rows.Where(r => r.MovieFileId != null).Select(r => r.MovieFileId!.Value).ToList();
+        var episodeFileIds = rows.Where(r => r.EpisodeFileId != null).Select(r => r.EpisodeFileId!.Value).ToList();
+        var movies = await db.MovieFiles.AsNoTracking().Where(f => movieFileIds.Contains(f.Id))
+            .Join(db.Movies.AsNoTracking(), f => f.MovieId, m => m.Id, (f, m) => new { f.Id, f.MovieId, f.EmbeddedSubtitles, m.Title, m.Year })
+            .ToDictionaryAsync(x => x.Id, ct);
+        var episodes = await db.EpisodeFiles.AsNoTracking().Where(f => episodeFileIds.Contains(f.Id))
+            .Join(db.Series.AsNoTracking(), f => f.SeriesId, s => s.Id, (f, s) => new
+            {
+                f.Id, f.SeriesId, f.SeasonNumber, f.EmbeddedSubtitles, s.Title,
+                Episode = db.Episodes.Where(e => e.EpisodeFileId == f.Id).Min(e => (int?)e.EpisodeNumber),
+            })
+            .ToDictionaryAsync(x => x.Id, ct);
+
+        var byId = rows.ToDictionary(r => r.Id);
+        var items = new List<RedundantSubtitle>(ids.Count);
+        foreach (var id in ids)
+        {
+            if (!byId.TryGetValue(id, out var r)) continue;
+            if (r.MovieFileId is { } mf && movies.TryGetValue(mf, out var m))
+                items.Add(new RedundantSubtitle(r.Id, MediaType.Movie, m.MovieId, null, mf, null, m.Year > 0 ? $"{m.Title} ({m.Year})" : m.Title,
+                    r.Language, r.HearingImpaired, r.Forced, r.Path, r.Provider, r.DateAdded, EmbeddedSubtitleList.Parse(m.EmbeddedSubtitles)));
+            else if (r.EpisodeFileId is { } ef && episodes.TryGetValue(ef, out var e))
+                items.Add(new RedundantSubtitle(r.Id, MediaType.Series, null, e.SeriesId, null, ef,
+                    e.Episode is { } n ? $"{e.Title} S{e.SeasonNumber:00}E{n:00}" : $"{e.Title} S{e.SeasonNumber:00}",
+                    r.Language, r.HearingImpaired, r.Forced, r.Path, r.Provider, r.DateAdded, EmbeddedSubtitleList.Parse(e.EmbeddedSubtitles)));
+        }
+
+        return new RedundantPage(items, matches.Count);
+    }
+
+    private sealed record RedundantKey(int Id, string SortTitle, int Number1, int Number2, string Language);
 }

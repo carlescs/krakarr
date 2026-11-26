@@ -15,6 +15,10 @@ import { SubtitleManager } from '../../shared/subtitle-manager/subtitle-manager'
 import { BestMatchItem, SubtitleBestMatch } from '../../shared/subtitle-best-match/subtitle-best-match';
 import { TableSort } from '../../core/table-sort';
 import { SortHeader } from '../../shared/sort-header/sort-header';
+import { RedundantSubtitles } from './redundant-subtitles/redundant-subtitles';
+
+/** Page tab: files missing subtitles, or downloaded subtitles a video already has embedded. */
+export type SubtitlesTab = 'wanted' | 'redundant';
 
 /** Which wanted files to list: all of them, those still searched automatically, or those marked "not found". */
 export type WantedFilter = 'all' | 'searching' | 'notFound';
@@ -36,7 +40,7 @@ function notFoundParam(filter: WantedFilter) { return filter === 'all' ? undefin
 
 @Component({
   selector: 'kr-subtitles',
-  imports: [ScrollingModule, RouterLink, DatePipe, NgTemplateOutlet, MultiPicker, SubtitleManager, SubtitleBestMatch, SortHeader],
+  imports: [ScrollingModule, RouterLink, DatePipe, NgTemplateOutlet, MultiPicker, SubtitleManager, SubtitleBestMatch, SortHeader, RedundantSubtitles],
   templateUrl: './subtitles.html',
   styleUrl: './subtitles.scss',
 })
@@ -52,6 +56,11 @@ export class SubtitlesPage implements OnInit {
   protected readonly availableProviders = computed<PickerOption<string>[]>(() =>
     this.providers().filter(p => p.configured).map(p => ({ id: p.name, name: p.displayName || p.name })));
   protected readonly selectedProviders = signal<string[]>([]);
+  protected readonly tab = signal<SubtitlesTab>('wanted');
+  protected readonly tabs: { id: SubtitlesTab; label: string; title: string }[] = [
+    { id: 'wanted', label: 'Wanted', title: 'Files missing a wanted language' },
+    { id: 'redundant', label: 'Already embedded', title: 'Downloaded subtitles in a language the video already has as an embedded track' },
+  ];
   /** Files marked "not found" are hidden by default: nothing will happen to them until they are retried. */
   protected readonly filter = signal<WantedFilter>('searching');
   protected readonly filters: { id: WantedFilter; label: string; title: string }[] = [
