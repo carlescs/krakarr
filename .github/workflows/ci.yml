@@ -40,6 +40,32 @@ jobs:
           fi
           node scripts/release/lint-commits.mjs --range "$range"
 
+  secrets:
+    name: Secrets scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Scans the whole git history (not just the working tree), so a secret that was committed
+      # and later deleted still fails the build. Uses Betterleaks' built-in rules (stable v1 line;
+      # v2 is still in release candidates) plus the false-positive filter in .betterleaks.toml.
+      - name: Betterleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo ghcr.io/betterleaks/betterleaks:v1.10.1 \
+            git --config .betterleaks.toml --redact -v .
+      # Guards the config: a fake GitHub token generated at runtime must still be caught, so the
+      # filter can't silently drop the built-in rules.
+      - name: Check the config still detects secrets
+        run: |
+          mkdir -p "$RUNNER_TEMP/canary"
+          token="ghp_$(head -c 512 /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 36)"
+          echo "GITHUB_TOKEN=$token" > "$RUNNER_TEMP/canary/env.txt"
+          if docker run --rm -v "$PWD:/repo:ro" -v "$RUNNER_TEMP/canary:/scan:ro" ghcr.io/betterleaks/betterleaks:v1.10.1 \
+               dir --config /repo/.betterleaks.toml --redact /scan; then
+            echo "::error::Betterleaks did not flag the canary token; check .betterleaks.toml"; exit 1
+          fi
+
   backend:
     name: Backend (.NET)
     runs-on: ubuntu-latest

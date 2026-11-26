@@ -1,0 +1,19 @@
+# Betterleaks config for the "Secrets scan" CI job. Keeps every built-in rule and only drops
+# known false positives of the low-confidence generic-password rule:
+# - fixed passwords used by the test suites (tests/, *.spec.ts)
+# - the commented-out example POSTGRES_PASSWORD in docker-compose.yml
+# - the "New password" label in the users settings page
+# Keep this list narrow: a filter that evaluates to true discards the finding.
+filter = '''
+finding["rule_id"] == "generic-password" && filter.matchesAny(attributes["path"], [
+  `^tests/`,
+  `\.spec\.ts$`,
+  `^docker-compose\.yml$`,
+  `^web/src/app/pages/settings/users/users\.html$`,
+  `^web/src/app/pages/settings/users\.ts$`
+])
+'''
+
+# Must come after the top-level keys: everything below a table header belongs to that table.
+[extend]
+useDefault = true
