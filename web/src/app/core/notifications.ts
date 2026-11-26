@@ -30,7 +30,7 @@ export class Notifications {
 
   start() {
     if (this.subscription) return;
-    this.subscription = merge(this.events.notificationsUpdated, this.events.requestsUpdated, interval(REFRESH_INTERVAL_MS)).subscribe(() => this.refresh());
+    this.subscription = merge(this.events.notificationsUpdated, this.events.requestsUpdated, this.events.resynced, interval(REFRESH_INTERVAL_MS)).subscribe(() => this.refresh());
     this.refresh();
   }
 

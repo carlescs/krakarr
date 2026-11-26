@@ -1,5 +1,5 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
-import { Subscription } from 'rxjs';
+import { Subscription, merge } from 'rxjs';
 import { Api, errorMessage } from './api';
 import { Events } from './events';
 import { BackgroundTask, BackgroundTaskProgress } from './models';
@@ -15,7 +15,7 @@ export function isActive(task: BackgroundTask) {
 /**
  * Long-running work (e.g. subtitle syncs) for the tasks menu in the top bar: the tasks the signed-in user started,
  * plus automatic ones for staff (the server filters). The list is refetched when the server says it changed
- * (`backgroundTasksUpdated`); progress in between arrives as `backgroundTaskProgress` and is applied in place.
+ * (`backgroundTasksUpdated`) or the connection comes back (`resynced`); progress in between arrives as `backgroundTaskProgress` and is applied in place.
  */
 @Injectable({ providedIn: 'root' })
 export class BackgroundTasks {
@@ -33,7 +33,8 @@ export class BackgroundTasks {
 
   start() {
     if (this.subscription) return;
-    this.subscription = this.events.backgroundTasksUpdated.subscribe(() => this.refresh());
+    // Also refetch after a reconnect: a task that finished while the connection was down would otherwise look stuck.
+    this.subscription = merge(this.events.backgroundTasksUpdated, this.events.resynced).subscribe(() => this.refresh());
     this.subscription.add(this.events.backgroundTaskProgress.subscribe(p => this.applyProgress(p)));
     this.refresh();
   }
