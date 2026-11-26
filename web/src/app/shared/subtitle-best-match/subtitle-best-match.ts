@@ -4,17 +4,19 @@ import { BestSubtitleMatches, ScoredSubtitle, SubtitleFileRef } from '../../core
 import { SubtitleLanguages } from '../../core/subtitles';
 import { Toasts } from '../../core/toast';
 import { Modal } from '../modal/modal';
+import { SubtitleResults } from '../subtitle-results/subtitle-results';
 
 /** A file to offer best-match subtitles for. */
 export type BestMatchItem = SubtitleFileRef & { label: string };
 
 /**
  * Walks through files one at a time, showing the best subtitle for each missing language even when it scores below
- * the minimum automatic downloads need, and downloads only what the user confirms for that file.
+ * the minimum automatic downloads need, and downloads only what the user confirms for that file. Any language's pick
+ * can be swapped for another provider result ("Other options") without leaving the review.
  */
 @Component({
   selector: 'kr-subtitle-best-match',
-  imports: [Modal],
+  imports: [Modal, SubtitleResults],
   templateUrl: './subtitle-best-match.html',
   styleUrl: './subtitle-best-match.scss',
 })
@@ -33,7 +35,13 @@ export class SubtitleBestMatch implements OnInit {
   protected readonly match = signal<BestSubtitleMatches | null>(null);
   /** Languages whose best match the user wants downloaded; all of them by default. */
   protected readonly selected = signal<ReadonlySet<string>>(new Set());
+  /** Results picked by hand from "Other options", replacing the best match of their language. */
+  protected readonly overrides = signal<ReadonlyMap<string, ScoredSubtitle>>(new Map());
+  /** The language whose other results are open, with those results. */
+  protected readonly alternatives = signal<{ language: string; loading: boolean; results: ScoredSubtitle[]; errors: string[] } | null>(null);
   protected readonly downloading = signal(false);
+  /** Share of the files reached so far, counting the one on screen. */
+  protected readonly progress = computed(() => Math.round((Math.min(this.index() + 1, this.items().length) / Math.max(1, this.items().length)) * 100));
   private downloaded = 0;
   private markedNotFound = 0;
 
@@ -41,7 +49,8 @@ export class SubtitleBestMatch implements OnInit {
     const m = this.match();
     if (!m) return [];
     const best = new Map(m.results.map(r => [r.candidate.language, r]));
-    return m.missingLanguages.map(language => ({ language, best: best.get(language) }));
+    const overrides = this.overrides();
+    return m.missingLanguages.map(language => ({ language, best: overrides.get(language) ?? best.get(language), custom: overrides.has(language) }));
   });
 
   ngOnInit() {
@@ -59,10 +68,33 @@ export class SubtitleBestMatch implements OnInit {
     this.selected.set(next);
   }
 
+  /** Opens (or closes) the other provider results for a language. */
+  async toggleAlternatives(language: string) {
+    const item = this.item();
+    if (!item || this.alternatives()?.language === language) { this.alternatives.set(null); return; }
+    this.alternatives.set({ language, loading: true, results: [], errors: [] });
+    try {
+      const res = await this.api.subtitleCandidates({ movieFileId: item.movieFileId, episodeFileId: item.episodeFileId }, language);
+      if (this.alternatives()?.language === language) this.alternatives.set({ language, loading: false, results: res.results, errors: res.errors });
+    } catch (e) {
+      if (this.alternatives()?.language === language) this.alternatives.set({ language, loading: false, results: [], errors: [errorMessage(e)] });
+    }
+  }
+
+  /** Uses another result for its language instead of the best match. */
+  protected choose(r: ScoredSubtitle) {
+    const language = r.candidate.language;
+    this.overrides.update(m => new Map(m).set(language, r));
+    this.toggle(language, true);
+    this.alternatives.set(null);
+  }
+
   private async load() {
     const item = this.item();
     if (!item) { this.finish(); return; }
     this.match.set(null);
+    this.overrides.set(new Map());
+    this.alternatives.set(null);
     this.loading.set(true);
     try {
       const m = await this.api.bestSubtitleMatches({ movieFileId: item.movieFileId, episodeFileId: item.episodeFileId });
@@ -83,9 +115,11 @@ export class SubtitleBestMatch implements OnInit {
     if (!item || !m) return;
     this.downloading.set(true);
     try {
-      for (const r of m.results.filter(r => this.selected().has(r.candidate.language))) {
+      for (const { best: r, custom } of this.rows().filter(row => row.best && this.selected().has(row.language))) {
+        if (!r) continue;
         try {
-          await this.api.downloadSubtitle({ movieFileId: item.movieFileId, episodeFileId: item.episodeFileId }, r.candidate, r.score, false);
+          // A result picked by hand from the other options counts as manual: automatic upgrades leave it alone.
+          await this.api.downloadSubtitle({ movieFileId: item.movieFileId, episodeFileId: item.episodeFileId }, r.candidate, r.score, custom);
           this.downloaded++;
           this.changed.emit();
         } catch (e) {

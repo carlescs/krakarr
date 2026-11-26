@@ -1,0 +1,49 @@
+<table class="table">
+  <thead>
+    <tr>
+      <th krSort="release" [krSortBy]="sort">Release</th>
+      @if (!singleLanguage()) { <th class="max-sm:hidden" krSort="language" [krSortBy]="sort">Language</th> }
+      <th krSort="score" [krSortBy]="sort">Score</th>
+      <th class="max-sm:hidden" krSort="downloads" [krSortBy]="sort">Downloads</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    @for (r of sort.rows(); track key(r)) {
+      @let done = downloaded().has(key(r));
+      <tr [class.opacity-60]="!r.acceptable && !r.best && !done" [class.bg-emerald-500/5]="done" data-result>
+        <td class="w-full max-w-0">
+          <div class="break-all sm:truncate sm:break-normal" [title]="r.candidate.releaseNames.join(' | ')">{{ r.candidate.releaseNames[0] ?? r.candidate.fileName }}</div>
+          <div class="flex flex-wrap gap-1 text-xs">
+            @if (!singleLanguage()) { <span class="badge bg-surface-700 text-slate-200 sm:hidden">{{ languageName(r.candidate.language) }}</span> }
+            @if (r.best) {
+              <span class="badge bg-accent-500/15 text-accent-300" title="The best subtitle for this language, even if it scores below the minimum automatic downloads need" data-top-pick>Top pick</span>
+            }
+            <span class="badge bg-violet-500/15 text-violet-300">{{ r.candidate.provider }}</span>
+            @if (r.candidate.hashMatch) { <span class="badge bg-emerald-500/15 text-emerald-300">hash match</span> }
+            @if (r.candidate.hearingImpaired) { <span class="badge bg-surface-700 text-slate-300">HI</span> }
+            @if (r.candidate.trustedUploader) { <span class="badge bg-surface-700 text-slate-300">trusted</span> }
+            <span class="text-slate-500">{{ r.matches.join(', ') }}</span>
+            @if (!r.acceptable) { <span class="text-rose-300">· {{ r.rejections.join(' · ') }}</span> }
+          </div>
+        </td>
+        @if (!singleLanguage()) { <td class="whitespace-nowrap max-sm:hidden">{{ languageName(r.candidate.language) }}</td> }
+        <td><span class="badge" [class]="scoreClass(r.score)">{{ r.score }}</span></td>
+        <td class="text-slate-400 max-sm:hidden">{{ r.candidate.downloads }}</td>
+        <td class="whitespace-nowrap text-right">
+          @if (done) {
+            <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-300" data-downloaded>
+              <svg class="size-3.5" fill="none" viewBox="0 0 24 24" stroke-width="3" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+              Downloaded
+            </span>
+          } @else {
+            <button class="btn-sm" [class]="r.acceptable || r.best ? 'btn-primary' : 'btn-secondary'" (click)="pick.emit(r)"
+                    [disabled]="downloading() !== null" [attr.aria-label]="action() + ' ' + (r.candidate.releaseNames[0] ?? r.candidate.fileName ?? '')">
+              {{ downloading() === key(r) ? '…' : action() }}
+            </button>
+          }
+        </td>
+      </tr>
+    }
+  </tbody>
+</table>

@@ -34,7 +34,8 @@ export class EpisodeDetailsDialog {
   readonly closed = output<void>();
   readonly search = output<void>();
   readonly interactive = output<void>();
-  readonly manageSubtitles = output<void>();
+  /** Opens the subtitle dialog, searching the given missing language first (or every missing one). */
+  readonly manageSubtitles = output<string | null>();
   /** Asks to delete the episode's file. */
   readonly deleteFile = output<void>();
   /** A subtitle was deleted from the dialog. */

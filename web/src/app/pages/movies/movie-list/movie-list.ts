@@ -12,7 +12,7 @@ import { PagedSelection, ViewMode, storeView, storedView } from '../../../core/s
 import { Subscriptions } from '../../../core/subscriptions';
 import { TableSort } from '../../../core/table-sort';
 import { Toasts } from '../../../core/toast';
-import { gridMetrics, gridSlots, observeContainerWidth } from '../../../core/virtual-scroll';
+import { gridMetrics, gridSlots, observeContainerWidth, KrVirtualTable } from '../../../core/virtual-scroll';
 import { BulkActions } from '../../../shared/bulk-actions/bulk-actions';
 import { MoreMenu } from '../../../shared/more-menu/more-menu';
 import { PosterGridSkeleton } from '../../../shared/poster-grid/poster-grid';
@@ -46,6 +46,7 @@ interface MovieTableRow {
   host: { class: 'block' },
   imports: [
     ScrollingModule,
+    KrVirtualTable,
     RouterLink,
     FormsModule,
     Poster,

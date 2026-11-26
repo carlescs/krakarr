@@ -1,5 +1,5 @@
 import { CdkVirtualScrollViewport, VIRTUAL_SCROLL_STRATEGY, VirtualScrollStrategy } from '@angular/cdk/scrolling';
-import { Directive, OnChanges, forwardRef, input } from '@angular/core';
+import { DestroyRef, Directive, ElementRef, OnChanges, afterNextRender, forwardRef, inject, input } from '@angular/core';
 import { Subject, distinctUntilChanged } from 'rxjs';
 
 const SLOTS: number[][] = [];
@@ -199,5 +199,28 @@ export class KrRowHeights implements OnChanges {
 
   ngOnChanges(): void {
     this.strategy.update(this.krRowHeights(), this.minBufferPx(), this.maxBufferPx());
+  }
+}
+
+/**
+ * Reserves room for a virtualized table's `<thead>`. The viewport sizes itself from rows × item size, but the header
+ * sits in the same scrolled content above the rows, so without this the last rows hang out below the viewport (and
+ * the card around it). Keeps the viewport's bottom padding equal to the header's height, following its resizes.
+ */
+@Directive({ selector: 'cdk-virtual-scroll-viewport[krVirtualTable]' })
+export class KrVirtualTable {
+  constructor() {
+    const host = inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
+    const destroyRef = inject(DestroyRef);
+    afterNextRender(() => {
+      const thead = host.querySelector('thead');
+      if (!thead) return;
+      const apply = () => { host.style.paddingBottom = `${thead.offsetHeight}px`; };
+      apply();
+      if (typeof ResizeObserver === 'undefined') return;
+      const observer = new ResizeObserver(apply);
+      observer.observe(thead);
+      destroyRef.onDestroy(() => observer.disconnect());
+    });
   }
 }

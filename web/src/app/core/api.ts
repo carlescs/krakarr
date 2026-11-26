@@ -7,7 +7,7 @@ import { readNdjson } from './ndjson';
 import type { Passkey, PasskeyCreationOptionsJson, PasskeyCredentialJson, PasskeyRequestOptionsJson } from './passkeys';
 import {
   AuthStatus, AutomationSettings, BackupInfo, BackupList, BackupSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
-  IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, BestSubtitleMatches, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, SubtitleSyncTools, RedundantSubtitlePage, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, EpisodeRelease, MediaInfo, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
+  IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, BestSubtitleMatches, SubtitleCandidate, SubtitleCandidates, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, SubtitleSyncTools, RedundantSubtitlePage, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, EpisodeRelease, MediaInfo, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, KeywordLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
   DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, EmbySettings, PlexSettings, MediaServerTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, BackgroundTask, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus,
   AlternateTitle, AlternateTitleInput
@@ -377,7 +377,8 @@ export class Api {
   testSubtitleProviders(settings: SubtitleSettings) {
     return this.post<{ name: string; success: boolean; message: string }[]>('subtitles/providers/test', settings);
   }
-  subtitleFiles(filter: { movieId?: number; seriesId?: number }) { return this.get<SubtitleFile[]>('subtitles/files', filter); }
+  /** Subtitles (external files plus tracks inside the video) of a movie, a whole series or one video file. */
+  subtitleFiles(filter: { movieId?: number; seriesId?: number; movieFileId?: number; episodeFileId?: number }) { return this.get<SubtitleFile[]>('subtitles/files', filter); }
   /** A slice of the external subtitles that duplicate an embedded track, sorted by title. */
   redundantSubtitles(query: { offset: number; limit: number }) { return this.get<RedundantSubtitlePage>('subtitles/redundant', query); }
   wantedSubtitleLanguages() { return this.get<WantedSubtitleLanguages>('subtitles/wanted-languages'); }
@@ -403,8 +404,10 @@ export class Api {
       ...(ref.notFound != null ? { notFound: ref.notFound } : {}),
     });
   }
-  subtitleCandidates(ref: SubtitleFileRef, language?: string) {
-    return this.get<{ label: string; results: ScoredSubtitle[]; errors: string[] }>('subtitles/candidates', { ...ref, language });
+  /** Every provider result for a file, scored; `language` narrows it to one or a few languages (all wanted ones otherwise). */
+  subtitleCandidates(ref: SubtitleFileRef, language?: string | readonly string[]) {
+    const languages = typeof language === 'string' ? language : language?.length ? language.join(',') : undefined;
+    return this.get<SubtitleCandidates>('subtitles/candidates', { ...ref, language: languages });
   }
   /** Best subtitle per missing language, ignoring the minimum score; downloads nothing. */
   bestSubtitleMatches(ref: SubtitleFileRef) { return this.get<BestSubtitleMatches>('subtitles/best-match', { ...ref }); }

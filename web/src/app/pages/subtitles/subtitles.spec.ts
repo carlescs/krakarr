@@ -1,6 +1,7 @@
 import { CdkVirtualScrollViewport } from '@angular/cdk/scrolling';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
+import { Router } from '@angular/router';
 import { describe, expect, it, vi } from 'vitest';
 import { WantedSubtitle, WantedSubtitlePage, WantedSubtitleQuery } from '../../core/models';
 import { button, mockApi, settle, setupTest, text } from '../../../testing/test-setup';
@@ -49,9 +50,10 @@ describe('SubtitlesPage', () => {
     await settle(fixture);
     expect(api.searchSubtitles).toHaveBeenLastCalledWith({ notFound: false });
 
-    button(el, 'Manual').click();
+    button(el, 'Choose…').click();
     await settle(fixture);
     expect(el.querySelector('kr-subtitle-manager')).not.toBeNull();
+    expect(api.subtitleFiles).toHaveBeenCalledWith({ movieFileId: 30, episodeFileId: undefined });
   });
 
   it('hides movies marked not found by default, counts each filter and retries them', async () => {
@@ -304,5 +306,51 @@ describe('SubtitlesPage', () => {
     expect(api.redundantSubtitles).toHaveBeenCalled();
     expect(el.textContent).not.toContain('Search all missing');
     expect(el.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim()).toBe('Already embedded');
+  });
+
+  it('opens the subtitle dialog on a missing language when its badge is clicked', async () => {
+    const api = setupTest({
+      api: mockApi({
+        settings: async () => settings,
+        subtitleLanguages: async () => [{ code: 'es', name: 'Spanish' }, { code: 'en', name: 'English' }],
+        wantedSubtitleLanguages: async () => ({ enabled: true, useEmbeddedSubtitles: true, languages: ['en', 'es'] }),
+        wantedSubtitles: list,
+        subtitleFiles: async () => [],
+        subtitleCandidates: async () => ({ label: 'Dark S01E01', results: [], errors: [] }),
+      }),
+    });
+    const fixture = TestBed.createComponent(SubtitlesPage);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+
+    el.querySelector<HTMLButtonElement>('button[title="Find English subtitles"]')!.click();
+    await settle(fixture);
+    expect(el.querySelector('kr-subtitle-manager')).not.toBeNull();
+    expect(api.subtitleCandidates).toHaveBeenCalledWith({ movieFileId: undefined, episodeFileId: 40 }, 'en');
+  });
+
+  it('keeps the tab and filter in the address', async () => {
+    setupTest({
+      api: mockApi({
+        settings: async () => settings,
+        subtitleLanguages: async () => [{ code: 'es', name: 'Spanish' }],
+        wantedSubtitles: list,
+        redundantSubtitles: async () => ({ items: [], offset: 0, limit: 100, total: 0 }),
+      }),
+    });
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/?show=notFound');
+    const fixture = TestBed.createComponent(SubtitlesPage);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toContain('Not found');
+
+    [...el.querySelectorAll<HTMLButtonElement>('[role="radio"]')].find(b => b.textContent!.trim().startsWith('All'))!.click();
+    await settle(fixture);
+    expect(router.url).toBe('/?show=all');
+
+    button(el, 'Already embedded').click();
+    await settle(fixture);
+    expect(router.url).toBe('/?tab=redundant');
   });
 });

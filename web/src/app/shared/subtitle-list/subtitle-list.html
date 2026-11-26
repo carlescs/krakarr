@@ -7,6 +7,12 @@
           <svg class="size-3" fill="none" viewBox="0 0 24 24" stroke-width="3" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
           {{ c.name }}
         </span>
+      } @else if (searchable()) {
+        <button type="button" class="badge border border-dashed border-amber-500/40 bg-amber-500/10 text-amber-300 transition hover:border-amber-400 hover:bg-amber-500/20"
+                [title]="'No ' + c.name + ' subtitle yet: find one'" (click)="find.emit(c.code)" data-missing>
+          <svg class="size-3" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg>
+          {{ c.name }} · missing
+        </button>
       } @else {
         <span class="badge border border-dashed border-amber-500/40 bg-amber-500/10 text-amber-300" [title]="'No ' + c.name + ' subtitle yet'" data-missing>
           {{ c.name }} · missing

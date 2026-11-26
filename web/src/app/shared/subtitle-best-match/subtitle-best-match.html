@@ -1,4 +1,9 @@
-<kr-modal [title]="items().length > 1 ? 'Best match · ' + (index() + 1) + ' of ' + items().length : 'Best match'" width="max-w-3xl" (closed)="finish()">
+<kr-modal [title]="items().length > 1 ? 'Review · ' + (index() + 1) + ' of ' + items().length : 'Best match'" width="max-w-3xl" (closed)="finish()">
+  @if (items().length > 1) {
+    <div class="-mt-1 mb-4 h-1 overflow-hidden rounded-full bg-surface-800" role="progressbar" [attr.aria-valuenow]="progress()" aria-valuemin="0" aria-valuemax="100">
+      <div class="h-full rounded-full bg-accent-500 transition-all" [style.width.%]="progress()"></div>
+    </div>
+  }
   @if (item(); as it) {
     <p class="mb-1 truncate font-medium text-white" [title]="it.label">{{ it.label }}</p>
     <p class="mb-4 text-xs text-slate-400">
@@ -15,28 +20,51 @@
       }
       <ul class="divide-y divide-surface-700">
         @for (row of rows(); track row.language) {
-          <li class="flex items-start gap-3 py-3">
-            @if (row.best; as r) {
-              <input type="checkbox" class="mt-1" [checked]="selected().has(row.language)" (change)="toggle(row.language, $any($event.target).checked)"
-                     [attr.aria-label]="'Download ' + languageName(row.language)" />
-              <div class="min-w-0 flex-1">
-                <div class="flex flex-wrap items-center gap-2">
+          @let open = alternatives()?.language === row.language;
+          <li class="py-3" data-language-row>
+            <div class="flex items-start gap-3">
+              @if (row.best; as r) {
+                <input type="checkbox" class="mt-1" [checked]="selected().has(row.language)" (change)="toggle(row.language, $any($event.target).checked)"
+                       [attr.aria-label]="'Download ' + languageName(row.language)" />
+                <div class="min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="font-medium text-slate-200">{{ languageName(row.language) }}</span>
+                    <span class="badge" [class]="belowMinimum(r) ? 'bg-rose-500/15 text-rose-300' : 'bg-emerald-500/15 text-emerald-300'">{{ r.score }}</span>
+                    @if (belowMinimum(r)) { <span class="text-xs text-rose-300">below minimum {{ m.minimumScore }}</span> }
+                    @if (row.custom) { <span class="badge bg-surface-700 text-slate-300" title="Picked from the other options">Your pick</span> }
+                  </div>
+                  <div class="break-all text-sm text-slate-300 sm:truncate sm:break-normal" [title]="r.candidate.releaseNames.join(' | ')">{{ r.candidate.releaseNames[0] ?? r.candidate.fileName }}</div>
+                  <div class="flex flex-wrap gap-1 text-xs">
+                    <span class="badge bg-violet-500/15 text-violet-300">{{ r.candidate.provider }}</span>
+                    @if (r.candidate.hashMatch) { <span class="badge bg-emerald-500/15 text-emerald-300">hash match</span> }
+                    @if (r.candidate.hearingImpaired) { <span class="badge bg-surface-700 text-slate-300">HI</span> }
+                    <span class="text-slate-500">{{ r.matches.join(', ') }}</span>
+                  </div>
+                </div>
+              } @else {
+                <div class="min-w-0 flex-1 pl-7">
                   <span class="font-medium text-slate-200">{{ languageName(row.language) }}</span>
-                  <span class="badge" [class]="belowMinimum(r) ? 'bg-rose-500/15 text-rose-300' : 'bg-emerald-500/15 text-emerald-300'">{{ r.score }}</span>
-                  @if (belowMinimum(r)) { <span class="text-xs text-rose-300">below minimum {{ m.minimumScore }}</span> }
+                  <span class="ml-2 text-sm text-slate-500">No subtitles found</span>
                 </div>
-                <div class="break-all text-sm text-slate-300 sm:truncate sm:break-normal" [title]="r.candidate.releaseNames.join(' | ')">{{ r.candidate.releaseNames[0] ?? r.candidate.fileName }}</div>
-                <div class="flex flex-wrap gap-1 text-xs">
-                  <span class="badge bg-violet-500/15 text-violet-300">{{ r.candidate.provider }}</span>
-                  @if (r.candidate.hashMatch) { <span class="badge bg-emerald-500/15 text-emerald-300">hash match</span> }
-                  @if (r.candidate.hearingImpaired) { <span class="badge bg-surface-700 text-slate-300">HI</span> }
-                  <span class="text-slate-500">{{ r.matches.join(', ') }}</span>
-                </div>
-              </div>
-            } @else {
-              <div class="min-w-0 flex-1 pl-7">
-                <span class="font-medium text-slate-200">{{ languageName(row.language) }}</span>
-                <span class="ml-2 text-sm text-slate-500">No subtitles found</span>
+              }
+              <button class="btn-ghost btn-sm shrink-0" (click)="toggleAlternatives(row.language)" [attr.aria-expanded]="open" [disabled]="downloading()"
+                      [title]="'Every ' + languageName(row.language) + ' result, including ones automatic downloads would skip'">
+                {{ open ? 'Hide options' : 'Other options' }}
+              </button>
+            </div>
+            @if (open) {
+              @let alt = alternatives()!;
+              <div class="mt-2 rounded-lg bg-surface-800/60 p-2" data-alternatives>
+                @for (e of alt.errors; track e) { <p class="mb-2 rounded bg-amber-500/10 px-3 py-2 text-xs text-amber-300">{{ e }}</p> }
+                @if (alt.loading) {
+                  <p class="py-3 text-center text-sm text-slate-400">Searching providers…</p>
+                } @else if (alt.results.length === 0) {
+                  <p class="py-3 text-center text-sm text-slate-400">No other {{ languageName(row.language) }} subtitles.</p>
+                } @else {
+                  <div class="overflow-x-auto sm:max-h-72 sm:overflow-auto">
+                    <kr-subtitle-results [results]="alt.results" [singleLanguage]="true" action="Use" (pick)="choose($event)" />
+                  </div>
+                }
               </div>
             }
           </li>
@@ -47,15 +75,15 @@
 
   <ng-container footer>
     @if (items().length > 1) {
-      <button class="btn-ghost" (click)="finish()" [disabled]="downloading()">Stop</button>
+      <button class="btn-ghost sm:mr-auto" (click)="finish()" [disabled]="downloading()">Stop</button>
       <button class="btn-secondary" (click)="next()" [disabled]="loading() || downloading()">Skip</button>
     } @else {
-      <button class="btn-secondary" (click)="finish()" [disabled]="downloading()">Cancel</button>
+      <button class="btn-secondary sm:mr-auto" (click)="finish()" [disabled]="downloading()">Cancel</button>
     }
     <button class="btn-secondary" (click)="markNotFound()" [disabled]="loading() || downloading() || (match()?.missingLanguages?.length ?? 0) === 0"
             title="Not good enough: stop searching this file automatically until it is retried">Mark not found</button>
     <button class="btn-primary" (click)="confirm()" [disabled]="loading() || downloading() || selected().size === 0">
-      {{ downloading() ? 'Downloading…' : 'Download ' + selected().size }}
+      {{ downloading() ? 'Downloading…' : 'Download ' + selected().size + (items().length > 1 ? ' & next' : '') }}
     </button>
   </ng-container>
 </kr-modal>
