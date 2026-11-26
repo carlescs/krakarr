@@ -302,7 +302,7 @@ selected keeps running only while it still has torrents, so the built-in engine 
 | `UMASK` | `002` | File creation mask |
 | `KRAKARR__URLBASE` | *(empty)* | Serve under a sub-path, e.g. `/krakarr`, behind a reverse proxy |
 | `KRAKARR__PORT` | `8787` | HTTP port (outside Docker; in Docker use `ASPNETCORE_HTTP_PORTS`) |
-| `Database__Provider` | `sqlite` | `sqlite` or `postgres` |
+| `Database__Provider` | `sqlite` | `sqlite` or `postgres` (to move existing data, use *Settings → Database*) |
 | `Database__ConnectionString` | `/config/krakarr.db` | e.g. `Host=postgres;Database=krakarr;Username=krakarr;Password=…` |
 | `AllowedHosts` | `*` | Host names Krakarr answers to, separated by `;` (e.g. `krakarr.example.com;192.168.1.10`). Set it to block DNS rebinding attacks |
 | `Krakarr__TrustedProxies` | *(loopback only)* | Reverse proxies allowed to set `X-Forwarded-For`/`X-Forwarded-Proto`: IPs or CIDR ranges separated by `,` (e.g. `172.16.0.0/12` for a proxy container on a Docker network). Headers from anyone else are ignored |
@@ -414,6 +414,24 @@ restoring the Krakarr backup.
 The API is `GET /api/v1/system/backups` (list), `POST` (back up now), `GET`/`DELETE /api/v1/system/backups/{name}`,
 `POST /api/v1/system/backups/restore` (zip as the request body), `POST /api/v1/system/backups/{name}/restore` and
 `DELETE /api/v1/system/backups/restore` (cancel a staged restore).
+
+### Switching database (SQLite ⇄ PostgreSQL)
+
+*Settings → Database* (admins) moves Krakarr's data to another database without losing any of it. Pick the new database
+(a PostgreSQL server, or a SQLite file in `/config`), *Test connection*, then *Switch on next restart*. On the next start,
+before anything else opens the database, Krakarr migrates both databases to the current schema, copies every table
+(in one transaction, in batches, keeping ids), checks the row counts and points `config.json` at the new database. The
+previous `config.json` is kept as `config.json.pre-switch` and the old database is left untouched, unless you tick
+*Delete the SQLite file* when leaving SQLite: then the file goes once the copy has succeeded. Otherwise the page keeps
+offering *Delete old database* after the restart, for when you've checked everything made it across. If the copy fails,
+nothing changes: Krakarr keeps running on the old database and the page shows why.
+
+- The new database must be empty. Krakarr creates a missing PostgreSQL database if the user may create databases.
+- If `Database__Provider` / `Database__ConnectionString` environment variables choose the database, Krakarr can't
+  change them: the page lists the values to set. Set them and recreate the container; the copy runs on that start.
+- PostgreSQL only stores UTC times and enforces column lengths: times are converted, and the rare value longer than its
+  column is shortened (the outcome lists how many).
+- Make a backup first. Switching back later works the same way, into a new SQLite file.
 
 ### Security notes
 

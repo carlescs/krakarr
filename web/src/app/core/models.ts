@@ -321,6 +321,32 @@ export interface BackupInfo { name: string; type: BackupType; size: number; crea
 export interface RestoreOutcome { succeeded: boolean; message: string; at: string; }
 export interface BackupList { backups: BackupInfo[]; restorePending: boolean; lastRestore: RestoreOutcome | null; provider: string; }
 
+/** Switching Krakarr to another database: the tables are copied on the next start. */
+export type DatabaseProvider = 'sqlite' | 'postgres';
+/** Where to switch to: server fields for PostgreSQL, a file name in the config folder for SQLite. */
+export interface DatabaseTargetRequest {
+  provider: DatabaseProvider; host?: string; port?: number | null; database?: string; username?: string; password?: string; file?: string;
+  /** Delete the current SQLite file once the data has been copied (only when leaving SQLite). */
+  deleteSource?: boolean;
+}
+export interface DatabaseTestResult { ok: boolean; empty: boolean; message: string; }
+/** An environment variable to set by hand when environment variables choose the database. */
+export interface EnvironmentSetting { name: string; value: string; }
+export interface TableCopy { table: string; rows: number; truncated: number; }
+export interface DatabaseSwitchOutcome { succeeded: boolean; message: string; at: string; tables: TableCopy[]; }
+export interface DatabaseInfo {
+  provider: DatabaseProvider; location: string;
+  /** Database settings fixed by environment variables: Krakarr can't change them itself. */
+  pinned: string[];
+  /** `deleteSource`: the SQLite file deleted after the copy, or null to keep it. */
+  pending: { provider: DatabaseProvider; location: string; created: string; deleteSource: string | null } | null;
+  pendingEnvironment: EnvironmentSetting[] | null;
+  lastSwitch: DatabaseSwitchOutcome | null;
+  /** The SQLite file Krakarr used before a successful switch, while it still exists. */
+  oldDatabase: { file: string; size: number; switchedAt: string } | null;
+}
+export interface DatabaseSwitchStaged { message: string; environment: EnvironmentSetting[]; }
+
 export interface SystemStatus {
   version: string; runtime: string; os: string; isDocker: boolean; configDirectory: string; downloadDirectory: string;
   databaseProvider: string; environmentName: string; startTime: string;

@@ -1,0 +1,149 @@
+<div class="space-y-6">
+  @if (info(); as i) {
+    @if (i.lastSwitch; as s) {
+      <div class="rounded px-3 py-2 text-sm" [class]="s.succeeded ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/15 text-rose-300'" data-last-switch>
+        <p>{{ s.message }} ({{ s.at | date: 'medium' }})</p>
+        @if (s.tables.length) {
+          <details class="mt-2">
+            <summary class="cursor-pointer text-xs">Rows copied per table</summary>
+            <ul class="mt-1 grid gap-x-6 text-xs text-slate-300 sm:grid-cols-2">
+              @for (t of s.tables; track t.table) {
+                <li class="flex justify-between gap-3" [attr.data-table]="t.table">
+                  <span class="font-mono">{{ t.table }}</span>
+                  <span>{{ t.rows | number }}@if (t.truncated) { <span class="text-amber-300"> ({{ t.truncated | number }} shortened)</span> }</span>
+                </li>
+              }
+            </ul>
+          </details>
+        }
+      </div>
+    }
+
+    <section class="card space-y-2 p-4 sm:p-5">
+      <h2 class="font-semibold text-white">Current database</h2>
+      <p class="text-sm text-slate-300" data-current>
+        <span class="font-medium text-white">{{ providerNames[i.provider] }}</span>
+        <span class="ml-2 font-mono text-xs text-slate-400 wrap-anywhere">{{ i.location }}</span>
+      </p>
+      @if (i.pinned.length) {
+        <p class="hint" data-pinned>
+          Environment variables (<code>{{ i.pinned.join(', ') }}</code>) choose the database, so after a switch you change them yourself;
+          the assistant tells you what to set.
+        </p>
+      }
+    </section>
+
+    @if (i.oldDatabase; as old) {
+      <section class="card flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5" data-old-database>
+        <div class="min-w-0">
+          <h2 class="font-semibold text-white">Old SQLite database</h2>
+          <p class="font-mono text-xs text-slate-400 wrap-anywhere">{{ old.file }} · {{ old.size | bytes }}</p>
+          <p class="hint">Krakarr has run on {{ providerNames[i.provider] }} since {{ old.switchedAt | date: 'medium' }}. Once you've checked
+            your library, users and settings are all there, delete the old file to free the space.</p>
+        </div>
+        <button type="button" class="btn-danger whitespace-nowrap" [disabled]="deletingOld()" (click)="deleteOld()">
+          {{ deletingOld() ? 'Deleting…' : 'Delete old database' }}
+        </button>
+      </section>
+    }
+
+    @if (i.pending; as p) {
+      <section class="card space-y-3 border-amber-500/40 bg-amber-500/10 p-4 sm:p-5" data-pending>
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 class="font-semibold text-amber-100">Ready to switch to {{ providerNames[p.provider] }}</h2>
+            <p class="font-mono text-xs text-amber-200/80 wrap-anywhere">{{ p.location }}</p>
+          </div>
+          <button type="button" class="btn-secondary whitespace-nowrap px-3 py-1 text-xs" (click)="cancel()">Cancel switch</button>
+        </div>
+        <ol class="list-decimal space-y-2 pl-5 text-sm text-amber-100">
+          @if (i.pendingEnvironment?.length) {
+            <li data-environment>
+              Environment variables choose the database, so set these in your container (for example in <code>docker-compose.yml</code>),
+              with the real password:
+              <pre class="mt-1 overflow-x-auto rounded bg-surface-900 p-2 text-xs text-slate-200">@for (e of i.pendingEnvironment; track e.name) {<span class="block">{{ e.name }}={{ e.value }}</span>}</pre>
+            </li>
+          }
+          <li><span class="font-medium">Restart Krakarr</span>{{ i.pendingEnvironment?.length ? ' (recreate the container so it picks up the new variables)' : '' }}.
+            On start it copies every table into the new database, checks the row counts and switches over. With a large library this
+            takes a minute or two.</li>
+          <li>Come back to this page to see the outcome. If anything goes wrong, Krakarr keeps running on the old database.
+            @if (p.deleteSource) {
+              <span data-delete-pending>Once the copy succeeds, <code class="wrap-anywhere">{{ p.deleteSource }}</code> is deleted.</span>
+            } @else {
+              The old database is left as it was.
+            }</li>
+        </ol>
+      </section>
+    } @else {
+      <section class="card space-y-5 p-4 sm:p-5" data-assistant>
+        <div>
+          <h2 class="font-semibold text-white">Switch database</h2>
+          <p class="hint">Move all of Krakarr's data (library, history, users, settings) to another database. Nothing is copied until
+            Krakarr restarts. Make a backup first, from the Backups tab.</p>
+        </div>
+
+        <div class="space-y-3">
+          <h3 class="text-sm font-medium text-slate-200">1. The new database</h3>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <div><label class="label" for="db-provider">Type</label>
+              <select id="db-provider" class="input" [ngModel]="form().provider" (ngModelChange)="edit({ provider: $event })">
+                <option value="postgres">PostgreSQL</option>
+                <option value="sqlite">SQLite (a file in the config folder)</option>
+              </select></div>
+          </div>
+          @if (form().provider === 'postgres') {
+            <div class="grid gap-4 sm:grid-cols-2" data-postgres-fields>
+              <div><label class="label" for="db-host">Server</label>
+                <input id="db-host" class="input" placeholder="postgres" autocomplete="off" [ngModel]="form().host" (ngModelChange)="edit({ host: $event })" />
+                <p class="hint">Host name or IP; in Docker Compose, the service name.</p></div>
+              <div><label class="label" for="db-port">Port</label>
+                <input id="db-port" class="input" type="number" min="1" max="65535" [ngModel]="form().port" (ngModelChange)="edit({ port: $event })" /></div>
+              <div><label class="label" for="db-name">Database</label>
+                <input id="db-name" class="input" placeholder="krakarr" autocomplete="off" [ngModel]="form().database" (ngModelChange)="edit({ database: $event })" />
+                <p class="hint">An empty database. Krakarr creates it if it doesn't exist and the user may create databases.</p></div>
+              <div><label class="label" for="db-user">User</label>
+                <input id="db-user" class="input" autocomplete="off" [ngModel]="form().username" (ngModelChange)="edit({ username: $event })" /></div>
+              <div><label class="label" for="db-password">Password</label>
+                <input id="db-password" class="input" type="password" autocomplete="new-password" [ngModel]="form().password" (ngModelChange)="edit({ password: $event })" /></div>
+            </div>
+          } @else {
+            <div class="grid gap-4 sm:grid-cols-2" data-sqlite-fields>
+              <div><label class="label" for="db-file">File name</label>
+                <input id="db-file" class="input" autocomplete="off" [ngModel]="form().file" (ngModelChange)="edit({ file: $event })" />
+                <p class="hint">Created in the config folder. It must not exist yet, or hold no Krakarr data.</p></div>
+            </div>
+          }
+        </div>
+
+        <div class="space-y-2">
+          <h3 class="text-sm font-medium text-slate-200">2. Test the connection</h3>
+          <button type="button" class="btn-secondary" [disabled]="testing()" (click)="runTest()">{{ testing() ? 'Testing…' : 'Test connection' }}</button>
+          @if (test(); as t) {
+            <p class="rounded px-3 py-2 text-sm" data-test-result
+               [class]="t.ok && t.empty ? 'bg-emerald-500/10 text-emerald-300' : t.ok ? 'bg-amber-500/10 text-amber-200' : 'bg-rose-500/15 text-rose-300'">
+              {{ t.message }}
+            </p>
+          }
+        </div>
+
+        <div class="space-y-2">
+          <h3 class="text-sm font-medium text-slate-200">3. Switch</h3>
+          <p class="hint">Krakarr copies the data the next time it starts, then uses the new database from then on.</p>
+          @if (i.provider === 'sqlite') {
+            <label class="flex items-start gap-2 text-sm">
+              <input id="db-delete-source" type="checkbox" class="mt-0.5 accent-accent-500" [ngModel]="deleteSource()" (ngModelChange)="deleteSource.set($event)" />
+              <span>Delete the SQLite file (<code class="wrap-anywhere">{{ i.location }}</code>) once the data is copied
+                <span class="hint block">Only after the copy and the row counts check out. Without the file, a backup is the only way back.</span></span>
+            </label>
+          }
+          <button type="button" class="btn-primary" [disabled]="!canSwitch() || staging()" (click)="stage()">
+            {{ staging() ? 'Preparing…' : 'Switch on next restart' }}
+          </button>
+        </div>
+      </section>
+    }
+  } @else {
+    <p class="text-sm text-slate-500">Loading…</p>
+  }
+</div>

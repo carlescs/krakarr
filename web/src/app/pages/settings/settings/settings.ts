@@ -21,6 +21,7 @@ import { AccountSettings } from '../account/account';
 import { UsersSettings } from '../users/users';
 import { HealthSettings } from '../health/health';
 import { BackupSettingsPanel } from '../backups/backups';
+import { DatabaseSettings } from '../database/database';
 import { MediaServerSettings } from '../media-servers/media-servers';
 
 interface TokenDoc { token: string; description: string; example: string; }
@@ -85,11 +86,11 @@ export function buildName(format: string, values: Record<string, string>): strin
   return result.trim().replace(/\.+$/, '').replace(/\s{2,}/g, ' ').trim();
 }
 
-type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'media-servers' | 'telemetry' | 'health' | 'tasks' | 'backups' | 'users' | 'general' | 'account';
+type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'media-servers' | 'telemetry' | 'health' | 'tasks' | 'backups' | 'database' | 'users' | 'general' | 'account';
 
 @Component({
   selector: 'kr-settings',
-  imports: [LanguagePicker, FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings, HealthSettings, BackupSettingsPanel, MediaServerSettings, SortHeader],
+  imports: [LanguagePicker, FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings, HealthSettings, BackupSettingsPanel, DatabaseSettings, MediaServerSettings, SortHeader],
   templateUrl: './settings.html',
   styleUrl: './settings.scss',
 })
@@ -112,6 +113,7 @@ export class SettingsPage implements OnInit {
     { id: 'health', label: 'Health' },
     { id: 'tasks', label: 'Tasks' },
     { id: 'backups', label: 'Backups' },
+    { id: 'database', label: 'Database' },
     { id: 'users', label: 'Users' },
     { id: 'general', label: 'General' },
     { id: 'account', label: 'Account' },

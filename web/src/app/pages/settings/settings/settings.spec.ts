@@ -29,7 +29,7 @@ describe('SettingsPage', () => {
     const el = fixture.nativeElement as HTMLElement;
     expect(text(el, 'h1')).toBe('Settings');
     expect([...el.querySelectorAll('h1 + div button')].map(b => b.textContent)).toEqual([
-      'Media management', 'Quality profiles', 'Download client', 'Subtitles', 'Metadata', 'Media servers', 'Telemetry', 'Health', 'Tasks', 'Backups', 'Users', 'General', 'Account',
+      'Media management', 'Quality profiles', 'Download client', 'Subtitles', 'Metadata', 'Media servers', 'Telemetry', 'Health', 'Tasks', 'Backups', 'Database', 'Users', 'General', 'Account',
     ]);
     expect(api.settings).toHaveBeenCalledWith('media');
     expect(api.settings).toHaveBeenCalledWith('general');
