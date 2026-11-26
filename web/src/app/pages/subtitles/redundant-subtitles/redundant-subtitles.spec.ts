@@ -51,6 +51,65 @@ describe('RedundantSubtitles', () => {
     expect(text(el, 'h2')).toBe('Already embedded 1');
   });
 
+  it('selects rows and deletes them in one request after confirming', async () => {
+    const api = setupTest({
+      api: mockApi({
+        redundantSubtitles: async () => ({ items: rows, offset: 0, limit: 100, total: 2 }),
+        deleteSubtitles: async () => ({ affected: 2, errors: [] }),
+      }),
+    });
+    const fixture = TestBed.createComponent(RedundantSubtitles);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[role="toolbar"]')).toBeNull();
+
+    const pick = (label: string) => el.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!;
+    pick('Select Dark - S01E01.de.srt').click();
+    await settle(fixture);
+    expect(text(el, '[role="toolbar"]')).toContain('1 selected');
+    expect(pick('Select all').indeterminate).toBe(true);
+
+    pick('Select all').click();
+    await settle(fixture);
+    expect(text(el, '[role="toolbar"]')).toContain('2 selected');
+
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    button(el, 'Delete selected').click();
+    await settle(fixture);
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Delete 2 downloaded subtitles'));
+    expect(api.deleteSubtitles).not.toHaveBeenCalled();
+
+    confirm.mockReturnValue(true);
+    button(el, 'Delete selected').click();
+    await settle(fixture);
+    expect(api.deleteSubtitles).toHaveBeenCalledWith([7, 8]);
+    expect(text(el, 'h2')).toBe('Already embedded 0');
+    expect(text(el)).toContain('No downloaded subtitle duplicates an embedded track.');
+  });
+
+  it('reloads after a bulk delete that partly failed', async () => {
+    const api = setupTest({
+      api: mockApi({
+        redundantSubtitles: async () => ({ items: rows, offset: 0, limit: 100, total: 2 }),
+        deleteSubtitles: async () => ({ affected: 1, errors: ['Alien (1979).en.srt: access denied'] }),
+      }),
+    });
+    const fixture = TestBed.createComponent(RedundantSubtitles);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    el.querySelector<HTMLInputElement>('input[aria-label="Select all"]')!.click();
+    await settle(fixture);
+
+    api.redundantSubtitles.mockImplementation(async () => ({ items: [rows[1]], offset: 0, limit: 100, total: 1 }));
+    button(el, 'Delete selected').click();
+    await settle(fixture);
+    expect(api.redundantSubtitles).toHaveBeenCalledTimes(2);
+    expect(el.querySelector('a[href="/series/4"]')).toBeNull();
+    expect(el.querySelector('a[href="/movies/3"]')).not.toBeNull();
+    expect(el.querySelector('[role="toolbar"]')).toBeNull();
+  });
+
   it('says when nothing duplicates an embedded track and loads more on request', async () => {
     const api = setupTest({ api: mockApi({ redundantSubtitles: async () => ({ items: [], offset: 0, limit: 100, total: 0 }) }) });
     const fixture = TestBed.createComponent(RedundantSubtitles);

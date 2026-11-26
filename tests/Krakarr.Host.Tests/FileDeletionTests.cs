@@ -39,6 +39,48 @@ public sealed class FileDeletionTests(KrakarrFactory factory) : IClassFixture<Kr
     }
 
     [Fact]
+    public async Task Bulk_deletes_subtitle_files_and_their_rows()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        Touch("Bulk (2002)", "Bulk (2002).mkv");
+        var english = Touch("Bulk (2002)", "Bulk (2002).en.srt");
+        var german = Touch("Bulk (2002)", "Bulk (2002).de.srt");
+        var french = Touch("Bulk (2002)", "Bulk (2002).fr.srt");
+        var (fileId, ids) = await WithDbAsync(async db =>
+        {
+            var profile = await db.QualityProfiles.MinAsync(p => p.Id, ct);
+            var movie = new Movie { TmdbId = 81_002, Title = "Bulk", SortTitle = "bulk", Year = 2002, Path = Path.Combine(_media, "Bulk (2002)"), QualityProfileId = profile };
+            db.Movies.Add(movie);
+            await db.SaveChangesAsync(ct);
+            var file = new MovieFile { MovieId = movie.Id, RelativePath = "Bulk (2002).mkv", Size = 5, QualityId = Qualities.Bluray1080.Id };
+            db.MovieFiles.Add(file);
+            await db.SaveChangesAsync(ct);
+            var subtitles = new[] { english, german, french }
+                .Select(path => new SubtitleFile { MovieFileId = file.Id, Language = Path.GetFileNameWithoutExtension(path)[^2..], Path = path, Provider = "opensubtitles" })
+                .ToList();
+            db.SubtitleFiles.AddRange(subtitles);
+            await db.SaveChangesAsync(ct);
+            return (file.Id, subtitles.Select(s => s.Id).ToList());
+        });
+        var client = await AdminAsync(ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/v1/subtitles/bulk/delete", new { ids = Array.Empty<int>() }, ct)).StatusCode);
+
+        // An unknown id is skipped; the French subtitle stays.
+        var response = await client.PostAsJsonAsync("/api/v1/subtitles/bulk/delete", new { ids = new[] { ids[0], ids[1], 999_999 } }, ct);
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<JsonElement>(ct);
+        Assert.Equal(2, result.GetProperty("affected").GetInt32());
+        Assert.Equal(0, result.GetProperty("errors").GetArrayLength());
+
+        Assert.False(File.Exists(english));
+        Assert.False(File.Exists(german));
+        Assert.True(File.Exists(french));
+        var left = await WithDbAsync(db => db.SubtitleFiles.Where(s => s.MovieFileId == fileId).Select(s => s.Id).ToListAsync(ct));
+        Assert.Equal([ids[2]], left);
+    }
+
+    [Fact]
     public async Task Deletes_a_movie_file_and_optionally_unmonitors_the_movie()
     {
         var ct = TestContext.Current.CancellationToken;

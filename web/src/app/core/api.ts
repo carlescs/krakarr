@@ -400,6 +400,7 @@ export class Api {
     return this.post<SubtitleFile>('subtitles/download', { ...ref, candidate, score, manual });
   }
   deleteSubtitle(id: number) { return this.delete<void>(`subtitles/${id}`); }
+  deleteSubtitles(ids: number[]) { return this.post<BulkResult>('subtitles/bulk/delete', { ids }); }
   /** Resyncs a subtitle against the video in the background; the result lands on the subtitle (syncNote). */
   syncSubtitle(id: number) { return this.post<CommandInfo>(`subtitles/${id}/sync`, {}); }
   /** Moves every cue by offsetMs (negative = earlier). */
