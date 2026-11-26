@@ -73,6 +73,8 @@ export class SeriesDetailPage implements OnInit {
   protected readonly icons = { search: ICON_SEARCH, list: ICON_LIST, bookmark: ICON_BOOKMARK, cc: ICON_CC, trash: ICON_TRASH };
   protected readonly subtitles = signal<SubtitleFile[]>([]);
   protected readonly subtitleEpisode = signal<Episode | null>(null);
+  /** Language the subtitle dialog searches first (a missing one that was clicked); null = every missing language. */
+  protected readonly subtitleLanguage = signal<string | null>(null);
   /** Episode files waiting for the delete confirmation. */
   protected readonly fileDeletion = signal<{ title: string; unmonitorLabel: string; fileIds: number[]; paths: string[] } | null>(null);
   protected readonly subtitlesByFile = computed(() => {
@@ -331,11 +333,17 @@ export class SeriesDetailPage implements OnInit {
   }
 
   /** Swaps the details dialog for the interactive search or the subtitle manager, so only one dialog is open. */
-  protected fromDetails(e: Episode, action: 'interactive' | 'subtitles' | 'delete') {
+  protected fromDetails(e: Episode, action: 'interactive' | 'subtitles' | 'delete', language: string | null = null) {
     this.detailEpisodeId.set(null);
     if (action === 'interactive') this.interactive({ label: this.code(e), episodeId: e.id });
     else if (action === 'delete') this.confirmDeleteEpisodeFile(e);
-    else this.subtitleEpisode.set(e);
+    else this.openSubtitles(e, language);
+  }
+
+  /** Opens an episode's subtitle dialog, searching `language` first (or every missing language). */
+  protected openSubtitles(e: Episode, language: string | null) {
+    this.subtitleLanguage.set(language);
+    this.subtitleEpisode.set(e);
   }
 
   protected confirmDeleteEpisodeFile(e: Episode) {

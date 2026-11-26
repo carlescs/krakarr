@@ -40,6 +40,22 @@ describe('SubtitleList', () => {
     expect(el.querySelector('[aria-label="Delete subtitle"]')).toBeNull();
   });
 
+  it('asks to find a missing language when it is searchable', async () => {
+    setup({ enabled: true, useEmbeddedSubtitles: true, languages: ['en', 'es', 'fr'] });
+    const fixture = TestBed.createComponent(SubtitleList);
+    fixture.componentRef.setInput('files', [embedded, external]);
+    const find = vi.fn();
+    fixture.componentInstance.find.subscribe(find);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('button[data-missing]')).toBeNull();
+
+    fixture.componentRef.setInput('searchable', true);
+    await settle(fixture);
+    (el.querySelector('button[data-missing]') as HTMLButtonElement).click();
+    expect(find).toHaveBeenCalledWith('fr');
+  });
+
   it('ignores embedded tracks when they are not used', async () => {
     setup({ enabled: true, useEmbeddedSubtitles: false, languages: ['en'] });
     const fixture = TestBed.createComponent(SubtitleList);

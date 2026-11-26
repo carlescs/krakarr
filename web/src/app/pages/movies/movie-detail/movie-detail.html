@@ -90,18 +90,21 @@
       <div class="mb-3 flex flex-wrap items-center gap-2">
         <h2 class="flex-1 text-sm font-semibold uppercase tracking-wide text-slate-400">Subtitles</h2>
         @if (auth.isStaff()) {
-          <button class="btn-secondary btn-sm" (click)="searchSubtitles()">Automatic search</button>
-          <button class="btn-ghost btn-sm" (click)="subtitlesOpen.set(true)">Interactive search</button>
+          <button class="btn-ghost btn-sm" (click)="searchSubtitles()"
+                  title="Search in the background and download the best subtitles that meet the minimum score">Search</button>
+          <button class="btn-secondary btn-sm" (click)="openSubtitles(null)"
+                  title="See every result, with the top pick per language, and choose what to download">Choose…</button>
         }
       </div>
-      <kr-subtitle-list [files]="subtitles()" [deletable]="auth.isStaff()" (changed)="loadSubtitles()" />
+      <kr-subtitle-list [files]="subtitles()" [deletable]="auth.isStaff()" [searchable]="auth.isStaff()"
+                        (find)="openSubtitles($event)" (changed)="loadSubtitles()" />
     </section>
     @if (confirmDeleteFile()) {
       <kr-delete-files title="Delete movie file" [paths]="[f.relativePath]" unmonitorLabel="Unmonitor the movie"
                        [action]="deleteFile" (closed)="confirmDeleteFile.set(false)" (deleted)="fileDeleted()" />
     }
     @if (subtitlesOpen()) {
-      <kr-subtitle-manager [fileRef]="{ movieFileId: f.id }" [label]="m.title" [files]="subtitles()"
+      <kr-subtitle-manager [fileRef]="{ movieFileId: f.id }" [label]="m.title" [language]="subtitleLanguage()"
                            (closed)="subtitlesOpen.set(false)" (changed)="loadSubtitles()" />
     }
   }

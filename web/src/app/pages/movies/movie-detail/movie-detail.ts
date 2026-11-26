@@ -67,6 +67,8 @@ export class MovieDetailPage implements OnInit {
   protected readonly confirmDeleteFile = signal(false);
   protected readonly subtitles = signal<SubtitleFile[]>([]);
   protected readonly subtitlesOpen = signal(false);
+  /** Language the subtitle dialog searches first (a missing one that was clicked); null = every missing language. */
+  protected readonly subtitleLanguage = signal<string | null>(null);
   /** The movie's page on Jellyfin, once it's downloaded and Jellyfin is set up. */
   protected readonly jellyfinUrl = signal<string | null>(null);
   private jellyfinCheckedFor: number | null = null;
@@ -164,6 +166,11 @@ export class MovieDetailPage implements OnInit {
   async autoSearch() {
     await this.api.searchMovie(this.id());
     this.toasts.show('Search started — results will appear in History');
+  }
+
+  protected openSubtitles(language: string | null) {
+    this.subtitleLanguage.set(language);
+    this.subtitlesOpen.set(true);
   }
 
   async searchSubtitles() {

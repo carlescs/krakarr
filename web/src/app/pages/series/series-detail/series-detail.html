@@ -114,7 +114,12 @@
                             <span class="badge bg-surface-700 px-1.5 text-[10px] uppercase text-slate-300" [title]="s.languageName + (s.hearingImpaired ? ' (HI)' : '') + (s.forced ? ' (forced)' : '') + (s.provider === 'embedded' ? ' · inside the video file' : '')">{{ s.language }}</span>
                           }
                           @for (code of missingSubtitles().get(f.id) ?? []; track code) {
-                            <span class="badge border border-dashed border-amber-500/40 px-1.5 text-[10px] uppercase text-amber-300/80" [title]="'No ' + subtitleLanguages.name(code) + ' subtitle yet'" data-missing-subtitle>{{ code }}</span>
+                            @if (auth.isStaff()) {
+                              <button type="button" class="badge border border-dashed border-amber-500/40 px-1.5 text-[10px] uppercase text-amber-300/80 transition hover:border-amber-400 hover:text-amber-200"
+                                      [title]="'No ' + subtitleLanguages.name(code) + ' subtitle yet: find one'" (click)="openSubtitles(e, code)" data-missing-subtitle>{{ code }}</button>
+                            } @else {
+                              <span class="badge border border-dashed border-amber-500/40 px-1.5 text-[10px] uppercase text-amber-300/80" [title]="'No ' + subtitleLanguages.name(code) + ' subtitle yet'" data-missing-subtitle>{{ code }}</span>
+                            }
                           }
                           <span class="truncate font-mono text-xs text-slate-500 max-sm:hidden" [title]="f.relativePath">{{ f.relativePath }}</span>
                         </div>
@@ -129,7 +134,7 @@
                     <td class="whitespace-nowrap text-right">
                       @if (auth.isStaff()) {
                         @if (e.episodeFile) {
-                          <button class="btn-ghost btn-sm" title="Subtitles" (click)="subtitleEpisode.set(e)">
+                          <button class="btn-ghost btn-sm" title="Subtitles" (click)="openSubtitles(e, null)">
                             <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons.cc" /></svg>
                           </button>
                           <button class="btn-ghost btn-sm text-rose-300 max-sm:hidden" title="Delete file" (click)="confirmDeleteEpisodeFile(e)" data-delete-file>
@@ -249,7 +254,7 @@
   @if (detailEpisode(); as e) {
     <kr-episode-details [seriesId]="s.id" [episode]="e" [subtitles]="e.episodeFile ? (subtitlesByFile().get(e.episodeFile.id) ?? []) : []"
                         (closed)="detailEpisodeId.set(null)" (search)="searchEpisode(e)"
-                        (interactive)="fromDetails(e, 'interactive')" (manageSubtitles)="fromDetails(e, 'subtitles')" (deleteFile)="fromDetails(e, 'delete')" (subtitlesChanged)="loadSubtitles()" />
+                        (interactive)="fromDetails(e, 'interactive')" (manageSubtitles)="fromDetails(e, 'subtitles', $event)" (deleteFile)="fromDetails(e, 'delete')" (subtitlesChanged)="loadSubtitles()" />
   }
 
   @if (fileDeletion(); as d) {
@@ -259,8 +264,7 @@
 
   @if (subtitleEpisode(); as e) {
     <kr-subtitle-manager [fileRef]="{ episodeFileId: e.episodeFile!.id }" [label]="code(e) + (e.title ? ' · ' + e.title : '')"
-                         [files]="subtitlesByFile().get(e.episodeFile!.id) ?? []"
-                         (closed)="subtitleEpisode.set(null)" (changed)="loadSubtitles()" />
+                         [language]="subtitleLanguage()" (closed)="subtitleEpisode.set(null)" (changed)="loadSubtitles()" />
   }
 
   @if (editing()) {

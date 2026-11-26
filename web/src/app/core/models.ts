@@ -361,7 +361,13 @@ export interface SubtitleCandidate {
   provider: string; payload: string; language: string; releaseNames: string[]; fileName?: string; hearingImpaired: boolean; forced: boolean;
   hashMatch: boolean; aiTranslated: boolean; trustedUploader: boolean; downloads: number;
 }
-export interface ScoredSubtitle { candidate: SubtitleCandidate; score: number; matches: string[]; rejections: string[]; acceptable: boolean; }
+export interface ScoredSubtitle {
+  candidate: SubtitleCandidate; score: number; matches: string[]; rejections: string[]; acceptable: boolean;
+  /** Interactive search only: the top pick for its language even below the minimum score (what "best match" offers). */
+  best?: boolean;
+}
+/** Interactive search results, best first. */
+export interface SubtitleCandidates { label: string; results: ScoredSubtitle[]; errors: string[]; minimumScore?: number; }
 /** Best subtitle per missing language, even below `minimumScore`; nothing is downloaded until the user confirms. */
 export interface BestSubtitleMatches { label: string; missingLanguages: string[]; minimumScore: number; results: ScoredSubtitle[]; errors: string[]; }
 export interface WantedSubtitle {

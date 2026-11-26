@@ -23,7 +23,11 @@ export class SubtitleList implements OnInit {
    * video can't be changed.
    */
   readonly deletable = input(false);
+  /** Turns each missing wanted language into a button that asks to find subtitles in it (`find`). */
+  readonly searchable = input(false);
   readonly changed = output<void>();
+  /** A missing language was clicked: find subtitles in it. */
+  readonly find = output<string>();
 
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);

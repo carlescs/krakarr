@@ -29,7 +29,8 @@ public sealed record WantedSubtitleCountsDto(int Searching, int NotFound);
 public sealed record SubtitleRetryRequest(int? MovieFileId, int? EpisodeFileId = null);
 /// <param name="Manual">Picked by hand from the full list (default): automatic upgrades leave it alone. Best-match downloads send false so a better subtitle can still replace them.</param>
 public sealed record SubtitleDownloadRequest(int? MovieFileId, int? EpisodeFileId, SubtitleCandidate Candidate, int? Score, bool Manual = true);
-public sealed record ScoredSubtitleDto(SubtitleCandidate Candidate, int Score, IReadOnlyList<string> Matches, IReadOnlyList<string> Rejections, bool Acceptable);
+/// <param name="Best">Interactive search only: the top pick for its language even below the minimum score, i.e. what "best match" offers.</param>
+public sealed record ScoredSubtitleDto(SubtitleCandidate Candidate, int Score, IReadOnlyList<string> Matches, IReadOnlyList<string> Rejections, bool Acceptable, bool Best = false);
 /// <summary>Best subtitle per missing language, even below <c>MinimumScore</c>; downloaded only once the user confirms.</summary>
 public sealed record BestSubtitleMatchesDto(string Label, IReadOnlyList<string> MissingLanguages, int MinimumScore, IReadOnlyList<ScoredSubtitleDto> Results, IReadOnlyList<string> Errors);
 /// <summary>The subtitle languages Krakarr looks for, so detail pages can show which ones a file is missing.</summary>
@@ -83,12 +84,26 @@ public static class SubtitleEndpoints
             return results;
         });
 
-        // Subtitle files for a movie or a whole series, plus the subtitle tracks inside the videos (Provider "embedded", Id 0).
-        group.MapGet("/files", async (int? movieId, int? seriesId, KrakarrDbContext db, CancellationToken ct) =>
+        // Subtitle files for a movie, a whole series or one video file, plus the subtitle tracks inside the videos (Provider "embedded", Id 0).
+        group.MapGet("/files", async (int? movieId, int? seriesId, int? movieFileId, int? episodeFileId, KrakarrDbContext db, CancellationToken ct) =>
         {
             IQueryable<SubtitleFile> query;
             List<SubtitleFileDto> embedded;
-            if (movieId is { } mid)
+            if (movieFileId is { } mfid)
+            {
+                query = db.SubtitleFiles.Where(s => s.MovieFileId == mfid);
+                var files = await db.MovieFiles.AsNoTracking().Where(f => f.Id == mfid && f.EmbeddedSubtitles != null && f.EmbeddedSubtitles != "")
+                    .Select(f => new { f.Id, f.RelativePath, f.EmbeddedSubtitles, f.DateAdded }).ToListAsync(ct);
+                embedded = files.SelectMany(f => EmbeddedDtos(f.Id, null, f.RelativePath, f.EmbeddedSubtitles, f.DateAdded)).ToList();
+            }
+            else if (episodeFileId is { } efid)
+            {
+                query = db.SubtitleFiles.Where(s => s.EpisodeFileId == efid);
+                var files = await db.EpisodeFiles.AsNoTracking().Where(f => f.Id == efid && f.EmbeddedSubtitles != null && f.EmbeddedSubtitles != "")
+                    .Select(f => new { f.Id, f.RelativePath, f.EmbeddedSubtitles, f.DateAdded }).ToListAsync(ct);
+                embedded = files.SelectMany(f => EmbeddedDtos(null, f.Id, f.RelativePath, f.EmbeddedSubtitles, f.DateAdded)).ToList();
+            }
+            else if (movieId is { } mid)
             {
                 var fileIds = db.MovieFiles.Where(f => f.MovieId == mid).Select(f => f.Id);
                 query = db.SubtitleFiles.Where(s => s.MovieFileId != null && fileIds.Contains(s.MovieFileId.Value));
@@ -106,7 +121,7 @@ public static class SubtitleEndpoints
             }
             else
             {
-                return Results.Problem("movieId or seriesId is required", statusCode: 400);
+                return Results.Problem("movieId, seriesId, movieFileId or episodeFileId is required", statusCode: 400);
             }
 
             var rows = await query.AsNoTracking().OrderBy(s => s.Language).ToListAsync(ct);
@@ -267,17 +282,27 @@ public static class SubtitleEndpoints
         });
 
         // Interactive search: every candidate with its score and why it would be skipped automatically.
+        // `language` narrows the search to one language or a comma-separated few (e.g. the ones the file is missing).
         group.MapGet("/candidates", async (int? movieFileId, int? episodeFileId, string? language, SubtitleService service, ISettingsService settings, CancellationToken ct) =>
         {
             var target = await ResolveAsync(service, movieFileId, episodeFileId, ct);
             if (target is null) return Results.NotFound();
             var s = await settings.GetAsync<SubtitleSettings>(ct);
-            var languages = language is not null ? [Languages.Normalize(language) ?? language] : s.Languages;
+            var requested = (language ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(l => Languages.Normalize(l) ?? l).Distinct(StringComparer.Ordinal).Take(20).ToList();
+            IReadOnlyList<string> languages = requested.Count > 0 ? requested : s.Languages;
             var (candidates, errors) = await service.SearchProvidersAsync(target, languages, s, ct);
+            // Per language, what "best match" would offer: the top candidate ignoring the minimum score (other rules still apply).
+            var best = languages
+                .Select(l => SubtitleScorer.Rank(target.Video, candidates.Where(c => c.Language == l), s, ignoreMinimum: true)
+                    .FirstOrDefault(r => r.Acceptable && r.Score > 0)?.Candidate)
+                .OfType<SubtitleCandidate>()
+                .Select(c => (c.Provider, c.Payload))
+                .ToHashSet();
             var ranked = languages.SelectMany(l => SubtitleScorer.Rank(target.Video, candidates.Where(c => c.Language == l), s))
                 .OrderByDescending(r => r.Score)
-                .Select(r => new ScoredSubtitleDto(r.Candidate, r.Score, r.Matches, r.Rejections, r.Acceptable));
-            return Results.Ok(new { target.Label, Results = ranked, Errors = errors });
+                .Select(r => new ScoredSubtitleDto(r.Candidate, r.Score, r.Matches, r.Rejections, r.Acceptable, best.Contains((r.Candidate.Provider, r.Candidate.Payload))));
+            return Results.Ok(new { target.Label, Results = ranked, Errors = errors, MinimumScore = SubtitleScorer.MinimumScore(target.Video, s) });
         });
 
         // Best match per missing language, ignoring the minimum score; the UI asks before downloading each one.
