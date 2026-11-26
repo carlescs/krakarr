@@ -1,6 +1,8 @@
-import { CdkVirtualScrollViewport } from '@angular/cdk/scrolling';
+import { CdkVirtualScrollViewport, ScrollingModule } from '@angular/cdk/scrolling';
+import { Component } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
-import { VariableHeightVirtualScrollStrategy, gridMetrics } from './virtual-scroll';
+import { KrVirtualTable, VariableHeightVirtualScrollStrategy, gridMetrics } from './virtual-scroll';
 
 describe('gridMetrics', () => {
   it('matches responsive column breakpoints for movies and series', () => {
@@ -76,5 +78,27 @@ describe('VariableHeightVirtualScrollStrategy', () => {
     expect(state().totalSize).toBe(0);
     expect(state().renderedRange).toEqual({ start: 0, end: 0 });
     expect(state().renderedOffset).toBe(0);
+  });
+});
+
+@Component({
+  imports: [ScrollingModule, KrVirtualTable],
+  template: `
+    <cdk-virtual-scroll-viewport krVirtualTable scrollWindow [itemSize]="44">
+      <table><thead><tr><th style="height: 33px; padding: 0">Title</th></tr></thead>
+        <tbody><tr *cdkVirtualFor="let row of rows" style="height: 44px"><td>{{ row }}</td></tr></tbody>
+      </table>
+    </cdk-virtual-scroll-viewport>`,
+})
+class VirtualTableHost { rows = [1, 2, 3]; }
+
+describe('KrVirtualTable', () => {
+  it('reserves the table header\'s height below the virtual rows', async () => {
+    TestBed.configureTestingModule({});
+    const fixture = TestBed.createComponent(VirtualTableHost);
+    await fixture.whenStable();
+    const viewport = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('cdk-virtual-scroll-viewport')!;
+    const thead = viewport.querySelector('thead')!;
+    expect(viewport.style.paddingBottom).toBe(`${thead.offsetHeight}px`);
   });
 });

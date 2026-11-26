@@ -68,8 +68,8 @@
     <kr-bulk-actions mediaType="Movie" [selection]="selection" [total]="total()" [closable]="view() === 'grid'" (closed)="stopSelecting()" />
   }
   @if (view() === 'table') {
-    <div class="card overflow-x-auto pb-10">
-      <cdk-virtual-scroll-viewport scrollWindow [itemSize]="tableRowHeight" [minBufferPx]="600" [maxBufferPx]="1200">
+    <div class="card overflow-x-auto">
+      <cdk-virtual-scroll-viewport krVirtualTable scrollWindow [itemSize]="tableRowHeight" [minBufferPx]="600" [maxBufferPx]="1200">
         <table class="table">
           <thead>
             <tr>

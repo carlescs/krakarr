@@ -9,7 +9,7 @@ import { Events } from '../../core/events';
 import { Language, SubtitleProvider, SubtitleSettings, WantedSubtitle, WantedSubtitlePage, WantedSubtitleQuery, WantedSubtitleSortKey } from '../../core/models';
 import { PagedListCache, VirtualRowDataSource } from '../../core/paged-list';
 import { Toasts } from '../../core/toast';
-import { observeContainerWidth } from '../../core/virtual-scroll';
+import { observeContainerWidth, KrVirtualTable } from '../../core/virtual-scroll';
 import { MultiPicker, PickerOption } from '../../shared/multi-picker/multi-picker';
 import { SubtitleManager } from '../../shared/subtitle-manager/subtitle-manager';
 import { BestMatchItem, SubtitleBestMatch } from '../../shared/subtitle-best-match/subtitle-best-match';
@@ -40,7 +40,7 @@ function notFoundParam(filter: WantedFilter) { return filter === 'all' ? undefin
 
 @Component({
   selector: 'kr-subtitles',
-  imports: [ScrollingModule, RouterLink, DatePipe, NgTemplateOutlet, MultiPicker, SubtitleManager, SubtitleBestMatch, SortHeader, RedundantSubtitles],
+  imports: [KrVirtualTable, ScrollingModule, RouterLink, DatePipe, NgTemplateOutlet, MultiPicker, SubtitleManager, SubtitleBestMatch, SortHeader, RedundantSubtitles],
   templateUrl: './subtitles.html',
   styleUrl: './subtitles.scss',
 })
