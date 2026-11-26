@@ -59,7 +59,7 @@ public sealed class HealthNotificationSource(IHealthMonitor health) : INotificat
     {
         if (context.Role != UserRole.Admin) return Task.FromResult<IReadOnlyList<Notification>>([]);
         IReadOnlyList<Notification> notifications = health.Current.Issues
-            .Select(i => new Notification("health." + i.Id, "health", i.CheckName, i.Message, "/settings/health",
+            .Select(i => new Notification("health." + i.Id, "health", i.CheckName, i.Message, "/settings/health", i.Count,
                 Severity: i.Severity == HealthSeverity.Error ? NotificationSeverity.Error : NotificationSeverity.Warning,
                 Date: i.Since))
             .ToList();
