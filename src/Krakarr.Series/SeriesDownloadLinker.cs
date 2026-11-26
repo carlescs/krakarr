@@ -37,9 +37,9 @@ public sealed class SeriesDownloadLinker(KrakarrDbContext db, IEventHub eventHub
         IReadOnlyList<Episode> episodes = [];
         if (parsed.SeasonNumber is { } season)
         {
-            // Only the parsed season's episodes, without their files.
+            // Only the parsed season's episodes (in library or scene numbering), without their files.
             var candidates = await db.Episodes.AsNoTracking()
-                .Where(e => e.SeriesId == seriesId && e.SeasonNumber == season)
+                .Where(e => e.SeriesId == seriesId && (e.SeasonNumber == season || e.SceneSeasonNumber == season))
                 .ToListAsync(ct);
             episodes = EpisodeDecisionEngine.MapEpisodes(candidates, parsed, DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime));
         }

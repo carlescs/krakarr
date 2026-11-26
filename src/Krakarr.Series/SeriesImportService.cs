@@ -102,8 +102,10 @@ public sealed class SeriesImportService(
                 continue;
             }
 
+            // Scene numbering first: the file is named like the release (see SceneNumbering).
             var episodes = parsed.EpisodeNumbers
-                .Select(n => series.Episodes.FirstOrDefault(e => e.SeasonNumber == season && e.EpisodeNumber == n))
+                .Select(n => SceneNumbering.Find(series.Episodes, season, n))
+                .Distinct()
                 .ToList();
             if (episodes.Count == 0 || episodes.Any(e => e is null))
             {

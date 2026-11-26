@@ -288,6 +288,7 @@
           </select>
         </div>
         <div><kr-language-override [(value)]="editLanguages" /></div>
+        <div><kr-alternate-titles kind="series" [itemId]="id()" /></div>
       </div>
       <ng-container footer>
         <button class="btn-ghost" (click)="editing.set(false)">Cancel</button>

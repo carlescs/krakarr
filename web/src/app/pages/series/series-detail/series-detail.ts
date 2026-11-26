@@ -1,4 +1,4 @@
-import { Component, DestroyRef, OnInit, computed, effect, inject, input, numberAttribute, signal, untracked } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, effect, inject, input, numberAttribute, signal, untracked, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -12,6 +12,7 @@ import { Toasts } from '../../../core/toast';
 import { ReleaseSearch } from '../../../core/indexer-search';
 import { Languages } from '../../../core/languages';
 import { LanguageOverride } from '../../../shared/language-override/language-override';
+import { AlternateTitles } from '../../../shared/alternate-titles/alternate-titles';
 import { IndexerProgress } from '../../../shared/indexer-progress/indexer-progress';
 import { Modal } from '../../../shared/modal/modal';
 import { TableSort } from '../../../core/table-sort';
@@ -56,7 +57,7 @@ export function episodeCodes(episodes: readonly Pick<Episode, 'seasonNumber' | '
 
 @Component({
   selector: 'kr-series-detail',
-  imports: [DeleteFilesDialog, MediaDownloads, RouterLink, ExternalLinks, EpisodeDetailsDialog, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, IndexerProgress, BytesPipe, AgoPipe, SubtitleManager, SortHeader],
+  imports: [DeleteFilesDialog, MediaDownloads, RouterLink, ExternalLinks, EpisodeDetailsDialog, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, AlternateTitles, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, IndexerProgress, BytesPipe, AgoPipe, SubtitleManager, SortHeader],
   templateUrl: './series-detail.html',
   styleUrl: './series-detail.scss',
 })
@@ -144,6 +145,7 @@ export class SeriesDetailPage implements OnInit {
   protected readonly searching = this.releaseSearch.running;
   protected readonly grabbing = signal<string | null>(null);
   protected readonly editing = signal(false);
+  private readonly alternateTitles = viewChild(AlternateTitles);
   protected readonly confirmDelete = signal(false);
   protected readonly organizing = signal(false);
   protected readonly organizePreview = signal<OrganizePreview | null>(null);
@@ -436,6 +438,7 @@ export class SeriesDetailPage implements OnInit {
   async saveEdit() {
     try {
       await this.api.updateSeries(this.id(), this.editMonitored, this.editProfileId, this.editSeasonFolder, this.editLanguages, this.editTitle.trim());
+      await this.alternateTitles()?.save();
       this.editing.set(false);
       await this.load();
     } catch (e) {

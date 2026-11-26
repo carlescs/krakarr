@@ -27,6 +27,13 @@ public sealed record MovieLookup
     public double? Rating { get; init; }
     /// <summary>Local movie id when the movie is already in the library.</summary>
     public int? MovieId { get; init; }
+    /// <summary>ISO 639-1 code of the original language ("ja"), when known.</summary>
+    public string? OriginalLanguage { get; init; }
+    /// <summary>
+    /// TMDB alternative titles and translated titles, in every language (only from <see cref="ITmdbClient.GetMovieAsync"/>).
+    /// The caller picks the ones to keep (<see cref="Media.Parsing.AlternateTitles.Select"/>).
+    /// </summary>
+    public IReadOnlyList<AlternateTitleInfo> AlternateTitles { get; init; } = [];
 }
 
 public sealed record CollectionLookup(int TmdbId, string Name, string? PosterUrl, string? FanartUrl);
@@ -52,8 +59,13 @@ public sealed class TmdbClient(TmdbApi api, ISettingsService settings) : ITmdbCl
 
     public async Task<MovieLookup> GetMovieAsync(int tmdbId, CancellationToken ct = default)
     {
-        var movie = await GetAsync<TmdbMovie>($"3/movie/{tmdbId.ToString(CultureInfo.InvariantCulture)}?append_to_response=release_dates", ct);
-        return Map(movie) with { ReleaseDates = MapReleaseDates(movie.ReleaseDates), Collection = MapCollection(movie.Collection) };
+        var movie = await GetAsync<TmdbMovie>($"3/movie/{tmdbId.ToString(CultureInfo.InvariantCulture)}?append_to_response=release_dates,alternative_titles,translations", ct);
+        return Map(movie) with
+        {
+            ReleaseDates = MapReleaseDates(movie.ReleaseDates),
+            Collection = MapCollection(movie.Collection),
+            AlternateTitles = MapAlternateTitles(movie),
+        };
     }
 
     public async Task<MovieLookup?> FindByImdbAsync(string imdbId, CancellationToken ct = default)
@@ -79,7 +91,32 @@ public sealed class TmdbClient(TmdbApi api, ISettingsService settings) : ITmdbCl
         Runtime = m.Runtime ?? 0,
         Status = m.Status,
         Rating = m.VoteAverage is > 0 ? Math.Round(m.VoteAverage.Value, 1) : null,
+        OriginalLanguage = string.IsNullOrWhiteSpace(m.OriginalLanguage) ? null : m.OriginalLanguage,
     };
+
+    /// <summary>Original title (in its language), translated titles, then alternative titles (AKAs), with their language.</summary>
+    internal static List<AlternateTitleInfo> MapAlternateTitles(TmdbMovie m)
+    {
+        var list = new List<AlternateTitleInfo>();
+        if (!string.IsNullOrWhiteSpace(m.OriginalTitle))
+        {
+            list.Add(new AlternateTitleInfo(m.OriginalTitle, Media.Parsing.AlternateTitles.LanguageFor(m.OriginalLanguage, null)));
+        }
+
+        foreach (var t in m.Translations?.Translations ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(t.Data?.Title)) continue;
+            list.Add(new AlternateTitleInfo(t.Data.Title, Media.Parsing.AlternateTitles.LanguageFor(t.Language, t.Country)));
+        }
+
+        foreach (var t in m.AlternativeTitles?.Titles ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(t.Title)) continue;
+            list.Add(new AlternateTitleInfo(t.Title, Media.Parsing.AlternateTitles.LanguageFor(null, t.Country)));
+        }
+
+        return list;
+    }
 
     internal static CollectionLookup? MapCollection(TmdbCollection? c) =>
         c is { Id: > 0, Name: { Length: > 0 } name }
@@ -138,6 +175,37 @@ public sealed class TmdbClient(TmdbApi api, ISettingsService settings) : ITmdbCl
         [JsonPropertyName("tagline")] public string? Tagline { get; init; }
         [JsonPropertyName("genres")] public List<TmdbNamed>? Genres { get; init; }
         [JsonPropertyName("credits")] public TmdbCreditList? Credits { get; init; }
+        [JsonPropertyName("original_language")] public string? OriginalLanguage { get; init; }
+        [JsonPropertyName("alternative_titles")] public TmdbAlternativeTitles? AlternativeTitles { get; init; }
+        [JsonPropertyName("translations")] public TmdbTranslations? Translations { get; init; }
+    }
+
+    internal sealed record TmdbAlternativeTitles
+    {
+        [JsonPropertyName("titles")] public List<TmdbAlternativeTitle>? Titles { get; init; }
+    }
+
+    internal sealed record TmdbAlternativeTitle
+    {
+        [JsonPropertyName("iso_3166_1")] public string? Country { get; init; }
+        [JsonPropertyName("title")] public string? Title { get; init; }
+    }
+
+    internal sealed record TmdbTranslations
+    {
+        [JsonPropertyName("translations")] public List<TmdbTranslation>? Translations { get; init; }
+    }
+
+    internal sealed record TmdbTranslation
+    {
+        [JsonPropertyName("iso_3166_1")] public string? Country { get; init; }
+        [JsonPropertyName("iso_639_1")] public string? Language { get; init; }
+        [JsonPropertyName("data")] public TmdbTranslationData? Data { get; init; }
+    }
+
+    internal sealed record TmdbTranslationData
+    {
+        [JsonPropertyName("title")] public string? Title { get; init; }
     }
 
     internal sealed record TmdbCollection

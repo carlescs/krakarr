@@ -286,6 +286,26 @@ public static class SeriesEndpoints
             return Results.NoContent();
         });
 
+        // Alternate titles: metadata and scene titles are read-only, the user's own can be replaced.
+        group.MapGet("/{id:int}/titles", async (int id, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            if (!await db.Series.AnyAsync(s => s.Id == id, ct)) return Results.NotFound();
+            var titles = await db.AlternateTitles.AsNoTracking().Where(t => t.SeriesId == id).ToListAsync(ct);
+            return Results.Ok(Media.Parsing.AlternateTitles.ToDtos(titles));
+        });
+
+        group.MapPut("/{id:int}/titles", async (int id, UpdateAlternateTitlesRequest req, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            var series = await db.Series.Include(s => s.AlternateTitles).FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (series is null) return Results.NotFound();
+            var (removed, error) = Media.Parsing.AlternateTitles.SetUserTitles(
+                series.AlternateTitles, req.Titles, [series.Title, series.MetadataTitle], SeriesService.NormalizeTitle);
+            if (error is not null) return Results.Problem(error, statusCode: StatusCodes.Status400BadRequest);
+            db.AlternateTitles.RemoveRange(removed);
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(Media.Parsing.AlternateTitles.ToDtos(series.AlternateTitles));
+        });
+
         group.MapDelete("/{id:int}", async (int id, bool? deleteFiles, KrakarrDbContext db, ITorrentEngine engine, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, CancellationToken ct) =>
         {
             var series = await db.Series.FirstOrDefaultAsync(s => s.Id == id, ct);

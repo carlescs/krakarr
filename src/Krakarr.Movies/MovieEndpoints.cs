@@ -305,6 +305,26 @@ public static class MovieEndpoints
             return Results.NoContent();
         });
 
+        // Alternate titles: metadata and scene titles are read-only, the user's own can be replaced.
+        group.MapGet("/{id:int}/titles", async (int id, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            if (!await db.Movies.AnyAsync(m => m.Id == id, ct)) return Results.NotFound();
+            var titles = await db.AlternateTitles.AsNoTracking().Where(t => t.MovieId == id).ToListAsync(ct);
+            return Results.Ok(Media.Parsing.AlternateTitles.ToDtos(titles));
+        });
+
+        group.MapPut("/{id:int}/titles", async (int id, UpdateAlternateTitlesRequest req, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            var movie = await db.Movies.Include(m => m.AlternateTitles).FirstOrDefaultAsync(m => m.Id == id, ct);
+            if (movie is null) return Results.NotFound();
+            var (removed, error) = Media.Parsing.AlternateTitles.SetUserTitles(
+                movie.AlternateTitles, req.Titles, [movie.Title], Media.Parsing.ReleaseParser.NormalizeTitle);
+            if (error is not null) return Results.Problem(error, statusCode: StatusCodes.Status400BadRequest);
+            db.AlternateTitles.RemoveRange(removed);
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(Media.Parsing.AlternateTitles.ToDtos(movie.AlternateTitles));
+        });
+
         group.MapDelete("/{id:int}", async (int id, bool? deleteFiles, KrakarrDbContext db, ITorrentEngine engine, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, CancellationToken ct) =>
         {
             var movie = await db.Movies.Include(m => m.MovieFile).FirstOrDefaultAsync(m => m.Id == id, ct);

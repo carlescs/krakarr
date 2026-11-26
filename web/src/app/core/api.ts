@@ -9,7 +9,8 @@ import {
   AuthStatus, AutomationSettings, BackupInfo, BackupList, BackupSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
   IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, BestSubtitleMatches, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, SubtitleSyncTools, RedundantSubtitlePage, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, EpisodeRelease, MediaInfo, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, KeywordLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
-  DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, EmbySettings, PlexSettings, MediaServerTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus
+  DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, EmbySettings, PlexSettings, MediaServerTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus,
+  AlternateTitle, AlternateTitleInput
 } from './models';
 
 const API = 'api/v1';
@@ -229,6 +230,12 @@ export class Api {
   /** Replaces the editable fields; `languages` null = use the global default. */
   updateMovie(id: number, monitored: boolean, qualityProfileId: number, minimumAvailability: MinimumAvailability | undefined, languages: string[] | null) {
     return this.put<void>(`movies/${id}`, { monitored, qualityProfileId, minimumAvailability: minimumAvailability ?? null, languages });
+  }
+  /** Alternate titles of a movie or series: metadata and scene titles, then the user's own. */
+  alternateTitles(kind: 'movies' | 'series', id: number) { return this.get<AlternateTitle[]>(`${kind}/${id}/titles`); }
+  /** Replaces the user's own alternate titles; metadata and scene titles stay. */
+  setAlternateTitles(kind: 'movies' | 'series', id: number, titles: AlternateTitleInput[]) {
+    return this.put<AlternateTitle[]>(`${kind}/${id}/titles`, { titles });
   }
   deleteMovie(id: number, deleteFiles: boolean) { return this.delete<void>(`movies/${id}`, { deleteFiles }); }
   /** Deletes a movie's file from disk; `unmonitor` also unmonitors the movie. */

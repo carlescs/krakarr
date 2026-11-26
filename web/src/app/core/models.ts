@@ -282,7 +282,7 @@ export interface MediaManagementSettings {
 export type SeriesMetadataSource = 'Tmdb' | 'Tvdb';
 /** Scores from OMDb; each is null when the source has none. */
 export interface TitleRatings { imdb: number | null; imdbVotes: number | null; rottenTomatoes: number | null; metacritic: number | null; rottenTomatoesUrl: string | null; }
-export interface MetadataSettings { tmdbApiKey?: string; seriesSource: SeriesMetadataSource; tvdbApiKey?: string; tvdbPin?: string; omdbApiKey?: string; language: string; releaseRegion?: string | null; }
+export interface MetadataSettings { tmdbApiKey?: string; seriesSource: SeriesMetadataSource; tvdbApiKey?: string; tvdbPin?: string; omdbApiKey?: string; language: string; releaseRegion?: string | null; sceneMapping?: boolean; }
 /** A library path as Krakarr sees it (from) and as the media server sees it (to). */
 export interface PathMapping { from: string; to: string; }
 export interface JellyfinSettings { url?: string | null; apiKey?: string | null; publicUrl?: string | null; refreshLibrary?: boolean; pathMappings?: PathMapping[]; }
@@ -475,3 +475,10 @@ export interface DashboardStats {
   activity: { grabbed: number; imported: number; failed: number; subtitles: number; importIssues: number };
   recentlyImported: { mediaType: MediaType; id: number; title: string; year: number; posterUrl?: string; date: string }[];
 }
+
+/** Where an alternate title comes from: the metadata source, the user, or TheXEM scene names. */
+export type AlternateTitleSource = 'Metadata' | 'User' | 'Scene';
+/** Another name of a movie or series that releases may use. `language`: a language code, or null when unknown. */
+export interface AlternateTitle { id: number; title: string; language: string | null; source: AlternateTitleSource; }
+/** An alternate title as the user enters it. */
+export interface AlternateTitleInput { title: string; language: string | null; }

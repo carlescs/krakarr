@@ -70,6 +70,7 @@ public sealed class MovieService(
         };
         MovieReleases.Apply(movie, lookup.ReleaseDates, MapStatus(lookup.Status), Today);
         await ApplyCollectionAsync(movie, lookup.Collection, ct);
+        await ApplyAlternateTitlesAsync(movie, lookup, ct);
         var roots = await db.RootFolders.AsNoTracking().Where(r => r.MediaType == MediaType.Movie).Select(r => r.Path).ToListAsync(ct);
         movie.Path = LibraryPaths.ResolveItemFolder(roots, request.RootFolderPath, request.ExistingPath,
             () => MovieNaming.BuildFolderName(movie, media.MovieFolderFormat));
@@ -107,6 +108,8 @@ public sealed class MovieService(
             movie.Runtime = lookup.Runtime;
             MovieReleases.Apply(movie, lookup.ReleaseDates, MapStatus(lookup.Status), Today);
             await ApplyCollectionAsync(movie, lookup.Collection, ct);
+            if (movie.Id > 0) await db.Entry(movie).Collection(m => m.AlternateTitles).LoadAsync(ct);
+            await ApplyAlternateTitlesAsync(movie, lookup, ct);
         }
         catch (MetadataException ex)
         {
@@ -279,6 +282,35 @@ public sealed class MovieService(
         movie.Collection = collection;
     }
 
+    /// <summary>
+    /// Replaces the movie's metadata alternate titles (translations, original title, AKAs) with the ones from TMDB in the
+    /// languages worth keeping. <see cref="Movie.AlternateTitles"/> must be loaded. Does not save.
+    /// </summary>
+    private async Task ApplyAlternateTitlesAsync(Movie movie, MovieLookup lookup, CancellationToken ct)
+    {
+        var keep = await AlternateTitleLanguages.ForAsync(db, settings, movie.Languages, lookup.OriginalLanguage, ct);
+        var titles = AlternateTitles.Select(lookup.AlternateTitles, [movie.Title], ReleaseParser.NormalizeTitle, keep);
+        db.AlternateTitles.RemoveRange(AlternateTitles.Sync(movie.AlternateTitles, AlternateTitleSource.Metadata, titles, ReleaseParser.NormalizeTitle));
+    }
+
+    /// <summary>Loads <see cref="Movie.AlternateTitles"/> for matching and searching, unless already loaded.</summary>
+    public async Task EnsureAlternateTitlesAsync(Movie movie, CancellationToken ct = default)
+    {
+        if (movie.Id == 0) return;
+        var entry = db.Entry(movie);
+        if (entry.State != EntityState.Detached)
+        {
+            var collection = entry.Collection(m => m.AlternateTitles);
+            if (!collection.IsLoaded) await collection.LoadAsync(ct);
+            return;
+        }
+
+        if (movie.AlternateTitles.Count == 0)
+        {
+            movie.AlternateTitles = await db.AlternateTitles.AsNoTracking().Where(t => t.MovieId == movie.Id).ToListAsync(ct);
+        }
+    }
+
     /// <summary>Deletes collections that no movie in the library belongs to any more.</summary>
     public static Task<int> PruneCollectionsAsync(KrakarrDbContext db, CancellationToken ct = default) =>
         db.MovieCollections.Where(c => !db.Movies.Any(m => m.CollectionId == c.Id)).ExecuteDeleteAsync(ct);
@@ -289,6 +321,7 @@ public sealed class MovieService(
     {
         var profile = movie.QualityProfile ?? await db.QualityProfiles.FirstAsync(p => p.Id == movie.QualityProfileId, ct);
         var existing = await ExistingQualityAsync(movie, ct);
+        await EnsureAlternateTitlesAsync(movie, ct);
 
         var result = await indexerSearch.SearchAsync(Criteria(movie), ct: ct);
 
@@ -305,6 +338,7 @@ public sealed class MovieService(
         var profile = movie.QualityProfile ?? await db.QualityProfiles.FirstAsync(p => p.Id == movie.QualityProfileId, ct);
         var existing = await ExistingQualityAsync(movie, ct);
         var languages = (await settings.GetAsync<LanguageSettings>(ct)).For(movie.Languages);
+        await EnsureAlternateTitlesAsync(movie, ct);
 
         var run = await indexerSearch.StartAsync(Criteria(movie), ct: ct);
         movie.LastSearched = DateTimeOffset.UtcNow;
@@ -316,13 +350,16 @@ public sealed class MovieService(
         await foreach (var e in events) yield return e;
     }
 
-    private static SearchCriteria Criteria(Movie movie) => new()
+    internal static SearchCriteria Criteria(Movie movie) => new()
     {
         Type = SearchType.Movie,
-        Query = movie.Year > 0 ? $"{movie.Title} {movie.Year}" : movie.Title,
+        Query = WithYear(movie.Title, movie.Year),
         ImdbId = movie.ImdbId,
         TmdbId = movie.TmdbId,
+        AlternateTitles = movie.AlternateTitles.Select(t => new AlternateTitleInfo(WithYear(t.Title, movie.Year), t.Language)).ToList(),
     };
+
+    private static string WithYear(string title, int year) => year > 0 ? $"{title} {year}" : title;
 
     /// <summary>Searches and grabs the best approved release. Returns a human readable outcome.</summary>
     public async Task<string> AutoSearchAsync(int movieId, CancellationToken ct = default)

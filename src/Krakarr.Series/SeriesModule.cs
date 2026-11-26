@@ -21,6 +21,13 @@ public static class SeriesModule
             c.Timeout = TimeSpan.FromSeconds(30);
             c.DefaultRequestHeaders.UserAgent.ParseAdd("Krakarr/0.1");
         });
+        services.AddHttpClient(XemClient.HttpClientName, c =>
+        {
+            c.BaseAddress = new Uri((configuration["Xem:BaseUrl"] ?? "https://thexem.info/").TrimEnd('/') + "/");
+            c.Timeout = TimeSpan.FromSeconds(20);
+            c.DefaultRequestHeaders.UserAgent.ParseAdd("Krakarr/0.1");
+        });
+        services.AddScoped<IXemClient, XemClient>();
         services.AddScoped<ITmdbTvClient, TmdbTvClient>();
         services.AddScoped<ITvdbClient, TvdbClient>();
         services.AddScoped<ISeriesMetadata, SeriesMetadata>();

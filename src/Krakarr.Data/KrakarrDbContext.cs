@@ -35,6 +35,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
     public DbSet<MediaRequest> MediaRequests => Set<MediaRequest>();
     public DbSet<MediaSubscription> MediaSubscriptions => Set<MediaSubscription>();
     public DbSet<NotificationDismissal> NotificationDismissals => Set<NotificationDismissal>();
+    public DbSet<AlternateTitle> AlternateTitles => Set<AlternateTitle>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
@@ -201,6 +202,19 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
             e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Movie).WithMany().HasForeignKey(x => x.MovieId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Series).WithMany().HasForeignKey(x => x.SeriesId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<AlternateTitle>(e =>
+        {
+            e.Property(x => x.Title).HasMaxLength(AlternateTitle.MaxTitleLength);
+            e.Property(x => x.NormalizedTitle).HasMaxLength(AlternateTitle.MaxTitleLength);
+            e.Property(x => x.Language).HasMaxLength(16);
+            e.HasIndex(x => x.NormalizedTitle);
+            e.HasIndex(x => x.MovieId);
+            e.HasIndex(x => x.SeriesId);
+            // Removing the title removes its alternate titles.
+            e.HasOne<Movie>().WithMany(x => x.AlternateTitles).HasForeignKey(x => x.MovieId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<Series>().WithMany(x => x.AlternateTitles).HasForeignKey(x => x.SeriesId).OnDelete(DeleteBehavior.Cascade);
         });
 
         b.Entity<NotificationDismissal>(e =>
