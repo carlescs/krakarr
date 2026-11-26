@@ -37,6 +37,9 @@ public sealed class HealthMonitorTests
             lock (Published) Published.Add(eventName);
             return Task.CompletedTask;
         }
+
+        public Task PublishToUserAsync(int userId, string eventName, object? payload, CancellationToken cancellationToken = default) =>
+            PublishAsync(eventName, payload, cancellationToken);
     }
 
     private HealthMonitor Monitor()

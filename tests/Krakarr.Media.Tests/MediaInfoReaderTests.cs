@@ -40,6 +40,39 @@ public class MediaInfoReaderTests
     }
 
     [Fact]
+    public void Reads_hdr_from_the_hevc_sps_when_the_container_has_no_transfer()
+    {
+        var video = Assert.Single(MediaInfoReader.ReadHeaders(Fixture("vui-hdr10-hevc.mkv")).Video);
+
+        Assert.Equal(("HEVC", 10, DynamicRange.Hdr10), (video.Codec, video.BitDepth, video.DynamicRange));
+    }
+
+    [Fact]
+    public void Reads_bit_depth_and_hlg_from_the_avc_sps()
+    {
+        var video = Assert.Single(MediaInfoReader.ReadHeaders(Fixture("vui-hlg-avc444.mp4")).Video);
+
+        // High 4:4:4 Predictive at 8 bits: the profile alone would say 10.
+        Assert.Equal(("AVC", 8, DynamicRange.Hlg), (video.Codec, video.BitDepth, video.DynamicRange));
+    }
+
+    [Theory]
+    [InlineData("hdr10plus-hevc.mkv")]
+    [InlineData("hdr10plus-hevc.mp4")]
+    public void Detects_hdr10_plus_from_the_first_frame(string file)
+    {
+        var video = Assert.Single(MediaInfoReader.ReadHeaders(Fixture(file)).Video);
+
+        Assert.Equal(("HEVC", 3840, 2160, 10, DynamicRange.Hdr10Plus), (video.Codec, video.Width, video.Height, video.BitDepth, video.DynamicRange));
+    }
+
+    [Fact]
+    public void Plain_hdr10_files_stay_hdr10()
+    {
+        Assert.Equal(DynamicRange.Hdr10, Assert.Single(MediaInfoReader.ReadHeaders(Fixture("hdr10-hevc.mkv")).Video).DynamicRange);
+    }
+
+    [Fact]
     public void Summarizes_a_file_for_storage()
     {
         var summary = MediaInfoSummary.Parse(MediaInfoSummary.ReadFile(Fixture("hdr10-hevc.mkv")))!;
@@ -114,6 +147,57 @@ public class MediaInfoReaderTests
         var summary = MediaInfoSummary.From(result)!;
         Assert.Equal(2160, summary.Resolution);
         Assert.Equal("7.1", summary.AudioChannels);
+    }
+
+    /// <summary>An hvcC with no parameter sets and 4-byte NAL lengths.</summary>
+    private static readonly byte[] EmptyHvcC = [1, .. new byte[20], 0x03, 0];
+
+    /// <summary>A 4-byte length-prefixed NAL unit.</summary>
+    private static byte[] Nal(params byte[] nal)
+    {
+        var length = new byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(length, (uint)nal.Length);
+        return [.. length, .. nal];
+    }
+
+    private static readonly byte[] Hdr10PlusSei = Nal(0x4E, 0x01, 0x04, 0x07, 0xB5, 0x00, 0x3C, 0x00, 0x01, 0x04, 0x01, 0x80);
+    private static readonly byte[] Slice = Nal(0x26, 0x01, 0xAF, 0x00);
+
+    private static byte[] HevcTrack(byte trackNumber, bool dolbyVision) =>
+        El(0xAE, UInt(0xD7, trackNumber), UInt(0x83, 1), Str(0x86, "V_MPEGH/ISO/HEVC"), El(0x63A2, EmptyHvcC),
+            dolbyVision ? El(0x41E4, UInt(0x41E7, 0x64766343)) : [],
+            El(0xE0, UInt(0xB0, 3840), UInt(0xBA, 2160), El(0x55B0, UInt(0x55BA, 16))));
+
+    private static byte[] SimpleBlock(byte trackNumber, params byte[][] nals) =>
+        El(0xA3, [(byte)(0x80 | trackNumber), 0, 0, 0x80, .. nals.SelectMany(n => n)]);
+
+    [Fact]
+    public void Finds_the_hdr10_plus_sei_in_the_video_tracks_first_block_after_other_tracks()
+    {
+        var tracks = El(0x1654AE6B,
+            El(0xAE, UInt(0xD7, 1), UInt(0x83, 2), Str(0x86, "A_AC3"), El(0xE1, UInt(0x9F, 6))),
+            HevcTrack(2, dolbyVision: true));
+        var cluster = El(0x1F43B675, UInt(0xE7, 0),
+            SimpleBlock(1, new byte[16]), // audio first
+            El(0xA0, El(0xA1, [0x82, 0, 0, 0, .. Hdr10PlusSei, .. Slice])));
+        // Tags between Tracks and the first Cluster are stepped over.
+        var file = EbmlHeader.Concat(El(0x18538067, tracks, El(0x1254C367, new byte[64]), cluster)).ToArray();
+
+        Assert.Equal(DynamicRange.DolbyVisionHdr10Plus, Assert.Single(MediaInfoReader.Read(new MemoryStream(file)).Video).DynamicRange);
+    }
+
+    [Fact]
+    public void An_sei_after_the_first_slice_or_a_broken_cluster_is_ignored()
+    {
+        var late = EbmlHeader.Concat(El(0x18538067, El(0x1654AE6B, HevcTrack(1, false)),
+            El(0x1F43B675, SimpleBlock(1, Slice, Hdr10PlusSei)))).ToArray();
+        Assert.Equal(DynamicRange.Hdr10, Assert.Single(MediaInfoReader.Read(new MemoryStream(late)).Video).DynamicRange);
+
+        // A cluster cut off mid-block still leaves the track info.
+        var cut = EbmlHeader.Concat(El(0x18538067, El(0x1654AE6B, HevcTrack(1, false)),
+            El(0x1F43B675, SimpleBlock(1, Hdr10PlusSei, Slice)))).ToArray()[..^10];
+        var video = Assert.Single(MediaInfoReader.Read(new MemoryStream(cut)).Video);
+        Assert.Equal((3840, DynamicRange.Hdr10), (video.Width, video.DynamicRange));
     }
 
     [Fact]

@@ -1,0 +1,72 @@
+<button type="button" class="btn-ghost relative px-2" [attr.aria-label]="label()" [title]="label()" [attr.aria-expanded]="open()"
+        aria-haspopup="true" (click)="open.set(!open())">
+  <svg class="size-6" [class.animate-spin]="tasks.active() > 0" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor">
+    <path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons['tasks']" />
+  </svg>
+  @if (badge() > 0) {
+    <span class="absolute top-0.5 right-0.5 min-w-4 rounded-full px-1 text-center text-[10px] leading-4 font-semibold text-slate-950"
+          [class]="badgeTone()">{{ badge() > 99 ? '99+' : badge() }}</span>
+  }
+</button>
+@if (open()) {
+  <div class="card fixed inset-x-2 top-[calc(3.5rem+env(safe-area-inset-top))] z-40 overflow-hidden shadow-xl sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-1 sm:w-96">
+    <div class="flex items-center justify-between border-b border-surface-700 px-4 py-2.5">
+      <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">Tasks</span>
+      @if (tasks.finished() > 0) {
+        <button type="button" class="text-xs font-medium text-slate-400 transition hover:text-white"
+                (click)="tasks.dismissFinished()">Clear finished</button>
+      }
+    </div>
+    @if (tasks.items().length === 0) {
+      <p class="px-4 py-6 text-center text-sm text-slate-500">No tasks running.</p>
+    } @else {
+      <ul class="max-h-[60vh] divide-y divide-surface-800 overflow-y-auto">
+        @for (t of tasks.items(); track t.id) {
+          <li class="flex items-start gap-3 py-3 pr-2 pl-4" [class.bg-emerald-500/10]="t.state === 'Succeeded'">
+            <svg class="mt-0.5 size-5 shrink-0" [class]="tone(t)" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons[t.kind] ?? icons['task']" />
+            </svg>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline gap-2">
+                @if (t.link) {
+                  <a [routerLink]="t.link" (click)="open.set(false)" class="min-w-0 flex-1 truncate text-sm font-medium text-slate-100 hover:underline" [title]="t.title">{{ t.title }}</a>
+                } @else {
+                  <span class="min-w-0 flex-1 truncate text-sm font-medium text-slate-100" [title]="t.title">{{ t.title }}</span>
+                }
+                <span class="shrink-0 text-[11px] font-medium" [class]="tone(t)">{{ stateLabels[t.state] }}</span>
+              </div>
+              <span class="block text-xs text-slate-400 wrap-anywhere">{{ t.message ?? (t.state === 'Waiting' ? 'Waiting for its turn' : '') }}</span>
+              @if (isActive(t)) {
+                <span class="mt-1.5 flex items-center gap-2">
+                  <span class="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-700" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                        [attr.aria-label]="'Progress of ' + t.title" [attr.aria-valuenow]="t.percent ?? null">
+                    @if (t.percent != null) {
+                      <span class="block h-full rounded-full bg-accent-400 transition-[width] duration-500" [style.width.%]="t.percent"></span>
+                    } @else {
+                      <span class="block h-full w-full animate-pulse rounded-full bg-accent-400/40"></span>
+                    }
+                  </span>
+                  @if (t.percent != null) {
+                    <span class="shrink-0 text-right text-[11px] tabular-nums text-slate-400">{{ t.percent }}%@if (remaining(t.remainingSeconds); as left) { · {{ left }} }</span>
+                  }
+                </span>
+              }
+              @if (t.canCancel) {
+                <button type="button" class="btn-secondary btn-sm mt-2" [disabled]="tasks.busy().has(t.id)"
+                        [attr.aria-label]="'Cancel ' + t.title" (click)="tasks.cancel(t)">Cancel</button>
+              }
+            </div>
+            @if (!isActive(t)) {
+              <button type="button" class="rounded p-1.5 text-slate-500 transition hover:bg-surface-700 hover:text-slate-200"
+                      [attr.aria-label]="'Dismiss ' + t.title" title="Dismiss" (click)="tasks.dismiss(t)">
+                <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                </svg>
+              </button>
+            }
+          </li>
+        }
+      </ul>
+    }
+  </div>
+}

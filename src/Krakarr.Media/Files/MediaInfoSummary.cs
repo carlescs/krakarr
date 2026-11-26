@@ -33,7 +33,7 @@ public sealed record MediaInfoSummary
     [JsonPropertyName("w")] public int Width { get; init; }
     [JsonPropertyName("h")] public int Height { get; init; }
     [JsonPropertyName("bd")] public int? BitDepth { get; init; }
-    /// <summary>HDR10, HLG, DV or "DV HDR10"; null for SDR or unknown.</summary>
+    /// <summary>HDR10, HDR10+, HLG, DV, "DV HDR10" or "DV HDR10+"; null for SDR or unknown.</summary>
     [JsonPropertyName("dr")] public string? DynamicRange { get; init; }
     [JsonPropertyName("a")] public IReadOnlyList<AudioSummary> Audio { get; init; } = [];
 

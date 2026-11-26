@@ -1,11 +1,12 @@
 using Microsoft.EntityFrameworkCore.Migrations;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace Krakarr.Data.Sqlite.Migrations;
+namespace Krakarr.Data.Postgres.Migrations;
 
 /// <inheritdoc />
-public partial class _20261126170152_AlternateTitlesAndSceneMapping : Migration
+public partial class _20261126172019_AlternateTitlesAndSceneMapping : Migration
 {
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)
@@ -13,27 +14,27 @@ public partial class _20261126170152_AlternateTitlesAndSceneMapping : Migration
         migrationBuilder.AddColumn<int>(
             name: "SceneEpisodeNumber",
             table: "Episodes",
-            type: "INTEGER",
+            type: "integer",
             nullable: true);
 
         migrationBuilder.AddColumn<int>(
             name: "SceneSeasonNumber",
             table: "Episodes",
-            type: "INTEGER",
+            type: "integer",
             nullable: true);
 
         migrationBuilder.CreateTable(
             name: "AlternateTitles",
             columns: table => new
             {
-                Id = table.Column<int>(type: "INTEGER", nullable: false)
-                    .Annotation("Sqlite:Autoincrement", true),
-                MovieId = table.Column<int>(type: "INTEGER", nullable: true),
-                SeriesId = table.Column<int>(type: "INTEGER", nullable: true),
-                Title = table.Column<string>(type: "TEXT", maxLength: 200, nullable: false),
-                NormalizedTitle = table.Column<string>(type: "TEXT", maxLength: 200, nullable: false),
-                Language = table.Column<string>(type: "TEXT", maxLength: 16, nullable: true),
-                Source = table.Column<int>(type: "INTEGER", nullable: false)
+                Id = table.Column<int>(type: "integer", nullable: false)
+                    .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                MovieId = table.Column<int>(type: "integer", nullable: true),
+                SeriesId = table.Column<int>(type: "integer", nullable: true),
+                Title = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                NormalizedTitle = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                Language = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: true),
+                Source = table.Column<int>(type: "integer", nullable: false)
             },
             constraints: table =>
             {

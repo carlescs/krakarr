@@ -63,7 +63,7 @@ const NAMING_TOKENS: { title: string; usedIn: string; tokens: TokenDoc[] }[] = [
     tokens: [
       { token: 'MediaInfo VideoCodec', description: 'Video codec', example: 'HEVC' },
       { token: 'MediaInfo VideoBitDepth', description: 'Video bit depth', example: '10' },
-      { token: 'MediaInfo VideoDynamicRange', description: 'HDR10, HLG, DV or DV HDR10; empty for SDR', example: 'HDR10' },
+      { token: 'MediaInfo VideoDynamicRange', description: 'HDR10, HDR10+, HLG, DV, DV HDR10 or DV HDR10+; empty for SDR', example: 'HDR10' },
       { token: 'MediaInfo Resolution', description: 'Real resolution of the video', example: '2160p' },
       { token: 'MediaInfo AudioCodec', description: 'Codec of the first audio track', example: 'EAC3 Atmos' },
       { token: 'MediaInfo AudioChannels', description: 'Channels of the first audio track', example: '5.1' },

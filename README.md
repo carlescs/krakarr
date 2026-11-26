@@ -93,10 +93,12 @@ Then open <http://localhost:8787>:
 
 ### Media info
 
-- Krakarr reads the **headers** of each video file (Matroska/WebM and MP4/MOV, no media data, no ffmpeg needed) for its
-  video codec, resolution, bit depth and HDR format (HDR10, HLG, Dolby Vision), its audio tracks (codec, channels,
-  language) and its duration. Other containers (AVI, TS…) are read with `ffprobe` when it is installed. Files are read on
-  import, library import and the first rescan after an upgrade, and again when they change on disk.
+- Krakarr reads the **headers** of each video file (Matroska/WebM and MP4/MOV, no ffmpeg needed) for its video codec,
+  resolution, bit depth and HDR format (HDR10, HDR10+, HLG, Dolby Vision), its audio tracks (codec, channels, language)
+  and its duration. For HEVC and AVC it also reads the parameter sets (bit depth and transfer characteristics the
+  container may not repeat) and the start of the first frame (at most 64 KB), where HDR10+ metadata lives. Other
+  containers (AVI, TS…) are read with `ffprobe`, which the Docker image ships (outside Docker, when it is on `PATH`).
+  Files are read on import, library import and the first rescan after an upgrade, and again when they change on disk.
 - **Quality** takes the resolution from the video itself: a release named 2160p that is really 720p is stored (and
   judged for upgrades) as 720p. The source (WEB-DL, Bluray…) still comes from the name.
 - **Samples and fakes:** a download whose file is less than half the movie's or episode's runtime is not imported.
@@ -224,7 +226,8 @@ Nothing is moved or renamed.
   without them, Krakarr fixes a constant shift or a framerate difference against a reference subtitle. The Docker image
   ships alass and a slimmed-down ffmpeg/ffprobe (audio decoding and text subtitle tracks only, ~14 MB in all), so syncing
   works out of the box. ffsubsync isn't included (it needs Python and numpy); outside Docker, install any of the tools on
-  `PATH` or set their paths in **Settings → Subtitles**. Syncs run one at a time with a timeout. Subtitles (SRT, VTT,
+  `PATH` or set their paths in **Settings → Subtitles**. Syncs run one at a time with a timeout; whoever starts one
+  follows it in the tasks menu of the top bar (automatic syncs show there for admins and managers) (progress, time left, cancel, then the outcome). Subtitles (SRT, VTT,
   ASS/SSA) can also be shifted by hand by ± ms.
 
 ### Media servers (Jellyfin, Emby, Plex)
