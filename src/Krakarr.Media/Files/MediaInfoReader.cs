@@ -7,10 +7,14 @@ namespace Krakarr.Media.Files;
 public static class DynamicRange
 {
     public const string Hdr10 = "HDR10";
+    /// <summary>HDR10 with SMPTE ST 2094-40 dynamic metadata, found in the SEI of the first frame.</summary>
+    public const string Hdr10Plus = "HDR10+";
     public const string Hlg = "HLG";
     public const string DolbyVision = "DV";
     /// <summary>Dolby Vision with an HDR10 base layer (profile 7/8.1): plays as HDR10 on other displays.</summary>
     public const string DolbyVisionHdr10 = "DV HDR10";
+    /// <summary>Dolby Vision with an HDR10+ base layer.</summary>
+    public const string DolbyVisionHdr10Plus = "DV HDR10+";
 }
 
 /// <summary>A video track. Codec is a display name ("HEVC", "AVC", "AV1"…); DynamicRange is null for SDR or unknown.</summary>
@@ -32,8 +36,10 @@ public sealed record MediaInfo(
 }
 
 /// <summary>
-/// Reads the tracks and duration of Matroska/WebM and MP4/MOV files from their headers only, through a seekable stream.
-/// Every read is bounded (no media data is loaded), so this is cheap even for large files on a NAS. Other containers,
+/// Reads the tracks and duration of Matroska/WebM and MP4/MOV files from their headers, through a seekable stream.
+/// HEVC/AVC parameter sets (bit depth, VUI transfer characteristics) are read from the codec configuration, and the
+/// start of the first video frame is scanned for in-band parameter sets and the HDR10+ SEI. Every read is bounded (at
+/// most <see cref="MaxFrameBytes"/> of media data), so this is cheap even for large files on a NAS. Other containers,
 /// or files whose headers can't be read, fall back to <c>ffprobe</c> when it is installed; otherwise
 /// <see cref="MediaInfo.Empty"/>.
 /// </summary>
@@ -42,6 +48,9 @@ public static class MediaInfoReader
     private const int MaxElementBytes = 1024 * 1024;
     private const int MaxStringBytes = 1024;
     private const int MaxDepth = 8;
+    /// <summary>Most bytes read from the start of the first video frame: its SEI and parameter sets precede the slices.</summary>
+    internal const int MaxFrameBytes = 64 * 1024;
+    private const int MaxConfigBytes = 16 * 1024;
 
     /// <summary>Reads a file; falls back to ffprobe when the headers can't be read and it is available.</summary>
     public static MediaInfo Read(string videoPath)
@@ -102,13 +111,36 @@ public static class MediaInfoReader
         _ => null,
     };
 
-    private static string? WithDolbyVision(string? range, bool dolbyVision) =>
-        !dolbyVision ? range : range == DynamicRange.Hdr10 ? DynamicRange.DolbyVisionHdr10 : DynamicRange.DolbyVision;
+    private static string? WithDolbyVision(string? range, bool dolbyVision) => !dolbyVision ? range : range switch
+    {
+        DynamicRange.Hdr10 => DynamicRange.DolbyVisionHdr10,
+        DynamicRange.Hdr10Plus => DynamicRange.DolbyVisionHdr10Plus,
+        _ => DynamicRange.DolbyVision,
+    };
+
+    /// <summary>
+    /// The dynamic range from the container's transfer characteristics, else the bitstream's (VUI), upgraded to HDR10+
+    /// when the first frame carries its SEI.
+    /// </summary>
+    private static string? Range(ulong containerTransfer, VideoStreamDetails? stream, bool dolbyVision)
+    {
+        var range = FromTransfer(containerTransfer) ?? (stream is null ? null : FromTransfer(stream.Transfer));
+        if (stream?.Hdr10Plus == true && range is null or DynamicRange.Hdr10) range = DynamicRange.Hdr10Plus;
+        return WithDolbyVision(range, dolbyVision);
+    }
+
+    /// <summary>Parameter set details of an HEVC or AVC track from its configuration record, or null for other codecs.</summary>
+    private static VideoStreamDetails? StreamDetails(string? codec, byte[]? config) => config is null ? null : codec switch
+    {
+        "HEVC" => VideoBitstream.Hevc(config),
+        "AVC" => VideoBitstream.Avc(config),
+        _ => null,
+    };
 
     /// <summary>Luma bit depth from an HEVC decoder configuration record (hvcC), or null.</summary>
     private static int? HevcBitDepth(ReadOnlySpan<byte> hvcC) => hvcC.Length > 17 && hvcC[0] == 1 ? (hvcC[17] & 0x07) + 8 : null;
 
-    /// <summary>Bit depth implied by an AVC decoder configuration record (avcC): High 10 and above are 10-bit.</summary>
+    /// <summary>Bit depth implied by an AVC decoder configuration record (avcC) when its SPS can't be read: High 10 and above are 10-bit.</summary>
     private static int? AvcBitDepth(ReadOnlySpan<byte> avcC) => avcC.Length > 1 && avcC[0] == 1 ? avcC[1] is 110 or 122 or 244 ? 10 : 8 : null;
 
     private static string AppendAtmos(string codec, string? name) =>
@@ -126,7 +158,9 @@ public static class MediaInfoReader
         private const uint Video = 0xE0, PixelWidth = 0xB0, PixelHeight = 0xBA, Colour = 0x55B0, BitsPerChannel = 0x55B2,
             TransferCharacteristics = 0x55BA, BlockAdditionMapping = 0x41E4, BlockAddIdType = 0x41E7;
         private const uint Audio = 0xE1, Channels = 0x9F;
-        private const uint Cluster = 0x1F43B675;
+        private const uint Cluster = 0x1F43B675, SimpleBlock = 0xA3, BlockGroup = 0xA0, Block = 0xA1, TrackNumber = 0xD7;
+        /// <summary>Most top-level elements stepped over looking for the first Cluster, and blocks looked at in it.</summary>
+        private const int MaxElementsBeforeCluster = 32, MaxBlocks = 64;
         private const ulong VideoTrack = 0x01, AudioTrack = 0x02, SubtitleTrack = 0x11;
         private const ulong UnknownSize = ulong.MaxValue;
 
@@ -141,9 +175,11 @@ public static class MediaInfoReader
             var segmentEnd = size == UnknownSize ? s.Length : Math.Min(s.Length, segmentStart + (long)size);
 
             byte[]? tracks = null, info = null;
-            long? tracksAt = null, infoAt = null;
+            long? tracksAt = null, infoAt = null, clusterAt = null;
+            var unknownSize = false;
             while (s.Position < segmentEnd && (tracks is null || info is null))
             {
+                var at = s.Position;
                 (id, size) = ReadHeader(s);
                 if (id == Tracks) tracks = Load(s, size);
                 else if (id == Info) info = Load(s, size);
@@ -154,16 +190,117 @@ public static class MediaInfoReader
                     infoAt ??= Find(seekHead, Info, segmentStart);
                 }
                 // Media data starts: jump to the elements the SeekHead pointed at, if any.
-                else if (id == Cluster || size == UnknownSize) break;
+                else if (id == Cluster || size == UnknownSize)
+                {
+                    if (id == Cluster) clusterAt = at;
+                    else unknownSize = true;
+                    break;
+                }
                 else Skip(s, size);
             }
 
+            // Where to look for the first Cluster: here, unless we stopped inside an element of unknown size.
+            var clusterSearchFrom = clusterAt ?? (unknownSize ? null : s.Position);
             tracks ??= LoadAt(s, tracksAt, Tracks, segmentEnd);
             info ??= LoadAt(s, infoAt, Info, segmentEnd);
             if (tracks is null && info is null) return MediaInfo.Empty;
 
-            var (video, audio, subtitles) = tracks is null ? ([], [], []) : ParseTracks(tracks);
+            var (pending, audio, subtitles) = tracks is null ? ([], [], []) : ParseTracks(tracks);
+            if (pending.FirstOrDefault(v => v.Stream is not null) is { } main && clusterSearchFrom is { } from)
+            {
+                ScanFirstFrame(s, from, segmentEnd, main);
+            }
+
+            var video = pending.Select(v => new VideoTrackInfo(v.Codec, v.Width, v.Height,
+                v.Bits ?? v.Stream?.BitDepth ?? v.ProfileBits, Range(v.Transfer, v.Stream, v.DolbyVision))).ToList();
             return new MediaInfo(info is null ? null : ParseDuration(info), video, audio, subtitles);
+        }
+
+        /// <summary>A video track whose bitstream details may still be completed from the first frame.</summary>
+        private sealed record PendingVideo(ulong Number, string? Codec, int Width, int Height, int? Bits, int? ProfileBits,
+            ulong Transfer, bool DolbyVision, VideoStreamDetails? Stream);
+
+        /// <summary>
+        /// Finds the first Cluster and scans the start of the track's first block, for HDR10+ and in-band parameter
+        /// sets. Reads a few element headers and at most <see cref="MaxFrameBytes"/>; a malformed file just ends it.
+        /// </summary>
+        private static void ScanFirstFrame(Stream s, long from, long segmentEnd, PendingVideo track)
+        {
+            try
+            {
+                s.Position = from;
+                for (var n = 0; n < MaxElementsBeforeCluster && s.Position < segmentEnd; n++)
+                {
+                    var (id, size) = ReadHeader(s);
+                    if (id == Cluster)
+                    {
+                        ScanCluster(s, size == UnknownSize ? segmentEnd : Math.Min(segmentEnd, s.Position + (long)Math.Min(size, long.MaxValue / 2)), track);
+                        return;
+                    }
+
+                    if (size == UnknownSize) return;
+                    Skip(s, size);
+                }
+            }
+            catch (Exception ex) when (ex is IOException or EndOfStreamException or InvalidDataException or ArgumentOutOfRangeException or ArgumentException)
+            {
+            }
+        }
+
+        private static void ScanCluster(Stream s, long end, PendingVideo track)
+        {
+            var blocks = 0;
+            while (blocks < MaxBlocks && s.Position < end)
+            {
+                var (id, size) = ReadHeader(s);
+                if (size == UnknownSize || size > (ulong)(end - s.Position)) return;
+                var bodyEnd = s.Position + (long)size;
+                if (id == SimpleBlock)
+                {
+                    blocks++;
+                    if (ScanBlock(s, size, track)) return;
+                }
+                else if (id == BlockGroup)
+                {
+                    while (s.Position < bodyEnd)
+                    {
+                        var (cid, csize) = ReadHeader(s);
+                        if (csize == UnknownSize || csize > (ulong)(bodyEnd - s.Position)) return;
+                        var childEnd = s.Position + (long)csize;
+                        if (cid == Block)
+                        {
+                            blocks++;
+                            if (ScanBlock(s, csize, track)) return;
+                        }
+
+                        s.Position = childEnd;
+                    }
+                }
+
+                s.Position = bodyEnd;
+            }
+        }
+
+        /// <summary>Scans a (Simple)Block if it belongs to the track; true when it did.</summary>
+        private static bool ScanBlock(Stream s, ulong size, PendingVideo track)
+        {
+            // Block header: track number (vint), timecode (2), flags (1).
+            Span<byte> head = stackalloc byte[11];
+            var headLength = (int)Math.Min(size, (ulong)head.Length);
+            s.ReadExactly(head[..headLength]);
+            var data = head[..headLength].ToArray();
+            var pos = 0;
+            if (!TryVint(data, ref pos, keepMarker: false, out var number) || number != track.Number) return false;
+            if (pos + 3 > data.Length) return true;
+            var lacing = (data[pos + 2] >> 1) & 0x03;
+            pos += 3;
+            if (lacing != 0) return true;
+
+            var frame = new byte[(int)Math.Min(size - (ulong)pos, MaxFrameBytes)];
+            s.Position -= headLength - pos;
+            s.ReadExactly(frame);
+            VideoBitstream.ScanFrame(frame, track.Codec == "HEVC", track.Stream!);
+            return true;
         }
 
         private static byte[]? LoadAt(Stream s, long? at, uint expected, long segmentEnd)
@@ -208,15 +345,15 @@ public static class MediaInfoReader
             return seconds is > 0 and < 1e7 ? TimeSpan.FromSeconds(seconds) : null;
         }
 
-        private static (List<VideoTrackInfo>, List<AudioTrackInfo>, List<EmbeddedSubtitleTrack>) ParseTracks(byte[] tracks)
+        private static (List<PendingVideo>, List<AudioTrackInfo>, List<EmbeddedSubtitleTrack>) ParseTracks(byte[] tracks)
         {
-            var video = new List<VideoTrackInfo>();
+            var video = new List<PendingVideo>();
             var audio = new List<AudioTrackInfo>();
             var subtitles = new List<EmbeddedSubtitleTrack>();
             foreach (var (id, entry) in Children(tracks))
             {
                 if (id != TrackEntry) continue;
-                ulong type = 0, channels = 0, width = 0, height = 0, bits = 0, transfer = 0;
+                ulong number = 0, type = 0, channels = 0, width = 0, height = 0, bits = 0, transfer = 0;
                 bool forced = false, hi = false, enabled = true, dolbyVision = false;
                 string? language = null, bcp47 = null, name = null, codec = null;
                 byte[]? codecPrivate = null;
@@ -224,6 +361,7 @@ public static class MediaInfoReader
                 {
                     switch (cid)
                     {
+                        case TrackNumber: number = UInt(body); break;
                         case TrackType: type = UInt(body); break;
                         case CodecId: codec = Str(body); break;
                         case CodecPrivate: codecPrivate = body; break;
@@ -272,12 +410,12 @@ public static class MediaInfoReader
                 {
                     case VideoTrack:
                         var videoCodec = VideoCodec(codec);
-                        int? bitDepth = bits is > 0 and <= 16 ? (int)bits
-                            : videoCodec == "HEVC" && codecPrivate is not null ? HevcBitDepth(codecPrivate)
+                        int? profileBits = videoCodec == "HEVC" && codecPrivate is not null ? HevcBitDepth(codecPrivate)
                             : videoCodec == "AVC" && codecPrivate is not null ? AvcBitDepth(codecPrivate)
                             : null;
-                        video.Add(new VideoTrackInfo(videoCodec, (int)Math.Min(width, 65535), (int)Math.Min(height, 65535), bitDepth,
-                            WithDolbyVision(FromTransfer(transfer), dolbyVision)));
+                        video.Add(new PendingVideo(number, videoCodec, (int)Math.Min(width, 65535), (int)Math.Min(height, 65535),
+                            bits is > 0 and <= 16 ? (int)bits : null, profileBits, transfer, dolbyVision,
+                            StreamDetails(videoCodec, codecPrivate)));
                         break;
                     case AudioTrack:
                         audio.Add(new AudioTrackInfo(AudioCodec(codec, name), (int)Math.Min(channels, 32), lang, name));
@@ -428,6 +566,11 @@ public static class MediaInfoReader
             public ulong Transfer;
             public bool DolbyVision;
             public string? AudioCodecDetail;
+            /// <summary>The hvcC/avcC record, parsed into <see cref="Stream"/> once the track is read.</summary>
+            public byte[]? Config;
+            public VideoStreamDetails? Stream;
+            /// <summary>File offset of the first chunk (stco/co64): where the first sample starts.</summary>
+            public long? FirstChunk;
             public List<uint> ChapterRefs { get; } = [];
         }
 
@@ -455,9 +598,12 @@ public static class MediaInfoReader
             if (!found) return MediaInfo.Empty;
             // QuickTime chapters are text tracks referenced through tref/chap; they are not subtitles.
             var chapters = tracks.SelectMany(t => t.ChapterRefs).ToHashSet();
-            var video = tracks.Where(t => t.Handler == "vide" && VideoCodec(t.Codec) is not null)
-                .Select(t => new VideoTrackInfo(VideoCodec(t.Codec), t.Width, t.Height, t.BitDepth,
-                    WithDolbyVision(FromTransfer(t.Transfer), t.DolbyVision || t.Codec is "dvh1" or "dvhe" or "dav1")))
+            var videoTracks = tracks.Where(t => t.Handler == "vide" && VideoCodec(t.Codec) is not null).ToList();
+            foreach (var t in videoTracks) t.Stream = StreamDetails(VideoCodec(t.Codec), t.Config);
+            if (videoTracks.FirstOrDefault(t => t.Stream is not null) is { } main) ScanFirstSample(s, main);
+            var video = videoTracks
+                .Select(t => new VideoTrackInfo(VideoCodec(t.Codec), t.Width, t.Height, t.Stream?.BitDepth ?? t.BitDepth,
+                    Range(t.Transfer, t.Stream, t.DolbyVision || t.Codec is "dvh1" or "dvhe" or "dav1")))
                 .ToList();
             var audio = tracks.Where(t => t.Handler == "soun")
                 .Select(t => new AudioTrackInfo(t.AudioCodecDetail ?? AudioCodec(t.Codec, t.Name), t.Channels, t.ExtendedLanguage ?? t.Language, t.Name))
@@ -468,6 +614,23 @@ public static class MediaInfoReader
                     NameSays(t.Name, "forced"), t.Handler == "clcp" || IsHearingImpaired(t.Name)))
                 .ToList();
             return new MediaInfo(duration, video, audio, subtitles);
+        }
+
+        /// <summary>
+        /// Scans the start of the track's first sample (at its first chunk offset) for HDR10+ and in-band parameter sets.
+        /// Fragmented files (no chunk offsets in moov) are left out. Reads at most <see cref="MaxFrameBytes"/>.
+        /// </summary>
+        private static void ScanFirstSample(Stream s, Track track)
+        {
+            if (track.FirstChunk is not { } at || at <= 0 || at >= s.Length) return;
+            try
+            {
+                var frame = Load(s, at, s.Length, MaxFrameBytes);
+                VideoBitstream.ScanFrame(frame, VideoCodec(track.Codec) == "HEVC", track.Stream!);
+            }
+            catch (Exception ex) when (ex is IOException or EndOfStreamException)
+            {
+            }
         }
 
         private static TimeSpan? ParseMvhd(byte[] mvhd)
@@ -533,6 +696,13 @@ public static class MediaInfoReader
                     case "stsd":
                         ParseStsd(s, cstart, cend, track);
                         break;
+                    case "stco" or "co64":
+                        // version/flags(4) entry_count(4), then 32- or 64-bit offsets.
+                        var stco = Load(s, cstart, cend, 16);
+                        if (stco.Length < 12 || BinaryPrimitives.ReadUInt32BigEndian(stco.AsSpan(4)) == 0) break;
+                        if (type == "stco") track.FirstChunk = BinaryPrimitives.ReadUInt32BigEndian(stco.AsSpan(8));
+                        else if (stco.Length >= 16 && BinaryPrimitives.ReadUInt64BigEndian(stco.AsSpan(8)) is var offset and < long.MaxValue / 2) track.FirstChunk = (long)offset;
+                        break;
                     case "udta":
                         foreach (var (utype, ustart, uend) in Boxes(s, cstart, cend))
                         {
@@ -584,10 +754,12 @@ public static class MediaInfoReader
                 switch (type)
                 {
                     case "hvcC":
-                        track.BitDepth = HevcBitDepth(Load(s, cstart, cend, 32));
+                        track.Config = Load(s, cstart, cend, MaxConfigBytes);
+                        track.BitDepth = HevcBitDepth(track.Config);
                         break;
                     case "avcC":
-                        track.BitDepth = AvcBitDepth(Load(s, cstart, cend, 8));
+                        track.Config = Load(s, cstart, cend, MaxConfigBytes);
+                        track.BitDepth = AvcBitDepth(track.Config);
                         break;
                     case "av1C":
                         // marker/version(1) seq_profile(3)+level(5) tier(1) high_bitdepth(1) twelve_bit(1) ...

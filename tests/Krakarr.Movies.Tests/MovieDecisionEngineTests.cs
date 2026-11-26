@@ -140,3 +140,71 @@ public class MovieDecisionEngineTests
         Assert.Equal(["es"], decisions[0].Languages);
     }
 }
+
+public class MovieAlternateTitleTests
+{
+    private static readonly QualityProfile Hd1080 = new()
+    {
+        Id = 1, Name = "HD-1080p", AllowedQualityIds = [Qualities.Bluray1080.Id], CutoffQualityId = Qualities.Bluray1080.Id,
+    };
+
+    private static ReleaseInfo Release(string title) => new()
+    {
+        Title = title, Guid = title, DownloadUrl = "http://x/" + title, Size = 8L * 1024 * 1024 * 1024, Seeders = 10,
+    };
+
+    private static Movie Spirited() => new()
+    {
+        Id = 2, TmdbId = 129, Title = "Spirited Away", OriginalTitle = "千と千尋の神隠し", Year = 2001, Path = "/m/Spirited Away (2001)",
+    };
+
+    [Fact]
+    public void Accepts_releases_named_by_an_alternate_title()
+    {
+        var movie = Spirited();
+        var release = Release("El.Viaje.de.Chihiro.2001.1080p.BluRay.x264-GRP");
+        Assert.Contains(MovieDecisionEngine.Evaluate(movie, Hd1080, null, release).Rejections, r => r.StartsWith("Title mismatch"));
+
+        movie.AlternateTitles.Add(new AlternateTitle { Title = "El viaje de Chihiro", NormalizedTitle = "elviajedechihiro", Language = "es" });
+        movie.AlternateTitles.Add(new AlternateTitle { Title = "Sen to Chihiro no Kamikakushi", NormalizedTitle = "sentochihironokamikakushi" });
+        var d = MovieDecisionEngine.Evaluate(movie, Hd1080, null, release);
+        Assert.True(d.Approved, string.Join(", ", d.Rejections));
+        Assert.True(MovieDecisionEngine.Evaluate(movie, Hd1080, null, Release("Sen.to.Chihiro.no.Kamikakushi.2001.1080p.BluRay.x264-GRP")).Approved);
+
+        // The year still has to fit.
+        Assert.Contains(MovieDecisionEngine.Evaluate(movie, Hd1080, null, Release("El.Viaje.de.Chihiro.2015.1080p.BluRay.x264-GRP")).Rejections,
+            r => r.StartsWith("Year mismatch"));
+    }
+
+    [Fact]
+    public void Search_criteria_carry_alternate_titles_with_the_year()
+    {
+        var movie = Spirited();
+        movie.AlternateTitles.Add(new AlternateTitle { Title = "El viaje de Chihiro", NormalizedTitle = "elviajedechihiro", Language = "es" });
+        var criteria = MovieService.Criteria(movie);
+        Assert.Equal("Spirited Away 2001", criteria.Query);
+        Assert.Equal([new AlternateTitleInfo("El viaje de Chihiro 2001", "es")], criteria.AlternateTitles);
+    }
+
+    [Fact]
+    public void Reads_tmdb_original_translated_and_alternative_titles()
+    {
+        var json = """
+            {"id":129,"title":"Spirited Away","original_title":"千と千尋の神隠し","original_language":"ja",
+             "translations":{"translations":[
+               {"iso_3166_1":"ES","iso_639_1":"es","data":{"title":"El viaje de Chihiro"}},
+               {"iso_3166_1":"MX","iso_639_1":"es","data":{"title":"El viaje de Chihiro (MX)"}},
+               {"iso_3166_1":"US","iso_639_1":"en","data":{"title":""}}]},
+             "alternative_titles":{"titles":[{"iso_3166_1":"JP","title":"Sen to Chihiro no Kamikakushi"},{"iso_3166_1":"FR","title":"Le Voyage de Chihiro"}]}}
+            """;
+        var movie = System.Text.Json.JsonSerializer.Deserialize<TmdbClient.TmdbMovie>(json)!;
+        Assert.Equal(
+            [
+                new AlternateTitleInfo("千と千尋の神隠し", "ja"), new AlternateTitleInfo("El viaje de Chihiro", "es"),
+                new AlternateTitleInfo("El viaje de Chihiro (MX)", "es-419"), new AlternateTitleInfo("Sen to Chihiro no Kamikakushi", "ja"),
+                new AlternateTitleInfo("Le Voyage de Chihiro", "fr"),
+            ],
+            TmdbClient.MapAlternateTitles(movie));
+        Assert.Equal("ja", TmdbClient.Map(movie).OriginalLanguage);
+    }
+}

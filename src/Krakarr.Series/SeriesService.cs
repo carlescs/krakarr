@@ -29,6 +29,7 @@ public sealed class SeriesService(
     IDownloadService downloads,
     IEventHub eventHub,
     TimeProvider time,
+    IXemClient xem,
     ILogger<SeriesService> logger)
 {
     private DateOnly Today => DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
@@ -39,6 +40,7 @@ public sealed class SeriesService(
             .Include(s => s.QualityProfile)
             .Include(s => s.Seasons)
             .Include(s => s.Episodes).ThenInclude(e => e.EpisodeFile)
+            .Include(s => s.AlternateTitles)
             .AsSplitQuery()
             .FirstOrDefaultAsync(s => s.Id == id, ct);
 
@@ -92,6 +94,8 @@ public sealed class SeriesService(
         }
 
         ApplyMonitorMode(series, request.Monitor, Today);
+        await ApplyAlternateTitlesAsync(series, info, ct);
+        await ApplySceneMappingAsync(series, ct);
 
         db.Series.Add(series);
         await db.SaveChangesAsync(ct);
@@ -183,6 +187,10 @@ public sealed class SeriesService(
                 seen.Add(episode);
             }
 
+            var titles = db.Entry(series).Collection(x => x.AlternateTitles);
+            if (!titles.IsLoaded) await titles.LoadAsync(ct);
+            await ApplyAlternateTitlesAsync(series, info, ct);
+            await ApplySceneMappingAsync(series, ct);
             series.LastRefreshed = time.GetUtcNow();
         }
         catch (MetadataException ex)
@@ -329,6 +337,53 @@ public sealed class SeriesService(
         await eventHub.PublishAsync(EventNames.SeriesUpdated, new { series.Id }, ct);
     }
 
+    /// <summary>Normalises a series' alternate title the way the decision engine compares series titles.</summary>
+    public static string NormalizeTitle(string title) => SeriesNaming.NormalizedTitle(title);
+
+    /// <summary>
+    /// Replaces the series' metadata alternate titles with the ones from the metadata source in the languages worth
+    /// keeping. <see cref="Core.Domain.Series.AlternateTitles"/> must be loaded. Does not save.
+    /// </summary>
+    private async Task ApplyAlternateTitlesAsync(Core.Domain.Series series, SeriesInfo info, CancellationToken ct)
+    {
+        var keep = await AlternateTitleLanguages.ForAsync(db, settings, series.Languages, info.OriginalLanguage, ct);
+        var titles = AlternateTitles.Select(info.AlternateTitles, [series.Title, series.MetadataTitle], NormalizeTitle, keep);
+        db.AlternateTitles.RemoveRange(AlternateTitles.Sync(series.AlternateTitles, AlternateTitleSource.Metadata, titles, NormalizeTitle));
+    }
+
+    /// <summary>
+    /// Reads scene names and numbering from TheXEM when enabled (numbering only with TheTVDB metadata, whose order XEM
+    /// maps). The result is kept on the series until the next refresh; when XEM cannot be reached the previous mapping
+    /// stays. <see cref="Core.Domain.Series.AlternateTitles"/> must be loaded. Does not save.
+    /// </summary>
+    private async Task ApplySceneMappingAsync(Core.Domain.Series series, CancellationToken ct)
+    {
+        var meta = await settings.GetAsync<MetadataSettings>(ct);
+        if (!meta.SceneMapping || series.TvdbId is not { } tvdbId)
+        {
+            SceneNumbering.Apply(series.Episodes, []);
+            db.AlternateTitles.RemoveRange(AlternateTitles.Sync(series.AlternateTitles, AlternateTitleSource.Scene, [], NormalizeTitle));
+            return;
+        }
+
+        try
+        {
+            var names = (await xem.GetNamesAsync(tvdbId, ct)).Select(n => new AlternateTitleInfo(n));
+            var titles = AlternateTitles.Select(names, [series.Title, series.MetadataTitle], NormalizeTitle);
+            db.AlternateTitles.RemoveRange(AlternateTitles.Sync(series.AlternateTitles, AlternateTitleSource.Scene, titles, NormalizeTitle));
+            var mappings = meta.SeriesSource == SeriesMetadataSource.Tvdb ? await xem.GetMappingsAsync(tvdbId, ct) : [];
+            SceneNumbering.Apply(series.Episodes, mappings);
+        }
+        catch (MetadataException ex)
+        {
+            logger.LogWarning("Could not read TheXEM scene mapping for {Title}: {Message}", series.Title, ex.Message);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            logger.LogWarning("Could not read TheXEM scene mapping for {Title}: timed out", series.Title);
+        }
+    }
+
     /// <summary>True when another series (not <paramref name="exceptId"/>) has one of these ids.</summary>
     private Task<bool> InLibraryAsync(SeriesIds ids, int? exceptId, CancellationToken ct) =>
         db.Series.AnyAsync(s => s.Id != exceptId
@@ -433,16 +488,33 @@ public sealed class SeriesService(
         await foreach (var e in events) yield return e;
     }
 
-    private static SearchCriteria Criteria(Core.Domain.Series series, int? season, Episode? episode) => new()
+    /// <summary>Search for a season or an episode, in the scene numbering releases use (see <see cref="SceneNumbering"/>).</summary>
+    internal static SearchCriteria Criteria(Core.Domain.Series series, int? season, Episode? episode)
     {
-        Type = SearchType.Tv,
-        Query = SeriesNaming.BaseTitle(series.Title),
-        TvdbId = series.TvdbId,
-        // Only fall back to the TMDB id: indexers that know both prefer it, but TV releases are mostly tagged by TVDB id.
-        TmdbId = series.TvdbId is null ? series.TmdbId : null,
-        Season = season,
-        Episode = episode?.EpisodeNumber,
-    };
+        int? searchSeason = season, searchEpisode = null;
+        if (episode is not null)
+        {
+            (searchSeason, searchEpisode) = SceneNumbering.SceneNumbers(episode);
+        }
+        else if (season is { } s)
+        {
+            searchSeason = SceneNumbering.SearchSeason(series.Episodes.Where(e => e.SeasonNumber == s), s);
+        }
+
+        return new SearchCriteria
+        {
+            Type = SearchType.Tv,
+            Query = SeriesNaming.BaseTitle(series.Title),
+            TvdbId = series.TvdbId,
+            // Only fall back to the TMDB id: indexers that know both prefer it, but TV releases are mostly tagged by TVDB id.
+            TmdbId = series.TvdbId is null ? series.TmdbId : null,
+            Season = searchSeason,
+            Episode = searchEpisode,
+            AlternateTitles = series.AlternateTitles
+                .Select(t => new AlternateTitleInfo(SeriesNaming.BaseTitle(t.Title), t.Language))
+                .ToList(),
+        };
+    }
 
     /// <summary>
     /// Automatic search: for each season with wanted episodes, search the season (packs and single episodes),

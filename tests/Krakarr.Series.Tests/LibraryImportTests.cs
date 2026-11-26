@@ -103,7 +103,8 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
 
         public Task<SeriesInfo> GetSeriesAsync(int tvdbId, CancellationToken ct = default) => Task.FromResult(new SeriesInfo
         {
-            TvdbId = 424242, Title = "Test Show (TVDB)", Year = 2021,
+            TvdbId = 424242, Title = "Test Show (TVDB)", Year = 2021, OriginalLanguage = "ja",
+            AlternateTitles = [new AlternateTitleInfo("Tesuto Sho", "ja"), new AlternateTitleInfo("Serie de prueba", "es"), new AlternateTitleInfo("Testserie", "de")],
             Episodes =
             [
                 new EpisodeInfo { TvdbId = 71, SeasonNumber = 1, EpisodeNumber = 1, AirDate = new DateOnly(2021, 1, 1) },
@@ -111,6 +112,16 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
             ],
         });
         public Task LoginAsync(CancellationToken ct = default) => Task.CompletedTask;
+    }
+
+    /// <summary>TheXEM: scene season 2 starts at TheTVDB's S01E02.</summary>
+    private sealed class FakeXem : IXemClient
+    {
+        public Task<IReadOnlyList<SceneMapping>> GetMappingsAsync(int tvdbId, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<SceneMapping>>(tvdbId == 424242 ? [new SceneMapping(1, 1, 1, 1), new SceneMapping(1, 2, 2, 1)] : []);
+
+        public Task<IReadOnlyList<string>> GetNamesAsync(int tvdbId, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<string>>(tvdbId == 424242 ? ["Test Show", "Test Show Scene"] : []);
     }
 
     private sealed class Unused : IIndexerSearchService, IDownloadService
@@ -129,6 +140,7 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
         services.AddKrakarrData();
         services.AddSingleton<ITmdbTvClient, FakeTmdb>();
         services.AddSingleton<ITvdbClient, FakeTvdb>();
+        services.AddSingleton<IXemClient, FakeXem>();
         services.AddScoped<ISeriesMetadata, SeriesMetadata>();
         services.AddSingleton<IIndexerSearchService, Unused>();
         services.AddSingleton<IDownloadService, Unused>();
@@ -248,6 +260,43 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
         Assert.Equal("Renamed", e2.Title);
         Assert.Equal(72, e2.TvdbId);
         Assert.Equal(3, e2.TmdbId); // TMDB id kept for switching back
+    }
+
+    [Fact]
+    public async Task Refresh_stores_alternate_titles_and_scene_mapping_and_keeps_user_titles()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var scope = _services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<SeriesService>();
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
+        await settings.SaveAsync(new LanguageSettings { Preferred = ["es"] }, ct);
+        var added = await service.AddAsync(new AddSeriesRequest(9001, null, 1, "/tv"), ct);
+        added.AlternateTitles.Add(new AlternateTitle { Title = "Mine", NormalizedTitle = "mine", Source = AlternateTitleSource.User });
+        await db.SaveChangesAsync(ct);
+
+        await settings.SaveAsync(new MetadataSettings { SeriesSource = SeriesMetadataSource.Tvdb, SceneMapping = true }, ct);
+        db.ChangeTracker.Clear();
+        await service.RefreshAsync((await service.LoadAsync(added.Id, ct))!, ct);
+
+        var titles = await db.AlternateTitles.AsNoTracking().Where(t => t.SeriesId == added.Id).ToListAsync(ct);
+        // Original language and wanted language kept, German dropped. The title is now TheTVDB's, so XEM's "Test Show" is an alternate.
+        Assert.Equal(
+            [("Mine", AlternateTitleSource.User), ("Serie de prueba", AlternateTitleSource.Metadata), ("Test Show", AlternateTitleSource.Scene),
+             ("Test Show Scene", AlternateTitleSource.Scene), ("Tesuto Sho", AlternateTitleSource.Metadata)],
+            titles.Select(t => (t.Title, t.Source)).OrderBy(t => t.Title, StringComparer.Ordinal));
+        Assert.Equal("testshowscene", titles.Single(t => t.Title == "Test Show Scene").NormalizedTitle);
+
+        var episodes = await db.Episodes.AsNoTracking().Where(e => e.SeriesId == added.Id).OrderBy(e => e.EpisodeNumber).ToListAsync(ct);
+        Assert.Equal([(1, 1), (2, 1)], episodes.Select(e => (e.SceneSeasonNumber!.Value, e.SceneEpisodeNumber!.Value)));
+
+        // Turning scene mapping off forgets XEM's data and keeps the rest.
+        await settings.SaveAsync(new MetadataSettings { SeriesSource = SeriesMetadataSource.Tvdb }, ct);
+        db.ChangeTracker.Clear();
+        await service.RefreshAsync((await service.LoadAsync(added.Id, ct))!, ct);
+        Assert.Equal(["Mine", "Serie de prueba", "Tesuto Sho"],
+            (await db.AlternateTitles.AsNoTracking().Where(t => t.SeriesId == added.Id).Select(t => t.Title).ToListAsync(ct)).Order(StringComparer.Ordinal));
+        Assert.All(await db.Episodes.AsNoTracking().Where(e => e.SeriesId == added.Id).ToListAsync(ct), e => Assert.Null(e.SceneSeasonNumber));
     }
 
     [Fact]

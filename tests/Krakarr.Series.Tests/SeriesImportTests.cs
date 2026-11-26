@@ -57,6 +57,7 @@ public sealed class SeriesImportTests : IAsyncLifetime
         services.AddKrakarrMedia();
         var unused = new Unused();
         services.AddSingleton<ISeriesMetadata>(unused);
+        services.AddSingleton<IXemClient>(new XemClient(new NoHttp()));
         services.AddSingleton<IIndexerSearchService>(unused);
         services.AddSingleton<IDownloadService>(unused);
         services.AddSingleton<ITorrentEngine>(_engine);
@@ -268,4 +269,9 @@ public sealed class SeriesImportTests : IAsyncLifetime
         Assert.False(download.Imported);
         Assert.Contains("the runtime is 45 min (sample or fake?)", download.ImportMessage);
     }
+}
+
+internal sealed class NoHttp : IHttpClientFactory
+{
+    public HttpClient CreateClient(string name) => throw new NotSupportedException();
 }

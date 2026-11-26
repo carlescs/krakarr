@@ -79,12 +79,26 @@ Then open <http://localhost:8787>:
   `MULTi`/`DUAL` releases also count as English. Untagged releases are assumed to be in the indexer's **default
   language** (set per indexer), or English when it has none.
 
+### Alternate titles and scene mapping
+
+- **Alternate titles:** on refresh Krakarr stores each movie's and series' original title, translated titles and AKAs
+  (TMDB alternative titles and translations, TheTVDB aliases), keeping those in your wanted languages, your indexers'
+  default languages, English and the original language. Releases named by any of them are accepted.
+- **Your own titles:** add more in the *Edit* dialog, optionally with a language. Refreshes never change them.
+- **Searches:** an indexer that cannot search by IMDb/TMDB/TheTVDB id is also searched (at most two extra queries) with
+  the alternate titles in its default language and the ones without a language.
+- **TheXEM** (*Settings → Metadata*, off by default): reads scene names and scene season/episode numbering from
+  thexem.info when series refresh. Releases and downloaded files are matched by scene numbers first, and searches use
+  them. Numbering applies only with TheTVDB as the series source, since TheXEM maps TheTVDB's episode order.
+
 ### Media info
 
-- Krakarr reads the **headers** of each video file (Matroska/WebM and MP4/MOV, no media data, no ffmpeg needed) for its
-  video codec, resolution, bit depth and HDR format (HDR10, HLG, Dolby Vision), its audio tracks (codec, channels,
-  language) and its duration. Other containers (AVI, TS…) are read with `ffprobe` when it is installed. Files are read on
-  import, library import and the first rescan after an upgrade, and again when they change on disk.
+- Krakarr reads the **headers** of each video file (Matroska/WebM and MP4/MOV, no ffmpeg needed) for its video codec,
+  resolution, bit depth and HDR format (HDR10, HDR10+, HLG, Dolby Vision), its audio tracks (codec, channels, language)
+  and its duration. For HEVC and AVC it also reads the parameter sets (bit depth and transfer characteristics the
+  container may not repeat) and the start of the first frame (at most 64 KB), where HDR10+ metadata lives. Other
+  containers (AVI, TS…) are read with `ffprobe`, which the Docker image ships (outside Docker, when it is on `PATH`).
+  Files are read on import, library import and the first rescan after an upgrade, and again when they change on disk.
 - **Quality** takes the resolution from the video itself: a release named 2160p that is really 720p is stored (and
   judged for upgrades) as 720p. The source (WEB-DL, Bluray…) still comes from the name.
 - **Samples and fakes:** a download whose file is less than half the movie's or episode's runtime is not imported.

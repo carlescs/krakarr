@@ -163,6 +163,8 @@ public class Movie
     /// <summary>TMDB collection (franchise) the movie belongs to, if any.</summary>
     public int? CollectionId { get; set; }
     public MovieCollection? Collection { get; set; }
+    /// <summary>Other names releases use for the movie. Load it only for the movie being matched or searched.</summary>
+    public List<AlternateTitle> AlternateTitles { get; set; } = [];
 }
 
 /// <summary>A TMDB movie collection ("The Lord of the Rings Collection"). Only collections with movies in the library are kept.</summary>
@@ -267,6 +269,42 @@ public class Series
     public DateTimeOffset? LastSearched { get; set; }
     public List<Season> Seasons { get; set; } = [];
     public List<Episode> Episodes { get; set; } = [];
+    /// <summary>Other names releases use for the series. Load it only for the series being matched or searched.</summary>
+    public List<AlternateTitle> AlternateTitles { get; set; } = [];
+}
+
+public enum AlternateTitleSource
+{
+    /// <summary>TMDB alternative titles and translations, TheTVDB aliases. Replaced on every refresh.</summary>
+    Metadata = 0,
+    /// <summary>Added by the user; refreshes never touch them.</summary>
+    User = 1,
+    /// <summary>Scene names from TheXEM. Replaced on every refresh.</summary>
+    Scene = 2,
+}
+
+/// <summary>Another name of a movie or series (local title, original title, AKA, scene name) that releases may use.</summary>
+public class AlternateTitle
+{
+    public const int MaxTitleLength = 200;
+
+    public int Id { get; set; }
+    /// <summary>Set for a movie's title; <see cref="SeriesId"/> is null then.</summary>
+    public int? MovieId { get; set; }
+    /// <summary>Set for a series' title; <see cref="MovieId"/> is null then.</summary>
+    public int? SeriesId { get; set; }
+    public required string Title { get; set; }
+    /// <summary>
+    /// <see cref="Title"/> normalised the way release names are (<c>ReleaseParser.NormalizeTitle</c>; for series without a
+    /// trailing year), so RSS sync can look titles up without loading the library.
+    /// </summary>
+    public required string NormalizedTitle { get; set; }
+    /// <summary>
+    /// Language the title is in (<see cref="MediaLanguages"/> code), when known. Text searches use titles in the indexer's
+    /// default language; a null language is searched on every indexer.
+    /// </summary>
+    public string? Language { get; set; }
+    public AlternateTitleSource Source { get; set; }
 }
 
 public class Season
@@ -287,6 +325,10 @@ public class Episode
     public int SeasonNumber { get; set; }
     public int EpisodeNumber { get; set; }
     public int? AbsoluteNumber { get; set; }
+    /// <summary>Season number scene releases use for this episode (TheXEM), when it differs or is mapped; null = not mapped.</summary>
+    public int? SceneSeasonNumber { get; set; }
+    /// <summary>Episode number scene releases use for this episode (TheXEM); set together with <see cref="SceneSeasonNumber"/>.</summary>
+    public int? SceneEpisodeNumber { get; set; }
     public string? Title { get; set; }
     public string? Overview { get; set; }
     public DateOnly? AirDate { get; set; }

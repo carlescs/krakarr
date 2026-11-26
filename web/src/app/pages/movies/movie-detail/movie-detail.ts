@@ -1,4 +1,4 @@
-import { Component, DestroyRef, OnInit, computed, effect, inject, input, numberAttribute, signal, untracked } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, effect, inject, input, numberAttribute, signal, untracked, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -13,6 +13,7 @@ import { Toasts } from '../../../core/toast';
 import { ReleaseSearch } from '../../../core/indexer-search';
 import { Languages } from '../../../core/languages';
 import { LanguageOverride } from '../../../shared/language-override/language-override';
+import { AlternateTitles } from '../../../shared/alternate-titles/alternate-titles';
 import { IndexerProgress } from '../../../shared/indexer-progress/indexer-progress';
 import { Modal } from '../../../shared/modal/modal';
 import { TableSort } from '../../../core/table-sort';
@@ -31,7 +32,7 @@ import { DeleteFilesDialog } from '../../../shared/delete-files/delete-files';
 
 @Component({
   selector: 'kr-movie-detail',
-  imports: [DeleteFilesDialog, MediaDownloads, ExternalLinks, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, MovieReleases, FormsModule, DatePipe, Poster, Modal, IndexerProgress, SubtitleManager, SubtitleList, MediaInfoView, SortHeader, BytesPipe, AgoPipe],
+  imports: [DeleteFilesDialog, MediaDownloads, ExternalLinks, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, AlternateTitles, MovieReleases, FormsModule, DatePipe, Poster, Modal, IndexerProgress, SubtitleManager, SubtitleList, MediaInfoView, SortHeader, BytesPipe, AgoPipe],
   templateUrl: './movie-detail.html',
   styleUrl: './movie-detail.scss',
 })
@@ -63,6 +64,7 @@ export class MovieDetailPage implements OnInit {
   protected readonly searching = this.releaseSearch.running;
   protected readonly grabbing = signal<string | null>(null);
   protected readonly editing = signal(false);
+  private readonly alternateTitles = viewChild(AlternateTitles);
   protected readonly confirmDelete = signal(false);
   protected readonly confirmDeleteFile = signal(false);
   protected readonly subtitles = signal<SubtitleFile[]>([]);
@@ -222,6 +224,7 @@ export class MovieDetailPage implements OnInit {
   async saveEdit() {
     try {
       await this.api.updateMovie(this.id(), this.editMonitored, this.editProfileId, this.editAvailability, this.editLanguages);
+      await this.alternateTitles()?.save();
       this.editing.set(false);
       await this.load();
     } catch (e) {

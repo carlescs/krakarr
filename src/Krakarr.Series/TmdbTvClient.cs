@@ -2,8 +2,10 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Krakarr.Core.Configuration;
+using Krakarr.Core.Domain;
 using Krakarr.Core.Metadata;
 using Krakarr.Data;
+using Krakarr.Media.Parsing;
 
 namespace Krakarr.Series;
 
@@ -48,7 +50,7 @@ public sealed class TmdbTvClient(TmdbApi api, ISettingsService settings) : ITmdb
     {
         var meta = await settings.GetAsync<MetadataSettings>(ct);
         var id = tmdbId.ToString(CultureInfo.InvariantCulture);
-        var show = await api.GetAsync<TvShow>(meta, $"3/tv/{id}?append_to_response=external_ids", ct);
+        var show = await api.GetAsync<TvShow>(meta, $"3/tv/{id}?append_to_response=external_ids,alternative_titles,translations", ct);
 
         var seasonNumbers = show.Seasons.Select(s => s.SeasonNumber).Distinct().Order().ToList();
         var episodes = new List<EpisodeInfo>();
@@ -98,7 +100,27 @@ public sealed class TmdbTvClient(TmdbApi api, ISettingsService settings) : ITmdb
             ImdbId = Blank(show.ExternalIds?.ImdbId),
             FirstAired = firstAired,
             Episodes = episodes,
+            OriginalLanguage = AlternateTitles.LanguageFor(show.OriginalLanguage, null),
+            AlternateTitles = MapAlternateTitles(show),
         };
+    }
+
+    /// <summary>Original name (in its language), translated names, then alternative titles (AKAs), with their language.</summary>
+    private static List<AlternateTitleInfo> MapAlternateTitles(TvShow show)
+    {
+        var list = new List<AlternateTitleInfo>();
+        if (Blank(show.OriginalName) is { } original) list.Add(new AlternateTitleInfo(original, AlternateTitles.LanguageFor(show.OriginalLanguage, null)));
+        foreach (var t in show.Translations?.Translations ?? [])
+        {
+            if (Blank(t.Data?.Name) is { } name) list.Add(new AlternateTitleInfo(name, AlternateTitles.LanguageFor(t.Language, t.Country)));
+        }
+
+        foreach (var t in show.AlternativeTitles?.Results ?? [])
+        {
+            if (Blank(t.Title) is { } title) list.Add(new AlternateTitleInfo(title, AlternateTitles.LanguageFor(null, t.Country)));
+        }
+
+        return list;
     }
 
     /// <summary>TMDB has no absolute numbering; number regular episodes in season/episode order (specials get none).</summary>
@@ -167,7 +189,25 @@ public sealed class TmdbTvClient(TmdbApi api, ISettingsService settings) : ITmdb
         [JsonPropertyName("networks")] public List<Named> Networks { get; init; } = [];
         [JsonPropertyName("seasons")] public List<SeasonSummary> Seasons { get; init; } = [];
         [JsonPropertyName("external_ids")] public ExternalIds? ExternalIds { get; init; }
+        [JsonPropertyName("original_language")] public string? OriginalLanguage { get; init; }
+        [JsonPropertyName("alternative_titles")] public AlternativeTitleList? AlternativeTitles { get; init; }
+        [JsonPropertyName("translations")] public TranslationList? Translations { get; init; }
     }
+
+    private sealed record AlternativeTitleList([property: JsonPropertyName("results")] List<AlternativeTitle>? Results);
+
+    private sealed record AlternativeTitle(
+        [property: JsonPropertyName("iso_3166_1")] string? Country,
+        [property: JsonPropertyName("title")] string? Title);
+
+    private sealed record TranslationList([property: JsonPropertyName("translations")] List<Translation>? Translations);
+
+    private sealed record Translation(
+        [property: JsonPropertyName("iso_3166_1")] string? Country,
+        [property: JsonPropertyName("iso_639_1")] string? Language,
+        [property: JsonPropertyName("data")] TranslationData? Data);
+
+    private sealed record TranslationData([property: JsonPropertyName("name")] string? Name);
 
     private sealed record Named([property: JsonPropertyName("name")] string? Name);
 

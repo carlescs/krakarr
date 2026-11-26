@@ -17,7 +17,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261125184243_SubtitleSyncAndUpgrade";
+    public override string LastMigrationId => "20261126172019_AlternateTitlesAndSceneMapping";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -27,6 +27,48 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
             .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
         NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+        modelBuilder.Entity("Krakarr.Core.Domain.AlternateTitle", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
+
+                b.Property<string>("Language")
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<int?>("MovieId")
+                    .HasColumnType("integer");
+
+                b.Property<string>("NormalizedTitle")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)");
+
+                b.Property<int?>("SeriesId")
+                    .HasColumnType("integer");
+
+                b.Property<int>("Source")
+                    .HasColumnType("integer");
+
+                b.Property<string>("Title")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)");
+
+                b.HasKey("Id");
+
+                b.HasIndex("MovieId");
+
+                b.HasIndex("NormalizedTitle");
+
+                b.HasIndex("SeriesId");
+
+                b.ToTable("AlternateTitles");
+            });
 
         modelBuilder.Entity("Krakarr.Core.Domain.Download", b =>
             {
@@ -157,6 +199,12 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("text");
 
                 b.Property<int>("Runtime")
+                    .HasColumnType("integer");
+
+                b.Property<int?>("SceneEpisodeNumber")
+                    .HasColumnType("integer");
+
+                b.Property<int?>("SceneSeasonNumber")
                     .HasColumnType("integer");
 
                 b.Property<int>("SeasonNumber")
@@ -1003,6 +1051,19 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("UserPasskeys");
             });
 
+        modelBuilder.Entity("Krakarr.Core.Domain.AlternateTitle", b =>
+            {
+                b.HasOne("Krakarr.Core.Domain.Movie", null)
+                    .WithMany("AlternateTitles")
+                    .HasForeignKey("MovieId")
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasOne("Krakarr.Core.Domain.Series", null)
+                    .WithMany("AlternateTitles")
+                    .HasForeignKey("SeriesId")
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
         modelBuilder.Entity("Krakarr.Core.Domain.Episode", b =>
             {
                 b.HasOne("Krakarr.Core.Domain.EpisodeFile", "EpisodeFile")
@@ -1151,8 +1212,15 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Navigation("User");
             });
 
+        modelBuilder.Entity("Krakarr.Core.Domain.Movie", b =>
+            {
+                b.Navigation("AlternateTitles");
+            });
+
         modelBuilder.Entity("Krakarr.Core.Domain.Series", b =>
             {
+                b.Navigation("AlternateTitles");
+
                 b.Navigation("Episodes");
 
                 b.Navigation("Seasons");
