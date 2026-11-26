@@ -58,7 +58,7 @@
         <button class="btn-ghost btn-sm" (click)="logout()" [title]="'Sign out ' + (auth.status()?.username ?? '')">Sign out</button>
       </div>
     </header>
-    <main class="flex-1 pt-6 pr-[max(1rem,env(safe-area-inset-right))] pb-tabbar pl-[max(1rem,env(safe-area-inset-left))] lg:px-8 lg:pb-6">
+    <main class="page-transition flex-1 pt-6 pr-[max(1rem,env(safe-area-inset-right))] pb-tabbar pl-[max(1rem,env(safe-area-inset-left))] lg:px-8 lg:pb-6">
       <router-outlet />
     </main>
   </div>
