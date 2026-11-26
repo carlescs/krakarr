@@ -57,6 +57,16 @@ public sealed class SubtitleSyncProgressTests
     }
 
     [Fact]
+    public void A_sync_asked_for_by_a_user_is_theirs_and_an_automatic_one_is_for_staff()
+    {
+        _progress.Queue(1, "Dune (2021) · English", "/movies/3", ownerId: 5);
+        _progress.Queue(2, "Severance S01E03 · Spanish", "/series/5");
+
+        Assert.Equal(["subtitles.sync.1"], _tasks.For(new BackgroundTaskViewer(5, IsStaff: false)).Select(t => t.Id));
+        Assert.Equal(["subtitles.sync.2"], _tasks.For(new BackgroundTaskViewer(6, IsStaff: true)).Select(t => t.Id));
+    }
+
+    [Fact]
     public void A_sync_that_ends_without_an_outcome_disappears()
     {
         _progress.Queue(7, "Dune (2021) · English", "/movies/3");

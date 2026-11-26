@@ -18,9 +18,9 @@ export class Events {
   readonly requestsUpdated = new Subject<void>();
   /** Something a notification source reports may have changed. */
   readonly notificationsUpdated = new Subject<void>();
-  /** A background task was queued, started, finished, cancelled or dismissed; staff only. */
+  /** A background task was queued, started, finished, cancelled or dismissed; sent to whoever may see it. */
   readonly backgroundTasksUpdated = new Subject<void>();
-  /** Progress of a background task changed (e.g. a subtitle sync); staff only. */
+  /** Progress of a background task changed (e.g. a subtitle sync); sent to whoever may see it. */
   readonly backgroundTaskProgress = new Subject<BackgroundTaskProgress>();
   /** A health run finished (admins refetch the report). */
   readonly healthUpdated = new Subject<void>();

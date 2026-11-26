@@ -42,11 +42,19 @@ public sealed record BackgroundTaskInfo(
     public bool IsFinished => Finished is not null;
 }
 
+/// <summary>Who is looking at the tasks: a task is shown to the user who started it; tasks nobody started (automatic work) to staff.</summary>
+public sealed record BackgroundTaskViewer(int? UserId, bool IsStaff)
+{
+    public bool CanSee(int? ownerId) => ownerId is { } owner ? owner == UserId : IsStaff;
+}
+
 /// <summary>Payload of <see cref="EventNames.BackgroundTaskProgress"/>: new progress and message of the task <paramref name="Id"/>.</summary>
 public sealed record BackgroundTaskProgress(string Id, double? Percent, string? Message, double? RemainingSeconds = null);
 
 /// <summary>
-/// Long-running work waiting, running or recently finished, for the tasks menu in the top bar (staff only). The work
+/// Long-running work waiting, running or recently finished, for the tasks menu in the top bar. A task started by a user
+/// (<c>ownerId</c>) is only listed for, cancelled by and pushed to that user; one nobody started (automatic work) is
+/// shared by staff (see <see cref="BackgroundTaskViewer"/>). The work
 /// itself runs wherever it likes (the command queue, a scheduled task); it reports here with <see cref="Queue"/>,
 /// <see cref="Stage"/>, <see cref="Report"/> and <see cref="Complete"/>, and watches the token <see cref="Queue"/> returns
 /// for <see cref="Cancel"/>. Finished tasks stay for <see cref="KeepFinished"/> (at most <see cref="MaxFinished"/>) so the
@@ -75,25 +83,28 @@ public sealed class BackgroundTasks(IEventHub eventHub, TimeProvider time, ILogg
 
     private readonly ConcurrentDictionary<string, Entry> _entries = new();
 
-    /// <summary>Everything tracked, oldest first.</summary>
-    public IReadOnlyList<BackgroundTaskInfo> Current
+    /// <summary>Everything tracked, whoever started it, oldest first.</summary>
+    public IReadOnlyList<BackgroundTaskInfo> Current => List(_ => true);
+
+    /// <summary>What <paramref name="viewer"/> may see, oldest first.</summary>
+    public IReadOnlyList<BackgroundTaskInfo> For(BackgroundTaskViewer viewer) => List(e => viewer.CanSee(e.OwnerId));
+
+    private List<BackgroundTaskInfo> List(Func<Entry, bool> filter)
     {
-        get
-        {
-            Prune();
-            return _entries.Values.Select(e => e.Snapshot()).OrderBy(t => t.Queued).ThenBy(t => t.Id, StringComparer.Ordinal).ToList();
-        }
+        Prune();
+        return _entries.Values.Where(filter).Select(e => e.Snapshot()).OrderBy(t => t.Queued).ThenBy(t => t.Id, StringComparer.Ordinal).ToList();
     }
 
     /// <summary>
     /// Shows a task as waiting. Does nothing when it's already waiting or running (a queued task that starts); replaces
     /// the outcome of an earlier run with the same id. Returns the token <see cref="Cancel"/> trips for this run
-    /// (<see cref="CancellationToken.None"/> when it isn't tracked).
+    /// (<see cref="CancellationToken.None"/> when it isn't tracked). <paramref name="ownerId"/> is the user who started it,
+    /// null for automatic work.
     /// </summary>
-    public CancellationToken Queue(string id, string kind, string title, string? link, bool cancellable = true)
+    public CancellationToken Queue(string id, string kind, string title, string? link, int? ownerId = null, bool cancellable = true)
     {
         Prune();
-        var entry = new Entry(id, kind, title, link, cancellable, time.GetUtcNow());
+        var entry = new Entry(id, kind, title, link, ownerId, cancellable, time.GetUtcNow());
         if (_entries.TryGetValue(id, out var existing))
         {
             if (!existing.IsFinished) return existing.Token;
@@ -104,18 +115,18 @@ public sealed class BackgroundTasks(IEventHub eventHub, TimeProvider time, ILogg
             return CancellationToken.None;
         }
 
-        Publish(EventNames.BackgroundTasksUpdated, null);
+        Publish(entry, EventNames.BackgroundTasksUpdated, null);
         return entry.Token;
     }
 
     /// <summary>
     /// Cancels a waiting or running task. A waiting one is finished as cancelled at once; a running one shows
     /// <see cref="CancellingMessage"/> until the work stops and calls <see cref="Complete"/>. False when there is nothing
-    /// to cancel.
+    /// to cancel, or <paramref name="viewer"/> (when given) may not see it.
     /// </summary>
-    public bool Cancel(string id)
+    public bool Cancel(string id, BackgroundTaskViewer? viewer = null)
     {
-        if (!_entries.TryGetValue(id, out var entry)) return false;
+        if (!_entries.TryGetValue(id, out var entry) || viewer?.CanSee(entry.OwnerId) == false) return false;
         lock (entry)
         {
             if (!entry.Cancellable || entry.Finished is not null || entry.CancelRequested) return false;
@@ -135,7 +146,7 @@ public sealed class BackgroundTasks(IEventHub eventHub, TimeProvider time, ILogg
         }
 
         entry.CancelWork();
-        Publish(EventNames.BackgroundTasksUpdated, null);
+        Publish(entry, EventNames.BackgroundTasksUpdated, null);
         return true;
     }
 
@@ -157,8 +168,8 @@ public sealed class BackgroundTasks(IEventHub eventHub, TimeProvider time, ILogg
         }
 
         // Waiting → running changes what the list shows (state, cancel); later stages only change the message.
-        if (started) Publish(EventNames.BackgroundTasksUpdated, null);
-        else Publish(EventNames.BackgroundTaskProgress, new BackgroundTaskProgress(id, null, stage));
+        if (started) Publish(entry, EventNames.BackgroundTasksUpdated, null);
+        else Publish(entry, EventNames.BackgroundTaskProgress, new BackgroundTaskProgress(id, null, stage));
     }
 
     /// <summary>Progress of the current stage. Published when the whole percent changes, at most every <see cref="MinPublishInterval"/>.</summary>
@@ -179,7 +190,7 @@ public sealed class BackgroundTasks(IEventHub eventHub, TimeProvider time, ILogg
             update = new BackgroundTaskProgress(id, Math.Floor(percent), entry.Message, entry.RemainingSeconds);
         }
 
-        Publish(EventNames.BackgroundTaskProgress, update);
+        Publish(entry, EventNames.BackgroundTaskProgress, update);
     }
 
     /// <summary>
@@ -208,7 +219,7 @@ public sealed class BackgroundTasks(IEventHub eventHub, TimeProvider time, ILogg
         }
 
         Prune();
-        Publish(EventNames.BackgroundTasksUpdated, null);
+        Publish(entry, EventNames.BackgroundTasksUpdated, null);
     }
 
     /// <summary>Stops showing a task that ended without an outcome (e.g. what it worked on is gone). Keeps finished ones.</summary>
@@ -216,25 +227,32 @@ public sealed class BackgroundTasks(IEventHub eventHub, TimeProvider time, ILogg
     {
         if (_entries.TryGetValue(id, out var entry) && !entry.IsFinished
             && _entries.TryRemove(new KeyValuePair<string, Entry>(id, entry)))
-            Publish(EventNames.BackgroundTasksUpdated, null);
+            Publish(entry, EventNames.BackgroundTasksUpdated, null);
     }
 
-    /// <summary>Hides a finished task. False when there is none, or it is still going (cancel it instead).</summary>
-    public bool Dismiss(string id)
+    /// <summary>
+    /// Hides a finished task. False when there is none, it is still going (cancel it instead), or
+    /// <paramref name="viewer"/> (when given) may not see it.
+    /// </summary>
+    public bool Dismiss(string id, BackgroundTaskViewer? viewer = null)
     {
-        if (!_entries.TryGetValue(id, out var entry) || !entry.IsFinished
+        if (!_entries.TryGetValue(id, out var entry) || viewer?.CanSee(entry.OwnerId) == false || !entry.IsFinished
             || !_entries.TryRemove(new KeyValuePair<string, Entry>(id, entry))) return false;
-        Publish(EventNames.BackgroundTasksUpdated, null);
+        Publish(entry, EventNames.BackgroundTasksUpdated, null);
         return true;
     }
 
-    /// <summary>Hides every finished task; returns how many.</summary>
-    public int DismissFinished()
+    /// <summary>Hides every finished task (that <paramref name="viewer"/> may see, when given); returns how many.</summary>
+    public int DismissFinished(BackgroundTaskViewer? viewer = null)
     {
         var removed = 0;
-        foreach (var entry in _entries.Values.Where(e => e.IsFinished))
-            if (_entries.TryRemove(new KeyValuePair<string, Entry>(entry.Id, entry))) removed++;
-        if (removed > 0) Publish(EventNames.BackgroundTasksUpdated, null);
+        foreach (var entry in _entries.Values.Where(e => e.IsFinished && viewer?.CanSee(e.OwnerId) != false))
+        {
+            if (!_entries.TryRemove(new KeyValuePair<string, Entry>(entry.Id, entry))) continue;
+            removed++;
+            Publish(entry, EventNames.BackgroundTasksUpdated, null);
+        }
+
         return removed;
     }
 
@@ -251,17 +269,23 @@ public sealed class BackgroundTasks(IEventHub eventHub, TimeProvider time, ILogg
         }
     }
 
-    /// <summary>Fire and forget: progress comes from tools' output callbacks, which must not wait on SignalR.</summary>
-    private void Publish(string eventName, object? payload)
+    /// <summary>
+    /// Tells whoever may see <paramref name="entry"/>: its owner, or staff for automatic work (the hub sends events not
+    /// marked public to staff only). Fire and forget: progress comes from tools' output callbacks, which must not wait
+    /// on SignalR.
+    /// </summary>
+    private void Publish(Entry entry, string eventName, object? payload)
     {
-        _ = PublishCoreAsync(eventName, payload);
+        _ = PublishCoreAsync(entry.OwnerId, eventName, payload);
     }
 
-    private async Task PublishCoreAsync(string eventName, object? payload)
+    private async Task PublishCoreAsync(int? ownerId, string eventName, object? payload)
     {
         try
         {
-            await eventHub.PublishAsync(eventName, payload);
+            await (ownerId is { } owner
+                ? eventHub.PublishToUserAsync(owner, eventName, payload)
+                : eventHub.PublishAsync(eventName, payload));
         }
         catch (Exception ex)
         {
@@ -269,9 +293,10 @@ public sealed class BackgroundTasks(IEventHub eventHub, TimeProvider time, ILogg
         }
     }
 
-    private sealed class Entry(string id, string kind, string title, string? link, bool cancellable, DateTimeOffset queued)
+    private sealed class Entry(string id, string kind, string title, string? link, int? ownerId, bool cancellable, DateTimeOffset queued)
     {
         public string Id => id;
+        public int? OwnerId => ownerId;
         public bool Cancellable => cancellable;
         public DateTimeOffset? Started { get; set; }
         public DateTimeOffset? Finished { get; set; }

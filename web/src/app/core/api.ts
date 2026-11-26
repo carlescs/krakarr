@@ -249,7 +249,7 @@ export class Api {
   dismissNotification(id: string) { return this.delete<void>(`notifications/${encodeURIComponent(id)}`); }
   dismissAllNotifications() { return this.delete<void>('notifications'); }
 
-  // Background tasks (the tasks menu in the top bar): long-running work such as subtitle syncs. Staff only.
+  // Background tasks (the tasks menu in the top bar): long-running work such as subtitle syncs, the caller's own (plus automatic ones for staff).
   backgroundTasks() { return this.get<BackgroundTask[]>('system/background-tasks'); }
   cancelBackgroundTask(id: string) { return this.post<void>(`system/background-tasks/${encodeURIComponent(id)}/cancel`); }
   /** Hides a finished task. */

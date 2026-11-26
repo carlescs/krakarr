@@ -1,8 +1,10 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Krakarr.Core.Configuration;
+using Krakarr.Core.Domain;
 using Krakarr.Core.Jobs;
 using Krakarr.Data;
+using Krakarr.Host.Auth;
 using Microsoft.Extensions.Options;
 
 namespace Krakarr.Host.Endpoints;
@@ -33,14 +35,15 @@ public static class SystemEndpoints
         group.MapGet("/commands", (ICommandQueue commands) => commands.Recent);
 
         // Long-running work (e.g. subtitle syncs) for the tasks menu in the top bar: waiting, running and recently finished.
-        group.MapGet("/background-tasks", (BackgroundTasks tasks) => tasks.Current);
-        group.MapPost("/background-tasks/{id}/cancel", (string id, BackgroundTasks tasks) =>
-            tasks.Cancel(id) ? Results.NoContent() : Results.NotFound());
-        group.MapDelete("/background-tasks/{id}", (string id, BackgroundTasks tasks) =>
-            tasks.Dismiss(id) ? Results.NoContent() : Results.NotFound());
-        group.MapDelete("/background-tasks", (BackgroundTasks tasks) =>
+        // Open to every user (RoleAccess): each sees the tasks they started, and staff also see automatic ones.
+        group.MapGet("/background-tasks", (HttpContext http, BackgroundTasks tasks) => tasks.For(Viewer(http)));
+        group.MapPost("/background-tasks/{id}/cancel", (string id, HttpContext http, BackgroundTasks tasks) =>
+            tasks.Cancel(id, Viewer(http)) ? Results.NoContent() : Results.NotFound());
+        group.MapDelete("/background-tasks/{id}", (string id, HttpContext http, BackgroundTasks tasks) =>
+            tasks.Dismiss(id, Viewer(http)) ? Results.NoContent() : Results.NotFound());
+        group.MapDelete("/background-tasks", (HttpContext http, BackgroundTasks tasks) =>
         {
-            tasks.DismissFinished();
+            tasks.DismissFinished(Viewer(http));
             return Results.NoContent();
         });
 
@@ -54,4 +57,7 @@ public static class SystemEndpoints
 
         return app;
     }
+
+    private static BackgroundTaskViewer Viewer(HttpContext http) =>
+        new(http.User.GetUserId(), http.User.GetRole() is UserRole.Admin or UserRole.Manager);
 }

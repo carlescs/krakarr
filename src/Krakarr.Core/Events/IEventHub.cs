@@ -4,12 +4,17 @@ namespace Krakarr.Core.Events;
 public interface IEventHub
 {
     Task PublishAsync(string eventName, object? payload, CancellationToken cancellationToken = default);
+
+    /// <summary>Sends an event to one user's connections only, whatever its name (e.g. progress of a task they started).</summary>
+    Task PublishToUserAsync(int userId, string eventName, object? payload, CancellationToken cancellationToken = default);
 }
 
 /// <summary>No-op hub used when no transport is registered (tests, tools).</summary>
 public sealed class NullEventHub : IEventHub
 {
     public Task PublishAsync(string eventName, object? payload, CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+    public Task PublishToUserAsync(int userId, string eventName, object? payload, CancellationToken cancellationToken = default) => Task.CompletedTask;
 }
 
 public static class EventNames

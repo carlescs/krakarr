@@ -15,8 +15,12 @@ public sealed partial class SubtitleSyncProgress(BackgroundTasks tasks)
 
     public static string TaskId(int subtitleId) => $"subtitles.sync.{subtitleId}";
 
-    /// <summary>Shows a sync as waiting; see <see cref="BackgroundTasks.Queue"/>. Returns the token cancelling it trips.</summary>
-    public CancellationToken Queue(int subtitleId, string title, string link) => tasks.Queue(TaskId(subtitleId), Kind, "Sync " + title, link);
+    /// <summary>
+    /// Shows a sync as waiting; see <see cref="BackgroundTasks.Queue"/>. <paramref name="ownerId"/> is the user who asked
+    /// for it (only they see it), null for automatic syncs (staff see those). Returns the token cancelling it trips.
+    /// </summary>
+    public CancellationToken Queue(int subtitleId, string title, string link, int? ownerId = null) =>
+        tasks.Queue(TaskId(subtitleId), Kind, "Sync " + title, link, ownerId);
 
     public bool Cancel(int subtitleId) => tasks.Cancel(TaskId(subtitleId));
 

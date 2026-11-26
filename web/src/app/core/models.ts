@@ -443,7 +443,7 @@ export interface AppNotification {
 }
 
 export type BackgroundTaskState = 'Waiting' | 'Running' | 'Cancelling' | 'Succeeded' | 'Failed' | 'Cancelled';
-/** Long-running work (e.g. a subtitle sync) in the tasks menu of the top bar; staff only. */
+/** Long-running work (e.g. a subtitle sync) in the tasks menu of the top bar, seen by whoever started it (automatic work: staff). */
 export interface BackgroundTask {
   id: string; kind: string; title: string; link?: string | null; state: BackgroundTaskState;
   /** What it's doing now while running; the outcome once finished. */

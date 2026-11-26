@@ -212,8 +212,8 @@ Nothing is moved or renamed.
   without them, Krakarr fixes a constant shift or a framerate difference against a reference subtitle. The Docker image
   ships alass and a slimmed-down ffmpeg/ffprobe (audio decoding and text subtitle tracks only, ~14 MB in all), so syncing
   works out of the box. ffsubsync isn't included (it needs Python and numpy); outside Docker, install any of the tools on
-  `PATH` or set their paths in **Settings → Subtitles**. Syncs run one at a time with a timeout; admins and managers
-  follow them in the tasks menu of the top bar (progress, time left, cancel, then the outcome). Subtitles (SRT, VTT,
+  `PATH` or set their paths in **Settings → Subtitles**. Syncs run one at a time with a timeout; whoever starts one
+  follows it in the tasks menu of the top bar (automatic syncs show there for admins and managers) (progress, time left, cancel, then the outcome). Subtitles (SRT, VTT,
   ASS/SSA) can also be shifted by hand by ± ms.
 
 ### Media servers (Jellyfin, Emby, Plex)

@@ -19,10 +19,17 @@ public sealed class BackgroundTasksTests
     private sealed class RecordingHub : IEventHub
     {
         public List<(string Name, object? Payload)> Events { get; } = [];
+        public List<(int UserId, string Name)> UserEvents { get; } = [];
 
         public Task PublishAsync(string eventName, object? payload, CancellationToken cancellationToken = default)
         {
             lock (Events) Events.Add((eventName, payload));
+            return Task.CompletedTask;
+        }
+
+        public Task PublishToUserAsync(int userId, string eventName, object? payload, CancellationToken cancellationToken = default)
+        {
+            lock (UserEvents) UserEvents.Add((userId, eventName));
             return Task.CompletedTask;
         }
 
@@ -282,6 +289,56 @@ public sealed class BackgroundTasksTests
     }
 
     [Fact]
+    public void A_task_is_seen_by_the_user_who_started_it_and_automatic_ones_by_staff()
+    {
+        _tasks.Queue("mine", "subtitle", "Sync mine", null, ownerId: 1);
+        _tasks.Queue("theirs", "subtitle", "Sync theirs", null, ownerId: 2);
+        _tasks.Queue("auto", "subtitle", "Sync auto", null);
+
+        Assert.Equal(["auto", "mine"], _tasks.For(new BackgroundTaskViewer(1, IsStaff: true)).Select(t => t.Id));
+        Assert.Equal(["theirs"], _tasks.For(new BackgroundTaskViewer(2, IsStaff: false)).Select(t => t.Id));
+        Assert.Empty(_tasks.For(new BackgroundTaskViewer(3, IsStaff: false)));
+        Assert.Equal(["auto"], _tasks.For(new BackgroundTaskViewer(null, IsStaff: true)).Select(t => t.Id)); // API key
+        Assert.Equal(3, _tasks.Current.Count);
+    }
+
+    [Fact]
+    public void Only_whoever_sees_a_task_can_cancel_or_dismiss_it()
+    {
+        var mine = _tasks.Queue("mine", "subtitle", "Sync mine", null, ownerId: 1);
+        var auto = _tasks.Queue("auto", "subtitle", "Sync auto", null);
+        var admin = new BackgroundTaskViewer(2, IsStaff: true);
+        var user = new BackgroundTaskViewer(3, IsStaff: false);
+
+        Assert.False(_tasks.Cancel("mine", admin));
+        Assert.False(_tasks.Cancel("auto", user));
+        Assert.False(mine.IsCancellationRequested || auto.IsCancellationRequested);
+        Assert.True(_tasks.Cancel("mine", new BackgroundTaskViewer(1, IsStaff: false)));
+        Assert.True(_tasks.Cancel("auto", admin));
+
+        _tasks.Complete("mine", false, BackgroundTasks.CancelledMessage, cancelled: true);
+        _tasks.Complete("auto", false, BackgroundTasks.CancelledMessage, cancelled: true);
+        Assert.False(_tasks.Dismiss("mine", admin));
+        Assert.Equal(1, _tasks.DismissFinished(admin)); // only the automatic one
+        Assert.Equal("mine", Assert.Single(_tasks.Current).Id);
+        Assert.True(_tasks.Dismiss("mine", new BackgroundTaskViewer(1, IsStaff: false)));
+    }
+
+    [Fact]
+    public void Events_about_a_task_go_to_its_owner_only()
+    {
+        _tasks.Queue("mine", "subtitle", "Sync mine", null, ownerId: 7);
+        _tasks.Stage("mine", "Syncing");
+        _tasks.Stage("mine", "Still syncing");
+        _tasks.Complete("mine", true, "Synced");
+
+        Assert.Empty(_hub.Events); // nothing to the staff group
+        Assert.Equal(
+            [(7, EventNames.BackgroundTasksUpdated), (7, EventNames.BackgroundTasksUpdated), (7, EventNames.BackgroundTaskProgress), (7, EventNames.BackgroundTasksUpdated)],
+            _hub.UserEvents);
+    }
+
+    [Fact]
     public void Caps_how_many_tasks_are_tracked()
     {
         for (var i = 0; i < BackgroundTasks.MaxTracked + 10; i++) Queue($"t{i}");
@@ -310,6 +367,7 @@ public sealed class BackgroundTaskEndpointTests(KrakarrFactory factory) : IClass
         tasks.DismissFinished();
         var token = tasks.Queue("test.endpoint.1", "subtitle", "Sync Dune (2021) · English", "/movies/3");
         tasks.Queue("test.endpoint.2", "subtitle", "Sync Severance S01E03 · Spanish", "/series/5");
+        var someoneElses = tasks.Queue("test.endpoint.3", "subtitle", "Sync Other", "/movies/9", ownerId: 999_999);
         tasks.Stage("test.endpoint.2", "Syncing");
         tasks.Report("test.endpoint.2", 25);
 
@@ -320,6 +378,9 @@ public sealed class BackgroundTaskEndpointTests(KrakarrFactory factory) : IClass
         var second = Assert.Single(listed!, t => t.GetProperty("id").GetString() == "test.endpoint.2");
         Assert.Equal("Running", second.GetProperty("state").GetString());
         Assert.Equal(25, second.GetProperty("percent").GetDouble());
+        Assert.DoesNotContain(listed!, t => t.GetProperty("id").GetString() == "test.endpoint.3"); // another user's
+        Assert.Equal(HttpStatusCode.NotFound, (await client.PostAsync("/api/v1/system/background-tasks/test.endpoint.3/cancel", null, Ct)).StatusCode);
+        Assert.False(someoneElses.IsCancellationRequested);
 
         Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsync("/api/v1/system/background-tasks/test.endpoint.1/cancel", null, Ct)).StatusCode);
         Assert.True(token.IsCancellationRequested);
@@ -331,6 +392,7 @@ public sealed class BackgroundTaskEndpointTests(KrakarrFactory factory) : IClass
 
         tasks.Complete("test.endpoint.2", true, "Synced");
         Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync("/api/v1/system/background-tasks", Ct)).StatusCode);
-        Assert.DoesNotContain(tasks.Current, t => t.Id.StartsWith("test.endpoint.", StringComparison.Ordinal));
+        Assert.Equal(["test.endpoint.3"], tasks.Current.Where(t => t.Id.StartsWith("test.endpoint.", StringComparison.Ordinal)).Select(t => t.Id));
+        tasks.Finish("test.endpoint.3");
     }
 }

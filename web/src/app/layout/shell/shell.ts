@@ -89,7 +89,7 @@ export class Shell implements OnInit, OnDestroy {
   ngOnInit() {
     this.events.start();
     this.notifications.start();
-    if (this.auth.isStaff()) this.backgroundTasks.start();
+    this.backgroundTasks.start();
   }
   ngOnDestroy() {
     this.notifications.stop();

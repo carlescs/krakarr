@@ -13,9 +13,9 @@ export function isActive(task: BackgroundTask) {
 }
 
 /**
- * Long-running work (e.g. subtitle syncs) for the tasks menu in the top bar; staff only. The list is refetched when
- * the server says it changed (`backgroundTasksUpdated`); progress in between arrives as `backgroundTaskProgress` and
- * is applied in place.
+ * Long-running work (e.g. subtitle syncs) for the tasks menu in the top bar: the tasks the signed-in user started,
+ * plus automatic ones for staff (the server filters). The list is refetched when the server says it changed
+ * (`backgroundTasksUpdated`); progress in between arrives as `backgroundTaskProgress` and is applied in place.
  */
 @Injectable({ providedIn: 'root' })
 export class BackgroundTasks {

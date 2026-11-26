@@ -15,9 +15,9 @@ const STATE_LABELS: Record<BackgroundTask['state'], string> = {
 };
 
 /**
- * Tasks menu in the top bar (staff): long-running work such as subtitle syncs, with their progress, a Cancel button
- * while they run and their outcome once finished. Hidden while there is nothing to show; the icon spins while
- * something is running.
+ * Tasks menu in the top bar: long-running work such as subtitle syncs that the signed-in user started (plus automatic
+ * work, for staff), with their progress, a Cancel button while they run and their outcome once finished. Hidden while
+ * there is nothing to show; the icon spins while something is running.
  */
 @Component({
   selector: 'kr-background-tasks',
