@@ -60,11 +60,13 @@
    sidebar, top bar and tab bar stay put. The rest of the screen keeps the default, quicker cross-fade.
    The top bar and tab bar get their own names: view transition layers paint above the live page, so without them the
    page snapshot (which runs under both bars) would slide over the bars, and the bars' translucent backdrop would show
-   nothing behind it. Named, they are layered above the page (in paint order) and simply swap without moving. */
+   nothing behind it. Named, they are layered above the page (in paint order) and simply swap without moving.
+   The names only apply while a transition runs: a view-transition-name makes its element a stacking context, which
+   would otherwise trap the page's modals (z-50) under the top bar and tab bar. */
 @layer base {
-  .page-transition { view-transition-name: page; }
-  .topbar-transition { view-transition-name: topbar; }
-  .tabbar-transition { view-transition-name: tabbar; }
+  :root:active-view-transition .page-transition { view-transition-name: page; }
+  :root:active-view-transition .topbar-transition { view-transition-name: topbar; }
+  :root:active-view-transition .tabbar-transition { view-transition-name: tabbar; }
   ::view-transition-group(topbar), ::view-transition-group(tabbar) { animation: none; }
   ::view-transition-old(topbar), ::view-transition-old(tabbar) { animation: none; opacity: 0; }
   ::view-transition-new(topbar), ::view-transition-new(tabbar) { animation: none; }

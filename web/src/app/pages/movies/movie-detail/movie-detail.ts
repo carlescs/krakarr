@@ -24,6 +24,7 @@ import { RelatedTitles } from '../../../shared/related-titles/related-titles';
 import { SubtitleManager } from '../../../shared/subtitle-manager/subtitle-manager';
 import { SubtitleList } from '../../../shared/subtitle-list/subtitle-list';
 import { MediaInfoView } from '../../../shared/media-info/media-info';
+import { MoreMenu } from '../../../shared/more-menu/more-menu';
 import { SubscribeButton } from '../../../shared/subscribe-button/subscribe-button';
 import { ExternalLinks } from '../../../shared/external-links/external-links';
 import { MovieReleases } from '../../../shared/movie-releases/movie-releases';
@@ -32,7 +33,7 @@ import { DeleteFilesDialog } from '../../../shared/delete-files/delete-files';
 
 @Component({
   selector: 'kr-movie-detail',
-  imports: [DeleteFilesDialog, MediaDownloads, ExternalLinks, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, AlternateTitles, MovieReleases, FormsModule, DatePipe, Poster, Modal, IndexerProgress, SubtitleManager, SubtitleList, MediaInfoView, SortHeader, BytesPipe, AgoPipe],
+  imports: [DeleteFilesDialog, MoreMenu, MediaDownloads, ExternalLinks, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, AlternateTitles, MovieReleases, FormsModule, DatePipe, Poster, Modal, IndexerProgress, SubtitleManager, SubtitleList, MediaInfoView, SortHeader, BytesPipe, AgoPipe],
   templateUrl: './movie-detail.html',
   styleUrl: './movie-detail.scss',
 })
@@ -40,6 +41,7 @@ export class MovieDetailPage implements OnInit {
   readonly id = input.required({ transform: numberAttribute });
 
   protected readonly auth = inject(Auth);
+  protected readonly icons = { search: 'm21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z' };
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
   private readonly events = inject(Events);

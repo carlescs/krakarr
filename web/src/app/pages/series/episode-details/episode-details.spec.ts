@@ -97,7 +97,10 @@ describe('EpisodeDetailsDialog', () => {
     await settle(fixture);
     const interactive = vi.fn();
     fixture.componentInstance.interactive.subscribe(interactive);
+    const openMenu = async () => { (root.querySelector('kr-more-menu button') as HTMLButtonElement).click(); await settle(fixture); };
+    await openMenu();
     button(root, 'Interactive search').click();
+    await openMenu();
     expect(interactive).toHaveBeenCalled();
     expect(button(root, 'Subtitles')).toBeTruthy();
     const deleteFile = vi.fn();
@@ -108,7 +111,8 @@ describe('EpisodeDetailsDialog', () => {
     TestBed.resetTestingModule();
     const user = create(undefined, 'User');
     await settle(user.fixture);
-    expect(() => button(user.root, 'Automatic search')).toThrow();
+    expect(() => button(user.root, 'Search')).toThrow();
+    expect(user.root.querySelector('kr-more-menu')).toBeNull();
     expect(() => button(user.root, 'Delete file')).toThrow();
   });
 });
