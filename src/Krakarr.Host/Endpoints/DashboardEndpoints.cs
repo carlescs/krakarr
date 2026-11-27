@@ -31,8 +31,9 @@ public static class DashboardEndpoints
 {
     internal const int ActivityDays = 7;
     internal const int RecentRequests = 5;
-    internal const int RecentImports = 6;
-    internal const int RecentAdditions = 6;
+    /// <summary>Three pages of six on the dashboard.</summary>
+    internal const int RecentImports = 18;
+    internal const int RecentAdditions = 18;
     internal const int TopRequesters = 5;
 
     public static IEndpointRouteBuilder MapDashboardEndpoints(this IEndpointRouteBuilder app)

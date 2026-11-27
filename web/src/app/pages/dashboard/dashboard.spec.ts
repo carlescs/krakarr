@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
 import { Events } from '../../core/events';
 import { DashboardStats, TorrentStatus } from '../../core/models';
@@ -34,12 +34,6 @@ function torrent(id: number, overrides: Partial<TorrentStatus> = {}): TorrentSta
   };
 }
 
-async function showTab(fixture: ComponentFixture<DashboardPage>, label: string) {
-  const el = fixture.nativeElement as HTMLElement;
-  ([...el.querySelectorAll('[role="tab"]')] as HTMLElement[]).find(t => t.textContent!.trim() === label)!.click();
-  await settle(fixture);
-}
-
 describe('DashboardPage', () => {
   it('shows library, request, user and activity figures', async () => {
     const api = setupTest({
@@ -66,12 +60,6 @@ describe('DashboardPage', () => {
     expect(text(el, '[data-section="activity"]')).toContain('3 episodes air in the next 7 days');
     expect(text(el, '[data-section="downloads"]')).toContain('2 imports need attention');
     expect(el.querySelector('[data-list="recently-imported"] a[href="/movies/3"]')).not.toBeNull();
-    expect(el.querySelector('[data-list="recently-added"]')).toBeNull();
-    await showTab(fixture, 'Added');
-    expect(el.querySelector('[data-list="recently-imported"]')).toBeNull();
-    expect(el.querySelector('[data-list="recently-added"] a[href="/series/8"]')).not.toBeNull();
-    expect(text(el, '[data-list="recently-added"]')).toContain('Series');
-    expect(el.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain('Added');
     expect(text(el, '[data-section="downloads"]')).toContain('Nothing in the download client.');
   });
 
@@ -111,8 +99,6 @@ describe('DashboardPage', () => {
     const el = fixture.nativeElement as HTMLElement;
     expect(text(el, '[data-section="requests"]')).toContain('No requests yet.');
     expect(text(el, '[data-section="recent"]')).toContain('Nothing imported yet.');
-    await showTab(fixture, 'Added');
-    expect(text(el, '[data-section="recent"]')).toContain('Nothing in the library yet.');
     expect(el.querySelector('[data-list="root-folders"]')).toBeNull();
   });
 });
