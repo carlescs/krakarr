@@ -21,6 +21,7 @@ function stats(overrides: Partial<DashboardStats> = {}): DashboardStats {
     },
     activity: { grabbed: 12, imported: 10, failed: 1, subtitles: 5, importIssues: 2 },
     recentlyImported: [{ mediaType: 'Movie', id: 3, title: 'Alien', year: 1979, date: '2026-01-01T00:00:00Z' }],
+    recentlyAdded: [{ mediaType: 'Series', id: 8, title: 'Andor', year: 2022, date: '2026-01-02T00:00:00Z' }],
     ...overrides,
   };
 }
@@ -59,6 +60,8 @@ describe('DashboardPage', () => {
     expect(text(el, '[data-section="activity"]')).toContain('3 episodes air in the next 7 days');
     expect(text(el, '[data-section="downloads"]')).toContain('2 imports need attention');
     expect(el.querySelector('[data-list="recently-imported"] a[href="/movies/3"]')).not.toBeNull();
+    expect(el.querySelector('[data-list="recently-added"] a[href="/series/8"]')).not.toBeNull();
+    expect(text(el, '[data-list="recently-added"]')).toContain('Series');
     expect(text(el, '[data-section="downloads"]')).toContain('Nothing in the download client.');
   });
 
@@ -87,6 +90,7 @@ describe('DashboardPage', () => {
         dashboard: async () => stats({
           requests: { total: 0, pending: 0, approved: 0, declined: 0, last30Days: 0, recent: [] },
           recentlyImported: [],
+          recentlyAdded: [],
           users: { total: 1, admins: 1, managers: 0, users: 0, topRequesters: [] },
         }),
         rootFolders: async () => [],
@@ -97,6 +101,7 @@ describe('DashboardPage', () => {
     const el = fixture.nativeElement as HTMLElement;
     expect(text(el, '[data-section="requests"]')).toContain('No requests yet.');
     expect(text(el, '[data-section="recent"]')).toContain('Nothing imported yet.');
+    expect(text(el, '[data-section="added"]')).toContain('Nothing in the library yet.');
     expect(el.querySelector('[data-list="root-folders"]')).toBeNull();
   });
 });

@@ -290,6 +290,28 @@
         }
       </div>
     </section>
+
+    <!-- Recently added to the library -->
+    <section class="card overflow-hidden xl:col-span-3" data-section="added">
+      <h2 class="border-b border-surface-700 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-slate-400 sm:px-5">Recently added</h2>
+      <div class="px-4 py-4 sm:px-5">
+        @if (s.recentlyAdded.length === 0) {
+          <p class="text-sm text-slate-500">Nothing in the library yet.</p>
+        } @else {
+          <ul class="grid grid-cols-4 gap-3 sm:grid-cols-8" data-list="recently-added">
+            @for (r of s.recentlyAdded; track r.mediaType + r.id) {
+              <li>
+                <a [routerLink]="link(r.mediaType, r.id)" class="group block" [title]="r.title + ' (' + r.year + ')'">
+                  <kr-poster [url]="r.posterUrl" [title]="r.title" />
+                  <div class="mt-1 truncate text-xs text-slate-300 group-hover:text-accent-300">{{ r.title }}</div>
+                  <div class="truncate text-[11px] text-slate-500">{{ r.mediaType }} · {{ r.date | ago }}</div>
+                </a>
+              </li>
+            }
+          </ul>
+        }
+      </div>
+    </section>
   </div>
 } @else if (!error()) {
   <p class="text-sm text-slate-500">Loading…</p>
