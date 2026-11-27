@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
 import { Events } from '../../core/events';
 import { DashboardStats, TorrentStatus } from '../../core/models';
@@ -21,6 +21,7 @@ function stats(overrides: Partial<DashboardStats> = {}): DashboardStats {
     },
     activity: { grabbed: 12, imported: 10, failed: 1, subtitles: 5, importIssues: 2 },
     recentlyImported: [{ mediaType: 'Movie', id: 3, title: 'Alien', year: 1979, date: '2026-01-01T00:00:00Z' }],
+    recentlyAdded: [{ mediaType: 'Series', id: 8, title: 'Andor', year: 2022, date: '2026-01-02T00:00:00Z' }],
     ...overrides,
   };
 }
@@ -31,6 +32,12 @@ function torrent(id: number, overrides: Partial<TorrentStatus> = {}): TorrentSta
     downloadRate: 100, uploadRate: 10, seeds: 1, leechers: 1, ratio: 0, category: 'movies', savePath: '/d', added: '2026-01-01T00:00:00Z',
     imported: false, client: 'embedded', ...overrides,
   };
+}
+
+async function showTab(fixture: ComponentFixture<DashboardPage>, label: string) {
+  const el = fixture.nativeElement as HTMLElement;
+  ([...el.querySelectorAll('[role="tab"]')] as HTMLElement[]).find(t => t.textContent!.trim() === label)!.click();
+  await settle(fixture);
 }
 
 describe('DashboardPage', () => {
@@ -59,6 +66,12 @@ describe('DashboardPage', () => {
     expect(text(el, '[data-section="activity"]')).toContain('3 episodes air in the next 7 days');
     expect(text(el, '[data-section="downloads"]')).toContain('2 imports need attention');
     expect(el.querySelector('[data-list="recently-imported"] a[href="/movies/3"]')).not.toBeNull();
+    expect(el.querySelector('[data-list="recently-added"]')).toBeNull();
+    await showTab(fixture, 'Added');
+    expect(el.querySelector('[data-list="recently-imported"]')).toBeNull();
+    expect(el.querySelector('[data-list="recently-added"] a[href="/series/8"]')).not.toBeNull();
+    expect(text(el, '[data-list="recently-added"]')).toContain('Series');
+    expect(el.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain('Added');
     expect(text(el, '[data-section="downloads"]')).toContain('Nothing in the download client.');
   });
 
@@ -87,6 +100,7 @@ describe('DashboardPage', () => {
         dashboard: async () => stats({
           requests: { total: 0, pending: 0, approved: 0, declined: 0, last30Days: 0, recent: [] },
           recentlyImported: [],
+          recentlyAdded: [],
           users: { total: 1, admins: 1, managers: 0, users: 0, topRequesters: [] },
         }),
         rootFolders: async () => [],
@@ -97,6 +111,8 @@ describe('DashboardPage', () => {
     const el = fixture.nativeElement as HTMLElement;
     expect(text(el, '[data-section="requests"]')).toContain('No requests yet.');
     expect(text(el, '[data-section="recent"]')).toContain('Nothing imported yet.');
+    await showTab(fixture, 'Added');
+    expect(text(el, '[data-section="recent"]')).toContain('Nothing in the library yet.');
     expect(el.querySelector('[data-list="root-folders"]')).toBeNull();
   });
 });

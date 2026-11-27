@@ -516,8 +516,12 @@ export interface DashboardStats {
   };
   /** Last 7 days, plus downloads whose import failed. */
   activity: { grabbed: number; imported: number; failed: number; subtitles: number; importIssues: number };
-  recentlyImported: { mediaType: MediaType; id: number; title: string; year: number; posterUrl?: string; date: string }[];
+  recentlyImported: DashboardRecent[];
+  recentlyAdded: DashboardRecent[];
 }
+
+/** A movie or series on the dashboard, with the date it was imported or added. */
+export interface DashboardRecent { mediaType: MediaType; id: number; title: string; year: number; posterUrl?: string; date: string }
 
 /** Where an alternate title comes from: the metadata source, the user, or TheXEM scene names. */
 export type AlternateTitleSource = 'Metadata' | 'User' | 'Scene';
