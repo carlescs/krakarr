@@ -6,6 +6,8 @@
     </span>
   }
   <span class="mr-auto"></span>
+  <input class="input min-w-0 flex-1 max-sm:basis-full sm:w-56 sm:flex-none" type="search" placeholder="Filter…" aria-label="Filter torrents"
+         [ngModel]="filter()" (ngModelChange)="filter.set($event)" />
   @if (seedingCount() > 0 || showSeeding()) {
     <div class="inline-flex rounded-lg bg-surface-800 p-0.5 text-sm" role="radiogroup" aria-label="Show">
       <button type="button" role="radio" [attr.aria-checked]="!showSeeding()" [class]="segment(!showSeeding())" (click)="toggleSeeding(false)">
@@ -57,6 +59,7 @@
 @if (visible().length === 0) {
   <div class="card px-6 py-12 text-center text-sm text-slate-400">
     @if (list().length === 0) { No torrents. Grab a release or add a magnet link. }
+    @else if (tabCount() > 0) { No torrents match the filter — <button class="underline hover:text-slate-200" (click)="filter.set('')">clear it</button>. }
     @else if (showSeeding()) { Nothing seeding — <button class="underline hover:text-slate-200" (click)="toggleSeeding(false)">show downloads</button>. }
     @else { Nothing downloading. {{ seedingCount() }} torrent(s) seeding — <button class="underline hover:text-slate-200" (click)="toggleSeeding(true)">show them</button>. }
   </div>
@@ -71,7 +74,7 @@
       @if (selection.count() > 0) {
         <span class="font-medium text-white" aria-live="polite">{{ selection.count() }} selected</span>
       } @else {
-        <span class="text-slate-400">Select all ({{ visible().length }})</span>
+        <span class="text-slate-400">Select all ({{ visible().length }}{{ visible().length < tabCount() ? ' of ' + tabCount() : '' }})</span>
       }
     </label>
     <div class="flex-1"></div>

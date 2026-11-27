@@ -74,6 +74,19 @@ export function mediaLabel(info: DownloadMediaInfo): string {
   return info.episodes ? `${title} · ${info.episodes}` : title;
 }
 
+/** Lower-cased text where dots, dashes and underscores separate words as spaces do ("Alien.1979" → "alien 1979"). */
+function words(text: string): string {
+  return text.toLowerCase().replace(/[._-]+/g, ' ');
+}
+
+/** A torrent matches when each word of the filter appears in its name, category or linked title. */
+export function matchesFilter(d: TorrentStatus, filter: string, media?: DownloadMediaInfo): boolean {
+  const terms = words(filter).split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+  const haystack = words(`${d.name} ${d.category} ${media ? mediaLabel(media) : ''}`);
+  return terms.every(t => haystack.includes(t));
+}
+
 export function clientLabel(kind: DownloadClientKind | DownloadClientName): string {
   return kind === 'QBittorrent' || kind === 'qbittorrent' ? 'qBittorrent' : 'Built-in';
 }
@@ -116,11 +129,24 @@ export class DownloadsPage implements OnInit, OnDestroy {
   protected readonly seedingCount = computed(() => this.list().filter(isFinished).length);
   protected readonly sorts = SORTS;
   protected readonly sort = signal(readSort());
-  protected readonly visible = computed(() => {
+  /** Text filter on name, category and linked title; it narrows the current tab. */
+  protected readonly filter = signal('');
+  /** Torrents of the current tab (downloading or seeding), before the text filter. */
+  private readonly tab = computed(() => {
     const seeding = this.showSeeding();
-    return sortTorrents(this.list().filter(d => isFinished(d) === seeding), this.sort());
+    return this.list().filter(d => isFinished(d) === seeding);
   });
-  /** Multi-selection for bulk pause/resume/remove; only torrents in the current view (downloading or seeding) count. */
+  protected readonly tabCount = computed(() => this.tab().length);
+  protected readonly visible = computed(() => {
+    const filter = this.filter().trim();
+    const media = this.media();
+    const tab = this.tab();
+    return sortTorrents(filter ? tab.filter(d => matchesFilter(d, filter, media.get(d.id))) : tab, this.sort());
+  });
+  /**
+   * Multi-selection for bulk pause/resume/remove; only torrents in the current view (tab and filter) count, so
+   * "Select all" picks the matching torrents and hidden ones never take part in a bulk action.
+   */
   protected readonly selection = new Selection(this.visible, d => d.infoHash);
   protected readonly bulkBusy = signal(false);
   protected readonly confirmBulkRemove = signal(false);
