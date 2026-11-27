@@ -20,6 +20,7 @@ import { Modal } from '../../../shared/modal/modal';
 import { TableSort } from '../../../core/table-sort';
 import { SortHeader } from '../../../shared/sort-header/sort-header';
 import { Poster } from '../../../shared/poster/poster';
+import { Overview } from '../../../shared/overview/overview';
 import { LibraryCredits } from '../../../shared/library-credits/library-credits';
 import { RelatedTitles } from '../../../shared/related-titles/related-titles';
 import { SubtitleManager } from '../../../shared/subtitle-manager/subtitle-manager';
@@ -34,7 +35,7 @@ import { DeleteFilesDialog } from '../../../shared/delete-files/delete-files';
 
 @Component({
   selector: 'kr-movie-detail',
-  imports: [DeleteFilesDialog, MoreMenu, MediaDownloads, ExternalLinks, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, AlternateTitles, MovieReleases, FormsModule, DatePipe, Poster, Modal, IndexerProgress, SubtitleManager, SubtitleList, MediaInfoView, SortHeader, BytesPipe, AgoPipe],
+  imports: [DeleteFilesDialog, MoreMenu, MediaDownloads, ExternalLinks, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, AlternateTitles, MovieReleases, FormsModule, DatePipe, Poster, Overview, Modal, IndexerProgress, SubtitleManager, SubtitleList, MediaInfoView, SortHeader, BytesPipe, AgoPipe],
   templateUrl: './movie-detail.html',
   styleUrl: './movie-detail.scss',
 })

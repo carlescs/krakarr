@@ -28,7 +28,7 @@
             {{ languages.describe(m.languages ?? languages.preferred()) }}
           </span>
         </div>
-        <p class="mt-4 max-w-3xl text-sm leading-relaxed text-slate-300">{{ m.overview }}</p>
+        @if (m.overview) { <kr-overview class="mt-4" [text]="m.overview" /> }
         <div class="mt-5 flex flex-wrap items-center gap-2" data-actions>
           @if (jellyfinUrl(); as url) {
             <a class="btn bg-violet-600/90 text-white hover:bg-violet-500" [href]="url" target="_blank" rel="noopener" title="Open in Jellyfin" data-jellyfin>

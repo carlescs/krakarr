@@ -19,6 +19,7 @@ import { Modal } from '../../../shared/modal/modal';
 import { TableSort } from '../../../core/table-sort';
 import { SortHeader } from '../../../shared/sort-header/sort-header';
 import { Poster } from '../../../shared/poster/poster';
+import { Overview } from '../../../shared/overview/overview';
 import { LibraryCredits } from '../../../shared/library-credits/library-credits';
 import { RelatedTitles } from '../../../shared/related-titles/related-titles';
 import { Progress } from '../../../shared/progress/progress';
@@ -59,7 +60,7 @@ export function episodeCodes(episodes: readonly Pick<Episode, 'seasonNumber' | '
 
 @Component({
   selector: 'kr-series-detail',
-  imports: [DeleteFilesDialog, MoreMenu, MediaDownloads, RouterLink, ExternalLinks, EpisodeDetailsDialog, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, AlternateTitles, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, IndexerProgress, BytesPipe, AgoPipe, SubtitleManager, SortHeader],
+  imports: [DeleteFilesDialog, MoreMenu, MediaDownloads, RouterLink, ExternalLinks, EpisodeDetailsDialog, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, AlternateTitles, FormsModule, DatePipe, NgTemplateOutlet, Poster, Overview, Progress, Modal, IndexerProgress, BytesPipe, AgoPipe, SubtitleManager, SortHeader],
   templateUrl: './series-detail.html',
   styleUrl: './series-detail.scss',
 })

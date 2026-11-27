@@ -1,0 +1,6 @@
+<p #body class="whitespace-pre-line text-sm leading-relaxed text-slate-300" [class.line-clamp-4]="!expanded()" data-overview-text>{{ text() }}</p>
+@if (overflowing() || expanded()) {
+  <button type="button" class="mt-1 text-sm font-medium text-accent-300 hover:text-accent-200" [attr.aria-expanded]="expanded()" (click)="toggle()" data-overview-toggle>
+    {{ expanded() ? 'Show less' : 'Show more' }}
+  </button>
+}

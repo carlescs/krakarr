@@ -26,7 +26,7 @@
           }
           @for (g of p.genres; track g) { <span class="badge bg-surface-700 text-slate-300">{{ g }}</span> }
         </div>
-        @if (p.overview) { <p class="mt-4 max-w-3xl text-sm leading-relaxed text-slate-300">{{ p.overview }}</p> }
+        @if (p.overview) { <kr-overview class="mt-4" [text]="p.overview" /> }
         <div class="mt-5 flex flex-wrap gap-2">
           @if (canAdd()) {
             <button class="btn-primary" (click)="adding.set(true)">+ Add to library</button>
