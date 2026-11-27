@@ -5,7 +5,7 @@ import { Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
 import { Auth } from '../../core/auth';
 import { airsOn } from '../../core/format';
-import { CastMember, CrewMember, DiscoverItem, MediaRequest, MovieDetails, MovieRelease, SeasonSummary, SeriesDetails } from '../../core/models';
+import { CastMember, CrewMember, DiscoverItem, MediaRequest, MovieDetails, MovieRelease, SeasonDetails, SeasonEpisode, SeasonSummary, SeriesDetails } from '../../core/models';
 import { CreditsView } from '../../shared/credits/credits';
 import { DiscoverAdd } from '../../shared/discover-add/discover-add';
 import { Poster } from '../../shared/poster/poster';
@@ -13,6 +13,7 @@ import { Overview } from '../../shared/overview/overview';
 import { RelatedTitles } from '../../shared/related-titles/related-titles';
 import { ExternalLinks } from '../../shared/external-links/external-links';
 import { MovieReleases } from '../../shared/movie-releases/movie-releases';
+import { PreviewEpisodeDialog } from './preview-episode/preview-episode';
 
 type Kind = 'movie' | 'series';
 
@@ -43,7 +44,7 @@ interface Preview {
  */
 @Component({
   selector: 'kr-title-preview',
-  imports: [ExternalLinks, MovieReleases, DatePipe, RouterLink, Poster, Overview, CreditsView, RelatedTitles, DiscoverAdd],
+  imports: [ExternalLinks, MovieReleases, DatePipe, RouterLink, Poster, Overview, CreditsView, RelatedTitles, DiscoverAdd, PreviewEpisodeDialog],
   templateUrl: './title-preview.html',
   styleUrl: './title-preview.scss',
 })
@@ -64,6 +65,14 @@ export class TitlePreviewPage {
   protected readonly adding = signal(false);
   /** Pending request for this title, by anyone. */
   protected readonly openRequest = signal<MediaRequest | null>(null);
+  /** Season whose episodes are listed (series), by number. */
+  protected readonly selectedSeason = signal<number | null>(null);
+  /** The selected season's episodes, once loaded. */
+  protected readonly season = signal<SeasonDetails | null>(null);
+  protected readonly seasonLoading = signal(false);
+  protected readonly seasonError = signal<string | null>(null);
+  /** Episode open in the details dialog. */
+  protected readonly episode = signal<SeasonEpisode | null>(null);
 
   constructor() {
     // The component is reused when a related title links to another preview, so reload on every id change.
@@ -78,6 +87,10 @@ export class TitlePreviewPage {
     this.error.set(null);
     this.adding.set(false);
     this.openRequest.set(null);
+    this.selectedSeason.set(null);
+    this.season.set(null);
+    this.seasonError.set(null);
+    this.episode.set(null);
     try {
       const preview = kind === 'movie' ? fromMovie(await this.api.tmdbMovie(tmdbId)) : fromSeries(await this.api.tmdbSeries(tmdbId));
       if (this.kind() !== kind || this.tmdbId() !== tmdbId) return;
@@ -93,6 +106,34 @@ export class TitlePreviewPage {
     } catch (e) {
       this.error.set(errorMessage(e));
     }
+  }
+
+  /** Lists a season's episodes, or hides them when it is already shown. */
+  protected async toggleSeason(seasonNumber: number) {
+    this.episode.set(null);
+    this.seasonError.set(null);
+    if (this.selectedSeason() === seasonNumber) {
+      this.selectedSeason.set(null);
+      this.season.set(null);
+      return;
+    }
+    this.selectedSeason.set(seasonNumber);
+    this.season.set(null);
+    this.seasonLoading.set(true);
+    const tmdbId = this.tmdbId();
+    const current = () => this.selectedSeason() === seasonNumber && this.tmdbId() === tmdbId;
+    try {
+      const season = await this.api.tmdbSeason(tmdbId, seasonNumber);
+      if (current()) this.season.set(season);
+    } catch (e) {
+      if (current()) this.seasonError.set(errorMessage(e));
+    } finally {
+      if (current()) this.seasonLoading.set(false);
+    }
+  }
+
+  protected seasonName(s: { seasonNumber: number; name?: string }) {
+    return s.name ?? (s.seasonNumber === 0 ? 'Specials' : 'Season ' + s.seasonNumber);
   }
 
   protected openLibrary(d: DiscoverItem) {
