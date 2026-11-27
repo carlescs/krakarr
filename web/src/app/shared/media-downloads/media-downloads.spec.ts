@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { TorrentStatus, UserRole } from '../../core/models';
 import { button, settle, setupTest, text } from '../../../testing/test-setup';
 import { MediaDownloads } from './media-downloads';
@@ -19,6 +19,8 @@ async function render(downloads: TorrentStatus[], role: UserRole = 'Admin', labe
 }
 
 describe('MediaDownloads', () => {
+  afterEach(() => localStorage.clear());
+
   it('renders nothing without torrents', async () => {
     const { el } = await render([]);
     expect(el.querySelector('section')).toBeNull();
@@ -52,5 +54,25 @@ describe('MediaDownloads', () => {
     button(el, 'Show all 5').click();
     await settle(fixture);
     expect(el.querySelectorAll('[data-seeding-download]').length).toBe(5);
+  });
+
+  it('hides the torrents on request and remembers it', async () => {
+    const { fixture, el } = await render([torrent({}), torrent({ id: 2, infoHash: 'h2' })]);
+    button(el, 'Hide').click();
+    await settle(fixture);
+    expect(el.querySelector('[data-active-download]')).toBeNull();
+    expect(text(el, '[data-hidden-count]')).toBe('(2)');
+    expect(localStorage.getItem('krakarr.mediaDownloads.hidden')).toBe('true');
+
+    // A freshly opened page starts hidden.
+    const again = TestBed.createComponent(MediaDownloads);
+    again.componentRef.setInput('downloads', [torrent({})]);
+    await settle(again);
+    const el2 = again.nativeElement as HTMLElement;
+    expect(el2.querySelector('[data-active-download]')).toBeNull();
+    button(el2, 'Show').click();
+    await settle(again);
+    expect(el2.querySelectorAll('[data-active-download]').length).toBe(1);
+    expect(localStorage.getItem('krakarr.mediaDownloads.hidden')).toBe('false');
   });
 });

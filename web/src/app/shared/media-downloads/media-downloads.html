@@ -1,48 +1,55 @@
 @if (downloads().length > 0) {
   <section class="card mb-6 p-4 sm:p-5" aria-labelledby="media-downloads-title">
-    <div class="mb-3 flex flex-wrap items-center gap-2">
+    <div class="flex flex-wrap items-center gap-2" [class.mb-3]="!hidden()">
       <h2 id="media-downloads-title" class="flex-1 text-sm font-semibold uppercase tracking-wide text-slate-400">
         {{ active().length > 0 ? (active().length === 1 ? 'Download' : 'Downloads') : 'Seeding' }}
+        @if (hidden()) { <span class="ml-1 font-normal normal-case tracking-normal text-slate-500" data-hidden-count>({{ downloads().length }})</span> }
       </h2>
       @if (auth.isStaff()) {
         <a routerLink="/downloads" class="text-xs text-slate-400 hover:text-accent-300">All downloads →</a>
       }
+      <button type="button" class="text-xs text-slate-400 underline hover:text-slate-200" [attr.aria-expanded]="!hidden()"
+              aria-controls="media-downloads-list" (click)="toggleHidden()" data-downloads-toggle>
+        {{ hidden() ? 'Show' : 'Hide' }}
+      </button>
     </div>
-    <div class="space-y-4">
-      @for (d of active(); track d.infoHash) {
-        <div class="space-y-2" data-active-download>
-          <div class="flex flex-wrap items-center gap-2 text-sm">
-            <kr-state-badge [state]="d.state" />
-            <ng-container *ngTemplateOutlet="name; context: { $implicit: d }" />
-            @if (labels().get(d.infoHash); as label) { <span class="badge bg-violet-500/15 text-violet-300">{{ label }}</span> }
-            <span class="text-slate-400">
-              {{ d.progress.toFixed(1) }}%@if (d.state === 'Downloading') { · {{ d.downloadRate | speed }} · ETA {{ d.etaSeconds | duration }} }
-            </span>
+    @if (!hidden()) {
+      <div id="media-downloads-list" class="space-y-4">
+        @for (d of active(); track d.infoHash) {
+          <div class="space-y-2" data-active-download>
+            <div class="flex flex-wrap items-center gap-2 text-sm">
+              <kr-state-badge [state]="d.state" />
+              <ng-container *ngTemplateOutlet="name; context: { $implicit: d }" />
+              @if (labels().get(d.infoHash); as label) { <span class="badge bg-violet-500/15 text-violet-300">{{ label }}</span> }
+              <span class="text-slate-400">
+                {{ d.progress.toFixed(1) }}%@if (d.state === 'Downloading') { · {{ d.downloadRate | speed }} · ETA {{ d.etaSeconds | duration }} }
+              </span>
+            </div>
+            <kr-progress [value]="d.progress" [color]="d.state === 'Paused' ? 'bg-amber-500' : d.state === 'Error' ? 'bg-rose-500' : 'bg-accent-500'" />
+            @if (d.errorMessage || d.importMessage) { <p class="text-xs text-rose-300">{{ d.errorMessage || d.importMessage }}</p> }
           </div>
-          <kr-progress [value]="d.progress" [color]="d.state === 'Paused' ? 'bg-amber-500' : d.state === 'Error' ? 'bg-rose-500' : 'bg-accent-500'" />
-          @if (d.errorMessage || d.importMessage) { <p class="text-xs text-rose-300">{{ d.errorMessage || d.importMessage }}</p> }
-        </div>
-      }
-      @if (seeding().length > 0) {
-        <div [class.border-t]="active().length > 0" [class.border-surface-700]="active().length > 0" [class.pt-3]="active().length > 0">
-          @if (active().length > 0) { <p class="mb-2 text-xs uppercase tracking-wide text-slate-500">Imported, still seeding</p> }
-          <ul class="space-y-1.5">
-            @for (d of seedingShown(); track d.infoHash) {
-              <li class="flex flex-wrap items-center gap-2 text-sm" data-seeding-download>
-                <kr-state-badge [state]="d.state" />
-                <ng-container *ngTemplateOutlet="name; context: { $implicit: d }" />
-                <span class="text-xs text-slate-400">Ratio {{ d.ratio.toFixed(2) }}@if (d.uploadRate > 0) { · ↑ {{ d.uploadRate | speed }} }</span>
-              </li>
+        }
+        @if (seeding().length > 0) {
+          <div [class.border-t]="active().length > 0" [class.border-surface-700]="active().length > 0" [class.pt-3]="active().length > 0">
+            @if (active().length > 0) { <p class="mb-2 text-xs uppercase tracking-wide text-slate-500">Imported, still seeding</p> }
+            <ul class="space-y-1.5">
+              @for (d of seedingShown(); track d.infoHash) {
+                <li class="flex flex-wrap items-center gap-2 text-sm" data-seeding-download>
+                  <kr-state-badge [state]="d.state" />
+                  <ng-container *ngTemplateOutlet="name; context: { $implicit: d }" />
+                  <span class="text-xs text-slate-400">Ratio {{ d.ratio.toFixed(2) }}@if (d.uploadRate > 0) { · ↑ {{ d.uploadRate | speed }} }</span>
+                </li>
+              }
+            </ul>
+            @if (seeding().length > seedingShown().length) {
+              <button type="button" class="mt-2 text-xs text-slate-400 underline hover:text-slate-200" (click)="showAllSeeding.set(true)">
+                Show all {{ seeding().length }}
+              </button>
             }
-          </ul>
-          @if (seeding().length > seedingShown().length) {
-            <button type="button" class="mt-2 text-xs text-slate-400 underline hover:text-slate-200" (click)="showAllSeeding.set(true)">
-              Show all {{ seeding().length }}
-            </button>
-          }
-        </div>
-      }
-    </div>
+          </div>
+        }
+      </div>
+    }
   </section>
 }
 
