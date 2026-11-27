@@ -11,6 +11,7 @@ import { Episode, EpisodeRelease, HistoryItem, OrganizePreview, QualityProfile, 
 import { Toasts } from '../../../core/toast';
 import { ReleaseSearch } from '../../../core/indexer-search';
 import { Languages } from '../../../core/languages';
+import { JellyfinLink } from '../../../core/jellyfin-link';
 import { LanguageOverride } from '../../../shared/language-override/language-override';
 import { AlternateTitles } from '../../../shared/alternate-titles/alternate-titles';
 import { IndexerProgress } from '../../../shared/indexer-progress/indexer-progress';
@@ -115,9 +116,9 @@ export class SeriesDetailPage implements OnInit {
   protected readonly detailEpisodeId = signal<number | null>(null);
   protected readonly detailEpisode = computed(() => this.episodes().find(e => e.id === this.detailEpisodeId()) ?? null);
   protected readonly series = signal<Series | null>(null);
-  /** The series' page on Jellyfin, once an episode is downloaded and Jellyfin is set up. */
-  protected readonly jellyfinUrl = signal<string | null>(null);
-  private jellyfinCheckedFor: number | null = null;
+  /** The series' page on Jellyfin, once an episode is downloaded and Jellyfin has scanned it. */
+  private readonly jellyfin = new JellyfinLink();
+  protected readonly jellyfinUrl = this.jellyfin.url;
   protected readonly episodes = signal<Episode[]>([]);
   /** Torrents of this series in the download clients (live). */
   protected readonly downloads = computed(() => this.events.downloads().filter(d => d.seriesId === this.id()));
@@ -169,6 +170,7 @@ export class SeriesDetailPage implements OnInit {
   protected readonly profileName = computed(() => this.profiles().find(p => p.id === this.series()?.qualityProfileId)?.name ?? '');
 
   constructor() {
+    this.destroyRef.onDestroy(() => this.jellyfin.reset());
     // The router reuses this component when navigating between series (/series/1 → /series/2),
     // so (re)load whenever the id changes rather than only once in ngOnInit.
     effect(() => {
@@ -206,8 +208,7 @@ export class SeriesDetailPage implements OnInit {
   /** Clears everything tied to the previous series so nothing leaks across navigations. */
   private reset() {
     this.series.set(null);
-    this.jellyfinUrl.set(null);
-    this.jellyfinCheckedFor = null;
+    this.jellyfin.reset();
     this.episodes.set([]);
     this.history.set([]);
     this.subtitles.set([]);
@@ -236,7 +237,7 @@ export class SeriesDetailPage implements OnInit {
       this.editSeasonFolder = s.seasonFolder;
       this.editProfileId = s.qualityProfileId;
       this.editLanguages = s.languages ? [...s.languages] : null;
-      this.loadJellyfin(id, s.episodeFileCount > 0);
+      this.jellyfin.watch(s.episodeFileCount > 0 ? `${id}:${s.episodeFileCount}` : null, () => this.api.seriesJellyfinLink(id));
       if (!this.expandedInitialised) {
         // Open the latest regular season by default.
         const latest = Math.max(0, ...s.seasons.map(x => x.seasonNumber));
@@ -259,18 +260,6 @@ export class SeriesDetailPage implements OnInit {
       if (id === this.id()) this.episodes.set(episodes);
     } finally {
       if (this.loadingEpisodesFor === id) this.loadingEpisodesFor = null;
-    }
-  }
-
-  /** Looks the title up on Jellyfin once per page, as soon as something is downloaded. Failures just hide the button. */
-  private async loadJellyfin(id: number, hasFile: boolean) {
-    if (!hasFile || this.jellyfinCheckedFor === id) return;
-    this.jellyfinCheckedFor = id;
-    try {
-      const link = await this.api.seriesJellyfinLink(id);
-      if (id === this.id()) this.jellyfinUrl.set(link?.url ?? null);
-    } catch {
-      // Not configured, unreachable or unknown to Jellyfin: no button.
     }
   }
 

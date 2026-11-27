@@ -74,4 +74,45 @@ describe('MovieDetailPage', () => {
     expect(api.refreshMovie).toHaveBeenCalledWith(7);
     expect(toasts.show).toHaveBeenCalled();
   });
+
+  it('looks the movie up on Jellyfin once its file is imported', async () => {
+    let movieFile: { id: number } | null = null;
+    const api = {
+      movie: vi.fn(async (id: number) => ({ id, title: `Movie ${id}`, monitored: true, qualityProfileId: 1, minimumAvailability: 'Released', hasFile: !!movieFile, movieFile })),
+      qualityProfiles: vi.fn(async () => []),
+      history: vi.fn(async () => ({ items: [] })),
+      subtitleFiles: vi.fn(async () => []),
+      languages: vi.fn(async () => ({ all: [], preferred: [] })),
+      movieJellyfinLink: vi.fn(async () => ({ url: 'https://jf/web/#/details?id=m' })),
+    };
+    const movieUpdated = new Subject<{ id: number }>();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: Api, useValue: api },
+        { provide: Auth, useValue: { isStaff: () => true } },
+        { provide: Events, useValue: { downloads: signal([]), movieUpdated, historyAdded: new Subject(), subtitlesUpdated: new Subject() } },
+        { provide: Toasts, useValue: { error: vi.fn(), show: vi.fn(), success: vi.fn() } },
+        { provide: Router, useValue: { navigateByUrl: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(MovieDetailPage, { set: { template: '', imports: [] } });
+
+    const fixture = TestBed.createComponent(MovieDetailPage);
+    const page = fixture.componentInstance as unknown as { jellyfinUrl: () => string | null };
+    fixture.componentRef.setInput('id', 1);
+    await fixture.whenStable();
+    expect(api.movieJellyfinLink).not.toHaveBeenCalled();
+
+    movieFile = { id: 10 };
+    movieUpdated.next({ id: 1 });
+    await fixture.whenStable();
+    await new Promise(r => setTimeout(r));
+    expect(api.movieJellyfinLink).toHaveBeenCalledWith(1);
+    expect(page.jellyfinUrl()).toBe('https://jf/web/#/details?id=m');
+
+    // Further updates of the same file don't look it up again.
+    movieUpdated.next({ id: 1 });
+    await fixture.whenStable();
+    expect(api.movieJellyfinLink).toHaveBeenCalledTimes(1);
+  });
 });

@@ -12,6 +12,7 @@ import { HistoryItem, MinimumAvailability, Movie, QualityProfile, ReleaseDecisio
 import { Toasts } from '../../../core/toast';
 import { ReleaseSearch } from '../../../core/indexer-search';
 import { Languages } from '../../../core/languages';
+import { JellyfinLink } from '../../../core/jellyfin-link';
 import { LanguageOverride } from '../../../shared/language-override/language-override';
 import { AlternateTitles } from '../../../shared/alternate-titles/alternate-titles';
 import { IndexerProgress } from '../../../shared/indexer-progress/indexer-progress';
@@ -73,9 +74,9 @@ export class MovieDetailPage implements OnInit {
   protected readonly subtitlesOpen = signal(false);
   /** Language the subtitle dialog searches first (a missing one that was clicked); null = every missing language. */
   protected readonly subtitleLanguage = signal<string | null>(null);
-  /** The movie's page on Jellyfin, once it's downloaded and Jellyfin is set up. */
-  protected readonly jellyfinUrl = signal<string | null>(null);
-  private jellyfinCheckedFor: number | null = null;
+  /** The movie's page on Jellyfin, once it's downloaded and Jellyfin has scanned it. */
+  private readonly jellyfin = new JellyfinLink();
+  protected readonly jellyfinUrl = this.jellyfin.url;
   protected editMonitored = true;
   protected editProfileId = 0;
   protected editAvailability: MinimumAvailability = 'Released';
@@ -88,6 +89,7 @@ export class MovieDetailPage implements OnInit {
   protected readonly profileName = computed(() => this.profiles().find(p => p.id === this.movie()?.qualityProfileId)?.name ?? '');
 
   constructor() {
+    this.destroyRef.onDestroy(() => this.jellyfin.reset());
     // The router reuses this component when navigating between movies (/movies/1 → /movies/2),
     // so (re)load whenever the id changes rather than only once in ngOnInit.
     effect(() => {
@@ -127,8 +129,7 @@ export class MovieDetailPage implements OnInit {
     this.confirmDelete.set(false);
     this.confirmDeleteFile.set(false);
     this.subtitlesOpen.set(false);
-    this.jellyfinUrl.set(null);
-    this.jellyfinCheckedFor = null;
+    this.jellyfin.reset();
     this.deleteFiles = false;
   }
 
@@ -141,22 +142,10 @@ export class MovieDetailPage implements OnInit {
       this.editProfileId = m.qualityProfileId;
       this.editAvailability = m.minimumAvailability;
       this.editLanguages = m.languages ? [...m.languages] : null;
-      this.loadJellyfin(id, m.hasFile);
+      this.jellyfin.watch(m.movieFile ? `${id}:${m.movieFile.id}` : null, () => this.api.movieJellyfinLink(id));
       await Promise.all([this.loadHistory(), this.loadSubtitles()]);
     } catch (e) {
       this.toasts.error(errorMessage(e));
-    }
-  }
-
-  /** Looks the title up on Jellyfin once per page, as soon as something is downloaded. Failures just hide the button. */
-  private async loadJellyfin(id: number, hasFile: boolean) {
-    if (!hasFile || this.jellyfinCheckedFor === id) return;
-    this.jellyfinCheckedFor = id;
-    try {
-      const link = await this.api.movieJellyfinLink(id);
-      if (id === this.id()) this.jellyfinUrl.set(link?.url ?? null);
-    } catch {
-      // Not configured, unreachable or unknown to Jellyfin: no button.
     }
   }
 
