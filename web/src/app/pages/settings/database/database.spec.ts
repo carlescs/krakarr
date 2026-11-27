@@ -26,6 +26,26 @@ describe('DatabaseSettings', () => {
     expect(button(el, 'Switch on next restart').disabled).toBe(true);
   });
 
+  it('shows details of the current database and keeps the switch assistant collapsed', async () => {
+    const { el } = await render(mockApi({
+      database: async () => info({ provider: 'postgres', location: 'krakarr@db:5432/krakarr', pinned: ['Database__ConnectionString'] }),
+      databaseDetails: async () => ({
+        provider: 'postgres', version: '17.2', size: 52_428_800, file: null, journalMode: null,
+        host: 'db', port: 5432, database: 'krakarr', username: 'krakarr', sslMode: 'Prefer',
+        lastMigration: '20261126101500_AddPushSubscriptions', appliedMigrations: 42, pendingMigrations: 0,
+        rows: { movies: 1234, movieFiles: 1200, series: 56, episodes: 7890, episodeFiles: 7000, subtitleFiles: 300, history: 5000, users: 3 },
+      }),
+    }));
+    expect(text(el, '[data-version]')).toContain('17.2');
+    expect(text(el, '[data-host]')).toContain('db:5432');
+    expect(text(el, '[data-size]')).toContain('50');
+    expect(text(el, '[data-schema]')).toContain('AddPushSubscriptions');
+    expect(text(el, '[data-schema]')).not.toContain('20261126101500');
+    expect(text(el, '[data-configured]')).toContain('Environment variables');
+    expect(text(el, '[data-row="Movies"]')).toContain('1,234');
+    expect((el.querySelector('[data-assistant]') as HTMLDetailsElement).open).toBe(false);
+  });
+
   it('offers SQLite when on PostgreSQL', async () => {
     const { el } = await render(mockApi({ database: async () => info({ provider: 'postgres', location: 'krakarr@db:5432/krakarr' }) }));
     expect(el.querySelector('[data-sqlite-fields]')).not.toBeNull();

@@ -445,6 +445,23 @@ public sealed class DatabaseEndpointTests(KrakarrFactory factory) : IClassFixtur
     }
 
     [Fact]
+    public async Task Describes_the_current_database()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = await AdminAsync(ct);
+
+        var details = await client.GetFromJsonAsync<JsonElement>("/api/v1/system/database/details", ct);
+        Assert.Equal("sqlite", details.GetProperty("provider").GetString());
+        Assert.Equal(Path.Combine(factory.ConfigDirectory, "krakarr.db"), details.GetProperty("file").GetString());
+        Assert.False(string.IsNullOrEmpty(details.GetProperty("version").GetString()));
+        Assert.True(details.GetProperty("size").GetInt64() > 0);
+        Assert.True(details.GetProperty("appliedMigrations").GetInt32() > 0);
+        Assert.Equal(0, details.GetProperty("pendingMigrations").GetInt32());
+        Assert.True(details.GetProperty("rows").GetProperty("users").GetInt32() >= 1);
+        Assert.Equal(JsonValueKind.Null, details.GetProperty("host").ValueKind);
+    }
+
+    [Fact]
     public async Task Deletes_the_sqlite_file_left_behind_by_a_switch_but_never_the_one_in_use()
     {
         var ct = TestContext.Current.CancellationToken;

@@ -3,7 +3,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../../../core/api';
 import { BytesPipe } from '../../../core/format';
-import { DatabaseInfo, DatabaseProvider, DatabaseTargetRequest, DatabaseTestResult } from '../../../core/models';
+import { DatabaseDetails, DatabaseInfo, DatabaseProvider, DatabaseTargetRequest, DatabaseTestResult } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
 
 const PROVIDER_NAMES: Record<DatabaseProvider, string> = { sqlite: 'SQLite', postgres: 'PostgreSQL' };
@@ -24,6 +24,8 @@ export class DatabaseSettings implements OnInit {
 
   protected readonly providerNames = PROVIDER_NAMES;
   protected readonly info = signal<DatabaseInfo | null>(null);
+  /** Loaded on its own: the page works without it if the server can't read it. */
+  protected readonly details = signal<DatabaseDetails | null>(null);
   protected readonly form = signal<DatabaseTargetRequest>({ provider: 'postgres', port: 5432, file: 'krakarr.db' });
   /** Result of the last connection test; cleared whenever the form changes. */
   protected readonly test = signal<DatabaseTestResult | null>(null);
@@ -35,6 +37,7 @@ export class DatabaseSettings implements OnInit {
   protected readonly deleteSource = signal(false);
 
   async ngOnInit() {
+    this.api.databaseDetails().then(d => this.details.set(d), () => {});
     try {
       const info = await this.api.database();
       this.info.set(info);
@@ -43,6 +46,20 @@ export class DatabaseSettings implements OnInit {
     } catch (e) {
       this.toasts.error(errorMessage(e));
     }
+  }
+
+  protected rowCounts(r: NonNullable<DatabaseDetails['rows']>) {
+    return [
+      { label: 'Movies', count: r.movies }, { label: 'Movie files', count: r.movieFiles },
+      { label: 'Series', count: r.series }, { label: 'Episodes', count: r.episodes },
+      { label: 'Episode files', count: r.episodeFiles }, { label: 'Subtitles', count: r.subtitleFiles },
+      { label: 'History entries', count: r.history }, { label: 'Users', count: r.users },
+    ];
+  }
+
+  /** Migration ids look like 20261126101500_AddFoo: show the name, without the timestamp. */
+  protected migrationName(id: string) {
+    return id.replace(/^\d{14}_/, '');
   }
 
   private async reload() {
