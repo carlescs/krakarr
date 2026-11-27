@@ -31,6 +31,20 @@ public sealed record SeriesDetails
     public IReadOnlyList<CrewMember> Crew { get; init; } = [];
 }
 
+/// <summary>One episode in a TMDB season listing, for shows outside the library.</summary>
+public sealed record SeasonEpisode(int EpisodeNumber, string? Title, string? Overview, DateOnly? AirDate, int Runtime, string? StillUrl, double? Rating);
+
+/// <summary>A TMDB season with its episodes (without per-episode credits, which the episode details fetch on demand).</summary>
+public sealed record SeasonDetails
+{
+    public int SeasonNumber { get; init; }
+    public string? Name { get; init; }
+    public string? Overview { get; init; }
+    public DateOnly? AirDate { get; init; }
+    public string? PosterUrl { get; init; }
+    public IReadOnlyList<SeasonEpisode> Episodes { get; init; } = [];
+}
+
 /// <summary>What TMDB knows about one episode beyond what the library stores: still, score, guest stars, crew and ids.</summary>
 public sealed record EpisodeDetails
 {
@@ -70,6 +84,8 @@ public interface ISeriesDiscovery
     Task<Credits> CreditsAsync(SeriesIds ids, CancellationToken ct = default);
     /// <summary>One episode by season and episode number; null when the show or the episode isn't on TMDB.</summary>
     Task<EpisodeDetails?> EpisodeDetailsAsync(SeriesIds ids, int season, int episode, CancellationToken ct = default);
+    /// <summary>One season of any TMDB show with its episodes; null when TMDB has no such season.</summary>
+    Task<SeasonDetails?> SeasonAsync(int tmdbId, int season, CancellationToken ct = default);
 }
 
 public sealed class TmdbSeriesDiscovery(TmdbApi api, ISettingsService settings, TimeProvider time) : ISeriesDiscovery
@@ -203,6 +219,34 @@ public sealed class TmdbSeriesDiscovery(TmdbApi api, ISettingsService settings, 
         };
     }
 
+    public async Task<SeasonDetails?> SeasonAsync(int tmdbId, int season, CancellationToken ct = default)
+    {
+        var meta = await settings.GetAsync<MetadataSettings>(ct);
+        TvSeason s;
+        try
+        {
+            s = await api.GetAsync<TvSeason>(meta, string.Create(CultureInfo.InvariantCulture, $"3/tv/{tmdbId}/season/{season}"), ct);
+        }
+        catch (MetadataNotFoundException)
+        {
+            return null;
+        }
+
+        return new SeasonDetails
+        {
+            SeasonNumber = s.SeasonNumber,
+            Name = Blank(s.Name),
+            Overview = Blank(s.Overview),
+            AirDate = Date(s.AirDate),
+            PosterUrl = TmdbApi.Image(s.PosterPath, "w342"),
+            Episodes = s.Episodes
+                .OrderBy(e => e.EpisodeNumber)
+                .Select(e => new SeasonEpisode(e.EpisodeNumber, Blank(e.Name), Blank(e.Overview), Date(e.AirDate), e.Runtime ?? 0,
+                    TmdbApi.Image(e.StillPath, "w300"), e.VoteCount > 0 && e.VoteAverage > 0 ? Math.Round(e.VoteAverage.Value, 1) : null))
+                .ToList(),
+        };
+    }
+
     private static IEnumerable<CrewMember> Creators(List<TvCreator> creators) =>
         creators.Where(c => c.Id > 0 && Blank(c.Name) is not null).Select(c => new CrewMember(c.Id, c.Name!, "Creator", TmdbApi.Image(c.ProfilePath, "w185")));
 
@@ -265,6 +309,29 @@ public sealed class TmdbSeriesDiscovery(TmdbApi api, ISettingsService settings, 
         [JsonPropertyName("guest_stars")] public List<TmdbCastCredit> GuestStars { get; init; } = [];
         [JsonPropertyName("crew")] public List<TmdbCrewCredit> Crew { get; init; } = [];
         [JsonPropertyName("external_ids")] public TvExternalIds? ExternalIds { get; init; }
+    }
+
+    private sealed record TvSeason
+    {
+        [JsonPropertyName("season_number")] public int SeasonNumber { get; init; }
+        [JsonPropertyName("name")] public string? Name { get; init; }
+        [JsonPropertyName("overview")] public string? Overview { get; init; }
+        [JsonPropertyName("air_date")] public string? AirDate { get; init; }
+        [JsonPropertyName("poster_path")] public string? PosterPath { get; init; }
+        [JsonPropertyName("episodes")] public List<TvSeasonEpisode> Episodes { get; init; } = [];
+    }
+
+    /// <summary>An episode of a season listing; its guest stars and crew are skipped while reading (they can be large).</summary>
+    private sealed record TvSeasonEpisode
+    {
+        [JsonPropertyName("episode_number")] public int EpisodeNumber { get; init; }
+        [JsonPropertyName("name")] public string? Name { get; init; }
+        [JsonPropertyName("overview")] public string? Overview { get; init; }
+        [JsonPropertyName("air_date")] public string? AirDate { get; init; }
+        [JsonPropertyName("runtime")] public int? Runtime { get; init; }
+        [JsonPropertyName("still_path")] public string? StillPath { get; init; }
+        [JsonPropertyName("vote_average")] public double? VoteAverage { get; init; }
+        [JsonPropertyName("vote_count")] public int? VoteCount { get; init; }
     }
 
     private sealed record TvCreator
@@ -380,6 +447,33 @@ public static class SeriesDiscoveryEndpoints
                 .Select(s => (int?)s.Id).FirstOrDefaultAsync(ct);
             return details with { Show = show with { SeriesId = seriesId } };
         }));
+
+        // A season of any TMDB show with its episodes; 404 when TMDB has no such season.
+        group.MapGet("/tmdb/{tmdbId:int}/season/{season:int}", async (int tmdbId, int season, ISeriesDiscovery discovery, CancellationToken ct) =>
+        {
+            try
+            {
+                return await discovery.SeasonAsync(tmdbId, season, ct) is { } details ? Results.Ok(details) : Results.NotFound();
+            }
+            catch (MetadataException ex)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest);
+            }
+        });
+
+        // TMDB details of one episode of any show (guest stars, crew, ids); 404 when TMDB doesn't know it.
+        group.MapGet("/tmdb/{tmdbId:int}/season/{season:int}/episode/{episode:int}", async (int tmdbId, int season, int episode, ISeriesDiscovery discovery, CancellationToken ct) =>
+        {
+            try
+            {
+                var details = await discovery.EpisodeDetailsAsync(new SeriesIds(tmdbId, null), season, episode, ct);
+                return details is null ? Results.NotFound() : Results.Ok(details);
+            }
+            catch (MetadataException ex)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest);
+            }
+        });
 
         group.MapGet("/tmdb/{tmdbId:int}/recommendations", (int tmdbId, ISeriesDiscovery discovery, KrakarrDbContext db, CancellationToken ct) =>
             Run(async () => await MarkLibraryAsync(db, await discovery.RecommendationsAsync(new SeriesIds(tmdbId, null), ct), ct)));

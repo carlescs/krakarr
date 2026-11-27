@@ -70,6 +70,46 @@ describe('TitlePreviewPage', () => {
     expect(el.querySelector('a[href="/requests"]')?.textContent).toContain('View requests');
   });
 
+  it('lists the episodes of a season and opens an episode', async () => {
+    const api = mockApi({
+      tmdbSeries: async () => ({
+        show: { tmdbId: 329865, title: 'Dark', year: 2017 }, genres: [], cast: [], crew: [], episodeCount: 10,
+        seasons: [{ seasonNumber: 1, name: 'Season 1', episodeCount: 2 }],
+      }),
+      requestFor: async () => null,
+      tmdbSeason: async () => ({
+        seasonNumber: 1, name: 'Season 1', overview: 'A child goes missing.',
+        episodes: [
+          { episodeNumber: 1, title: 'Secrets', overview: 'Jonas returns to school.', airDate: '2017-12-01', runtime: 51, rating: 7.9 },
+          { episodeNumber: 2, title: 'Lies', runtime: 0 },
+        ],
+      }),
+      tmdbEpisode: async () => ({ showTmdbId: 329865, runtime: 51, voteCount: 10, guestStars: [{ tmdbId: 3, name: 'Guest Star' }], crew: [] }),
+    });
+    const { fixture, el } = await render('series', api, 'User');
+    expect(el.querySelector('[data-season-episodes]')).toBeNull();
+
+    (el.querySelector('[data-season]') as HTMLButtonElement).click();
+    await settle(fixture);
+    expect(api.tmdbSeason).toHaveBeenCalledWith(329865, 1);
+    const episodes = text(el, '[data-season-episodes]');
+    expect(episodes).toContain('A child goes missing.');
+    expect(episodes).toContain('1. Secrets');
+    expect(episodes).toContain('51 min');
+    expect(episodes).toContain('★ 7.9');
+    expect(episodes).toContain('2. Lies');
+
+    (el.querySelectorAll('[data-episode]')[0] as HTMLButtonElement).click();
+    await settle(fixture);
+    expect(api.tmdbEpisode).toHaveBeenCalledWith(329865, 1, 1);
+    expect(text(el, 'kr-preview-episode')).toContain('Guest Star');
+
+    (el.querySelector('[data-season]') as HTMLButtonElement).click();
+    await settle(fixture);
+    expect(el.querySelector('[data-season-episodes]')).toBeNull();
+    expect(el.querySelector('kr-preview-episode')).toBeNull();
+  });
+
   it('shows errors', async () => {
     const { el } = await render('movie', mockApi({ tmdbMovie: async () => { throw new Error('Not found on TMDB'); } }));
     expect(text(el)).toContain('Not found on TMDB');

@@ -161,6 +161,10 @@ export interface MovieDetails extends Credits {
   genres: string[];
 }
 export interface SeasonSummary { seasonNumber: number; name?: string; episodeCount: number; airDate?: string; posterUrl?: string; }
+/** One episode of a TMDB season listing (shows outside the library). */
+export interface SeasonEpisode { episodeNumber: number; title?: string; overview?: string; airDate?: string; runtime: number; stillUrl?: string; rating?: number; }
+/** A TMDB season with its episodes. */
+export interface SeasonDetails { seasonNumber: number; name?: string; overview?: string; airDate?: string; posterUrl?: string; episodes: SeasonEpisode[]; }
 /** Any TMDB show, in the library or not. */
 export interface SeriesDetails extends Credits {
   show: SeriesLookup; fanartUrl?: string; imdbId?: string; tagline?: string; firstAired?: string; lastAired?: string;
