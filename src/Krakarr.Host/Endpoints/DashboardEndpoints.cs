@@ -32,7 +32,7 @@ public static class DashboardEndpoints
     internal const int ActivityDays = 7;
     internal const int RecentRequests = 5;
     internal const int RecentImports = 6;
-    internal const int RecentAdditions = 8;
+    internal const int RecentAdditions = 6;
     internal const int TopRequesters = 5;
 
     public static IEndpointRouteBuilder MapDashboardEndpoints(this IEndpointRouteBuilder app)

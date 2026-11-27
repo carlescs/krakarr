@@ -46,6 +46,10 @@ export class DashboardPage implements OnInit {
   protected readonly rootFolders = signal<RootFolder[]>([]);
   protected readonly error = signal<string | null>(null);
 
+  /** Which list the "Recently" panel shows. */
+  protected readonly recentTabs = [{ id: 'imported', label: 'Imported' }, { id: 'added', label: 'Added' }] as const;
+  protected readonly recentTab = signal<'imported' | 'added'>('imported');
+
   // Library breakdowns as segmented bars.
   protected readonly movieSegments = computed<Segment[]>(() => {
     const m = this.stats()?.library.movies;

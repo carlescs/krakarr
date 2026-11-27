@@ -269,42 +269,32 @@
       </div>
     </section>
 
-    <!-- Recently imported -->
+    <!-- Recently imported or added, one tab each -->
     <section class="card overflow-hidden" data-section="recent">
-      <h2 class="border-b border-surface-700 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-slate-400 sm:px-5">Recently imported</h2>
-      <div class="px-4 py-4 sm:px-5">
-        @if (s.recentlyImported.length === 0) {
-          <p class="text-sm text-slate-500">Nothing imported yet.</p>
-        } @else {
-          <ul class="grid grid-cols-3 gap-3" data-list="recently-imported">
-            @for (r of s.recentlyImported; track r.mediaType + r.id) {
-              <li>
-                <a [routerLink]="link(r.mediaType, r.id)" class="group block" [title]="r.title + ' (' + r.year + ')'">
-                  <kr-poster [url]="r.posterUrl" [title]="r.title" />
-                  <div class="mt-1 truncate text-xs text-slate-300 group-hover:text-accent-300">{{ r.title }}</div>
-                  <div class="text-[11px] text-slate-500">{{ r.date | ago }}</div>
-                </a>
-              </li>
-            }
-          </ul>
-        }
+      <div class="flex items-center justify-between gap-3 border-b border-surface-700 px-4 py-2.5 sm:px-5">
+        <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Recently</h2>
+        <div class="inline-flex rounded-lg border border-surface-700 bg-surface-900 p-0.5" role="tablist" aria-label="Recently">
+          @for (t of recentTabs; track t.id) {
+            <button class="rounded-md px-3 py-1 text-xs font-medium transition pointer-coarse:min-h-9"
+                    [class]="recentTab() === t.id ? 'bg-surface-700 text-white' : 'text-slate-400 hover:text-slate-200'"
+                    role="tab" [attr.aria-selected]="recentTab() === t.id" (click)="recentTab.set(t.id)">{{ t.label }}</button>
+          }
+        </div>
       </div>
-    </section>
-
-    <!-- Recently added to the library -->
-    <section class="card overflow-hidden xl:col-span-3" data-section="added">
-      <h2 class="border-b border-surface-700 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-slate-400 sm:px-5">Recently added</h2>
-      <div class="px-4 py-4 sm:px-5">
-        @if (s.recentlyAdded.length === 0) {
-          <p class="text-sm text-slate-500">Nothing in the library yet.</p>
+      <div class="px-4 py-4 sm:px-5" role="tabpanel">
+        @let items = recentTab() === 'imported' ? s.recentlyImported : s.recentlyAdded;
+        @if (items.length === 0) {
+          <p class="text-sm text-slate-500">{{ recentTab() === 'imported' ? 'Nothing imported yet.' : 'Nothing in the library yet.' }}</p>
         } @else {
-          <ul class="grid grid-cols-4 gap-3 sm:grid-cols-8" data-list="recently-added">
-            @for (r of s.recentlyAdded; track r.mediaType + r.id) {
+          <ul class="grid grid-cols-3 gap-3" [attr.data-list]="'recently-' + recentTab()">
+            @for (r of items; track r.mediaType + r.id) {
               <li>
                 <a [routerLink]="link(r.mediaType, r.id)" class="group block" [title]="r.title + ' (' + r.year + ')'">
                   <kr-poster [url]="r.posterUrl" [title]="r.title" />
                   <div class="mt-1 truncate text-xs text-slate-300 group-hover:text-accent-300">{{ r.title }}</div>
-                  <div class="text-[11px] text-slate-500">{{ r.mediaType }} · <span class="whitespace-nowrap">{{ r.date | ago }}</span></div>
+                  <div class="text-[11px] text-slate-500">
+                    @if (recentTab() === 'added') {<span>{{ r.mediaType }} · </span>}<span class="whitespace-nowrap">{{ r.date | ago }}</span>
+                  </div>
                 </a>
               </li>
             }
