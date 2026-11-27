@@ -31,14 +31,14 @@ public sealed class DashboardTests(KrakarrFactory factory) : IClassFixture<Kraka
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-            var profile = db.QualityProfiles.First().Id;
+            var profile = db.QualityProfiles.Min(p => p.Id);
             var dora = db.Users.Single(u => u.Username == "dora");
 
-            var have = new Movie { TmdbId = 1, Title = "Alien", Year = 1979, Path = "/m/alien", QualityProfileId = profile };
-            var want = new Movie { TmdbId = 2, Title = "Aliens", Year = 1986, Path = "/m/aliens", QualityProfileId = profile };
-            var skip = new Movie { TmdbId = 3, Title = "Alien 3", Year = 1992, Path = "/m/alien3", QualityProfileId = profile, Monitored = false };
+            var have = new Movie { TmdbId = 1, Title = "Alien", Year = 1979, Path = "/m/alien", QualityProfileId = profile, Added = DateTimeOffset.UtcNow.AddDays(-3) };
+            var want = new Movie { TmdbId = 2, Title = "Aliens", Year = 1986, Path = "/m/aliens", QualityProfileId = profile, Added = DateTimeOffset.UtcNow.AddDays(-4) };
+            var skip = new Movie { TmdbId = 3, Title = "Alien 3", Year = 1992, Path = "/m/alien3", QualityProfileId = profile, Monitored = false, Added = DateTimeOffset.UtcNow.AddDays(-1) };
             db.Movies.AddRange(have, want, skip);
-            var show = new Core.Domain.Series { TmdbId = 10, Title = "Severance", Year = 2022, Path = "/s/sev", QualityProfileId = profile };
+            var show = new Core.Domain.Series { TmdbId = 10, Title = "Severance", Year = 2022, Path = "/s/sev", QualityProfileId = profile, Added = DateTimeOffset.UtcNow.AddDays(-2) };
             db.Series.Add(show);
             await db.SaveChangesAsync(Ct);
 
@@ -105,6 +105,10 @@ public sealed class DashboardTests(KrakarrFactory factory) : IClassFixture<Kraka
         // One entry per title, newest first.
         var recent = dash.GetProperty("recentlyImported").EnumerateArray().Select(r => r.GetProperty("title").GetString()).ToArray();
         Assert.Equal(["Severance", "Alien"], recent);
+
+        // Movies and series together, by the date they were added to the library.
+        var added = dash.GetProperty("recentlyAdded").EnumerateArray().Select(r => r.GetProperty("title").GetString()).ToArray();
+        Assert.Equal(["Alien 3", "Severance", "Alien", "Aliens"], added);
 
         // Staff only.
         var doraClient = await LoginAsync("dora", "password-123");

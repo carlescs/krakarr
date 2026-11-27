@@ -1,6 +1,6 @@
 <div class="mb-6 flex flex-wrap items-center gap-3">
-  <h1 class="page-title mr-auto max-sm:basis-full">Series <span class="ml-1 text-base font-normal text-slate-500">@if (!loading()) { {{ series().length }} }</span></h1>
-  <input class="input min-w-0 flex-1 sm:w-56 sm:flex-none" placeholder="Filter…" type="search" [ngModel]="query()" (ngModelChange)="query.set($event)" />
+  <h1 class="page-title mr-auto max-sm:basis-full">Series <span class="ml-1 text-base font-normal text-slate-500">@if (!loading()) { {{ libraryTotal() }} }</span></h1>
+  <input class="input min-w-0 flex-1 sm:w-56 sm:flex-none" placeholder="Filter by title or network…" type="search" [ngModel]="query()" (ngModelChange)="query.set($event)" />
   <select class="input w-36 sm:w-40" [ngModel]="filter()" (ngModelChange)="filter.set($event)">
     <option value="all">All</option>
     <option value="following">Following</option>
@@ -11,25 +11,25 @@
   </select>
   <div class="flex gap-2">
     <kr-view-toggle [mode]="view()" (modeChange)="setView($event)" />
-    @if (view() === 'grid' && !selecting() && series().length) {
+    @if (view() === 'grid' && !selecting() && libraryTotal()) {
       <button type="button" class="btn-secondary" (click)="selecting.set(true)">Select</button>
     }
   </div>
   @if (auth.isStaff()) {
     <div class="flex gap-2 max-sm:basis-full">
-      <a routerLink="/series/add" class="btn-primary max-sm:flex-1">+ Add series</a>
+      <a routerLink="/discover/search" [queryParams]="{ type: 'series' }" class="btn-primary max-sm:flex-1">+ Add series</a>
       <kr-more-menu>
         <a routerLink="/series/import" class="menu-item" role="menuitem">Import existing library…</a>
       </kr-more-menu>
     </div>
   } @else {
-    <a routerLink="/series/add" class="btn-secondary max-sm:basis-full">Search &amp; request</a>
+    <a routerLink="/discover/search" [queryParams]="{ type: 'series' }" class="btn-secondary max-sm:basis-full">Search &amp; request</a>
   }
 </div>
 
 @if (loading()) {
   <kr-poster-grid-skeleton />
-} @else if (series().length === 0) {
+} @else if (libraryTotal() === 0) {
   <div class="card flex flex-col items-center gap-3 px-6 py-16 text-center">
     <p class="text-lg font-medium text-white">No series yet</p>
     @if (auth.isStaff()) {
@@ -37,96 +37,116 @@
       <div class="mt-2 flex gap-2">
         <a routerLink="/settings" class="btn-secondary">Settings</a>
         <a routerLink="/series/import" class="btn-secondary">Import existing</a>
-        <a routerLink="/series/add" class="btn-primary">Add series</a>
+        <a routerLink="/discover/search" [queryParams]="{ type: 'series' }" class="btn-primary">Add series</a>
       </div>
     } @else {
       <p class="max-w-md text-sm text-slate-400">Nothing here yet. Browse <a routerLink="/discover" class="underline">Discover</a> for ideas.</p>
     }
   </div>
-} @else if (filtered().length === 0) {
+} @else if (total() === 0) {
   <p class="py-12 text-center text-slate-500">
-    {{ filter() === 'following' && !query() ? 'You don't follow any series yet. Open one and press Follow to see it here and in your calendar.' : 'No series match the filter.' }}
+    {{ filter() === 'following' && !query() ? 'You don’t follow any series yet. Open one and press Follow to see it here and in your calendar.' : 'No series match the filter.' }}
   </p>
 } @else {
   @if (showBulk()) {
-    <kr-bulk-actions mediaType="Series" [selection]="selection" [total]="filtered().length" [closable]="view() === 'grid'" (closed)="stopSelecting()" />
+    <kr-bulk-actions mediaType="Series" [selection]="selection" [total]="total()" [closable]="view() === 'grid'" (closed)="stopSelecting()" />
   }
   @if (view() === 'table') {
     <div class="card overflow-x-auto">
-      <table class="table">
-        <thead>
-          <tr>
-            <th class="w-10">
-              <input type="checkbox" class="size-4 accent-accent-500 align-middle" aria-label="Select all"
-                     [checked]="selection.all()" [indeterminate]="selection.count() > 0 && !selection.all()" (change)="selection.toggleAll()" />
-            </th>
-            <th krSort="title" [krSortBy]="sort">Title</th>
-            <th class="max-sm:hidden" krSort="year" [krSortBy]="sort">Year</th>
-            <th class="max-md:hidden" krSort="status" [krSortBy]="sort">Status</th>
-            <th krSort="episodes" [krSortBy]="sort">Episodes</th>
-            <th class="max-lg:hidden" krSort="nextAiring" [krSortBy]="sort">Next airing</th>
-            <th class="max-sm:hidden">Following</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (s of visible(); track s.id) {
-            @let checked = selection.has(s.id);
-            <tr [class.bg-accent-500/10]="checked">
-              <td>
-                <input type="checkbox" class="size-4 accent-accent-500 align-middle" [attr.aria-label]="'Select ' + s.title" [checked]="checked"
-                       (click)="selection.toggle(s.id, $event.shiftKey)" />
-              </td>
-              <td class="max-w-0 min-w-40 w-full">
-                <a [routerLink]="['/series', s.id]" class="block truncate font-medium text-slate-100 hover:text-white">{{ s.title }}</a>
-                @if (!s.monitored) { <span class="text-xs text-slate-500">Unmonitored</span> }
-              </td>
-              <td class="whitespace-nowrap text-slate-400 max-sm:hidden">{{ s.year || '—' }}</td>
-              <td class="whitespace-nowrap text-slate-400 max-md:hidden">{{ s.status }}</td>
-              <td class="min-w-28">
-                <div class="flex items-center gap-2">
-                  <kr-progress class="w-16 shrink-0 max-sm:hidden" [value]="percent(s)" [color]="progressColor(s)" />
-                  <span class="whitespace-nowrap text-xs text-slate-400">{{ s.episodeFileCount }}/{{ s.episodeCount }}</span>
-                  @if (s.downloadingCount > 0) { <span class="badge bg-accent-500/15 text-accent-300" title="Downloading">↓ {{ s.downloadingCount }}</span> }
-                </div>
-              </td>
-              <td class="whitespace-nowrap text-slate-400 max-lg:hidden">{{ s.nextAiring ? (s.nextAiring | date: 'MMM d, y') : '—' }}</td>
-              <td class="max-sm:hidden">
-                @if (following().has(s.id)) { <span class="badge bg-accent-500/15 text-accent-300">Following</span> }
-              </td>
+      <cdk-virtual-scroll-viewport krVirtualTable scrollWindow [itemSize]="tableRowHeight" [minBufferPx]="600" [maxBufferPx]="1200">
+        <table class="table">
+          <thead>
+            <tr>
+              <th class="w-10">
+                <input type="checkbox" class="size-4 accent-accent-500 align-middle" aria-label="Select all"
+                       [checked]="selection.all()" [indeterminate]="selection.count() > 0 && !selection.all()" (change)="selection.toggleAll()" />
+              </th>
+              <th krSort="title" [krSortBy]="sort">Title</th>
+              <th class="max-sm:hidden" krSort="year" [krSortBy]="sort">Year</th>
+              <th class="max-lg:hidden" krSort="network" [krSortBy]="sort">Network</th>
+              <th class="max-md:hidden" krSort="status" [krSortBy]="sort">Status</th>
+              <th krSort="episodes" [krSortBy]="sort">Episodes</th>
+              <th class="max-lg:hidden" krSort="nextAiring" [krSortBy]="sort">Next airing</th>
+              <th class="max-sm:hidden">Following</th>
             </tr>
-          }
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            <tr *cdkVirtualFor="let index of tableDataSource; trackBy: trackIndex" class="h-11" [class.bg-accent-500/10]="isRowSelected(index)">
+              @if (seriesAt(index); as s) {
+                @let checked = selection.has(s.id);
+                <td>
+                  <input type="checkbox" class="size-4 accent-accent-500 align-middle" [attr.aria-label]="'Select ' + s.title" [checked]="checked"
+                         (click)="selection.toggle(s.id, $event.shiftKey)" />
+                </td>
+                <td class="max-w-0 min-w-40 w-full">
+                  <div class="flex items-center gap-2">
+                    <a [routerLink]="['/series', s.id]" class="min-w-0 truncate font-medium text-slate-100 hover:text-white">{{ s.title }}</a>
+                    @if (!s.monitored) { <span class="shrink-0 text-xs text-slate-500">Unmonitored</span> }
+                  </div>
+                </td>
+                <td class="whitespace-nowrap text-slate-400 max-sm:hidden">{{ s.year || '—' }}</td>
+                <td class="max-w-40 truncate whitespace-nowrap text-slate-400 max-lg:hidden" [title]="s.network ?? ''">{{ s.network || '—' }}</td>
+                <td class="whitespace-nowrap text-slate-400 max-md:hidden">{{ s.status }}</td>
+                <td class="min-w-28">
+                  <div class="flex items-center gap-2">
+                    <kr-progress class="w-16 shrink-0 max-sm:hidden" [value]="percent(s)" [color]="progressColor(s)" />
+                    <span class="whitespace-nowrap text-xs text-slate-400">{{ s.episodeFileCount }}/{{ s.episodeCount }}</span>
+                    @if (s.downloadingCount > 0) { <span class="badge bg-accent-500/15 text-accent-300" title="Downloading">↓ {{ s.downloadingCount }}</span> }
+                  </div>
+                </td>
+                <td class="whitespace-nowrap text-slate-400 max-lg:hidden">{{ s.nextAiring ? (s.nextAiring | date: 'MMM d, y') : '—' }}</td>
+                <td class="max-sm:hidden">
+                  @if (following().has(s.id)) { <span class="badge bg-accent-500/15 text-accent-300">Following</span> }
+                </td>
+              } @else {
+                <td colspan="8"><div class="h-4 w-48 animate-pulse rounded bg-surface-800"></div></td>
+              }
+            </tr>
+          </tbody>
+        </table>
+      </cdk-virtual-scroll-viewport>
     </div>
   } @else {
-    <div [class]="grid">
-      @for (s of visible(); track s.id) {
-        @let checked = selecting() && selection.has(s.id);
-        <a [routerLink]="selecting() ? null : ['/series', s.id]" class="group cursor-pointer" (click)="cardClick($event, s)"
-           (keydown.enter)="cardClick($event, s)" (keydown.space)="cardClick($event, s)" [attr.tabindex]="selecting() ? 0 : null"
-           [attr.role]="selecting() ? 'checkbox' : null" [attr.aria-checked]="selecting() ? checked : null">
-          <div class="relative overflow-hidden rounded-lg ring-1 transition group-hover:ring-accent-500" [class]="checked ? 'ring-2 ring-accent-400' : 'ring-surface-700'">
-            <kr-poster [url]="s.posterUrl" [title]="s.title" />
-            @if (s.downloadingCount > 0) {
-              <span class="badge absolute top-1.5 right-1.5 bg-accent-500 sm:top-2 sm:right-2 text-slate-950">↓ {{ s.downloadingCount }}</span>
-            }
-            @if (selecting()) {
-              <span class="absolute top-1.5 left-1.5 flex size-6 items-center justify-center rounded-full border-2 text-sm font-bold sm:top-2 sm:left-2"
-                    [class]="checked ? 'border-accent-400 bg-accent-500 text-slate-950' : 'border-white/70 bg-black/40 text-transparent'" aria-hidden="true">✓</span>
-            }
-          </div>
-          <kr-progress class="mt-2" [value]="percent(s)" [color]="progressColor(s)" />
-          <div class="mt-1.5 truncate text-xs font-medium text-slate-100 group-hover:text-white sm:text-sm">{{ s.title }}</div>
-          <div class="flex justify-between gap-1 text-[11px] text-slate-500 sm:text-xs">
-            <span class="truncate">{{ s.episodeFileCount }}/{{ s.episodeCount }}<span class="max-sm:hidden"> episodes</span></span>
-            @if (s.nextAiring) { <span class="whitespace-nowrap" [title]="'Next airing'">{{ s.nextAiring | date: 'MMM d' }}</span> }
-            @else { <span class="truncate">{{ s.status }}</span> }
-          </div>
-        </a>
-      }
-    </div>
-  }
-  @if (visible().length < sorted().length) {
-    <div class="h-px" (krNearViewport)="showMore()"></div>
+    <cdk-virtual-scroll-viewport scrollWindow [itemSize]="metrics().rowHeight" [minBufferPx]="600" [maxBufferPx]="1200">
+      <div *cdkVirtualFor="let row of gridDataSource; trackBy: trackGridRow"
+           class="grid w-full gap-x-3 pb-4 sm:gap-x-4"
+           [style.grid-template-columns]="gridTemplate()"
+           [style.height.px]="metrics().rowHeight">
+        @for (slot of slots(row.count); track slot) {
+          @let index = row.start + slot;
+          @if (seriesAt(index); as s) {
+            @let checked = selecting() && selection.has(s.id);
+            <a [routerLink]="selecting() ? null : ['/series', s.id]" class="group min-w-0 cursor-pointer" (click)="cardClick($event, s)"
+               (keydown.enter)="cardClick($event, s)" (keydown.space)="cardClick($event, s)" [attr.tabindex]="selecting() ? 0 : null"
+               [attr.role]="selecting() ? 'checkbox' : null" [attr.aria-checked]="selecting() ? checked : null">
+              <div class="relative overflow-hidden rounded-lg ring-1 transition group-hover:ring-accent-500" [class]="checked ? 'ring-2 ring-accent-400' : 'ring-surface-700'">
+                <kr-poster [url]="s.posterUrl" [title]="s.title" />
+                @if (s.downloadingCount > 0) {
+                  <span class="badge absolute top-1.5 right-1.5 bg-accent-500 sm:top-2 sm:right-2 text-slate-950">↓ {{ s.downloadingCount }}</span>
+                }
+                @if (selecting()) {
+                  <span class="absolute top-1.5 left-1.5 flex size-6 items-center justify-center rounded-full border-2 text-sm font-bold sm:top-2 sm:left-2"
+                        [class]="checked ? 'border-accent-400 bg-accent-500 text-slate-950' : 'border-white/70 bg-black/40 text-transparent'" aria-hidden="true">✓</span>
+                }
+              </div>
+              <kr-progress class="mt-2" [value]="percent(s)" [color]="progressColor(s)" />
+              <div class="mt-1.5 truncate text-xs font-medium text-slate-100 group-hover:text-white sm:text-sm" [title]="s.network ? s.title + ' · ' + s.network : s.title">{{ s.title }}</div>
+              <div class="flex justify-between gap-1 text-[11px] text-slate-500 sm:text-xs">
+                <span class="truncate">{{ s.episodeFileCount }}/{{ s.episodeCount }}<span class="max-sm:hidden"> episodes</span></span>
+                @if (s.nextAiring) { <span class="whitespace-nowrap" [title]="'Next airing'">{{ s.nextAiring | date: 'MMM d' }}</span> }
+                @else { <span class="truncate">{{ s.status }}</span> }
+              </div>
+            </a>
+          } @else {
+            <div class="min-w-0" aria-hidden="true">
+              <div class="aspect-[2/3] w-full animate-pulse rounded-lg bg-surface-800"></div>
+              <div class="mt-2 h-1.5 w-full animate-pulse rounded-full bg-surface-800"></div>
+              <div class="mt-1.5 h-4 w-3/4 animate-pulse rounded bg-surface-800"></div>
+              <div class="mt-1 h-3 w-1/2 animate-pulse rounded bg-surface-800"></div>
+            </div>
+          }
+        }
+      </div>
+    </cdk-virtual-scroll-viewport>
   }
 }

@@ -2,11 +2,14 @@ using System.Runtime.CompilerServices;
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Events;
+using Krakarr.Core.Metadata;
 using Krakarr.Core.Telemetry;
 using Krakarr.Data;
 using Krakarr.Downloads;
 using Krakarr.Indexers;
 using Krakarr.Media.Files;
+using Krakarr.Media.Parsing;
+using Krakarr.Subtitles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -30,7 +33,8 @@ public sealed class MovieService(
     IIndexerSearchService indexerSearch,
     IDownloadService downloads,
     IEventHub eventHub,
-    ILogger<MovieService> logger)
+    ILogger<MovieService> logger,
+    Krakarr.Core.Push.IPushNotifier? push = null)
 {
     public async Task<Movie> AddAsync(AddMovieRequest request, CancellationToken ct = default)
     {
@@ -67,6 +71,7 @@ public sealed class MovieService(
         };
         MovieReleases.Apply(movie, lookup.ReleaseDates, MapStatus(lookup.Status), Today);
         await ApplyCollectionAsync(movie, lookup.Collection, ct);
+        await ApplyAlternateTitlesAsync(movie, lookup, ct);
         var roots = await db.RootFolders.AsNoTracking().Where(r => r.MediaType == MediaType.Movie).Select(r => r.Path).ToListAsync(ct);
         movie.Path = LibraryPaths.ResolveItemFolder(roots, request.RootFolderPath, request.ExistingPath,
             () => MovieNaming.BuildFolderName(movie, media.MovieFolderFormat));
@@ -79,28 +84,178 @@ public sealed class MovieService(
         await db.SaveChangesAsync(ct);
         logger.LogInformation("Added movie {Title} ({Year})", movie.Title, movie.Year);
         await eventHub.PublishAsync(EventNames.MovieUpdated, new { movie.Id }, ct);
-        if (await MediaRequestUpdates.ApproveMatchingAsync(db, MediaType.Movie, movie.TmdbId, null, movie.Id, ct) > 0)
+        if (await MediaRequestUpdates.ApproveMatchingAsync(db, MediaType.Movie, movie.TmdbId, null, movie.Id, ct, push) > 0)
         {
             await eventHub.PublishAsync(EventNames.RequestsUpdated, null, ct);
         }
         return movie;
     }
 
+    /// <summary>Refreshes metadata from TMDB and rescans the movie's folder on disk for added, replaced or removed files.</summary>
     public async Task RefreshAsync(Movie movie, CancellationToken ct = default)
     {
-        var lookup = await tmdb.GetMovieAsync(movie.TmdbId, ct);
-        movie.ImdbId = lookup.ImdbId ?? movie.ImdbId;
-        movie.Title = lookup.Title;
-        movie.OriginalTitle = lookup.OriginalTitle;
-        movie.SortTitle = ReleaseSortTitle(lookup.Title);
-        movie.Year = lookup.Year;
-        movie.Overview = lookup.Overview;
-        movie.PosterUrl = lookup.PosterUrl ?? movie.PosterUrl;
-        movie.FanartUrl = lookup.FanartUrl ?? movie.FanartUrl;
-        movie.Runtime = lookup.Runtime;
-        MovieReleases.Apply(movie, lookup.ReleaseDates, MapStatus(lookup.Status), Today);
-        await ApplyCollectionAsync(movie, lookup.Collection, ct);
+        MetadataException? metadataError = null;
+        try
+        {
+            var lookup = await tmdb.GetMovieAsync(movie.TmdbId, ct);
+            movie.ImdbId = lookup.ImdbId ?? movie.ImdbId;
+            movie.Title = lookup.Title;
+            movie.OriginalTitle = lookup.OriginalTitle;
+            movie.SortTitle = ReleaseSortTitle(lookup.Title);
+            movie.Year = lookup.Year;
+            movie.Overview = lookup.Overview;
+            movie.PosterUrl = lookup.PosterUrl ?? movie.PosterUrl;
+            movie.FanartUrl = lookup.FanartUrl ?? movie.FanartUrl;
+            movie.Runtime = lookup.Runtime;
+            MovieReleases.Apply(movie, lookup.ReleaseDates, MapStatus(lookup.Status), Today);
+            await ApplyCollectionAsync(movie, lookup.Collection, ct);
+            if (movie.Id > 0) await db.Entry(movie).Collection(m => m.AlternateTitles).LoadAsync(ct);
+            await ApplyAlternateTitlesAsync(movie, lookup, ct);
+        }
+        catch (MetadataException ex)
+        {
+            metadataError = ex;
+        }
+
+        await RescanDiskAsync(movie, ct);
+        if (metadataError is not null) throw metadataError;
+    }
+
+    /// <summary>Syncs the movie's video file and sidecar/embedded subtitles with what is currently in <see cref="Movie.Path"/>.</summary>
+    public async Task RescanDiskAsync(Movie movie, CancellationToken ct = default)
+    {
+        var existing = movie.MovieFile
+            ?? (movie.MovieFileId is { } fid ? await db.MovieFiles.FirstOrDefaultAsync(f => f.Id == fid, ct) : null)
+            ?? await db.MovieFiles.FirstOrDefaultAsync(f => f.MovieId == movie.Id, ct);
+        var files = MediaFolder.VideoFiles(movie.Path);
+        var historyEntries = new List<HistoryEntry>();
+        var subtitlesChanged = false;
+
+        if (files.Count == 0)
+        {
+            if (existing is not null)
+            {
+                movie.MovieFileId = null;
+                movie.MovieFile = null;
+                db.MovieFiles.Remove(existing);
+                var deleted = new HistoryEntry
+                {
+                    EventType = HistoryEventType.FileDeleted,
+                    SourceTitle = existing.RelativePath,
+                    MovieId = movie.Id,
+                    QualityId = existing.QualityId,
+                    Message = "File no longer on disk",
+                };
+                db.History.Add(deleted);
+                historyEntries.Add(deleted);
+                subtitlesChanged = true;
+            }
+        }
+        else
+        {
+            var (source, size) = files[0];
+            var relativePath = Path.GetRelativePath(movie.Path, source);
+            var folderName = Path.GetFileName(Path.TrimEndingDirectorySeparator(movie.Path));
+            var fileName = Path.GetFileNameWithoutExtension(source);
+            var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+            if (existing is not null && string.Equals(existing.RelativePath, relativePath, comparison))
+            {
+                existing.RelativePath = relativePath;
+                if (existing.Size != size)
+                {
+                    existing.Size = size;
+                    var parsedQuality = QualityOf(source, folderName);
+                    if (parsedQuality != Qualities.Unknown) existing.QualityId = parsedQuality.Id;
+                    var parsedGroup = ReleaseParser.Parse(fileName).ReleaseGroup ?? ReleaseParser.Parse(folderName).ReleaseGroup;
+                    if (parsedGroup is not null) existing.ReleaseGroup = parsedGroup;
+                    existing.EmbeddedSubtitles = null;
+                    existing.MediaInfo = null; // read again below, which also corrects the quality
+                    existing.LastSubtitleSearch = null;
+                    existing.SubtitlesNotFound = null;
+                    subtitlesChanged = true;
+                }
+
+                movie.MovieFileId = existing.Id;
+                movie.MovieFile = existing;
+                if (await SubtitleService.SyncMovieFileAsync(db, movie.Path, existing, ct))
+                {
+                    subtitlesChanged = true;
+                }
+            }
+            else
+            {
+                if (existing is not null)
+                {
+                    if (!File.Exists(Path.Combine(movie.Path, existing.RelativePath)))
+                    {
+                        var deleted = new HistoryEntry
+                        {
+                            EventType = HistoryEventType.FileDeleted,
+                            SourceTitle = existing.RelativePath,
+                            MovieId = movie.Id,
+                            QualityId = existing.QualityId,
+                            Message = "File no longer on disk",
+                        };
+                        db.History.Add(deleted);
+                        historyEntries.Add(deleted);
+                    }
+
+                    movie.MovieFileId = null;
+                    movie.MovieFile = null;
+                    db.MovieFiles.Remove(existing);
+                    await db.SaveChangesAsync(ct);
+                }
+
+                var quality = QualityOf(source, folderName);
+                var movieFile = new MovieFile
+                {
+                    MovieId = movie.Id,
+                    RelativePath = relativePath,
+                    Size = size,
+                    QualityId = quality.Id,
+                    ReleaseGroup = ReleaseParser.Parse(fileName).ReleaseGroup ?? ReleaseParser.Parse(folderName).ReleaseGroup,
+                    SceneName = fileName,
+                };
+                db.MovieFiles.Add(movieFile);
+                await db.SaveChangesAsync(ct);
+
+                movie.MovieFileId = movieFile.Id;
+                movie.MovieFile = movieFile;
+                // Reads the headers too, which may correct the quality.
+                await SubtitleService.SyncMovieFileAsync(db, movie.Path, movieFile, ct);
+                var imported = new HistoryEntry
+                {
+                    EventType = HistoryEventType.Imported,
+                    SourceTitle = Path.GetFileName(source),
+                    MovieId = movie.Id,
+                    QualityId = movieFile.QualityId,
+                    Message = "Imported existing file",
+                };
+                db.History.Add(imported);
+                historyEntries.Add(imported);
+                subtitlesChanged = true;
+            }
+        }
+
         await db.SaveChangesAsync(ct);
+        foreach (var entry in historyEntries)
+        {
+            await eventHub.PublishAsync(EventNames.HistoryAdded, entry, ct);
+        }
+
+        if (subtitlesChanged)
+        {
+            await eventHub.PublishAsync(EventNames.SubtitlesUpdated, new { MovieId = (int?)movie.Id, SeriesId = (int?)null }, ct);
+        }
+
+        await eventHub.PublishAsync(EventNames.MovieUpdated, new { movie.Id }, ct);
+    }
+
+    public static Quality QualityOf(string file, string folderName)
+    {
+        var q = ReleaseParser.ParseQuality(Path.GetFileName(file));
+        return q != Qualities.Unknown ? q : ReleaseParser.ParseQuality(folderName);
     }
 
     /// <summary>Links the movie to its TMDB collection, creating or updating the collection row. Does not save.</summary>
@@ -128,6 +283,35 @@ public sealed class MovieService(
         movie.Collection = collection;
     }
 
+    /// <summary>
+    /// Replaces the movie's metadata alternate titles (translations, original title, AKAs) with the ones from TMDB in the
+    /// languages worth keeping. <see cref="Movie.AlternateTitles"/> must be loaded. Does not save.
+    /// </summary>
+    private async Task ApplyAlternateTitlesAsync(Movie movie, MovieLookup lookup, CancellationToken ct)
+    {
+        var keep = await AlternateTitleLanguages.ForAsync(db, settings, movie.Languages, lookup.OriginalLanguage, ct);
+        var titles = AlternateTitles.Select(lookup.AlternateTitles, [movie.Title], ReleaseParser.NormalizeTitle, keep);
+        db.AlternateTitles.RemoveRange(AlternateTitles.Sync(movie.AlternateTitles, AlternateTitleSource.Metadata, titles, ReleaseParser.NormalizeTitle));
+    }
+
+    /// <summary>Loads <see cref="Movie.AlternateTitles"/> for matching and searching, unless already loaded.</summary>
+    public async Task EnsureAlternateTitlesAsync(Movie movie, CancellationToken ct = default)
+    {
+        if (movie.Id == 0) return;
+        var entry = db.Entry(movie);
+        if (entry.State != EntityState.Detached)
+        {
+            var collection = entry.Collection(m => m.AlternateTitles);
+            if (!collection.IsLoaded) await collection.LoadAsync(ct);
+            return;
+        }
+
+        if (movie.AlternateTitles.Count == 0)
+        {
+            movie.AlternateTitles = await db.AlternateTitles.AsNoTracking().Where(t => t.MovieId == movie.Id).ToListAsync(ct);
+        }
+    }
+
     /// <summary>Deletes collections that no movie in the library belongs to any more.</summary>
     public static Task<int> PruneCollectionsAsync(KrakarrDbContext db, CancellationToken ct = default) =>
         db.MovieCollections.Where(c => !db.Movies.Any(m => m.CollectionId == c.Id)).ExecuteDeleteAsync(ct);
@@ -138,6 +322,7 @@ public sealed class MovieService(
     {
         var profile = movie.QualityProfile ?? await db.QualityProfiles.FirstAsync(p => p.Id == movie.QualityProfileId, ct);
         var existing = await ExistingQualityAsync(movie, ct);
+        await EnsureAlternateTitlesAsync(movie, ct);
 
         var result = await indexerSearch.SearchAsync(Criteria(movie), ct: ct);
 
@@ -154,6 +339,7 @@ public sealed class MovieService(
         var profile = movie.QualityProfile ?? await db.QualityProfiles.FirstAsync(p => p.Id == movie.QualityProfileId, ct);
         var existing = await ExistingQualityAsync(movie, ct);
         var languages = (await settings.GetAsync<LanguageSettings>(ct)).For(movie.Languages);
+        await EnsureAlternateTitlesAsync(movie, ct);
 
         var run = await indexerSearch.StartAsync(Criteria(movie), ct: ct);
         movie.LastSearched = DateTimeOffset.UtcNow;
@@ -165,13 +351,16 @@ public sealed class MovieService(
         await foreach (var e in events) yield return e;
     }
 
-    private static SearchCriteria Criteria(Movie movie) => new()
+    internal static SearchCriteria Criteria(Movie movie) => new()
     {
         Type = SearchType.Movie,
-        Query = movie.Year > 0 ? $"{movie.Title} {movie.Year}" : movie.Title,
+        Query = WithYear(movie.Title, movie.Year),
         ImdbId = movie.ImdbId,
         TmdbId = movie.TmdbId,
+        AlternateTitles = movie.AlternateTitles.Select(t => new AlternateTitleInfo(WithYear(t.Title, movie.Year), t.Language)).ToList(),
     };
+
+    private static string WithYear(string title, int year) => year > 0 ? $"{title} {year}" : title;
 
     /// <summary>Searches and grabs the best approved release. Returns a human readable outcome.</summary>
     public async Task<string> AutoSearchAsync(int movieId, CancellationToken ct = default)

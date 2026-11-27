@@ -1,7 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Auth } from '../../core/auth';
+import { stubPasskeys } from '../../../testing/passkeys';
 import { button, mockApi, settle, setupTest, text, type } from '../../../testing/test-setup';
 import { LoginPage } from './login';
 
@@ -15,6 +16,32 @@ async function render(api: ReturnType<typeof mockApi>, setupRequired: boolean) {
 }
 
 describe('LoginPage', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('signs in with a passkey', async () => {
+    const credentials = stubPasskeys({ authenticatorData: new Uint8Array([4]).buffer, signature: new Uint8Array([5]).buffer, userHandle: null });
+    const api = mockApi({
+      passkeyLoginOptions: async () => ({ challenge: 'AQI', rpId: 'localhost', userVerification: 'required' }),
+      passkeyLogin: async () => undefined,
+      authStatus: async () => ({ setupRequired: false, authenticated: true }),
+    });
+    const { fixture, navigate, el } = await render(api, false);
+    button(el, 'Sign in with a passkey').click();
+    await settle(fixture);
+    expect(credentials.get).toHaveBeenCalled();
+    expect(api.passkeyLogin).toHaveBeenCalledWith({
+      id: 'Aw', rawId: 'Aw', type: 'public-key',
+      response: { clientDataJSON: 'AQ', authenticatorData: 'BA', signature: 'BQ', userHandle: null },
+    });
+    expect(navigate).toHaveBeenCalledWith('/');
+  });
+
+  it('hides the passkey button where passkeys are unavailable', async () => {
+    vi.stubGlobal('isSecureContext', false);
+    const { el } = await render(mockApi(), false);
+    expect(() => button(el, 'Sign in with a passkey')).toThrow();
+  });
+
   it('signs in and opens the home page', async () => {
     const api = mockApi({ login: async () => undefined, authStatus: async () => ({ setupRequired: false, authenticated: true }) });
     const { fixture, navigate, el } = await render(api, false);

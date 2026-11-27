@@ -1,0 +1,23 @@
+@if (info(); as i) {
+  <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-xs sm:gap-x-8" data-media-info>
+    @if (video(); as v) {
+      <dt class="text-slate-500">Video</dt>
+      <dd class="text-slate-200" data-video>
+        {{ v }}
+        @if (i.dynamicRange) { <span class="badge ml-1 bg-violet-500/15 text-violet-300" data-hdr>{{ i.dynamicRange }}</span> }
+      </dd>
+    }
+    @if (i.audio.length > 0) {
+      <dt class="text-slate-500">Audio</dt>
+      <dd class="text-slate-200">
+        @for (a of i.audio; track $index) { <div data-audio>{{ track(a) }}</div> }
+      </dd>
+    }
+    @if (duration(); as d) {
+      <dt class="text-slate-500">Duration</dt><dd class="text-slate-200" data-duration>{{ d }}</dd>
+    }
+  </dl>
+  @for (w of i.warnings; track w) {
+    <p class="mt-2 text-xs text-amber-300" data-warning>⚠ {{ w }}</p>
+  }
+}

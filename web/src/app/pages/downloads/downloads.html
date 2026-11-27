@@ -6,6 +6,8 @@
     </span>
   }
   <span class="mr-auto"></span>
+  <input class="input min-w-0 flex-1 max-sm:basis-full sm:w-56 sm:flex-none" type="search" placeholder="Filter…" aria-label="Filter torrents"
+         [ngModel]="filter()" (ngModelChange)="filter.set($event)" />
   @if (seedingCount() > 0 || showSeeding()) {
     <div class="inline-flex rounded-lg bg-surface-800 p-0.5 text-sm" role="radiogroup" aria-label="Show">
       <button type="button" role="radio" [attr.aria-checked]="!showSeeding()" [class]="segment(!showSeeding())" (click)="toggleSeeding(false)">
@@ -26,14 +28,45 @@
   </div>
 }
 
+@if (importIssues().length > 0) {
+  <section class="card mb-4 border-amber-500/30" aria-labelledby="import-issues-title">
+    <h2 id="import-issues-title" class="border-b border-surface-700 px-4 py-3 text-sm font-semibold text-amber-300">
+      ⚠ {{ importIssues().length }} {{ importIssues().length === 1 ? 'import needs' : 'imports need' }} attention
+    </h2>
+    <ul class="divide-y divide-surface-700">
+      @for (i of importIssues(); track i.id) {
+        <li class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
+          <div class="min-w-0 flex-1 basis-60">
+            <p class="break-all font-medium text-slate-100">{{ i.name }}</p>
+            <p class="mt-1 text-xs text-rose-300 wrap-anywhere">{{ i.message }}</p>
+            @if (!i.inClient) { <p class="mt-1 text-xs text-slate-500">No longer in the download client.</p> }
+          </div>
+          <ng-container *ngTemplateOutlet="mediaLink; context: { $implicit: i }" />
+          <div class="flex gap-2">
+            @if (i.inClient && i.completedAt) {
+              <button type="button" class="btn-secondary btn-sm" [disabled]="issueBusy() !== null" (click)="resolveIssue(i, 'retry')"
+                      title="Try the import again">Retry import</button>
+            }
+            <button type="button" class="btn-ghost btn-sm" [disabled]="issueBusy() !== null" (click)="resolveIssue(i, 'dismiss')"
+                    [title]="i.inClient ? 'Keep the torrent but stop importing it into the library' : 'Forget this download'">Dismiss</button>
+          </div>
+        </li>
+      }
+    </ul>
+  </section>
+}
+
 @if (visible().length === 0) {
   <div class="card px-6 py-12 text-center text-sm text-slate-400">
     @if (list().length === 0) { No torrents. Grab a release or add a magnet link. }
+    @else if (tabCount() > 0) { No torrents match the filter — <button class="underline hover:text-slate-200" (click)="filter.set('')">clear it</button>. }
     @else if (showSeeding()) { Nothing seeding — <button class="underline hover:text-slate-200" (click)="toggleSeeding(false)">show downloads</button>. }
     @else { Nothing downloading. {{ seedingCount() }} torrent(s) seeding — <button class="underline hover:text-slate-200" (click)="toggleSeeding(true)">show them</button>. }
   </div>
 } @else {
-  <div class="card sticky top-[calc(3.5rem+env(safe-area-inset-top)+0.5rem)] z-10 mb-3 flex flex-wrap items-center gap-2 px-3 py-2"
+  <!-- Opaque strip flush with the top bar, so cards scrolling underneath don't show through the gap above the toolbar. -->
+  <div class="sticky top-[calc(3.5rem+1px+env(safe-area-inset-top))] z-10 -mt-2 mb-1 bg-surface-950 pt-2 pb-2">
+  <div class="card flex flex-wrap items-center gap-2 px-3 py-2"
        [class.shadow-lg]="selection.count() > 0" role="toolbar" aria-label="Bulk actions">
     <label class="flex items-center gap-2 text-sm">
       <input type="checkbox" class="size-4 accent-accent-500" aria-label="Select all torrents"
@@ -41,7 +74,7 @@
       @if (selection.count() > 0) {
         <span class="font-medium text-white" aria-live="polite">{{ selection.count() }} selected</span>
       } @else {
-        <span class="text-slate-400">Select all ({{ visible().length }})</span>
+        <span class="text-slate-400">Select all ({{ visible().length }}{{ visible().length < tabCount() ? ' of ' + tabCount() : '' }})</span>
       }
     </label>
     <div class="flex-1"></div>
@@ -62,20 +95,22 @@
               [attr.aria-label]="sort().desc ? 'Sort descending' : 'Sort ascending'" [title]="sort().desc ? 'Descending' : 'Ascending'">{{ sort().desc ? '↓' : '↑' }}</button>
     </div>
   </div>
+  </div>
   <div class="space-y-2">
     @for (d of visible(); track d.infoHash) {
       @let checked = selection.has(d.infoHash);
-      <div class="card p-3 sm:p-4" [class.ring-1]="checked" [class.ring-accent-500/60]="checked" [class.bg-accent-500/5]="checked">
+      @let focused = focusHash() === d.infoHash.toLowerCase();
+      <div class="card scroll-mt-32 p-3 sm:p-4" [id]="'torrent-' + d.infoHash" [attr.data-focused]="focused || null"
+           [class.ring-1]="checked && !focused" [class.ring-accent-500/60]="checked && !focused" [class.bg-accent-500/5]="checked"
+           [class.ring-2]="focused" [class.ring-accent-400]="focused">
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5 sm:gap-x-3">
           <input type="checkbox" class="size-4 shrink-0 accent-accent-500 pointer-coarse:size-5" [attr.aria-label]="'Select ' + d.name" [checked]="checked"
                  (click)="selection.toggle(d.infoHash, $event.shiftKey)" />
           <kr-state-badge [state]="d.state" />
           <button class="min-w-0 text-left font-medium text-slate-100 break-all hover:text-accent-300 max-sm:order-first max-sm:line-clamp-2 max-sm:basis-full sm:flex-1 sm:truncate" [title]="d.name + ' — show details'" (click)="details.set(d)">{{ d.name }}</button>
-          @if (d.movieId) {
-            <a [routerLink]="['/movies', d.movieId]" class="badge bg-accent-500/15 text-accent-300 hover:bg-accent-500/25">Movie</a>
-          }
-          @if (d.seriesId) {
-            <a [routerLink]="['/series', d.seriesId]" class="badge bg-violet-500/15 text-violet-300 hover:bg-violet-500/25">Series</a>
+          @if (d.movieId || d.seriesId) {
+            <!-- On phones the title gets its own line under the torrent name, so the controls stay on one row. -->
+            <div class="flex min-w-0 max-sm:-order-1 max-sm:basis-full"><ng-container *ngTemplateOutlet="mediaLink; context: { $implicit: d }" /></div>
           }
           @if (d.imported) { <span class="badge bg-emerald-500/15 text-emerald-300">Imported</span> }
           @if (multiClient()) { <span class="badge bg-surface-700 text-slate-300" title="Download client">{{ clientLabel(d.client) }}</span> }
@@ -158,3 +193,19 @@
     </ng-container>
   </kr-modal>
 }
+
+<!-- Link from a download (or failed import) to its movie or series, named once the titles are loaded. -->
+<ng-template #mediaLink let-d>
+  @let info = media().get(d.id);
+  @if (d.movieId) {
+    <a [routerLink]="['/movies', d.movieId]" class="badge max-w-full gap-1 sm:max-w-xs bg-accent-500/15 text-accent-300 hover:bg-accent-500/25"
+       [title]="info ? 'Movie: ' + mediaLabel(info) : 'Open the movie'" data-media-link>
+      <svg class="size-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons.film" /></svg><span class="truncate">{{ info ? mediaLabel(info) : 'Movie' }}</span>
+    </a>
+  } @else if (d.seriesId) {
+    <a [routerLink]="['/series', d.seriesId]" class="badge max-w-full gap-1 sm:max-w-xs bg-violet-500/15 text-violet-300 hover:bg-violet-500/25"
+       [title]="info ? 'Series: ' + mediaLabel(info) : 'Open the series'" data-media-link>
+      <svg class="size-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons.tv" /></svg><span class="truncate">{{ info ? mediaLabel(info) : 'Series' }}</span>
+    </a>
+  }
+</ng-template>

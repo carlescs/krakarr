@@ -10,7 +10,7 @@
 | **Prowlarr** – indexer management | `Krakarr.Indexers` | ✅ Torznab/Newznab indexers, import from an existing Prowlarr, capability detection, aggregated search across indexers |
 | **qBittorrent** – torrent client | `Krakarr.Downloads` | ✅ Embedded [MonoTorrent](https://github.com/alanmcgovern/monotorrent) engine: magnets, .torrent files, DHT, speed limits, seeding ratio/time limits, fast-resume — *or* drive an existing qBittorrent (tag-scoped) |
 | **Sonarr** – TV series | `Krakarr.Series` | ✅ TMDB or TheTVDB metadata, seasons/episodes, monitoring, season-pack aware search, RSS sync, rename + hardlink import |
-| **Bazarr** – subtitles | `Krakarr.Subtitles` | ✅ OpenSubtitles.com, wanted languages, hash + release scoring, automatic and manual search |
+| **Bazarr** – subtitles | `Krakarr.Subtitles` | ✅ OpenSubtitles.com, wanted languages, hash + release scoring, automatic and manual search, upgrades, sync |
 | **Seerr** – discovery | `Krakarr.Movies` / `Krakarr.Series` | ✅ Trending, popular, upcoming and top-rated lists, personal recommendations, recommended and similar titles, detail pages for any title, cast and person pages, one-click add, requests with approval |
 
 Everything (API, web UI, torrent engine, schedulers) runs in a single .NET process inside a single Docker container.
@@ -59,7 +59,7 @@ Then open <http://localhost:8787>:
 
 | Path / port | Purpose |
 |---|---|
-| `/config` | Database (`krakarr.db`), settings, torrent fast-resume cache, auth keys |
+| `/config` | Database (`krakarr.db`), settings, torrent fast-resume cache, auth keys, backups (`/config/Backups`) |
 | `/data` | **Both** downloads (`/data/downloads`) and your library (e.g. `/data/media/movies`) |
 | `8787/tcp` | Web UI + REST API |
 | `6881/tcp+udp` | BitTorrent peers / DHT (change in *Settings → Download client*) |
@@ -78,6 +78,35 @@ Then open <http://localhost:8787>:
   `GERMAN`, `iTA`, `PT-BR`, …) and the indexer's `language` attribute. Subtitle tags (`ENG SUBS`, `VOSTFR`) are ignored.
   `MULTi`/`DUAL` releases also count as English. Untagged releases are assumed to be in the indexer's **default
   language** (set per indexer), or English when it has none.
+
+### Alternate titles and scene mapping
+
+- **Alternate titles:** on refresh Krakarr stores each movie's and series' original title, translated titles and AKAs
+  (TMDB alternative titles and translations, TheTVDB aliases), keeping those in your wanted languages, your indexers'
+  default languages, English and the original language. Releases named by any of them are accepted.
+- **Your own titles:** add more in the *Edit* dialog, optionally with a language. Refreshes never change them.
+- **Searches:** an indexer that cannot search by IMDb/TMDB/TheTVDB id is also searched (at most two extra queries) with
+  the alternate titles in its default language and the ones without a language.
+- **TheXEM** (*Settings → Metadata*, off by default): reads scene names and scene season/episode numbering from
+  thexem.info when series refresh. Releases and downloaded files are matched by scene numbers first, and searches use
+  them. Numbering applies only with TheTVDB as the series source, since TheXEM maps TheTVDB's episode order.
+
+### Media info
+
+- Krakarr reads the **headers** of each video file (Matroska/WebM and MP4/MOV, no ffmpeg needed) for its video codec,
+  resolution, bit depth and HDR format (HDR10, HDR10+, HLG, Dolby Vision), its audio tracks (codec, channels, language)
+  and its duration. For HEVC and AVC it also reads the parameter sets (bit depth and transfer characteristics the
+  container may not repeat) and the start of the first frame (at most 64 KB), where HDR10+ metadata lives. Other
+  containers (AVI, TS…) are read with `ffprobe`, which the Docker image ships (outside Docker, when it is on `PATH`).
+  Files are read on import, library import and the first rescan after an upgrade, and again when they change on disk.
+- **Quality** takes the resolution from the video itself: a release named 2160p that is really 720p is stored (and
+  judged for upgrades) as 720p. The source (WEB-DL, Bluray…) still comes from the name.
+- **Samples and fakes:** a download whose file is less than half the movie's or episode's runtime is not imported.
+  Mislabelled resolutions and audio in none of the wanted languages are flagged on the movie page and episode dialog
+  (audio language tags are often missing or wrong, so they only warn).
+- **Naming tokens** for file formats: `{MediaInfo VideoCodec}`, `{MediaInfo VideoBitDepth}`,
+  `{MediaInfo VideoDynamicRange}`, `{MediaInfo Resolution}`, `{MediaInfo AudioCodec}`, `{MediaInfo AudioChannels}`,
+  `{MediaInfo AudioLanguages}` and `{MediaInfo Simple}`.
 
 ### TV series
 
@@ -112,6 +141,11 @@ TheTVDB is the series metadata source.
 - Titles already in the library carry a ✓ and open their page. Any other title opens a TMDB detail page (overview,
   genres, seasons, cast and crew, related titles) and has an *Add* button that asks for a root folder and quality
   profile, as *Add movie* / *Add series* do.
+- **Search** (the button on Discover, or *+ Add movie* / *+ Add series* on the library lists) is one search box for
+  movies, series, people and keywords at once. *All* previews each kind; the *Movies*, *Series*, *People* and
+  *Keywords* tabs list one kind in full, with overviews and an *Add* (or *Request*) button for titles.
+- **Keywords**: opening a keyword ("heist", "time travel", "based on novel"…) lists every movie and show TMDB tags
+  with it, most popular first. Add more keywords to narrow it down: a title has to carry all of them.
 - **People**: clicking a cast or crew member opens their page with a short biography and every movie and show they
   worked on, grouped by department (acting, directing, writing…). Talk-show and news appearances are left out.
 
@@ -183,13 +217,33 @@ Nothing is moved or renamed.
   **Settings → Subtitles** to download external subtitles anyway.
 - The **Subtitles** page lists files missing languages. Every movie and episode has a subtitle dialog with
   automatic search, manual search (all candidates with score and reasons) and delete.
+- **Upgrades:** for 7 days after a download (configurable), subtitles scoring below 90 are searched again with the
+  regular retry interval and replaced when a higher-scoring one turns up. Subtitles picked by hand or found on disk are kept.
+- **Synchronisation:** a subtitle can be synced against the video from its subtitle list, or automatically after
+  download when it scores below a threshold. The reference is a perfect-score subtitle of the same file, a text
+  subtitle track inside the video, or the audio. [alass](https://github.com/kaegi/alass) or
+  [ffsubsync](https://github.com/smacke/ffsubsync) do the work (plus ffmpeg for the audio and embedded tracks);
+  without them, Krakarr fixes a constant shift or a framerate difference against a reference subtitle. The Docker image
+  ships alass and a slimmed-down ffmpeg/ffprobe (audio decoding and text subtitle tracks only, ~14 MB in all), so syncing
+  works out of the box. ffsubsync isn't included (it needs Python and numpy); outside Docker, install any of the tools on
+  `PATH` or set their paths in **Settings → Subtitles**. Syncs run one at a time with a timeout; whoever starts one
+  follows it in the tasks menu of the top bar (automatic syncs show there for admins and managers) (progress, time left, cancel, then the outcome). Subtitles (SRT, VTT,
+  ASS/SSA) can also be shifted by hand by ± ms.
 
-### Jellyfin
+### Media servers (Jellyfin, Emby, Plex)
 
-- **Settings → Jellyfin:** enter the URL Krakarr reaches Jellyfin on (e.g. `http://jellyfin:8096`) and an API key
-  (Jellyfin → Dashboard → API Keys). Set a public URL too if browsers open Jellyfin on a different address.
-- Downloaded movies and series then show an **Open in Jellyfin** button, for every user. The title is found on Jellyfin by
-  its TMDB, TheTVDB or IMDb id (falling back to name and year), so the button appears once Jellyfin has scanned it.
+- **Settings → Media servers:** enter the URL Krakarr reaches each server on and its key: a Jellyfin API key
+  (Dashboard → API Keys), an Emby API key (Settings → Advanced → API Keys) or the Plex owner's `X-Plex-Token`. **Test**
+  checks the connection; an empty URL turns a server off.
+- **Library refresh:** after Krakarr imports, upgrades, renames or deletes files, the configured servers rescan just the
+  affected folder instead of waiting for their scheduled scan. Jellyfin and Emby get the folder through
+  `/Library/Media/Updated` (falling back to a full library refresh); Plex refreshes the library section that contains it.
+  Changes are grouped per folder for a few seconds, so a season pack triggers one rescan, not one per episode.
+- **Path mappings:** when a server sees the library under another path (e.g. Krakarr's `/data/tv` is `/media/tv` or
+  `D:\TV` on the server), add a mapping so it gets paths it knows.
+- **Open in Jellyfin:** downloaded movies and series show a button to their Jellyfin page, for every user. The title is
+  found by its TMDB, TheTVDB or IMDb id (falling back to name and year), so the button appears once Jellyfin has scanned
+  it. Set a public URL too if browsers open Jellyfin on a different address.
 
 ### Telemetry (OpenTelemetry)
 
@@ -248,7 +302,7 @@ selected keeps running only while it still has torrents, so the built-in engine 
 | `UMASK` | `002` | File creation mask |
 | `KRAKARR__URLBASE` | *(empty)* | Serve under a sub-path, e.g. `/krakarr`, behind a reverse proxy |
 | `KRAKARR__PORT` | `8787` | HTTP port (outside Docker; in Docker use `ASPNETCORE_HTTP_PORTS`) |
-| `Database__Provider` | `sqlite` | `sqlite` or `postgres` |
+| `Database__Provider` | `sqlite` | `sqlite` or `postgres` (to move existing data, use *Settings → Database*) |
 | `Database__ConnectionString` | `/config/krakarr.db` | e.g. `Host=postgres;Database=krakarr;Username=krakarr;Password=…` |
 | `AllowedHosts` | `*` | Host names Krakarr answers to, separated by `;` (e.g. `krakarr.example.com;192.168.1.10`). Set it to block DNS rebinding attacks |
 | `Krakarr__TrustedProxies` | *(loopback only)* | Reverse proxies allowed to set `X-Forwarded-For`/`X-Forwarded-Proto`: IPs or CIDR ranges separated by `,` (e.g. `172.16.0.0/12` for a proxy container on a Docker network). Headers from anyone else are ignored |
@@ -278,11 +332,24 @@ Everyone changes their own username and password under *Account* (the current pa
 takes effect immediately; resetting or changing a password, or deleting an account, signs that user out everywhere.
 There is always at least one admin, and admins can't delete themselves. The API key acts as an admin.
 
+### Passkeys
+
+Anyone can add **passkeys** under *Settings → Account → Passkeys* (confirming their password) and then use *Sign in
+with a passkey* on the login page instead of a username and password: a fingerprint, face, device PIN, phone or
+security key. Passkeys always verify the user (PIN or biometrics) and are stored in the device or password manager;
+Krakarr keeps only their public keys.
+
+- Browsers only offer passkeys on HTTPS or `localhost`, and never for an IP address: open Krakarr through a domain name
+  (behind a TLS reverse proxy that passes the original `Host` header). A passkey belongs to the host name it was
+  created on, so add one per name if you reach Krakarr under several.
+- Each user can rename or remove their own passkeys. An admin resetting someone's password also removes that user's
+  passkeys, so a lost or stolen device can't sign in afterwards.
+
 ### Requests
 
 Users can't add titles themselves, so wherever an admin or manager sees *+ Add* (Discover, a title's page, a person's
-credits, the movie and series search pages) they see *Request* instead. Users reach the search pages from Discover
-(*Search movies* / *Search series*) or *Search & request* on the library lists. Requests are listed under **Requests**:
+credits, search results) they see *Request* instead. Users reach the search from Discover (*Search*) or *Search &
+request* on the library lists. Requests are listed under **Requests**:
 
 - **Users** see their own requests and can withdraw them while pending.
 - **Admins and managers** see everyone's. *Approve* opens the usual add dialog (root
@@ -304,6 +371,90 @@ follows a title next to the button. Removing a title (or a user) removes its fol
 - The notification bell tells you when monitored titles you follow are released (movies out on digital or physical
   media) or air (episodes), today or yesterday.
 
+### Push notifications
+
+Anyone can get **push notifications** on their phone or computer, even with Krakarr closed: *Settings → Account → Push
+notifications → Turn on for this device*. Each device picks what it is told about, among what the user's role covers:
+
+| Topic | Who | Default |
+|---|---|---|
+| A title you follow is ready to watch (imported) | Everyone | On |
+| Your request is approved or declined | Everyone | On |
+| Someone requests a title | Admins and managers | On |
+| A download fails to import | Admins and managers | On |
+| Any download is imported | Admins and managers | Off |
+| A health check reports an error (at most every 6 hours per problem) | Admins | On |
+
+- It uses the browsers' standard Web Push: Chrome, Edge, Firefox and Safari, on Android and desktops. On **iPhone and
+  iPad** (iOS 16.4+), add Krakarr to the Home Screen first (*Share → Add to Home Screen*) and turn it on from there.
+- Like passkeys, it needs HTTPS (or `localhost`). Krakarr posts to the browser vendors' push services
+  (`fcm.googleapis.com`, `push.services.mozilla.com`, `push.apple.com`, `notify.windows.com`), so it needs outbound
+  access to them; messages are end-to-end encrypted for the device.
+- Signing out turns notifications off for that device. *Send test* checks a device, and other devices can be removed
+  from the same page.
+
+### Health checks
+
+*Settings → Health* (admins) lists setup problems that would otherwise go unnoticed, and each one also shows in the
+admins' notification bell until it is fixed (a dismissed problem comes back if it gets worse):
+
+- Low disk space on the filesystems holding the root folders and the download folder (a warning below 10 % free,
+  at most 50 GB; an error below 2 %, at most 5 GB).
+- Root folders that are missing, read-only, or empty while the library has files there (an unmounted share).
+- Downloads and root folders on different filesystems while hardlinks are on, so imports copy instead.
+- A download client that can't be reached, and a download folder that is missing or read-only.
+- No enabled indexer, or indexers that keep failing.
+- A missing or rejected TMDB or TheTVDB key, and subtitles on without a working provider. Keys are validated against
+  the service when they change, then daily (hourly after a failure); *Check now* validates them again.
+
+The checks run every 5 minutes and right after settings, root folders, indexers or the download client change.
+`GET /api/v1/system/health` returns the same report; `/api/v1/health` stays an anonymous liveness probe.
+
+**Indexer backoff:** an indexer whose query fails is skipped by searches and RSS syncs for 5 minutes, then 10, 20 and
+so on, doubling up to 24 hours while it keeps failing. Any successful query, a successful *Test*, or editing the
+indexer clears it. The Indexers page shows which indexers are failing and until when; picking a failing indexer
+explicitly in a manual search still queries it.
+
+### Backups and restore
+
+*Settings → Backups* (admins) makes a zip of the database, the data-protection keys (`/config/keys`) and
+`/config/config.json` into `/config/Backups`. A backup runs weekly by default (set the interval in days, 0 = off) and
+the newest 5 are kept (scheduled and manual together); *Back up now* makes one immediately. The SQLite database is
+copied with `VACUUM INTO`, so backups are consistent while Krakarr runs. Copy the zips off the machine too: a backup on
+the same SD card or disk won't survive it failing.
+
+To restore, pick *Restore* next to a backup or upload a zip with *Restore from file…*. The archive is checked (it must be
+a Krakarr backup for the same database provider) and applied the **next time Krakarr starts**, so restart the container
+afterwards. On startup the database is checked with `PRAGMA quick_check` before anything is replaced; the replaced
+files stay next to the new ones with a `.pre-restore` suffix, and a backup that fails is kept as
+`/config/restore-failed.zip`. The Backups page shows the outcome after the restart.
+
+**PostgreSQL:** backups only hold the settings, keys and `config.json`. Back up the database itself with `pg_dump`,
+e.g. `docker exec postgres pg_dump -U krakarr -Fc krakarr > krakarr.dump`, and restore it with `pg_restore` before
+restoring the Krakarr backup.
+
+The API is `GET /api/v1/system/backups` (list), `POST` (back up now), `GET`/`DELETE /api/v1/system/backups/{name}`,
+`POST /api/v1/system/backups/restore` (zip as the request body), `POST /api/v1/system/backups/{name}/restore` and
+`DELETE /api/v1/system/backups/restore` (cancel a staged restore).
+
+### Switching database (SQLite ⇄ PostgreSQL)
+
+*Settings → Database* (admins) moves Krakarr's data to another database without losing any of it. Pick the new database
+(a PostgreSQL server, or a SQLite file in `/config`), *Test connection*, then *Switch on next restart*. On the next start,
+before anything else opens the database, Krakarr migrates both databases to the current schema, copies every table
+(in one transaction, in batches, keeping ids), checks the row counts and points `config.json` at the new database. The
+previous `config.json` is kept as `config.json.pre-switch` and the old database is left untouched, unless you tick
+*Delete the SQLite file* when leaving SQLite: then the file goes once the copy has succeeded. Otherwise the page keeps
+offering *Delete old database* after the restart, for when you've checked everything made it across. If the copy fails,
+nothing changes: Krakarr keeps running on the old database and the page shows why.
+
+- The new database must be empty. Krakarr creates a missing PostgreSQL database if the user may create databases.
+- If `Database__Provider` / `Database__ConnectionString` environment variables choose the database, Krakarr can't
+  change them: the page lists the values to set. Set them and recreate the container; the copy runs on that start.
+- PostgreSQL only stores UTC times and enforces column lengths: times are converted, and the rare value longer than its
+  column is shortened (the outcome lists how many).
+- Make a backup first. Switching back later works the same way, into a new SQLite file.
+
 ### Security notes
 
 - **Root folders are the boundary.** Movie and series folders must be directly inside a configured root folder, and
@@ -317,7 +468,8 @@ follows a title next to the button. Removing a title (or a user) removes its fol
   another container or host, add its address or network; Krakarr logs a warning naming the address it ignored.
 - **Sessions can be revoked.** Every request re-checks the account, so deleting a user, changing a role or changing a
   password applies at once, and a password change signs out every other session. *Settings → Account → Sign out other
-  sessions* does the same without changing the password. Sign-ins also expire 30 days after the password was entered.
+  sessions* does the same without changing the password. Sign-ins also expire 30 days after the password (or passkey)
+  was entered.
 - **Browser hardening headers.** Every response carries a strict `Content-Security-Policy` (scripts only from Krakarr
   itself, images also from TMDB and TheTVDB), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
   `Referrer-Policy: no-referrer` and a restrictive `Permissions-Policy`.
@@ -415,7 +567,7 @@ API documentation (OpenAPI) is served at `/api/openapi/v1.json`.
 ## Roadmap
 
 - **Series (Sonarr):** daily and anime (absolute) numbering, wanted view
-- **Subtitles (Bazarr):** more providers (Podnapisi, Addic7ed, …), embedded subtitle detection, per-series language profiles, sync/encoding fixes
+- **Subtitles (Bazarr):** more providers (Podnapisi, Addic7ed, …), embedded subtitle detection, per-series language profiles, encoding fixes
 - **Indexers (Prowlarr):** native tracker definitions (Cardigann-style), per-indexer stats, Torznab proxy for other apps
 - **Downloads:** per-torrent limits, file selection, Usenet (NZB) support
-- Lists (Trakt/IMDb), notifications (including request updates), per-season requests, optional renaming of imported libraries
+- Lists (Trakt/IMDb), notifications to Discord, Telegram, ntfy and webhooks, per-season requests, optional renaming of imported libraries

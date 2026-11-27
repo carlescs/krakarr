@@ -1,4 +1,6 @@
+using Krakarr.Core.Health;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Krakarr.Indexers;
 
@@ -14,6 +16,9 @@ public static class IndexersServiceCollectionExtensions
         services.AddScoped<ITorznabClient, TorznabClient>();
         services.AddScoped<IProwlarrClient, ProwlarrClient>();
         services.AddScoped<IIndexerSearchService, IndexerSearchService>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddSingleton<IndexerBackoff>();
+        services.AddScoped<IHealthCheck, IndexerHealthCheck>();
         return services;
     }
 }

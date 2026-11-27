@@ -22,6 +22,15 @@ public sealed record AddTorrentOptions
     public string? DisplayName { get; init; }
 }
 
+/// <summary>
+/// Thrown by a client when Krakarr already has a download row for the torrent but the client itself isn't running it.
+/// <see cref="DownloadClientRouter"/> decides whether the row is stale (no client has the torrent) and retries.
+/// </summary>
+public sealed class StaleDownloadException(string infoHash) : InvalidOperationException("Torrent already exists")
+{
+    public string InfoHash { get; } = infoHash;
+}
+
 public sealed record TorrentStatus
 {
     public int Id { get; init; }
@@ -250,8 +259,52 @@ public sealed class DownloadClientRouter(
         return Array.Find(_all, c => c.Name == name) ?? Current;
     }
 
-    public Task<Download> AddMagnetAsync(string magnetUri, AddTorrentOptions options, CancellationToken ct = default) => Current.AddMagnetAsync(magnetUri, options, ct);
-    public Task<Download> AddTorrentAsync(byte[] torrentData, AddTorrentOptions options, CancellationToken ct = default) => Current.AddTorrentAsync(torrentData, options, ct);
+    public Task<Download> AddMagnetAsync(string magnetUri, AddTorrentOptions options, CancellationToken ct = default) =>
+        AddAsync(client => client.AddMagnetAsync(magnetUri, options, ct), ct);
+
+    public Task<Download> AddTorrentAsync(byte[] torrentData, AddTorrentOptions options, CancellationToken ct = default) =>
+        AddAsync(client => client.AddTorrentAsync(torrentData, options, ct), ct);
+
+    /// <summary>
+    /// Adds to the selected client. Krakarr keeps a download row after its torrent left the client (removed in
+    /// qBittorrent, or a torrent the built-in engine couldn't restore), which would block grabbing the same torrent
+    /// again; such a row is forgotten and the add retried once.
+    /// </summary>
+    private async Task<Download> AddAsync(Func<IDownloadClientImpl, Task<Download>> add, CancellationToken ct)
+    {
+        var client = Current;
+        try
+        {
+            return await add(client);
+        }
+        catch (StaleDownloadException ex)
+        {
+            await ForgetStaleAsync(ex.InfoHash, ct);
+            return await add(client);
+        }
+    }
+
+    /// <summary>Recently added rows may not be listed by their client yet, so they are never treated as stale.</summary>
+    internal static readonly TimeSpan StaleGracePeriod = TimeSpan.FromMinutes(1);
+
+    private async Task ForgetStaleAsync(string infoHash, CancellationToken ct)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        var hash = infoHash.ToLowerInvariant();
+        var row = await db.Downloads.AsNoTracking().Where(d => d.InfoHash == hash)
+            .Select(d => new { d.Id, d.Name, d.Added }).FirstOrDefaultAsync(ct);
+        if (row is null) return; // already gone
+
+        var live = _all.Any(c => c.GetStatuses().Any(s => string.Equals(s.InfoHash, hash, StringComparison.OrdinalIgnoreCase)));
+        if (live || DateTimeOffset.UtcNow - row.Added < StaleGracePeriod)
+        {
+            throw new InvalidOperationException($"Torrent already exists: {row.Name}");
+        }
+
+        await db.Downloads.Where(d => d.Id == row.Id).ExecuteDeleteAsync(ct);
+    }
+
     public async Task PauseAsync(string infoHash) => await (await OwnerAsync(infoHash)).PauseAsync(infoHash);
     public async Task ResumeAsync(string infoHash) => await (await OwnerAsync(infoHash)).ResumeAsync(infoHash);
     public async Task RemoveAsync(string infoHash, bool deleteData) => await (await OwnerAsync(infoHash)).RemoveAsync(infoHash, deleteData);

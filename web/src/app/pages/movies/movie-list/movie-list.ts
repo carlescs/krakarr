@@ -1,140 +1,254 @@
-import { Component, DestroyRef, computed, inject, linkedSignal, signal } from '@angular/core';
-import { NgTemplateOutlet } from '@angular/common';
+import { ScrollingModule } from '@angular/cdk/scrolling';
+import { Component, DestroyRef, ElementRef, Injector, computed, effect, inject, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { Events } from '../../../core/events';
+import { Api, errorMessage } from '../../../core/api';
 import { Auth } from '../../../core/auth';
-import { Library } from '../../../core/library';
+import { Events } from '../../../core/events';
+import { Library, MovieQuery } from '../../../core/library';
+import { MovieFilter, MovieGrouping, MovieListItem, MovieSortKey } from '../../../core/models';
+import { SEARCH_DEBOUNCE_MS, VirtualRowDataSource } from '../../../core/paged-list';
+import { PagedSelection, ViewMode, storeView, storedView } from '../../../core/selection';
 import { Subscriptions } from '../../../core/subscriptions';
-import { MovieListItem } from '../../../core/models';
-import { MovieGroup, groupByCollection } from '../../../core/movie-groups';
-import { NearViewport } from '../../../shared/near-viewport/near-viewport';
-import { Poster } from '../../../shared/poster/poster';
-import { GRID_CHUNK, POSTER_GRID, PosterGridSkeleton } from '../../../shared/poster-grid/poster-grid';
-import { MoreMenu } from '../../../shared/more-menu/more-menu';
-import { Progress } from '../../../shared/progress/progress';
-import { BulkActions } from '../../../shared/bulk-actions/bulk-actions';
-import { ViewToggle } from '../../../shared/view-toggle/view-toggle';
-import { Selection, ViewMode, storeView, storedView } from '../../../core/selection';
 import { TableSort } from '../../../core/table-sort';
+import { Toasts } from '../../../core/toast';
+import { gridMetrics, gridSlots, observeContainerWidth, KrVirtualTable } from '../../../core/virtual-scroll';
+import { BulkActions } from '../../../shared/bulk-actions/bulk-actions';
+import { MoreMenu } from '../../../shared/more-menu/more-menu';
+import { PosterGridSkeleton } from '../../../shared/poster-grid/poster-grid';
+import { Poster } from '../../../shared/poster/poster';
+import { Progress } from '../../../shared/progress/progress';
 import { SortHeader } from '../../../shared/sort-header/sort-header';
-
-type Filter = 'all' | 'following' | 'missing' | 'downloading' | 'downloaded' | 'unmonitored';
-type Grouping = 'none' | 'collection';
+import { ViewToggle } from '../../../shared/view-toggle/view-toggle';
+import { CollectionGrid } from '../collection-grid/collection-grid';
 
 const GROUPING_KEY = 'krakarr.movies.groupBy';
 const VIEW_KEY = 'krakarr.movies.view';
+const TABLE_ROW_HEIGHT = 44;
 
-function storedGrouping(): Grouping {
+function storedGrouping(): MovieGrouping {
   try { return localStorage.getItem(GROUPING_KEY) === 'collection' ? 'collection' : 'none'; } catch { return 'none'; }
+}
+
+interface MovieGridCardsRow {
+  key: string;
+  start: number;
+  count: number;
+}
+
+interface MovieTableRow {
+  key: string;
+  index: number;
 }
 
 @Component({
   selector: 'kr-movie-list',
-  imports: [RouterLink, FormsModule, NgTemplateOutlet, Poster, Progress, NearViewport, PosterGridSkeleton, MoreMenu, BulkActions, ViewToggle, SortHeader],
+  host: { class: 'block' },
+  imports: [
+    ScrollingModule,
+    KrVirtualTable,
+    RouterLink,
+    FormsModule,
+    Poster,
+    Progress,
+    PosterGridSkeleton,
+    MoreMenu,
+    BulkActions,
+    ViewToggle,
+    SortHeader,
+    CollectionGrid,
+  ],
   templateUrl: './movie-list.html',
   styleUrl: './movie-list.scss',
 })
 export class MovieListPage {
   protected readonly auth = inject(Auth);
+  private readonly api = inject(Api);
   private readonly events = inject(Events);
-  private readonly library = inject(Library);
+  private readonly cache = inject(Library).movies;
   private readonly subscriptions = inject(Subscriptions);
+  private readonly toasts = inject(Toasts);
 
-  protected readonly grid = POSTER_GRID;
-  protected readonly loading = computed(() => this.library.movies.items() === null);
-  protected readonly movies = computed(() => this.library.movies.items() ?? []);
-  private readonly collections = computed(() => this.library.movieCollections.items() ?? []);
+  protected readonly loading = this.cache.loading;
+  protected readonly total = this.cache.total;
+  protected readonly libraryTotal = this.cache.libraryTotal;
   protected readonly query = signal('');
-  protected readonly filter = signal<Filter>('all');
-  protected readonly grouping = signal<Grouping>(storedGrouping());
-  protected readonly collapsed = signal<ReadonlySet<string>>(new Set());
+  private readonly committedQuery = signal('');
+  protected readonly filter = signal<MovieFilter>('all');
+  protected readonly grouping = signal<MovieGrouping>(storedGrouping());
   protected readonly view = signal<ViewMode>(storedView(VIEW_KEY));
   /** Grid selection mode: cards toggle selection instead of opening the movie. The table always has checkboxes. */
   protected readonly selecting = signal(false);
   protected readonly following = this.subscriptions.movieIds;
+  protected readonly tableRowHeight = TABLE_ROW_HEIGHT;
+  protected readonly slots = gridSlots;
 
-  private readonly collectionNames = computed(() => new Map(this.collections().map(c => [c.id, c.name.toLowerCase()])));
+  /** Sort state shared with `SortHeader`; actual sorting happens on the server. */
+  protected readonly sort = new TableSort<MovieListItem, MovieSortKey>(
+    signal<MovieListItem[]>([]),
+    {
+      title: 'source',
+      year: m => m.year || null,
+      status: m => this.statusRank(m),
+    },
+    { key: 'title' },
+  );
 
-  protected readonly filtered = computed(() => {
-    const q = this.query().toLowerCase().trim();
-    const filter = this.filter();
-    const names = this.collectionNames();
-    const following = filter === 'following' ? this.following() : null;
-    return this.movies().filter(m => {
-      if (q && !m.title.toLowerCase().includes(q) && !(m.collectionId != null && names.get(m.collectionId)?.includes(q))) return false;
-      switch (filter) {
-        case 'following': return following!.has(m.id);
-        case 'missing': return m.monitored && !m.hasFile;
-        case 'downloading': return this.progressOf(m) != null;
-        case 'downloaded': return m.hasFile;
-        case 'unmonitored': return !m.monitored;
-        default: return true;
-      }
-    });
+  private readonly listQuery = computed<MovieQuery>(() => {
+    const s = this.sort.state();
+    const q = this.committedQuery().trim();
+    return { q: q || undefined, filter: this.filter(), sort: s.key ?? 'title', desc: s.desc ? true : undefined, groupBy: 'none' };
   });
 
-  /** The filtered list in the chosen sort order (the API sorts by title). Groups keep their own order. */
-  protected readonly sort = new TableSort(this.filtered, {
-    title: 'source',
-    year: m => m.year || null,
-    status: m => this.statusRank(m),
-  }, { key: 'title' });
-  private readonly sorted = this.sort.rows;
+  /** Search as sent to the server (debounced), shared with the collection cards. */
+  protected readonly searchTerm = computed(() => this.committedQuery().trim());
 
-  /** Cards rendered so far: more are added as the end of the list scrolls into view, and a new filter starts over. */
-  private readonly limit = linkedSignal({ source: () => [this.query(), this.filter(), this.grouping(), this.sort.state()], computation: () => GRID_CHUNK });
+  private readonly containerWidth = signal(0);
+  private readonly viewportWidth = signal(typeof window !== 'undefined' ? window.innerWidth : 1024);
+  protected readonly metrics = computed(() => gridMetrics(this.containerWidth(), this.viewportWidth(), 'movie'));
+  protected readonly gridTemplate = computed(() => `repeat(${this.metrics().cols}, minmax(0, 1fr))`);
 
-  /** Flat list: the first `limit` movies. */
-  protected readonly visible = computed(() => this.sorted().slice(0, this.limit()));
+  private readonly flatGridRows = computed<MovieGridCardsRow[]>(() => {
+    const total = this.total();
+    const cols = this.metrics().cols;
+    const count = Math.ceil(total / cols);
+    const rows: MovieGridCardsRow[] = new Array(count);
+    for (let r = 0; r < count; r++) {
+      const start = r * cols;
+      rows[r] = { key: `r-${r}`, start, count: Math.min(cols, total - start) };
+    }
+    return rows;
+  });
 
-  /** Sections when grouping by collection; null for the flat list. */
-  private readonly groups = computed(() => this.grouping() === 'collection' ? groupByCollection(this.filtered(), this.collections()) : null);
+  private readonly tableRows = computed<MovieTableRow[]>(() => {
+    const total = this.total();
+    const rows: MovieTableRow[] = new Array(total);
+    for (let i = 0; i < total; i++) rows[i] = { key: `m-${i}`, index: i };
+    return rows;
+  });
 
-  /** Every filtered movie in display order: what "select all" and Shift+click ranges work on. */
-  private readonly ordered = computed(() => this.groups()?.flatMap(g => g.movies) ?? this.sorted());
-  protected readonly selection = new Selection(this.ordered);
+  protected readonly flatGridDataSource: VirtualRowDataSource<MovieGridCardsRow>;
+  protected readonly tableDataSource: VirtualRowDataSource<MovieTableRow>;
+
+  protected readonly selection = new PagedSelection(
+    this.total,
+    () => this.cache.loadedIds(),
+    () => this.cache.allLoaded(),
+    (a, b) => this.cache.idsBetween(a, b),
+    () => this.api.movieIds(this.cache.currentQuery()),
+    e => this.toasts.error(errorMessage(e)),
+    (selected, total) => this.toasts.show(`Selected the first ${selected} of ${total} movies (bulk actions are limited to ${selected}).`, 'info', 7000),
+  );
 
   /** The bulk toolbar shows while something is selected in the table, and throughout grid selection mode. */
-  protected readonly showBulk = computed(() => this.view() === 'table' ? this.selection.count() > 0 : this.selecting());
-
-  /** The sections with the first `limit` cards spread over the expanded ones; null for the flat grid. */
-  protected readonly visibleGroups = computed(() => {
-    const groups = this.groups();
-    if (!groups) return null;
-    const collapsed = this.collapsed();
-    let left = this.limit();
-    const result: { group: MovieGroup; movies: MovieListItem[] }[] = [];
-    for (const group of groups) {
-      if (left <= 0) break;
-      const movies = collapsed.has(group.key) ? [] : group.movies.slice(0, left);
-      left -= movies.length;
-      result.push({ group, movies });
-    }
-    return result;
-  });
-
-  protected readonly hasMore = computed(() => {
-    const visible = this.visibleGroups();
-    if (!visible) return this.visible().length < this.sorted().length;
-    const collapsed = this.collapsed();
-    return visible.length < this.groups()!.length
-      || visible.some(g => !collapsed.has(g.group.key) && g.movies.length < g.group.movies.length);
-  });
+  protected readonly showBulk = computed(() =>
+    this.grouping() === 'none' && (this.view() === 'table' ? this.selection.count() > 0 : this.selecting()));
 
   /** Live download progress per movie, while connected; otherwise the list's own snapshot is used. */
   private readonly liveProgress = computed(() => {
     if (!this.events.connected()) return null;
     const byMovie = new Map<number, number>();
-    for (const d of this.events.downloads()) if (d.movieId && !d.imported) byMovie.set(d.movieId, Math.max(byMovie.get(d.movieId) ?? 0, d.progress));
+    for (const d of this.events.downloads()) {
+      if (d.movieId && !d.imported) byMovie.set(d.movieId, Math.max(byMovie.get(d.movieId) ?? 0, d.progress));
+    }
     return byMovie;
   });
 
+  private readonly liveDownloadingKey = computed(() => {
+    const live = this.liveProgress();
+    if (!live) return null;
+    return [...live.keys()].sort((a, b) => a - b).join(',');
+  });
+
   constructor() {
-    void this.subscriptions.refresh();
+    const injector = inject(Injector);
     const destroyRef = inject(DestroyRef);
-    destroyRef.onDestroy(this.library.movies.attach());
-    destroyRef.onDestroy(this.library.movieCollections.attach());
+    const host = inject(ElementRef<HTMLElement>);
+    const debounceMs = inject(SEARCH_DEBOUNCE_MS);
+
+    this.flatGridDataSource = new VirtualRowDataSource(
+      this.flatGridRows,
+      (rows, start, end) => [rows[start].start, rows[end].start + rows[end].count - 1],
+      (s, e) => this.cache.ensureRange(s, e),
+      injector,
+    );
+    this.tableDataSource = new VirtualRowDataSource(
+      this.tableRows,
+      (rows, start, end) => [rows[start].index, rows[end].index],
+      (s, e) => this.cache.ensureRange(s, e),
+      injector,
+    );
+
+    void this.subscriptions.refresh();
+    this.cache.setQuery(untracked(() => this.listQuery()));
+    destroyRef.onDestroy(this.cache.attach());
+    destroyRef.onDestroy(
+      observeContainerWidth(host.nativeElement, (cw, vw) => {
+        this.containerWidth.set(cw);
+        this.viewportWidth.set(vw);
+      }),
+    );
+    destroyRef.onDestroy(() => {
+      this.flatGridDataSource.destroy();
+      this.tableDataSource.destroy();
+    });
+
+    effect(onCleanup => {
+      const q = this.query();
+      if (debounceMs <= 0 || q.trim() === '') {
+        this.committedQuery.set(q);
+        return;
+      }
+      const timer = setTimeout(() => this.committedQuery.set(q), debounceMs);
+      onCleanup(() => clearTimeout(timer));
+    });
+
+    effect(() => {
+      const next = this.listQuery();
+      const changed = this.cache.setQuery(next);
+      if (changed && typeof window !== 'undefined' && window.scrollY > 0) {
+        window.scrollTo({ top: 0 });
+      }
+    });
+
+    // Narrow the selection when the query changes. Plain reloads of the same query keep it (and the Shift+click anchor).
+    let lastRevision = this.cache.queryRevision();
+    effect(() => {
+      const rev = this.cache.queryRevision();
+      if (rev !== lastRevision) {
+        lastRevision = rev;
+        void untracked(() => this.selection.reconcile());
+      }
+    });
+
+    let lastDownloadingKey = this.liveDownloadingKey();
+    effect(() => {
+      const key = this.liveDownloadingKey();
+      if (key !== lastDownloadingKey) {
+        lastDownloadingKey = key;
+        // What is downloading decides membership of the Downloading filter and the order of the status sort.
+        untracked(() => {
+          if (this.filter() === 'downloading') {
+            void this.cache.reload().then(() => this.selection.reconcile());
+          } else if (this.sort.state().key === 'status') {
+            void this.cache.reload();
+          }
+        });
+      }
+    });
+  }
+
+  protected movieAt(index: number): MovieListItem | undefined {
+    return this.cache.at(index);
+  }
+
+  protected isRowSelected(row: MovieTableRow): boolean {
+    const m = this.cache.at(row.index);
+    return m != null && this.selection.has(m.id);
+  }
+
+  protected trackRow(_index: number, row: { key: string }): string {
+    return row.key;
   }
 
   protected progressOf(m: MovieListItem): number | null {
@@ -152,8 +266,6 @@ export class MovieListPage {
     return m.hasFile ? 'Downloaded' : progress != null ? `Downloading ${Math.round(progress)}%` : !m.monitored ? 'Unmonitored' : 'Missing';
   }
 
-  protected showMore() { this.limit.update(n => n + GRID_CHUNK); }
-
   protected setView(mode: ViewMode) {
     this.view.set(mode);
     storeView(VIEW_KEY, mode);
@@ -170,19 +282,13 @@ export class MovieListPage {
   protected cardClick(event: Event, m: MovieListItem) {
     if (!this.selecting()) return;
     event.preventDefault();
-    this.selection.toggle(m.id, (event as MouseEvent | KeyboardEvent).shiftKey);
+    void this.selection.toggle(m.id, (event as MouseEvent | KeyboardEvent).shiftKey);
   }
 
-  protected setGrouping(value: Grouping) {
+  /** Switches between movie cards and collection cards. Collections have no selection mode. */
+  protected setGrouping(value: MovieGrouping) {
     this.grouping.set(value);
+    if (value === 'collection') this.stopSelecting();
     try { localStorage.setItem(GROUPING_KEY, value); } catch { /* storage unavailable */ }
-  }
-
-  protected toggle(key: string) {
-    this.collapsed.update(set => {
-      const next = new Set(set);
-      if (!next.delete(key)) next.add(key);
-      return next;
-    });
   }
 }

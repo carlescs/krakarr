@@ -1,10 +1,12 @@
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, Injector, OnDestroy, OnInit, afterNextRender, computed, effect, inject, signal, untracked } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
 import { Events } from '../../core/events';
 import { BytesPipe, DurationPipe, SpeedPipe } from '../../core/format';
-import { BulkDownloadAction, BulkResult, DownloadClientKind, DownloadClientName, DownloadClientStatus, TorrentStatus } from '../../core/models';
+import { BulkDownloadAction, BulkResult, DownloadClientKind, DownloadClientName, DownloadClientStatus, DownloadMediaInfo, ImportIssue, TorrentStatus } from '../../core/models';
 import { Selection } from '../../core/selection';
 import { Toasts } from '../../core/toast';
 import { MediaLink, MediaLinkPicker, linkFields } from '../../shared/media-link-picker/media-link-picker';
@@ -12,6 +14,10 @@ import { Modal } from '../../shared/modal/modal';
 import { Progress } from '../../shared/progress/progress';
 import { StateBadge } from '../../shared/state-badge/state-badge';
 import { TorrentDetailsDialog } from '../../shared/torrent-details/torrent-details';
+
+// Heroicons outline paths (24x24), as in the sidebar.
+const ICON_FILM = 'M3.375 19.5h17.25M3.375 19.5A1.125 1.125 0 0 1 2.25 18.375V5.625C2.25 5.004 2.754 4.5 3.375 4.5h17.25c.621 0 1.125.504 1.125 1.125v12.75c0 .621-.504 1.125-1.125 1.125M3.375 19.5h1.5m15.75 0h-1.5M6 4.5v15m12-15v15M2.25 9h3.75m12 0h3.75M2.25 15h3.75m12 0h3.75';
+const ICON_TV = 'M6 20.25h12m-7.5-3v3m3-3v3m-10.125-3h17.25c.621 0 1.125-.504 1.125-1.125V4.875c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v11.25c0 .621.504 1.125 1.125 1.125Z';
 
 const SHOW_SEEDING_KEY = 'krakarr.downloads.showSeeding';
 const SORT_KEY = 'krakarr.downloads.sort';
@@ -62,18 +68,45 @@ export function sortTorrents(list: readonly TorrentStatus[], { key, desc }: Sort
   });
 }
 
+/** Text of a download's library link: "Arrival (2016)" or "Severance · S01E01–E03". */
+export function mediaLabel(info: DownloadMediaInfo): string {
+  const title = info.year && !info.title.endsWith(`(${info.year})`) ? `${info.title} (${info.year})` : info.title;
+  return info.episodes ? `${title} · ${info.episodes}` : title;
+}
+
+/** Lower-cased text where dots, dashes and underscores separate words as spaces do ("Alien.1979" → "alien 1979"). */
+function words(text: string): string {
+  return text.toLowerCase().replace(/[._-]+/g, ' ');
+}
+
+/** A torrent matches when each word of the filter appears in its name, category or linked title. */
+export function matchesFilter(d: TorrentStatus, filter: string, media?: DownloadMediaInfo): boolean {
+  const terms = words(filter).split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+  const haystack = words(`${d.name} ${d.category} ${media ? mediaLabel(media) : ''}`);
+  return terms.every(t => haystack.includes(t));
+}
+
 export function clientLabel(kind: DownloadClientKind | DownloadClientName): string {
   return kind === 'QBittorrent' || kind === 'qbittorrent' ? 'qBittorrent' : 'Built-in';
 }
 
-/** The list shows either seeding torrents or everything else; the default is the non-seeding view. */
+/**
+ * Finished torrents go on the Seeding tab, whether they are still uploading or stopped: qBittorrent keeps completed
+ * downloads seeding, and reports them as completed (pausedUP/stoppedUP) once stopped.
+ */
+export function isFinished(d: TorrentStatus): boolean {
+  return d.state === 'Seeding' || d.state === 'Completed' || (d.state === 'Paused' && d.progress >= 100);
+}
+
+/** The list shows either finished (seeding) torrents or everything else; the default is the downloading view. */
 function readShowSeeding(): boolean {
   try { return localStorage.getItem(SHOW_SEEDING_KEY) === 'true'; } catch { return false; }
 }
 
 @Component({
   selector: 'kr-downloads',
-  imports: [FormsModule, RouterLink, Modal, MediaLinkPicker, Progress, StateBadge, TorrentDetailsDialog, BytesPipe, SpeedPipe, DurationPipe],
+  imports: [FormsModule, NgTemplateOutlet, RouterLink, Modal, MediaLinkPicker, Progress, StateBadge, TorrentDetailsDialog, BytesPipe, SpeedPipe, DurationPipe],
   templateUrl: './downloads.html',
   styleUrl: './downloads.scss',
 })
@@ -81,17 +114,39 @@ export class DownloadsPage implements OnInit, OnDestroy {
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
   private readonly events = inject(Events);
+  private readonly injector = inject(Injector);
+  private readonly query = toSignal(inject(ActivatedRoute).queryParamMap);
+
+  /** Torrent to scroll to and highlight (`?hash=`), e.g. when coming from a movie or series page. */
+  protected readonly focusHash = computed(() => this.query()?.get('hash')?.toLowerCase() ?? null);
+  /** The movie/series (and episodes) of each linked download, keyed by download id. */
+  protected readonly media = signal(new Map<number, DownloadMediaInfo>());
+  protected readonly mediaLabel = mediaLabel;
+  protected readonly icons = { film: ICON_FILM, tv: ICON_TV };
 
   protected readonly list = computed(() => this.events.downloads());
   protected readonly showSeeding = signal(readShowSeeding());
-  protected readonly seedingCount = computed(() => this.list().filter(d => d.state === 'Seeding').length);
+  protected readonly seedingCount = computed(() => this.list().filter(isFinished).length);
   protected readonly sorts = SORTS;
   protected readonly sort = signal(readSort());
-  protected readonly visible = computed(() => {
+  /** Text filter on name, category and linked title; it narrows the current tab. */
+  protected readonly filter = signal('');
+  /** Torrents of the current tab (downloading or seeding), before the text filter. */
+  private readonly tab = computed(() => {
     const seeding = this.showSeeding();
-    return sortTorrents(this.list().filter(d => (d.state === 'Seeding') === seeding), this.sort());
+    return this.list().filter(d => isFinished(d) === seeding);
   });
-  /** Multi-selection for bulk pause/resume/remove; only torrents in the current view (downloading or seeding) count. */
+  protected readonly tabCount = computed(() => this.tab().length);
+  protected readonly visible = computed(() => {
+    const filter = this.filter().trim();
+    const media = this.media();
+    const tab = this.tab();
+    return sortTorrents(filter ? tab.filter(d => matchesFilter(d, filter, media.get(d.id))) : tab, this.sort());
+  });
+  /**
+   * Multi-selection for bulk pause/resume/remove; only torrents in the current view (tab and filter) count, so
+   * "Select all" picks the matching torrents and hidden ones never take part in a bulk action.
+   */
   protected readonly selection = new Selection(this.visible, d => d.infoHash);
   protected readonly bulkBusy = signal(false);
   protected readonly confirmBulkRemove = signal(false);
@@ -109,6 +164,9 @@ export class DownloadsPage implements OnInit, OnDestroy {
     return [c, ...(c.others ?? [])].filter(x => x.error).map(x => ({ label: clientLabel(x.kind), error: x.error! }));
   });
   protected readonly clientLabel = clientLabel;
+  /** Downloads whose import failed: the dashboard's "imports need attention". */
+  protected readonly importIssues = signal<ImportIssue[]>([]);
+  protected readonly issueBusy = signal<number | null>(null);
   private clientTimer?: ReturnType<typeof setInterval>;
   protected readonly busy = signal(false);
   protected readonly removing = signal<TorrentStatus | null>(null);
@@ -125,10 +183,41 @@ export class DownloadsPage implements OnInit, OnDestroy {
   });
   protected deleteData = false;
 
+  /** Ids of the linked downloads on the page; the titles are fetched again only when this set changes. */
+  private readonly linkedIds = computed(() => [
+    ...this.list().filter(d => d.movieId || d.seriesId).map(d => d.id),
+    ...this.importIssues().filter(i => i.movieId || i.seriesId).map(i => i.id),
+  ].sort((a, b) => a - b).join(','));
+
+  constructor() {
+    effect(() => {
+      const ids = this.linkedIds();
+      if (!ids) return;
+      const known = untracked(this.media);
+      if (ids.split(',').every(id => known.has(+id))) return;
+      this.api.downloadMedia().then(list => this.media.set(new Map(list.map(i => [i.id, i])))).catch(() => {});
+    });
+
+    // Open the tab holding the requested torrent and scroll to it, once it is in the list.
+    let focused: string | null = null;
+    effect(() => {
+      const hash = this.focusHash();
+      if (!hash || hash === focused) return;
+      const target = this.list().find(d => d.infoHash.toLowerCase() === hash);
+      if (!target) return;
+      focused = hash;
+      untracked(() => this.showSeeding.set(isFinished(target)));
+      afterNextRender(() => document.getElementById('torrent-' + target.infoHash)?.scrollIntoView({ block: 'center' }), { injector: this.injector });
+    });
+  }
+
   async ngOnInit() {
-    const refreshClient = () => this.api.downloadClientStatus().then(c => this.client.set(c)).catch(() => {});
-    refreshClient();
-    this.clientTimer = setInterval(refreshClient, 10000);
+    const refresh = () => {
+      this.api.downloadClientStatus().then(c => this.client.set(c)).catch(() => {});
+      this.refreshIssues();
+    };
+    refresh();
+    this.clientTimer = setInterval(refresh, 10000);
     // Prime the list before the first SignalR tick arrives.
     if (this.events.downloads().length === 0) this.events.downloads.set(await this.api.downloads());
   }
@@ -216,6 +305,26 @@ export class DownloadsPage implements OnInit, OnDestroy {
   private report(message: string, result: BulkResult) {
     if (result.errors.length === 0) this.toasts.success(message);
     else this.toasts.error(`${message}; ${result.errors.length} failed: ${result.errors.slice(0, 3).join(' · ')}`);
+  }
+
+  private refreshIssues() {
+    return this.api.importIssues().then(i => this.importIssues.set(i)).catch(() => {});
+  }
+
+  /** Retry clears the failure so the import task tries again; dismiss stops tracking it. */
+  protected async resolveIssue(issue: ImportIssue, action: 'retry' | 'dismiss') {
+    if (this.issueBusy() !== null) return;
+    this.issueBusy.set(issue.id);
+    try {
+      if (action === 'retry') await this.api.retryImport(issue.id);
+      else await this.api.dismissImportIssue(issue.id);
+      this.importIssues.update(list => list.filter(i => i.id !== issue.id));
+      this.toasts.success(action === 'retry' ? 'Import queued again' : 'Dismissed');
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+    } finally {
+      this.issueBusy.set(null);
+    }
   }
 
   async remove(d: TorrentStatus) {

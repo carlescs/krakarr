@@ -24,7 +24,7 @@ public sealed class BulkActionTests(KrakarrFactory factory) : IClassFixture<Krak
     {
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-        var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+        var profile = await db.QualityProfiles.MinAsync(p => p.Id, ct);
         var movies = Enumerable.Range(firstTmdbId, count)
             .Select(i => new Movie { TmdbId = i, Title = $"Bulk {i}", SortTitle = $"bulk {i}", Year = 2000, Path = $"/movies/bulk-{i}", QualityProfileId = profile, Monitored = true })
             .ToList();
@@ -88,7 +88,7 @@ public sealed class BulkActionTests(KrakarrFactory factory) : IClassFixture<Krak
         var ids = await AddMoviesAsync(70_501, 2, ct);
         var series = await QueryAsync(async db =>
         {
-            var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+            var profile = await db.QualityProfiles.MinAsync(p => p.Id, ct);
             var s = new Krakarr.Core.Domain.Series { TvdbId = 70_501, Title = "Bulk show", SortTitle = "bulk show", Path = "/tv/bulk-show", QualityProfileId = profile };
             db.Series.Add(s);
             await db.SaveChangesAsync(ct);

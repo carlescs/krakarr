@@ -8,22 +8,34 @@
 </button>
 @if (open()) {
   <div class="card fixed inset-x-2 top-[calc(3.5rem+env(safe-area-inset-top))] z-40 overflow-hidden shadow-xl sm:absolute sm:inset-x-auto sm:top-full sm:right-0 sm:mt-1 sm:w-80">
-    <div class="border-b border-surface-700 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-400">Notifications</div>
+    <div class="flex items-center justify-between border-b border-surface-700 px-4 py-2.5">
+      <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">Notifications</span>
+      @if (notifications.items().length > 0) {
+        <button type="button" class="text-xs font-medium text-slate-400 transition hover:text-white"
+                (click)="notifications.dismissAll()">Dismiss all</button>
+      }
+    </div>
     @if (notifications.items().length === 0) {
       <p class="px-4 py-6 text-center text-sm text-slate-500">You're all caught up.</p>
     } @else {
       <ul class="max-h-[60vh] divide-y divide-surface-800 overflow-y-auto">
         @for (n of notifications.items(); track n.id) {
-          <li>
-            <a [routerLink]="n.link" (click)="open.set(false)" class="flex gap-3 px-4 py-3 transition hover:bg-surface-800">
+          <li class="flex items-start transition hover:bg-surface-800">
+            <a [routerLink]="n.link" (click)="open.set(false)" class="flex min-w-0 flex-1 gap-3 py-3 pl-4 pr-2">
               <svg class="mt-0.5 size-5 shrink-0" [class]="tone(n)" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor">
                 <path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons[n.kind] ?? icons['bell']" />
               </svg>
               <span class="min-w-0 flex-1">
                 <span class="block text-sm font-medium text-slate-100">{{ n.title }}</span>
-                @if (n.message) { <span class="block text-xs text-slate-400">{{ n.message }}</span> }
+                @if (n.message) { <span class="block text-xs text-slate-400 wrap-anywhere">{{ n.message }}</span> }
               </span>
             </a>
+            <button type="button" class="mt-2 mr-2 rounded p-1.5 text-slate-500 transition hover:bg-surface-700 hover:text-slate-200"
+                    [attr.aria-label]="'Dismiss ' + n.title" title="Dismiss" (click)="notifications.dismiss(n.id)">
+              <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+              </svg>
+            </button>
           </li>
         }
       </ul>

@@ -2,13 +2,14 @@ import { Component, DestroyRef, computed, effect, inject, signal } from '@angula
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, ParamMap, Router, RouterLink } from '@angular/router';
 import { debounceTime, merge } from 'rxjs';
 import { Api, errorMessage } from '../../core/api';
 import { Auth } from '../../core/auth';
 import {
-  CalendarFilters, CalendarItem, CalendarStatusFilter, CalendarView, DEFAULT_FILTERS, FeedOptions, ItemState, RELEASE_LABELS, addDays, buildItems, daysBetween,
-  feedUrl, groupByDay, itemState, localeFirstDayOfWeek, parseIsoDate, shiftAnchor, toIsoDate, viewRange,
+  CALENDAR_STATES as STATES, CALENDAR_STYLES as STYLES, CalendarFilters, CalendarItem, CalendarStatusFilter, CalendarView, DEFAULT_FILTERS, FeedOptions, RELEASE_LABELS,
+  StyleKey, addDays, buildItems, daysBetween, feedUrl, groupByDay, isCalendarView, itemState, localeFirstDayOfWeek, parseIsoDate, parsePeriodParam,
+  periodParam, shiftAnchor, styleKey, toIsoDate, viewRange,
 } from '../../core/calendar';
 import { Events } from '../../core/events';
 import { CalendarEntry, Subscriber } from '../../core/models';
@@ -17,24 +18,6 @@ import { Modal } from '../../shared/modal/modal';
 import { Poster } from '../../shared/poster/poster';
 
 const STORAGE_KEY = 'krakarr.calendar';
-
-type StyleKey = 'episodes' | 'Theatrical' | 'Digital' | 'Physical';
-
-/** Colour per kind of release: left bar, chip background and legend dot. */
-const STYLES: Record<StyleKey, { bar: string; chip: string; dot: string; label: string }> = {
-  episodes: { bar: 'border-l-accent-400', chip: 'bg-accent-500/10 hover:bg-accent-500/20', dot: 'bg-accent-400', label: 'Episodes' },
-  Theatrical: { bar: 'border-l-amber-400', chip: 'bg-amber-500/10 hover:bg-amber-500/20', dot: 'bg-amber-400', label: RELEASE_LABELS.Theatrical },
-  Digital: { bar: 'border-l-violet-400', chip: 'bg-violet-500/10 hover:bg-violet-500/20', dot: 'bg-violet-400', label: RELEASE_LABELS.Digital },
-  Physical: { bar: 'border-l-pink-400', chip: 'bg-pink-500/10 hover:bg-pink-500/20', dot: 'bg-pink-400', label: RELEASE_LABELS.Physical },
-};
-
-const STATES: Record<ItemState, { label: string; badge: string; icon: string }> = {
-  downloaded: { label: 'Downloaded', badge: 'bg-emerald-500/15 text-emerald-300', icon: '✓' },
-  downloading: { label: 'Downloading', badge: 'bg-accent-500/15 text-accent-300', icon: '↓' },
-  missing: { label: 'Missing', badge: 'bg-rose-500/15 text-rose-300', icon: '!' },
-  upcoming: { label: 'Upcoming', badge: 'bg-surface-700 text-slate-300', icon: '' },
-  unmonitored: { label: 'Unmonitored', badge: 'bg-slate-500/15 text-slate-400', icon: '' },
-};
 
 /** Whose titles the calendar shows: the whole library, the signed-in user's followed titles, or (staff) another user's. */
 type Owner = 'all' | 'me' | number;
@@ -61,6 +44,8 @@ export class CalendarPage {
   private readonly toasts = inject(Toasts);
   private readonly events = inject(Events);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   protected readonly styles = STYLES;
   protected readonly states = STATES;
@@ -79,9 +64,10 @@ export class CalendarPage {
   private readonly firstDay = localeFirstDayOfWeek();
   protected readonly today = toIsoDate(new Date());
 
-  protected readonly view = signal<CalendarView>(
-    this.stored.view ?? (typeof matchMedia !== 'undefined' && matchMedia('(max-width: 639px)').matches ? 'agenda' : 'month'));
-  protected readonly anchor = signal(new Date());
+  /** The URL (`/calendar/:view/:date`) wins; a bare `/calendar` opens the last view on today. */
+  protected readonly view = signal<CalendarView>(this.routeView(this.route.snapshot.paramMap)
+    ?? this.stored.view ?? (typeof matchMedia !== 'undefined' && matchMedia('(max-width: 639px)').matches ? 'agenda' : 'month'));
+  protected readonly anchor = signal(parsePeriodParam(this.route.snapshot.paramMap.get('date')) ?? new Date());
   protected readonly filters = signal<CalendarFilters>({ ...DEFAULT_FILTERS, ...this.stored.filters });
   /**
    * Staff start on the whole library they manage; plain users on the titles they follow. Titles only get followed
@@ -175,6 +161,7 @@ export class CalendarPage {
       }).catch(() => { /* picker keeps Everything / My titles */ });
     }
     effect(() => this.persist());
+    this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => this.applyRoute(params));
     merge(this.events.movieUpdated, this.events.seriesUpdated, this.events.historyAdded)
       .pipe(debounceTime(1500), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => void this.load(this.range(), true, this.owner()));
@@ -211,19 +198,48 @@ export class CalendarPage {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(value)); } catch { /* storage unavailable */ }
   }
 
-  protected setView(view: CalendarView) {
+  private routeView(params: ParamMap): CalendarView | null {
+    const view = params.get('view');
+    return isCalendarView(view) ? view : null;
+  }
+
+  /** Follows URL changes the page didn't make (back/forward, links), then writes the canonical URL back. */
+  private applyRoute(params: ParamMap) {
+    const view = this.routeView(params) ?? this.view();
+    if (view !== this.view()) this.setView(view, false);
+    const date = parsePeriodParam(params.get('date')) ?? (params.has('date') ? this.anchor() : new Date());
+    if (periodParam(view, date, this.firstDay) !== this.period()) {
+      this.anchor.set(date);
+      this.selectedDay.set(null);
+      this.scrollToToday = view === 'agenda';
+    }
+    if (params.get('view') !== view || params.get('date') !== this.period()) this.syncUrl();
+  }
+
+  private period() { return periodParam(this.view(), this.anchor(), this.firstDay); }
+
+  /** Puts the view and period in the URL without adding history entries, so Back leaves the calendar. */
+  private syncUrl() {
+    void this.router.navigate(['/calendar', this.view(), this.period()], { replaceUrl: true }).catch(() => { /* navigation cancelled */ });
+  }
+
+  protected setView(view: CalendarView, sync = true) {
     this.view.set(view);
     this.selectedDay.set(null);
     this.scrollToToday = view === 'agenda';
+    if (sync) this.syncUrl();
   }
 
   protected move(direction: 1 | -1) {
     this.anchor.set(shiftAnchor(this.view(), this.anchor(), direction));
     this.selectedDay.set(null);
+    this.syncUrl();
   }
 
   protected goToday() {
+    const before = this.period();
     this.anchor.set(new Date());
+    if (this.period() !== before) this.syncUrl();
     this.selectedDay.set(this.view() === 'month' ? this.today : null);
     this.scrollToToday = true;
     if (this.view() === 'agenda') setTimeout(() => this.scrollToAgendaDay());
@@ -256,7 +272,7 @@ export class CalendarPage {
   }
   private shortDate(day: string) { return parseIsoDate(day).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }); }
 
-  protected styleKey(item: CalendarItem): StyleKey { return item.kind === 'episodes' ? 'episodes' : item.releaseType ?? 'Theatrical'; }
+  protected styleKey(item: CalendarItem): StyleKey { return styleKey(item); }
   protected state(item: CalendarItem) { return itemState(item, this.today); }
   protected stateText(item: CalendarItem) {
     const s = this.state(item);

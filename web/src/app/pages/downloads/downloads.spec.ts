@@ -1,9 +1,10 @@
 import { TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Events } from '../../core/events';
 import { TorrentStatus } from '../../core/models';
 import { button, mockApi, settle, setupTest, text, type } from '../../../testing/test-setup';
-import { DownloadsPage, sortTorrents } from './downloads';
+import { DownloadsPage, isFinished, matchesFilter, mediaLabel, sortTorrents } from './downloads';
 
 const torrent = (t: Partial<TorrentStatus>): TorrentStatus => ({
   id: 1, infoHash: 'h1', name: 'Alien.1979.1080p', state: 'Downloading', progress: 42, size: 1024, downloaded: 0, uploaded: 0, downloadRate: 0, uploadRate: 0,
@@ -11,10 +12,11 @@ const torrent = (t: Partial<TorrentStatus>): TorrentStatus => ({
 });
 const torrents = [torrent({ movieId: 3 }), torrent({ id: 2, infoHash: 'h2', name: 'Dark.S01', state: 'Seeding', progress: 100, seriesId: 4 })];
 
-async function render(extra: Record<string, (...args: never[]) => unknown> = {}) {
+async function render(extra: Record<string, (...args: never[]) => unknown> = {}, url?: string) {
   const api = setupTest({
     api: mockApi({ downloadClientStatus: async () => ({ kind: 'BuiltIn' }), downloads: async () => torrents, ...extra }),
   });
+  if (url) await TestBed.inject(Router).navigateByUrl(url);
   const fixture = TestBed.createComponent(DownloadsPage);
   await settle(fixture);
   return { api, fixture, el: fixture.nativeElement as HTMLElement };
@@ -35,6 +37,77 @@ describe('DownloadsPage', () => {
     expect(text(el)).toContain('Dark.S01');
     expect(text(el)).not.toContain('Alien.1979.1080p');
     expect(localStorage.getItem('krakarr.downloads.showSeeding')).toBe('true');
+  });
+
+  it('lists finished torrents that stopped seeding on the seeding tab', async () => {
+    const done = torrent({ id: 3, infoHash: 'h3', name: 'Heat.1995', state: 'Completed', progress: 100, client: 'qbittorrent' });
+    const stopped = torrent({ id: 4, infoHash: 'h4', name: 'Ronin.1998', state: 'Paused', progress: 100 });
+    const { fixture, el } = await render({ downloads: async () => [...torrents, done, stopped] });
+    expect(button(el, 'Downloading (1)')).toBeTruthy();
+    expect(text(el)).not.toContain('Heat.1995');
+    expect(text(el)).not.toContain('Ronin.1998');
+
+    button(el, 'Seeding (3)').click();
+    await settle(fixture);
+    expect(text(el)).toContain('Heat.1995');
+    expect(text(el)).toContain('Ronin.1998');
+    expect(text(el)).toContain('Dark.S01');
+  });
+
+  it('lists failed imports and retries or dismisses them', async () => {
+    const issues = [
+      { id: 7, infoHash: 'h7', name: 'Robin.Hood.S01E10', client: 'embedded', seriesId: 4, message: 'Import failed: no video files', completedAt: '2026-01-02T00:00:00Z', inClient: true },
+      { id: 8, infoHash: 'h8', name: 'Gone.Movie', client: 'qbittorrent', movieId: 9, message: 'Removed from qBittorrent', inClient: false },
+    ];
+    const { api, fixture, el } = await render({
+      importIssues: async () => issues, retryImport: async () => undefined, dismissImportIssue: async () => undefined,
+    });
+    expect(text(el)).toContain('2 imports need attention');
+    expect(text(el)).toContain('Import failed: no video files');
+    expect(text(el)).toContain('No longer in the download client.');
+    // Only the download still in the client can be imported again.
+    expect(el.querySelectorAll('button[title="Try the import again"]').length).toBe(1);
+
+    button(el, 'Retry import').click();
+    await settle(fixture);
+    expect(api.retryImport).toHaveBeenCalledWith(7);
+    expect(text(el)).toContain('1 import needs attention');
+
+    button(el, 'Dismiss').click();
+    await settle(fixture);
+    expect(api.dismissImportIssue).toHaveBeenCalledWith(8);
+    expect(text(el)).not.toContain('needs attention');
+  });
+
+  it('names the movie or series of each download and links to it', async () => {
+    const { api, el } = await render({
+      downloadMedia: async () => [{ id: 1, movieId: 3, title: 'Alien', year: 1979 }, { id: 2, seriesId: 4, title: 'Dark', year: 2017, episodes: 'S01E01–E03' }],
+    });
+    expect(api.downloadMedia).toHaveBeenCalledTimes(1);
+    const link = el.querySelector('a[data-media-link]') as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('/movies/3');
+    expect(text(link)).toBe('Alien (1979)');
+  });
+
+  it('formats media labels', () => {
+    expect(mediaLabel({ id: 1, title: 'Alien', year: 1979 })).toBe('Alien (1979)');
+    expect(mediaLabel({ id: 1, title: 'Doctor Who (2005)', year: 2005, episodes: 'S01E01' })).toBe('Doctor Who (2005) · S01E01');
+    expect(mediaLabel({ id: 1, title: 'Untitled' })).toBe('Untitled');
+  });
+
+  it('opens the tab of the torrent named in the URL and highlights it', async () => {
+    const { el } = await render({}, '/?hash=H2');
+    expect(text(el)).toContain('Dark.S01');
+    expect(el.querySelector('[data-focused]')?.id).toBe('torrent-h2');
+  });
+
+  it('only treats complete torrents as finished', () => {
+    expect(isFinished(torrent({ state: 'Seeding', progress: 100 }))).toBe(true);
+    expect(isFinished(torrent({ state: 'Completed', progress: 100 }))).toBe(true);
+    expect(isFinished(torrent({ state: 'Paused', progress: 100 }))).toBe(true);
+    expect(isFinished(torrent({ state: 'Paused', progress: 40 }))).toBe(false);
+    expect(isFinished(torrent({ state: 'Error', progress: 100 }))).toBe(false);
+    expect(isFinished(torrent({ state: 'Downloading', progress: 99 }))).toBe(false);
   });
 
   it('pauses and removes torrents', async () => {
@@ -94,6 +167,45 @@ describe('DownloadsPage', () => {
     expect(text(el)).toContain('Select all (1)');
   });
 
+  it('filters torrents and selects all of the matching ones only', async () => {
+    const list = [
+      torrent({ infoHash: 'a', name: 'Alien.1979.1080p' }),
+      torrent({ infoHash: 'b', name: 'Aliens.1986.2160p' }),
+      torrent({ infoHash: 'c', name: 'Heat.1995' }),
+    ];
+    const { api, fixture, el } = await render({ downloads: async () => list, bulkDownloads: async () => ({ affected: 2, errors: [] }) });
+    (el.querySelector('input[aria-label="Select Heat.1995"]') as HTMLInputElement).click();
+    type(el, 'input[aria-label="Filter torrents"]', 'alien');
+    await settle(fixture);
+    expect(text(el)).not.toContain('Heat.1995');
+    // The hidden torrent drops out of the selection.
+    expect(text(el)).toContain('Select all (2 of 3)');
+
+    (el.querySelector('input[aria-label="Select all torrents"]') as HTMLInputElement).click();
+    await settle(fixture);
+    expect(text(el)).toContain('2 selected');
+    button(el.querySelector('[role="toolbar"]') as HTMLElement, 'Pause').click();
+    await settle(fixture);
+    expect(api.bulkDownloads).toHaveBeenCalledWith(['a', 'b'], 'Pause', false);
+
+    type(el, 'input[aria-label="Filter torrents"]', 'zzz');
+    await settle(fixture);
+    expect(text(el)).toContain('No torrents match the filter');
+    button(el, 'clear it').click();
+    await settle(fixture);
+    expect(text(el)).toContain('Heat.1995');
+  });
+
+  it('matches every filter word against the name, category and linked title', () => {
+    const t = torrent({ name: 'Alien.1979.1080p', category: 'movies' });
+    expect(matchesFilter(t, 'alien 1080P')).toBe(true);
+    expect(matchesFilter(t, 'alien 1979.1080')).toBe(true);
+    expect(matchesFilter(t, 'movies')).toBe(true);
+    expect(matchesFilter(t, 'alien 720p')).toBe(false);
+    expect(matchesFilter(t, 'ridley', { id: 1, title: 'Alien by Ridley' })).toBe(true);
+    expect(matchesFilter(t, '  ')).toBe(true);
+  });
+
   it('sorts by ETA, soonest first, with unknown ETAs last', async () => {
     const list = [
       torrent({ infoHash: 'a', name: 'Slow', etaSeconds: 9000 }),
@@ -125,7 +237,8 @@ describe('DownloadsPage', () => {
   });
 
   it('adds a magnet link', async () => {
-    const { api, fixture, el } = await render({ addMagnet: async () => undefined, movies: async () => [], seriesList: async () => [] });
+    const empty = { items: [], page: 1, pageSize: 200, total: 0, libraryTotal: 0 };
+    const { api, fixture, el } = await render({ addMagnet: async () => undefined, movies: async () => empty, seriesList: async () => empty });
     button(el, '+ Add torrent').click();
     await settle(fixture);
     type(el, 'textarea', 'magnet:?xt=urn:btih:abc&dn=Some.Movie');

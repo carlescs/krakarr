@@ -24,7 +24,24 @@ public sealed record SubtitleTarget
     public int? TmdbId { get; init; }
 }
 
-public sealed record WantedSubtitle(SubtitleTarget Target, IReadOnlyList<string> MissingLanguages);
+/// <param name="NotFound">When the file was marked "not found" (every provider came up empty, or by hand); automatic searches skip it.</param>
+/// <summary>Best subtitle per missing language, regardless of the minimum score (see <see cref="SubtitleService.BestMatchesAsync"/>).</summary>
+public sealed record BestSubtitleMatches(IReadOnlyList<string> MissingLanguages, int MinimumScore, IReadOnlyList<ScoredSubtitle> Best, IReadOnlyList<string> Errors);
+
+public sealed record WantedSubtitle(SubtitleTarget Target, IReadOnlyList<string> MissingLanguages, DateTimeOffset? NotFound = null);
+
+/// <summary>Column the wanted list is sorted by; <see cref="Default"/> lists movies first, then episodes by series and season.</summary>
+public enum WantedSort { Default, Type, Title, Missing }
+
+/// <summary>One page of the wanted list, with the total for the filter and the totals per filter.</summary>
+public sealed record WantedPage(IReadOnlyList<WantedSubtitle> Items, int Total, int Searching, int NotFound);
+
+/// <summary>An external subtitle in a language the video already carries as an embedded track (same forced flag).</summary>
+public sealed record RedundantSubtitle(int Id, MediaType MediaType, int? MovieId, int? SeriesId, int? MovieFileId, int? EpisodeFileId, string Label,
+    string Language, bool HearingImpaired, bool Forced, string Path, string Provider, DateTimeOffset DateAdded, IReadOnlyList<EmbeddedSubtitle> Embedded);
+
+/// <summary>A slice of the subtitles that duplicate an embedded track, with the total.</summary>
+public sealed record RedundantPage(IReadOnlyList<RedundantSubtitle> Items, int Total);
 
 /// <summary>Finds, scores, downloads and tracks external subtitles for library files.</summary>
 public sealed class SubtitleService(
@@ -105,31 +122,75 @@ public sealed class SubtitleService(
     public async Task SyncDiskAsync(SubtitleTarget target, CancellationToken ct = default)
     {
         await SyncEmbeddedAsync(target, ct);
+        await SyncSidecarsAsync(db, target.VideoPath, target.MovieFileId, target.EpisodeFileId, ct);
+        await db.SaveChangesAsync(ct);
+    }
 
-        var rows = await RowsAsync(target, ct);
+    /// <summary>
+    /// Syncs external subtitle files next to a movie file, and reads embedded subtitle tracks and media info when not read yet.
+    /// Does not save changes so the caller can batch saves.
+    /// </summary>
+    public static Task<bool> SyncMovieFileAsync(KrakarrDbContext db, string moviePath, MovieFile file, CancellationToken ct = default) =>
+        SyncFileSubtitlesAsync(db, Path.Combine(moviePath, file.RelativePath), file.Id, null, file, ct);
+
+    /// <summary>
+    /// Syncs external subtitle files next to an episode file, and reads embedded subtitle tracks and media info when not read yet.
+    /// Does not save changes so the caller can batch saves.
+    /// </summary>
+    public static Task<bool> SyncEpisodeFileAsync(KrakarrDbContext db, string seriesPath, EpisodeFile file, CancellationToken ct = default) =>
+        SyncFileSubtitlesAsync(db, Path.Combine(seriesPath, file.RelativePath), null, file.Id, file, ct);
+
+    private static async Task<bool> SyncFileSubtitlesAsync(
+        KrakarrDbContext db, string videoPath, int? movieFileId, int? episodeFileId, ILibraryFile file, CancellationToken ct)
+    {
+        var changed = false;
+        // One read of the headers gives both the media info and the subtitle tracks.
+        if (MediaFileProbe.Probe(videoPath, file) is { } tracks)
+        {
+            file.EmbeddedSubtitles ??= EmbeddedSubtitleList.Format(EmbeddedSubtitleList.FromTracks(tracks));
+            changed = true;
+        }
+
+        if (await SyncSidecarsAsync(db, videoPath, movieFileId, episodeFileId, ct))
+        {
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    private static async Task<bool> SyncSidecarsAsync(KrakarrDbContext db, string videoPath, int? movieFileId, int? episodeFileId, CancellationToken ct)
+    {
+        var changed = false;
+        var rows = movieFileId is { } mf
+            ? await db.SubtitleFiles.Where(s => s.MovieFileId == mf).ToListAsync(ct)
+            : await db.SubtitleFiles.Where(s => s.EpisodeFileId == episodeFileId).ToListAsync(ct);
         foreach (var gone in rows.Where(r => !File.Exists(r.Path)))
         {
             db.SubtitleFiles.Remove(gone);
+            changed = true;
         }
 
-        var known = rows.Select(r => r.Path).ToHashSet(StringComparer.Ordinal);
-        var baseName = Path.GetFileNameWithoutExtension(target.VideoPath);
-        foreach (var path in SidecarFiles.SubtitlesFor(target.VideoPath).Where(p => !known.Contains(p)))
+        var comparison = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var known = rows.Select(r => r.Path).ToHashSet(comparison);
+        var baseName = Path.GetFileNameWithoutExtension(videoPath);
+        foreach (var path in SidecarFiles.SubtitlesFor(videoPath).Where(p => !known.Contains(p)))
         {
             if (Languages.FromSidecarName(Path.GetFileName(path), baseName) is not { } info) continue;
             db.SubtitleFiles.Add(new SubtitleFile
             {
-                MovieFileId = target.MovieFileId,
-                EpisodeFileId = target.EpisodeFileId,
+                MovieFileId = movieFileId,
+                EpisodeFileId = episodeFileId,
                 Language = info.Language,
                 HearingImpaired = info.HearingImpaired,
                 Forced = info.Forced,
                 Path = path,
-                Provider = "disk",
+                Provider = SubtitleUpgrade.DiskProvider,
             });
+            changed = true;
         }
 
-        await db.SaveChangesAsync(ct);
+        return changed;
     }
 
     private async Task SyncEmbeddedAsync(SubtitleTarget target, CancellationToken ct)
@@ -164,9 +225,10 @@ public sealed class SubtitleService(
 
     // ---- Search & download -------------------------------------------------------------------
 
-    /// <summary>Queries every configured provider for the given languages; provider failures are reported, not thrown.</summary>
+    /// <summary>Queries configured providers (optionally filtered to <paramref name="providers"/>) for the given languages; provider failures are reported, not thrown.</summary>
     public async Task<(IReadOnlyList<SubtitleCandidate> Candidates, IReadOnlyList<string> Errors)> SearchProvidersAsync(
-        SubtitleTarget target, IReadOnlyList<string> languages, SubtitleSettings s, CancellationToken ct = default)
+        SubtitleTarget target, IReadOnlyList<string> languages, SubtitleSettings s, CancellationToken ct = default,
+        IReadOnlyCollection<string>? providers = null)
     {
         string? hash = null;
         long size = 0;
@@ -182,7 +244,7 @@ public sealed class SubtitleService(
             Title = target.Video.Title,
             Year = target.Video.Year,
             ImdbId = target.ImdbId,
-            TmdbId = target.MediaType == MediaType.Movie ? target.TmdbId : null,
+            TmdbId = target.TmdbId,
             SeasonNumber = target.Video.SeasonNumber,
             EpisodeNumber = target.Video.EpisodeNumber,
             Languages = languages,
@@ -192,7 +254,7 @@ public sealed class SubtitleService(
 
         var candidates = new List<SubtitleCandidate>();
         var errors = new List<string>();
-        foreach (var provider in Providers.Where(p => p.IsConfigured(s)))
+        foreach (var provider in ConfiguredProviders(s, providers))
         {
             try
             {
@@ -209,20 +271,22 @@ public sealed class SubtitleService(
     }
 
     /// <summary>
-    /// Automatic search: downloads the best acceptable subtitle for each missing wanted language.
-    /// With <paramref name="upgrade"/>, languages that already have a subtitle are searched too, and replaced when a
-    /// candidate scores higher than the current one. Subtitles found on disk have no score and are never replaced, and
-    /// languages present only inside the video (see <see cref="SubtitleSettings.UseEmbeddedSubtitles"/>) are not searched.
+    /// Automatic search: downloads the best acceptable subtitle for each missing wanted language, and upgrades recent
+    /// low-scoring downloads (see <see cref="SubtitleUpgrade.Select"/>): they are replaced when a candidate scores higher.
+    /// With <paramref name="upgrade"/>, every language that already has a downloaded subtitle is searched too.
+    /// Subtitles found on disk have no score and are never replaced, and languages present only inside the video
+    /// (see <see cref="SubtitleSettings.UseEmbeddedSubtitles"/>) are not searched.
     /// Returns a short summary for the task log.
     /// </summary>
-    public async Task<string> SearchMissingAsync(SubtitleTarget target, CancellationToken ct = default, bool upgrade = false)
+    public async Task<string> SearchMissingAsync(
+        SubtitleTarget target, CancellationToken ct = default, bool upgrade = false, IReadOnlyCollection<string>? providers = null)
     {
         using var activity = KrakarrTelemetry.ActivitySource.StartActivity("subtitle search");
         activity?.SetTag("krakarr.subtitle.target", target.Label);
         activity?.SetTag("krakarr.subtitle.upgrade", upgrade);
         try
         {
-            var result = await SearchMissingCoreAsync(target, upgrade, ct);
+            var result = await SearchMissingCoreAsync(target, upgrade, providers, ct);
             activity?.SetTag("krakarr.subtitle.result", result);
             return result;
         }
@@ -233,28 +297,32 @@ public sealed class SubtitleService(
         }
     }
 
-    private async Task<string> SearchMissingCoreAsync(SubtitleTarget target, bool upgrade, CancellationToken ct)
+    private async Task<string> SearchMissingCoreAsync(
+        SubtitleTarget target, bool upgrade, IReadOnlyCollection<string>? providers, CancellationToken ct)
     {
         var s = await settings.GetAsync<SubtitleSettings>(ct);
         await SyncDiskAsync(target, ct);
         var missing = await MissingLanguagesAsync(target, s, ct);
-        await MarkSearchedAsync(target, ct);
-
-        // Score to beat per language already present (upgrade only); disk subtitles are left alone.
-        var current = new Dictionary<string, int>();
-        if (upgrade)
+        // Score to beat per language already present; disk subtitles are left alone.
+        var current = SubtitleUpgrade.Select(await RowsAsync(target, ct), s, time.GetUtcNow(), upgrade)
+            .Where(kv => !missing.Contains(kv.Key)).ToDictionary();
+        if (missing.Count > 0 || current.Count > 0)
         {
-            foreach (var group in (await RowsAsync(target, ct)).Where(r => !r.Forced && s.Languages.Contains(r.Language)).GroupBy(r => r.Language))
-            {
-                if (group.Any(r => r.Provider == "disk")) continue;
-                current[group.Key] = group.Max(r => r.Score ?? 0);
-            }
+            // Don't query providers that asked us to back off, and leave the file due so it is searched once they allow it.
+            if (BackoffUntil(s, providers) is { } until)
+                return $"{target.Label}: skipped, subtitle providers paused until {until.ToLocalTime():g}";
         }
 
-        var languages = missing.Concat(current.Keys).ToList();
-        if (languages.Count == 0) return $"{target.Label}: all subtitles present";
+        await MarkSearchedAsync(target, ct);
 
-        var (candidates, providerErrors) = await SearchProvidersAsync(target, languages, s, ct);
+        var languages = missing.Concat(current.Keys).ToList();
+        if (languages.Count == 0)
+        {
+            await MarkNotFoundAsync(target, false, ct);
+            return $"{target.Label}: all subtitles present";
+        }
+
+        var (candidates, providerErrors) = await SearchProvidersAsync(target, languages, s, ct, providers);
         var errors = providerErrors.ToList();
         var downloaded = new List<string>();
         var upgraded = new List<string>();
@@ -273,12 +341,18 @@ public sealed class SubtitleService(
                 catch (SubtitleProviderException ex)
                 {
                     errors.Add($"{choice.Candidate.Provider}: {ex.Message}");
-                    if (ex.Message.Contains("quota", StringComparison.OrdinalIgnoreCase)) break;
+                    if (ex is SubtitleRateLimitException || ex.Message.Contains("quota", StringComparison.OrdinalIgnoreCase)) break;
                 }
             }
         }
 
         var stillMissing = missing.Except(downloaded).ToList();
+        // Mark the file when every configured provider answered and none had a missing language, so the scheduled
+        // search stops retrying it. Errors may be transient, and a search limited to some providers proves nothing.
+        if (stillMissing.Count == 0)
+            await MarkNotFoundAsync(target, false, ct);
+        else if (errors.Count == 0 && providers is not { Count: > 0 } && ConfiguredProviders(s, null).Any())
+            await MarkNotFoundAsync(target, true, ct);
         var parts = new List<string>();
         if (downloaded.Count > 0) parts.Add($"downloaded {string.Join(", ", downloaded)}");
         if (upgraded.Count > 0) parts.Add($"upgraded {string.Join(", ", upgraded)}");
@@ -288,8 +362,61 @@ public sealed class SubtitleService(
         return $"{target.Label}: {summary}";
     }
 
+    /// <summary>
+    /// The best subtitle for each missing wanted language, even when it scores below the minimum automatic downloads
+    /// need; the hearing-impaired, AI-translated and forced rules still apply, and a wrong episode (score 0) never
+    /// qualifies. Nothing is downloaded: the caller confirms each choice and downloads it.
+    /// </summary>
+    public async Task<BestSubtitleMatches> BestMatchesAsync(SubtitleTarget target, CancellationToken ct = default)
+    {
+        var s = await settings.GetAsync<SubtitleSettings>(ct);
+        await SyncDiskAsync(target, ct);
+        var missing = await MissingLanguagesAsync(target, s, ct);
+        var minimum = SubtitleScorer.MinimumScore(target.Video, s);
+        if (missing.Count == 0) return new BestSubtitleMatches(missing, minimum, [], []);
+        if (BackoffUntil(s) is { } until)
+            return new BestSubtitleMatches(missing, minimum, [], [$"Subtitle providers paused until {until.ToLocalTime():g}"]);
+
+        var (candidates, errors) = await SearchProvidersAsync(target, missing, s, ct);
+        var best = new List<ScoredSubtitle>();
+        foreach (var language in missing)
+        {
+            var top = SubtitleScorer.Rank(target.Video, candidates.Where(c => c.Language == language), s, ignoreMinimum: true)
+                .FirstOrDefault(r => r.Acceptable && r.Score > 0);
+            if (top is not null) best.Add(top);
+        }
+
+        return new BestSubtitleMatches(missing, minimum, best, errors);
+    }
+
+    /// <summary>
+    /// When every selected configured provider asked us to back off (rate limit or quota), the earliest time one of
+    /// them can be queried again; null when at least one can be queried now.
+    /// </summary>
+    public DateTimeOffset? BackoffUntil(SubtitleSettings s, IReadOnlyCollection<string>? providers = null)
+    {
+        DateTimeOffset? earliest = null;
+        foreach (var provider in ConfiguredProviders(s, providers))
+        {
+            if (provider.BackoffUntil is not { } until) return null;
+            if (earliest is null || until < earliest) earliest = until;
+        }
+
+        return earliest;
+    }
+
+    private IEnumerable<ISubtitleProvider> ConfiguredProviders(SubtitleSettings s, IReadOnlyCollection<string>? providers)
+    {
+        var configured = Providers.Where(p => p.IsConfigured(s));
+        if (providers is not { Count: > 0 }) return configured;
+        var allowed = new HashSet<string>(providers, StringComparer.OrdinalIgnoreCase);
+        return configured.Where(p => allowed.Contains(p.Name));
+    }
+
     /// <summary>Downloads a subtitle and stores it next to the video as "{video}.{lang}[.hi][.forced].{ext}".</summary>
-    public async Task<SubtitleFile> DownloadAsync(SubtitleTarget target, SubtitleCandidate candidate, int? score, SubtitleSettings? s = null, CancellationToken ct = default)
+    /// <param name="manual">Picked by hand in the interactive search: automatic upgrades leave it alone.</param>
+    public async Task<SubtitleFile> DownloadAsync(SubtitleTarget target, SubtitleCandidate candidate, int? score, SubtitleSettings? s = null, CancellationToken ct = default,
+        bool manual = false)
     {
         s ??= await settings.GetAsync<SubtitleSettings>(ct);
         var provider = Providers.FirstOrDefault(p => p.Name == candidate.Provider)
@@ -326,6 +453,8 @@ public sealed class SubtitleService(
             Provider = candidate.Provider,
             Score = score,
             Release = candidate.ReleaseNames.FirstOrDefault() ?? candidate.FileName,
+            Manual = manual,
+            DateAdded = time.GetUtcNow(),
         };
         db.SubtitleFiles.Add(row);
         var entry = new HistoryEntry
@@ -365,13 +494,207 @@ public sealed class SubtitleService(
             await db.EpisodeFiles.Where(f => f.Id == target.EpisodeFileId).ExecuteUpdateAsync(x => x.SetProperty(f => f.LastSubtitleSearch, now), ct);
     }
 
+    /// <summary>
+    /// Sets or clears the "not found" mark; a first mark is kept. Only movie files are marked automatically: episode
+    /// subtitles often appear days after airing, so episode files are only marked by hand (<see cref="MarkAllNotFoundAsync"/>),
+    /// but finding their subtitles clears the mark. Publishes <see cref="EventNames.SubtitlesUpdated"/> when the mark
+    /// changes so the wanted list and its counts refresh.
+    /// </summary>
+    private async Task MarkNotFoundAsync(SubtitleTarget target, bool notFound, CancellationToken ct)
+    {
+        int changed;
+        if (target.MovieFileId is not { } mf)
+        {
+            if (notFound || target.EpisodeFileId is not { } ef) return;
+            changed = await db.EpisodeFiles.Where(f => f.Id == ef && f.SubtitlesNotFound != null).ExecuteUpdateAsync(x => x.SetProperty(f => f.SubtitlesNotFound, (DateTimeOffset?)null), ct);
+        }
+        else if (notFound)
+        {
+            var now = time.GetUtcNow();
+            changed = await db.MovieFiles.Where(f => f.Id == mf && f.SubtitlesNotFound == null).ExecuteUpdateAsync(x => x.SetProperty(f => f.SubtitlesNotFound, now), ct);
+            if (changed > 0) logger.LogInformation("No subtitles found for {Target} on any provider; it will not be searched automatically again", target.Label);
+        }
+        else
+        {
+            changed = await db.MovieFiles.Where(f => f.Id == mf && f.SubtitlesNotFound != null).ExecuteUpdateAsync(x => x.SetProperty(f => f.SubtitlesNotFound, (DateTimeOffset?)null), ct);
+        }
+
+        if (changed > 0) await eventHub.PublishAsync(EventNames.SubtitlesUpdated, new { target.MovieId, target.SeriesId }, ct);
+    }
+
+    /// <summary>
+    /// Clears the "not found" mark of one movie or episode file (or of every marked file when neither is given) and makes
+    /// it due, so the scheduled search tries it again. Returns how many files were reset.
+    /// </summary>
+    public async Task<int> RetryNotFoundAsync(int? movieFileId, CancellationToken ct = default, int? episodeFileId = null)
+    {
+        var count = 0;
+        if (episodeFileId is null)
+        {
+            var movies = db.MovieFiles.Where(f => f.SubtitlesNotFound != null);
+            if (movieFileId is { } id) movies = movies.Where(f => f.Id == id);
+            count += await movies.ExecuteUpdateAsync(x => x
+                .SetProperty(f => f.SubtitlesNotFound, (DateTimeOffset?)null)
+                .SetProperty(f => f.LastSubtitleSearch, (DateTimeOffset?)null), ct);
+        }
+
+        if (movieFileId is null)
+        {
+            var episodes = db.EpisodeFiles.Where(f => f.SubtitlesNotFound != null);
+            if (episodeFileId is { } id) episodes = episodes.Where(f => f.Id == id);
+            count += await episodes.ExecuteUpdateAsync(x => x
+                .SetProperty(f => f.SubtitlesNotFound, (DateTimeOffset?)null)
+                .SetProperty(f => f.LastSubtitleSearch, (DateTimeOffset?)null), ct);
+        }
+
+        if (count > 0)
+        {
+            logger.LogInformation("Subtitles: retrying {Count} file(s) where nothing was found", count);
+            await eventHub.PublishAsync(EventNames.SubtitlesUpdated, new { MovieId = (int?)null, SeriesId = (int?)null }, ct);
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Marks one movie or episode file "not found" by hand (e.g. the best subtitle on offer was not good enough), so the
+    /// scheduled search stops retrying it until it is retried. A file already marked keeps its mark. Returns 1 when marked.
+    /// </summary>
+    public async Task<int> MarkFileNotFoundAsync(int? movieFileId, int? episodeFileId, CancellationToken ct = default)
+    {
+        var now = time.GetUtcNow();
+        var count = movieFileId is { } mf
+            ? await db.MovieFiles.Where(f => f.Id == mf && f.SubtitlesNotFound == null).ExecuteUpdateAsync(x => x.SetProperty(f => f.SubtitlesNotFound, now), ct)
+            : episodeFileId is { } ef
+                ? await db.EpisodeFiles.Where(f => f.Id == ef && f.SubtitlesNotFound == null).ExecuteUpdateAsync(x => x.SetProperty(f => f.SubtitlesNotFound, now), ct)
+                : 0;
+        if (count > 0) await eventHub.PublishAsync(EventNames.SubtitlesUpdated, new { MovieId = (int?)null, SeriesId = (int?)null }, ct);
+        return count;
+    }
+
+    /// <summary>
+    /// Marks every movie and episode file still missing a wanted language "not found", so the scheduled search stops
+    /// retrying them until they are retried (or replaced, or the wanted languages or providers change). Files already
+    /// marked keep their mark. Returns how many files were marked.
+    /// </summary>
+    public async Task<int> MarkAllNotFoundAsync(CancellationToken ct = default)
+    {
+        // Ids only: the wanted scan already works from slim rows.
+        var movieIds = new List<int>();
+        var episodeIds = new List<int>();
+        await foreach (var file in WantedFilesAsync(false, ct))
+            (file.MediaType == MediaType.Movie ? movieIds : episodeIds).Add(file.Id);
+
+        var now = time.GetUtcNow();
+        var count = 0;
+        foreach (var chunk in movieIds.Chunk(500))
+            count += await db.MovieFiles.Where(f => chunk.Contains(f.Id) && f.SubtitlesNotFound == null)
+                .ExecuteUpdateAsync(x => x.SetProperty(f => f.SubtitlesNotFound, now), ct);
+        foreach (var chunk in episodeIds.Chunk(500))
+            count += await db.EpisodeFiles.Where(f => chunk.Contains(f.Id) && f.SubtitlesNotFound == null)
+                .ExecuteUpdateAsync(x => x.SetProperty(f => f.SubtitlesNotFound, now), ct);
+
+        if (count > 0)
+        {
+            logger.LogInformation("Subtitles: marked {Count} file(s) as not found; they will not be searched automatically until retried", count);
+            await eventHub.PublishAsync(EventNames.SubtitlesUpdated, new { MovieId = (int?)null, SeriesId = (int?)null }, ct);
+        }
+
+        return count;
+    }
+
     // ---- Wanted -------------------------------------------------------------------------------
 
-    /// <summary>Library files missing at least one wanted language (based on known subtitle rows and embedded tracks).</summary>
-    public async Task<IReadOnlyList<WantedSubtitle>> WantedAsync(int limit, CancellationToken ct = default)
+    /// <summary>
+    /// Library files missing at least one wanted language (based on known subtitle rows and embedded tracks).
+    /// <paramref name="notFound"/>: true = only files marked "not found", false = only unmarked files.
+    /// </summary>
+    public async Task<IReadOnlyList<WantedSubtitle>> WantedAsync(int limit, CancellationToken ct = default, bool? notFound = null)
+    {
+        var result = new List<WantedSubtitle>();
+        await foreach (var file in WantedFilesAsync(notFound, ct))
+        {
+            var target = file.MediaType == MediaType.Movie ? await GetMovieTargetAsync(file.Id, ct) : await GetEpisodeTargetAsync(file.Id, ct);
+            if (target is not null) result.Add(new WantedSubtitle(target, file.Missing, file.NotFound));
+            if (result.Count >= limit) break;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// One page of the files missing a wanted language, sorted on the server so the list can be scrolled page by page.
+    /// Only the page's targets are built; the rest of the list stays as slim rows.
+    /// </summary>
+    public async Task<WantedPage> WantedPageAsync(int page, int pageSize, CancellationToken ct = default, bool? notFound = null,
+        WantedSort sort = WantedSort.Default, bool desc = false)
+    {
+        var files = new List<WantedFile>();
+        int searching = 0, marked = 0;
+        await foreach (var file in WantedFilesAsync(null, ct))
+        {
+            if (file.NotFound is null) searching++;
+            else marked++;
+            if (notFound is null || (file.NotFound is not null) == notFound) files.Add(file);
+        }
+
+        // List.Sort is not stable: ties fall back to the default order (the index in the list).
+        var keyed = files.Select((f, i) => (File: f, Index: i)).ToList();
+        int Compare((WantedFile File, int Index) a, (WantedFile File, int Index) b)
+        {
+            var c = sort switch
+            {
+                WantedSort.Type => a.File.MediaType.CompareTo(b.File.MediaType),
+                WantedSort.Missing => a.File.Missing.Count.CompareTo(b.File.Missing.Count),
+                WantedSort.Title => CompareTitles(a.File, b.File),
+                _ => a.Index.CompareTo(b.Index),
+            };
+            return (desc ? -c : c) is var d && d != 0 ? d : a.Index.CompareTo(b.Index);
+        }
+        keyed.Sort(Compare);
+
+        var items = new List<WantedSubtitle>(pageSize);
+        foreach (var (file, _) in keyed.Skip((page - 1) * pageSize).Take(pageSize))
+        {
+            var target = file.MediaType == MediaType.Movie ? await GetMovieTargetAsync(file.Id, ct) : await GetEpisodeTargetAsync(file.Id, ct);
+            if (target is not null) items.Add(new WantedSubtitle(target, file.Missing, file.NotFound));
+        }
+
+        return new WantedPage(items, files.Count, searching, marked);
+    }
+
+    private static int CompareTitles(WantedFile a, WantedFile b)
+    {
+        var c = string.CompareOrdinal(a.SortTitle, b.SortTitle);
+        if (c == 0) c = a.Number1.CompareTo(b.Number1);
+        if (c == 0) c = a.Number2.CompareTo(b.Number2);
+        return c;
+    }
+
+    /// <summary>How many files are missing a wanted language: still searched automatically, and marked "not found".</summary>
+    public async Task<(int Searching, int NotFound)> WantedCountsAsync(CancellationToken ct = default)
+    {
+        int searching = 0, notFound = 0;
+        await foreach (var file in WantedFilesAsync(null, ct))
+        {
+            if (file.NotFound is null) searching++;
+            else notFound++;
+        }
+
+        return (searching, notFound);
+    }
+
+    /// <summary>A file missing a wanted language. Sorting by title uses the sort title, then year (movies) or season and episode.</summary>
+    private sealed record WantedFile(MediaType MediaType, int Id, IReadOnlyList<string> Missing, DateTimeOffset? NotFound, string SortTitle, int Number1, int Number2);
+
+    /// <summary>
+    /// Files missing a wanted language, movies first, from slim rows (no targets are built). Episode files no episode points
+    /// at are left out: they have no target to search for.
+    /// </summary>
+    private async IAsyncEnumerable<WantedFile> WantedFilesAsync(bool? notFound, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
     {
         var s = await settings.GetAsync<SubtitleSettings>(ct);
-        if (s.Languages.Count == 0) return [];
+        if (s.Languages.Count == 0) yield break;
 
         var subs = await db.SubtitleFiles.AsNoTracking().Where(x => !x.Forced)
             .Select(x => new { x.MovieFileId, x.EpisodeFileId, x.Language }).ToListAsync(ct);
@@ -380,26 +703,124 @@ public sealed class SubtitleService(
 
         IEnumerable<string> Embedded(string? value) => s.UseEmbeddedSubtitles ? EmbeddedSubtitleList.FullLanguages(value) : [];
 
-        var result = new List<WantedSubtitle>();
-        foreach (var file in await db.MovieFiles.AsNoTracking().OrderBy(f => f.Id).Select(f => new { f.Id, f.EmbeddedSubtitles }).ToListAsync(ct))
+        var movieFiles = db.MovieFiles.AsNoTracking();
+        if (notFound is { } nf) movieFiles = nf ? movieFiles.Where(f => f.SubtitlesNotFound != null) : movieFiles.Where(f => f.SubtitlesNotFound == null);
+        var movieRows = await movieFiles
+            .Join(db.Movies.AsNoTracking(), f => f.MovieId, m => m.Id, (f, m) => new { f.Id, f.EmbeddedSubtitles, f.SubtitlesNotFound, m.SortTitle, m.Year })
+            .OrderBy(f => f.Id).ToListAsync(ct);
+        foreach (var file in movieRows)
         {
-            var id = file.Id;
-            var missing = s.Languages.Except(movieLangs[id]).Except(Embedded(file.EmbeddedSubtitles)).ToList();
-            if (missing.Count == 0) continue;
-            if (await GetMovieTargetAsync(id, ct) is { } t) result.Add(new WantedSubtitle(t, missing));
-            if (result.Count >= limit) return result;
+            var missing = s.Languages.Except(movieLangs[file.Id]).Except(Embedded(file.EmbeddedSubtitles)).ToList();
+            if (missing.Count > 0) yield return new WantedFile(MediaType.Movie, file.Id, missing, file.SubtitlesNotFound, file.SortTitle, file.Year, 0);
         }
+        movieRows = null;
 
-        foreach (var file in await db.EpisodeFiles.AsNoTracking().OrderBy(f => f.SeriesId).ThenBy(f => f.SeasonNumber).ThenBy(f => f.Id)
-                     .Select(f => new { f.Id, f.EmbeddedSubtitles }).ToListAsync(ct))
+        // A few hundred series at most: one shared title per series instead of one string per episode row.
+        var seriesTitles = await db.Series.AsNoTracking().Select(x => new { x.Id, x.SortTitle }).ToDictionaryAsync(x => x.Id, x => x.SortTitle, ct);
+
+        var episodeFiles = db.EpisodeFiles.AsNoTracking();
+        if (notFound is { } enf) episodeFiles = enf ? episodeFiles.Where(f => f.SubtitlesNotFound != null) : episodeFiles.Where(f => f.SubtitlesNotFound == null);
+        foreach (var file in await episodeFiles.OrderBy(f => f.SeriesId).ThenBy(f => f.SeasonNumber).ThenBy(f => f.Id)
+                     .Select(f => new
+                     {
+                         f.Id, f.SeriesId, f.SeasonNumber, f.EmbeddedSubtitles, f.SubtitlesNotFound,
+                         Episode = db.Episodes.Where(e => e.EpisodeFileId == f.Id).Min(e => (int?)e.EpisodeNumber),
+                     })
+                     .ToListAsync(ct))
         {
-            var id = file.Id;
-            var missing = s.Languages.Except(episodeLangs[id]).Except(Embedded(file.EmbeddedSubtitles)).ToList();
-            if (missing.Count == 0) continue;
-            if (await GetEpisodeTargetAsync(id, ct) is { } t) result.Add(new WantedSubtitle(t, missing));
-            if (result.Count >= limit) break;
+            if (file.Episode is not { } episode) continue;
+            var missing = s.Languages.Except(episodeLangs[file.Id]).Except(Embedded(file.EmbeddedSubtitles)).ToList();
+            if (missing.Count > 0)
+                yield return new WantedFile(MediaType.Series, file.Id, missing, file.SubtitlesNotFound, seriesTitles.GetValueOrDefault(file.SeriesId, ""), file.SeasonNumber, episode);
         }
-
-        return result;
     }
+
+    // ---- Redundant ----------------------------------------------------------------------------
+
+    /// <summary>
+    /// External subtitles in a language the video already has as an embedded track (forced matching forced), sorted by
+    /// title then language. The whole list is built from slim rows; only the requested rows are loaded in full. An offset
+    /// (rather than a page) lets the UI append exactly what follows the rows it shows after deleting some of them.
+    /// </summary>
+    public async Task<RedundantPage> RedundantPageAsync(int offset, int limit, CancellationToken ct = default)
+    {
+        var matches = new List<RedundantKey>();
+
+        // The SQL filter (the language code appears in the embedded list) drops most rows before they are loaded;
+        // Covers then checks the exact token and forced flag. Codes are canonical on both sides, so case matches.
+        var movieRows = await db.SubtitleFiles.AsNoTracking()
+            .Join(db.MovieFiles.AsNoTracking().Where(f => f.EmbeddedSubtitles != null && f.EmbeddedSubtitles != ""),
+                s => s.MovieFileId, f => (int?)f.Id, (s, f) => new { s.Id, s.Language, s.Forced, f.EmbeddedSubtitles, f.MovieId })
+            .Where(x => x.EmbeddedSubtitles!.Contains(x.Language))
+            .Join(db.Movies.AsNoTracking(), x => x.MovieId, m => m.Id, (x, m) => new { x.Id, x.Language, x.Forced, x.EmbeddedSubtitles, m.SortTitle, m.Year })
+            .ToListAsync(ct);
+        foreach (var row in movieRows)
+            if (EmbeddedSubtitleList.Covers(row.EmbeddedSubtitles, row.Language, row.Forced))
+                matches.Add(new RedundantKey(row.Id, row.SortTitle, row.Year, 0, row.Language));
+        movieRows = null;
+
+        var episodeRows = await db.SubtitleFiles.AsNoTracking()
+            .Join(db.EpisodeFiles.AsNoTracking().Where(f => f.EmbeddedSubtitles != null && f.EmbeddedSubtitles != ""),
+                s => s.EpisodeFileId, f => (int?)f.Id,
+                (s, f) => new { s.Id, s.Language, s.Forced, f.EmbeddedSubtitles, FileId = f.Id, f.SeriesId, f.SeasonNumber })
+            .Where(x => x.EmbeddedSubtitles!.Contains(x.Language))
+            .ToListAsync(ct);
+        var episodeMatches = episodeRows.Where(r => EmbeddedSubtitleList.Covers(r.EmbeddedSubtitles, r.Language, r.Forced))
+            .Select(r => (r.Id, r.Language, r.FileId, r.SeriesId, r.SeasonNumber)).ToList();
+        episodeRows = null;
+        if (episodeMatches.Count > 0)
+        {
+            // Episode numbers (for sorting) only for the matching files, a chunk at a time.
+            var episodeNumbers = new Dictionary<int, int>();
+            foreach (var chunk in episodeMatches.Select(m => m.FileId).Distinct().Chunk(500))
+                foreach (var n in await db.Episodes.AsNoTracking().Where(e => e.EpisodeFileId != null && chunk.Contains(e.EpisodeFileId.Value))
+                             .GroupBy(e => e.EpisodeFileId!.Value).Select(g => new { g.Key, Episode = g.Min(e => e.EpisodeNumber) }).ToListAsync(ct))
+                    episodeNumbers[n.Key] = n.Episode;
+            var seriesTitles = await db.Series.AsNoTracking().Select(x => new { x.Id, x.SortTitle }).ToDictionaryAsync(x => x.Id, x => x.SortTitle, ct);
+            foreach (var m in episodeMatches)
+                matches.Add(new RedundantKey(m.Id, seriesTitles.GetValueOrDefault(m.SeriesId, ""), m.SeasonNumber, episodeNumbers.GetValueOrDefault(m.FileId), m.Language));
+        }
+
+        matches.Sort((a, b) =>
+        {
+            var c = string.CompareOrdinal(a.SortTitle, b.SortTitle);
+            if (c == 0) c = a.Number1.CompareTo(b.Number1);
+            if (c == 0) c = a.Number2.CompareTo(b.Number2);
+            if (c == 0) c = string.CompareOrdinal(a.Language, b.Language);
+            return c != 0 ? c : a.Id.CompareTo(b.Id);
+        });
+
+        var ids = matches.Skip(offset).Take(limit).Select(m => m.Id).ToList();
+        var rows = await db.SubtitleFiles.AsNoTracking().Where(s => ids.Contains(s.Id)).ToListAsync(ct);
+        var movieFileIds = rows.Where(r => r.MovieFileId != null).Select(r => r.MovieFileId!.Value).ToList();
+        var episodeFileIds = rows.Where(r => r.EpisodeFileId != null).Select(r => r.EpisodeFileId!.Value).ToList();
+        var movies = await db.MovieFiles.AsNoTracking().Where(f => movieFileIds.Contains(f.Id))
+            .Join(db.Movies.AsNoTracking(), f => f.MovieId, m => m.Id, (f, m) => new { f.Id, f.MovieId, f.EmbeddedSubtitles, m.Title, m.Year })
+            .ToDictionaryAsync(x => x.Id, ct);
+        var episodes = await db.EpisodeFiles.AsNoTracking().Where(f => episodeFileIds.Contains(f.Id))
+            .Join(db.Series.AsNoTracking(), f => f.SeriesId, s => s.Id, (f, s) => new
+            {
+                f.Id, f.SeriesId, f.SeasonNumber, f.EmbeddedSubtitles, s.Title,
+                Episode = db.Episodes.Where(e => e.EpisodeFileId == f.Id).Min(e => (int?)e.EpisodeNumber),
+            })
+            .ToDictionaryAsync(x => x.Id, ct);
+
+        var byId = rows.ToDictionary(r => r.Id);
+        var items = new List<RedundantSubtitle>(ids.Count);
+        foreach (var id in ids)
+        {
+            if (!byId.TryGetValue(id, out var r)) continue;
+            if (r.MovieFileId is { } mf && movies.TryGetValue(mf, out var m))
+                items.Add(new RedundantSubtitle(r.Id, MediaType.Movie, m.MovieId, null, mf, null, m.Year > 0 ? $"{m.Title} ({m.Year})" : m.Title,
+                    r.Language, r.HearingImpaired, r.Forced, r.Path, r.Provider, r.DateAdded, EmbeddedSubtitleList.Parse(m.EmbeddedSubtitles)));
+            else if (r.EpisodeFileId is { } ef && episodes.TryGetValue(ef, out var e))
+                items.Add(new RedundantSubtitle(r.Id, MediaType.Series, null, e.SeriesId, null, ef,
+                    e.Episode is { } n ? $"{e.Title} S{e.SeasonNumber:00}E{n:00}" : $"{e.Title} S{e.SeasonNumber:00}",
+                    r.Language, r.HearingImpaired, r.Forced, r.Path, r.Provider, r.DateAdded, EmbeddedSubtitleList.Parse(e.EmbeddedSubtitles)));
+        }
+
+        return new RedundantPage(items, matches.Count);
+    }
+
+    private sealed record RedundantKey(int Id, string SortTitle, int Number1, int Number2, string Language);
 }

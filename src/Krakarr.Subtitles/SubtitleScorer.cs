@@ -106,10 +106,17 @@ public static class SubtitleScorer
         (a is QualitySource.WebDl or QualitySource.WebRip && b is QualitySource.WebDl or QualitySource.WebRip)
         || (a is QualitySource.Bluray or QualitySource.Remux && b is QualitySource.Bluray or QualitySource.Remux);
 
-    /// <summary>Scores all candidates for one language and ranks them, flagging those automatic downloads must skip.</summary>
-    public static IReadOnlyList<ScoredSubtitle> Rank(VideoInfo video, IEnumerable<SubtitleCandidate> candidates, SubtitleSettings settings)
+    /// <summary>The minimum score automatic downloads need for this kind of video.</summary>
+    public static int MinimumScore(VideoInfo video, SubtitleSettings settings) =>
+        video.MediaType == MediaType.Series ? settings.MinimumScoreEpisodes : settings.MinimumScoreMovies;
+
+    /// <summary>
+    /// Scores all candidates for one language and ranks them, flagging those automatic downloads must skip.
+    /// With <paramref name="ignoreMinimum"/>, a low score is not a rejection (the other rules still apply).
+    /// </summary>
+    public static IReadOnlyList<ScoredSubtitle> Rank(VideoInfo video, IEnumerable<SubtitleCandidate> candidates, SubtitleSettings settings, bool ignoreMinimum = false)
     {
-        var minimum = video.MediaType == MediaType.Series ? settings.MinimumScoreEpisodes : settings.MinimumScoreMovies;
+        var minimum = ignoreMinimum ? 0 : MinimumScore(video, settings);
         var preferHi = settings.HearingImpaired == HearingImpairedMode.PreferHearingImpaired;
 
         return candidates

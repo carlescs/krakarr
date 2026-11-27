@@ -161,3 +161,69 @@ public class TorznabTests
         Assert.Contains(("q", "The Office S05"), season);
     }
 }
+
+public class TorznabAlternateTitleTests
+{
+    private sealed class FakeIndexer(string caps) : HttpMessageHandler
+    {
+        public List<string> Queries { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var query = System.Web.HttpUtility.ParseQueryString(request.RequestUri!.Query);
+            if (query["t"] == "caps") return Xml(caps);
+            var q = query["q"] ?? string.Empty;
+            Queries.Add(q);
+            return Xml($"""
+                <rss version="2.0"><channel>
+                  <item><title>{q.Replace(' ', '.')}.1080p.WEB-DL-GRP</title><guid>{q}</guid><link>https://t/{Uri.EscapeDataString(q)}.torrent</link></item>
+                  <item><title>Shared.Release</title><guid>shared</guid><link>https://t/shared.torrent</link></item>
+                </channel></rss>
+                """);
+        }
+
+        private static Task<HttpResponseMessage> Xml(string body) =>
+            Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(body) });
+    }
+
+    private sealed class Factory(HttpMessageHandler handler) : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
+    }
+
+    private static readonly SearchCriteria Criteria = new()
+    {
+        Type = SearchType.Movie,
+        Query = "Spirited Away 2001",
+        ImdbId = "tt0245429",
+        AlternateTitles = [new("El viaje de Chihiro 2001", "es"), new("Le Voyage de Chihiro 2001", "fr"), new("Sen to Chihiro 2001"), new("Spirited Away 2001")],
+    };
+
+    [Fact]
+    public void Alternate_queries_only_without_id_search()
+    {
+        var spanish = new Indexer { Id = 1, Name = "ES", BaseUrl = "http://x", DefaultLanguage = "es" };
+        var byId = new IndexerCapabilities { MovieSearchAvailable = true, MovieSearchParams = new HashSet<string> { "q", "imdbid" } };
+        Assert.Empty(TorznabClient.AlternateQueries(spanish, Criteria, byId));
+        Assert.Empty(TorznabClient.AlternateQueries(spanish, Criteria with { Rss = true }, new IndexerCapabilities()));
+
+        Assert.Equal(["El viaje de Chihiro 2001", "Sen to Chihiro 2001"], TorznabClient.AlternateQueries(spanish, Criteria, new IndexerCapabilities()));
+        // English indexer: titles of unknown language; never the main query again.
+        var english = new Indexer { Id = 2, Name = "EN", BaseUrl = "http://x" };
+        Assert.Equal(["Sen to Chihiro 2001"], TorznabClient.AlternateQueries(english, Criteria, new IndexerCapabilities()));
+    }
+
+    [Fact]
+    public async Task Text_search_also_queries_alternate_titles_and_merges_results()
+    {
+        var fake = new FakeIndexer("""<caps><searching><search available="yes" supportedParams="q" /><movie-search available="yes" supportedParams="q" /></searching></caps>""");
+        var client = new TorznabClient(new Factory(fake), Microsoft.Extensions.Logging.Abstractions.NullLogger<TorznabClient>.Instance);
+        var indexer = new Indexer { Id = 991, Name = "ES", BaseUrl = $"http://alt-{Guid.NewGuid():N}", DefaultLanguage = "es" };
+
+        var releases = await client.SearchAsync(indexer, Criteria, TestContext.Current.CancellationToken);
+
+        Assert.Equal(["Spirited Away 2001", "El viaje de Chihiro 2001", "Sen to Chihiro 2001"], fake.Queries);
+        Assert.Equal(4, releases.Count); // one per query plus the release every query returned, once
+        Assert.Single(releases, r => r.Guid == "shared");
+    }
+}

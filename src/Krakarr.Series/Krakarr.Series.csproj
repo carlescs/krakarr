@@ -8,5 +8,6 @@
     <ProjectReference Include="../Krakarr.Media/Krakarr.Media.csproj" />
     <ProjectReference Include="../Krakarr.Indexers/Krakarr.Indexers.csproj" />
     <ProjectReference Include="../Krakarr.Downloads/Krakarr.Downloads.csproj" />
+    <ProjectReference Include="../Krakarr.Subtitles/Krakarr.Subtitles.csproj" />
   </ItemGroup>
 </Project>

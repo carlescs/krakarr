@@ -19,7 +19,7 @@ public class TmdbSeriesDiscoveryTests
             Requests.Add(uri);
             return uri.AbsolutePath switch
             {
-                "/3/tv/popular" => Json("""
+                "/3/tv/popular" or "/3/discover/tv" => Json("""
                     {"page":1,"total_pages":3,"results":[{"id":1396,"name":"Breaking Bad","first_air_date":"2008-01-20","poster_path":"/p.jpg","vote_average":8.9}]}
                     """),
                 "/3/find/81189" => Json("""{"tv_results":[{"id":1396,"name":"Breaking Bad"}]}"""),
@@ -40,6 +40,14 @@ public class TmdbSeriesDiscoveryTests
                      "guest_stars":[{"id":2,"name":"Second Guest","character":"Cop","order":1},{"id":1,"name":"First Guest","character":"Krazy-8","order":0,"profile_path":"/g.jpg"}],
                      "crew":[{"id":10,"name":"Adam Bernstein","job":"Director"},{"id":11,"name":"Vince Gilligan","job":"Writer"},{"id":12,"name":"Grip Person","job":"Grip"}],
                      "external_ids":{"imdb_id":"tt1054724","tvdb_id":349234}}
+                    """),
+                "/3/tv/1396/season/1" => Json("""
+                    {"season_number":1,"name":"Season 1","overview":"High school chemistry teacher.","air_date":"2008-01-20","poster_path":"/s1.jpg",
+                     "episodes":[
+                       {"episode_number":2,"name":"Cat's in the Bag...","air_date":"2008-01-27","runtime":48,"vote_average":0,"vote_count":0,
+                        "guest_stars":[{"id":1,"name":"Guest"}],"crew":[{"id":10,"name":"Director","job":"Director"}]},
+                       {"episode_number":1,"name":"Pilot","overview":"Walt is diagnosed.","air_date":"2008-01-20","runtime":58,"still_path":"/pilot.jpg",
+                        "vote_average":8.04,"vote_count":200}]}
                     """),
                 "/3/tv/1396/similar" => Json("""{"page":1,"total_pages":1,"results":[{"id":60059,"name":"Better Call Saul","first_air_date":"2015-02-08"}]}"""),
                 _ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)),
@@ -74,6 +82,19 @@ public class TmdbSeriesDiscoveryTests
         Assert.Equal(2008, show.Year);
         Assert.Equal(8.9, show.Rating);
         Assert.Equal(3, page.TotalPages);
+    }
+
+    [Fact]
+    public async Task Keyword_discovery_requires_every_keyword()
+    {
+        var fake = new FakeTmdb();
+        var page = await Discovery(fake).KeywordsAsync([818], 2, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1396, Assert.Single(page.Results).TmdbId);
+        Assert.Equal("/3/discover/tv", fake.Requests[0].AbsolutePath);
+        var query = Uri.UnescapeDataString(fake.Requests[0].Query);
+        Assert.Contains("with_keywords=818", query);
+        Assert.Contains("page=2", query);
     }
 
     [Fact]
@@ -146,5 +167,33 @@ public class TmdbSeriesDiscoveryTests
     {
         var e = await Discovery(new FakeTmdb()).EpisodeDetailsAsync(new SeriesIds(1396, null), 9, 1, TestContext.Current.CancellationToken);
         Assert.Null(e);
+    }
+
+    [Fact]
+    public async Task Season_lists_its_episodes_in_order()
+    {
+        var fake = new FakeTmdb();
+        var s = await Discovery(fake).SeasonAsync(1396, 1, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(s);
+        Assert.Equal("Season 1", s.Name);
+        Assert.Equal("High school chemistry teacher.", s.Overview);
+        Assert.Equal("https://image.tmdb.org/t/p/w342/s1.jpg", s.PosterUrl);
+        Assert.Equal([1, 2], s.Episodes.Select(e => e.EpisodeNumber));
+        var pilot = s.Episodes[0];
+        Assert.Equal("Pilot", pilot.Title);
+        Assert.Equal(new DateOnly(2008, 1, 20), pilot.AirDate);
+        Assert.Equal(58, pilot.Runtime);
+        Assert.Equal("https://image.tmdb.org/t/p/w300/pilot.jpg", pilot.StillUrl);
+        Assert.Equal(8.0, pilot.Rating);
+        Assert.Null(s.Episodes[1].Rating);
+        Assert.Null(s.Episodes[1].StillUrl);
+    }
+
+    [Fact]
+    public async Task Season_is_null_when_tmdb_has_no_such_season()
+    {
+        var s = await Discovery(new FakeTmdb()).SeasonAsync(1396, 9, TestContext.Current.CancellationToken);
+        Assert.Null(s);
     }
 }

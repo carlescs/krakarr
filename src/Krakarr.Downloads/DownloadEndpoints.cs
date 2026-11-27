@@ -68,6 +68,25 @@ public static class DownloadEndpoints
                 new ManualDownloadLink(req.MovieId, req.SeriesId), req.Category, new AddTorrentOptions(),
                 o => downloads.GrabAsync(req.Release, o, ct), ct)));
 
+        // The movie or series (and episodes) of each linked download, for naming and linking them in the UI.
+        group.MapGet("/media", (DownloadMedia media, CancellationToken ct) => media.ListAsync(ct));
+
+        // Failed imports: list them, import again, or dismiss them.
+        group.MapGet("/import-issues", (ImportIssues issues, CancellationToken ct) => issues.ListAsync(ct));
+        group.MapPost("/import-issues/{id:int}/retry", async (int id, ImportIssues issues, CancellationToken ct) =>
+        {
+            try
+            {
+                return await issues.RetryAsync(id, ct) ? Results.NoContent() : Results.NotFound();
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+        group.MapDelete("/import-issues/{id:int}", async (int id, ImportIssues issues, CancellationToken ct) =>
+            await issues.DismissAsync(id, ct) ? Results.NoContent() : Results.NotFound());
+
         group.MapPost("/{hash}/pause", (string hash, ITorrentEngine engine) => Control(() => engine.PauseAsync(hash)));
         group.MapPost("/{hash}/resume", (string hash, ITorrentEngine engine) => Control(() => engine.ResumeAsync(hash)));
         group.MapDelete("/{hash}", (string hash, bool? deleteData, ITorrentEngine engine) =>

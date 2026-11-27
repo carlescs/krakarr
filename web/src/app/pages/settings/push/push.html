@@ -1,0 +1,82 @@
+<section class="card max-w-2xl space-y-4 p-4 sm:p-5">
+  <div>
+    <h2 class="font-semibold text-white">Push notifications</h2>
+    <p class="hint">Get notified on this phone or computer, even when Krakarr is closed.</p>
+  </div>
+
+  @if (loading()) {
+    <p class="text-sm text-slate-500">Loading…</p>
+  } @else {
+    @switch (support) {
+      @case ('insecure') {
+        <p class="push-unsupported rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+          Push notifications need Krakarr to be opened over HTTPS (or on localhost).
+        </p>
+      }
+      @case ('install') {
+        <p class="push-unsupported rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+          On iPhone and iPad, add Krakarr to your Home Screen first (Share, then Add to Home Screen), open it from there and
+          come back to this page.
+        </p>
+      }
+      @case ('unsupported') {
+        <p class="push-unsupported rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+          This browser doesn't support push notifications.
+        </p>
+      }
+      @default {
+        @if (thisDevice(); as device) {
+          <div class="space-y-3">
+            <div class="flex flex-wrap items-center gap-2">
+              <p class="flex-1 text-sm text-slate-200">
+                On for this device <span class="text-slate-400">({{ device.name ?? 'this browser' }})</span>. Notify me when:
+              </p>
+              <button class="btn-secondary btn-sm" type="button" (click)="test(device)">Send test</button>
+              <button class="btn-ghost btn-sm text-rose-300" type="button" (click)="disable()" [disabled]="busy()">Turn off</button>
+            </div>
+            <ul class="space-y-2">
+              @for (t of topics(); track t.topic) {
+                <li>
+                  <label class="flex items-center gap-2 text-sm text-slate-200">
+                    <input type="checkbox" class="push-topic" [attr.data-topic]="t.topic" [checked]="has(device, t.topic)"
+                      (change)="toggle(t.topic, $any($event.target).checked)" />
+                    {{ t.label }}
+                  </label>
+                </li>
+              }
+            </ul>
+          </div>
+        } @else if (blocked()) {
+          <p class="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+            Notifications are blocked for Krakarr in this browser. Allow them in the site settings, then reload the page.
+          </p>
+        } @else {
+          <div class="flex flex-wrap items-center gap-3">
+            <p class="hint flex-1">Your browser will ask for permission. You can choose what to be told about afterwards.</p>
+            <button class="btn-primary" type="button" (click)="enable()" [disabled]="busy()">
+              {{ busy() ? 'Waiting for permission…' : 'Turn on for this device' }}
+            </button>
+          </div>
+        }
+      }
+    }
+
+    @if (otherDevices().length > 0) {
+      <div class="space-y-2 border-t border-surface-700 pt-4">
+        <h3 class="text-sm font-medium text-slate-300">Other devices</h3>
+        <ul class="divide-y divide-surface-700 rounded-lg border border-surface-700">
+          @for (d of otherDevices(); track d.id) {
+            <li class="flex flex-wrap items-center gap-2 px-3 py-2.5">
+              <div class="min-w-0 flex-1">
+                <p class="push-device truncate text-sm font-medium text-slate-100">{{ d.name ?? 'Unnamed device' }}</p>
+                <p class="text-xs text-slate-400">Added {{ d.createdAt | date: 'mediumDate' }}</p>
+              </div>
+              <button class="btn-ghost btn-sm" type="button" (click)="test(d)" [attr.aria-label]="'Send a test to ' + (d.name ?? 'device')">Test</button>
+              <button class="btn-ghost btn-sm text-rose-300" type="button" (click)="forget(d)" [attr.aria-label]="'Remove ' + (d.name ?? 'device')">Remove</button>
+            </li>
+          }
+        </ul>
+      </div>
+    }
+  }
+</section>

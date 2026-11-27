@@ -47,6 +47,11 @@ public sealed record MetadataSettings : ISettingsSection
     public string Language { get; init; } = "en-US";
     /// <summary>Country (ISO 3166-1 alpha-2) whose movie release dates the calendar prefers; empty = earliest worldwide.</summary>
     public string? ReleaseRegion { get; init; }
+    /// <summary>
+    /// Read scene names and scene season/episode numbering from TheXEM (thexem.info) when series are refreshed. Numbering
+    /// applies only with TheTVDB as <see cref="SeriesSource"/>, because XEM maps TheTVDB's order; scene names always help.
+    /// </summary>
+    public bool SceneMapping { get; init; }
 }
 
 /// <summary>Audio languages releases must have to be grabbed. Movies and series use these unless they set their own.</summary>
@@ -157,6 +162,22 @@ public sealed record AutomationSettings : ISettingsSection
     public TimeSpan? RssSyncInterval => RssSyncIntervalMinutes > 0 ? TimeSpan.FromMinutes(RssSyncIntervalMinutes) : null;
 }
 
+/// <summary>Scheduled backups of the database, data-protection keys and config files into <c>/config/Backups</c>.</summary>
+public sealed record BackupSettings : ISettingsSection
+{
+    public static string SectionKey => "backup";
+
+    /// <summary>Days between scheduled backups; 0 turns scheduled backups off ("Back up now" still works).</summary>
+    public int IntervalDays { get; init; } = 7;
+
+    /// <summary>How many backups to keep (scheduled and manual together); older ones are deleted after each backup.</summary>
+    public int RetentionCount { get; init; } = 5;
+
+    /// <summary>Time between scheduled backups, or <c>null</c> when they are off.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public TimeSpan? Interval => IntervalDays > 0 ? TimeSpan.FromDays(IntervalDays) : null;
+}
+
 public enum HearingImpairedMode
 {
     /// <summary>Use normal subtitles when available, hearing-impaired ones otherwise.</summary>
@@ -177,6 +198,13 @@ public sealed record OpenSubtitlesSettings
     public string? Password { get; init; }
 }
 
+public sealed record SubdlSettings
+{
+    public bool Enabled { get; init; } = true;
+    /// <summary>API key from subdl.com.</summary>
+    public string? ApiKey { get; init; }
+}
+
 public sealed record SubtitleSettings : ISettingsSection
 {
     public const string PasswordMask = "********";
@@ -194,17 +222,44 @@ public sealed record SubtitleSettings : ISettingsSection
     public bool IncludeAiTranslated { get; init; }
     /// <summary>Count subtitle tracks inside the video file (MKV, MP4) as present, so they are not searched again.</summary>
     public bool UseEmbeddedSubtitles { get; init; } = true;
+    /// <summary>
+    /// For this many days after a subtitle is downloaded, keep looking for a better one while its score is below
+    /// <see cref="UpgradeBelowScore"/>, and replace it when one scores higher. 0 = never upgrade automatically.
+    /// Subtitles picked by hand or found on disk are never replaced automatically.
+    /// </summary>
+    public int UpgradeDays { get; init; } = 7;
+    public int UpgradeBelowScore { get; init; } = 90;
+    public SubtitleSyncSettings Sync { get; init; } = new();
     public OpenSubtitlesSettings OpenSubtitles { get; init; } = new();
+    public SubdlSettings Subdl { get; init; } = new();
 }
 
-/// <summary>Internal bookkeeping: the language set the subtitle search last ran with.</summary>
+/// <summary>
+/// Resynchronising subtitles against the video with external tools (alass or ffsubsync, plus ffmpeg to read the
+/// audio or a subtitle track inside the video). Every tool is optional; empty paths are looked up on PATH.
+/// </summary>
+public sealed record SubtitleSyncSettings
+{
+    /// <summary>Sync newly downloaded subtitles scoring below <see cref="BelowScore"/> automatically.</summary>
+    public bool Automatic { get; init; }
+    public int BelowScore { get; init; } = 90;
+    /// <summary>A sync taking longer than this is stopped.</summary>
+    public int TimeoutSeconds { get; init; } = 300;
+    public string? AlassPath { get; init; }
+    public string? FfsubsyncPath { get; init; }
+    public string? FfmpegPath { get; init; }
+}
+
+/// <summary>Internal bookkeeping: the language set and providers the subtitle search last ran with.</summary>
 public sealed record SubtitleSearchState : ISettingsSection
 {
     public static string SectionKey => "subtitles-state";
     public string? LanguagesSignature { get; init; }
+    /// <summary>The configured providers; when it changes, files marked "not found" are searched again.</summary>
+    public string? ProvidersSignature { get; init; }
 }
 
-/// <summary>Optional Jellyfin server; when set, downloaded movies and series link to their Jellyfin page.</summary>
+/// <summary>Optional Jellyfin server; when set, downloaded movies and series link to their Jellyfin page and Jellyfin rescans changed folders.</summary>
 public sealed record JellyfinSettings : ISettingsSection
 {
     /// <summary>Placeholder returned instead of the stored API key; sending it back keeps the stored value.</summary>
@@ -217,9 +272,57 @@ public sealed record JellyfinSettings : ISettingsSection
     public string? ApiKey { get; init; }
     /// <summary>Address the browser opens, when it differs from <see cref="Url"/> (e.g. https://jellyfin.example.com).</summary>
     public string? PublicUrl { get; init; }
+    /// <summary>Ask Jellyfin to rescan a folder right after Krakarr imports, renames or deletes files in it.</summary>
+    public bool RefreshLibrary { get; init; } = true;
+    /// <summary>Translate Krakarr's library paths to the paths Jellyfin sees, when they differ.</summary>
+    public List<PathMapping> PathMappings { get; init; } = [];
 
     [System.Text.Json.Serialization.JsonIgnore]
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(ApiKey);
+}
+
+/// <summary>
+/// A library path as Krakarr sees it (<see cref="From"/>) and the same folder as a media server sees it (<see cref="To"/>),
+/// e.g. <c>/data/movies</c> → <c>/media/movies</c> or <c>D:\Movies</c>.
+/// </summary>
+public sealed record PathMapping
+{
+    public string? From { get; init; }
+    public string? To { get; init; }
+}
+
+/// <summary>Optional Emby server, asked to rescan library folders after imports, renames and deletes.</summary>
+public sealed record EmbySettings : ISettingsSection
+{
+    /// <summary>Placeholder returned instead of the stored API key; sending it back keeps the stored value.</summary>
+    public const string ApiKeyMask = "********";
+    public static string SectionKey => "emby";
+
+    /// <summary>Address Krakarr uses to reach Emby (e.g. http://emby:8096). Empty = integration off.</summary>
+    public string? Url { get; init; }
+    /// <summary>API key from Emby → Settings → Advanced → API Keys.</summary>
+    public string? ApiKey { get; init; }
+    public List<PathMapping> PathMappings { get; init; } = [];
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(ApiKey);
+}
+
+/// <summary>Optional Plex Media Server, asked to rescan the affected library section after imports, renames and deletes.</summary>
+public sealed record PlexSettings : ISettingsSection
+{
+    /// <summary>Placeholder returned instead of the stored token; sending it back keeps the stored value.</summary>
+    public const string TokenMask = "********";
+    public static string SectionKey => "plex";
+
+    /// <summary>Address Krakarr uses to reach Plex (e.g. http://plex:32400). Empty = integration off.</summary>
+    public string? Url { get; init; }
+    /// <summary>An <c>X-Plex-Token</c> of the server owner.</summary>
+    public string? Token { get; init; }
+    public List<PathMapping> PathMappings { get; init; } = [];
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(Token);
 }
 
 /// <summary>Transport of the OTLP exporter.</summary>

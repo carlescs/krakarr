@@ -17,16 +17,19 @@ public static class RoleAccess
         "/api/v1/indexers",
         "/api/v1/filesystem",
         "/api/v1/downloads/client",
-        "/api/v1/subtitles/providers",
         "/api/v1/system/status",
         "/api/v1/system/tasks",
+        "/api/v1/system/health",
+        "/api/v1/system/backups",
+        "/api/v1/system/database",
     ];
 
-    /// <summary>Readable by managers (they pick them when adding titles), changed only by admins.</summary>
+    /// <summary>Readable by managers (they pick them when adding titles or searching subtitles), changed/tested only by admins.</summary>
     private static readonly string[] AdminWrites =
     [
         "/api/v1/qualityprofiles",
         "/api/v1/rootfolders",
+        "/api/v1/subtitles/providers",
     ];
 
     /// <summary>Open to every signed-in user, any method (sign out, own password, notifications, live events).</summary>
@@ -35,6 +38,8 @@ public static class RoleAccess
         "/api/v1/auth",
         "/api/v1/health",
         "/api/v1/notifications", // each source filters by role
+        "/api/v1/push", // own devices only; topics are limited to the caller's role
+        "/api/v1/system/background-tasks", // each user sees the tasks they started
         "/hubs",
     ];
 
@@ -45,6 +50,7 @@ public static class RoleAccess
         "/api/v1/series",
         "/api/v1/calendar",
         "/api/v1/people",
+        "/api/v1/keywords",
         "/api/v1/ratings",
         "/api/v1/qualities",
         "/api/v1/qualityprofiles",

@@ -6,10 +6,12 @@ import { debounceTime, merge } from 'rxjs';
 import { Api, errorMessage } from '../../core/api';
 import { Events } from '../../core/events';
 import { AgoPipe, BytesPipe, DurationPipe, SpeedPipe } from '../../core/format';
-import { DashboardStats, DownloadState, MediaType, RootFolder } from '../../core/models';
+import { DashboardStats, DownloadState, RootFolder } from '../../core/models';
 import { Poster } from '../../shared/poster/poster';
 import { Progress } from '../../shared/progress/progress';
 import { StateBadge } from '../../shared/state-badge/state-badge';
+import { Recent } from './recent/recent';
+import { Upcoming } from './upcoming/upcoming';
 
 /** One part of a segmented bar: its share of the whole and how it is drawn in the bar and the legend. */
 export interface Segment { label: string; value: number; color: string; }
@@ -32,7 +34,7 @@ export const TOP_DOWNLOADS = 5;
 
 @Component({
   selector: 'kr-dashboard',
-  imports: [NgTemplateOutlet, RouterLink, BytesPipe, SpeedPipe, DurationPipe, AgoPipe, Poster, Progress, StateBadge],
+  imports: [NgTemplateOutlet, RouterLink, BytesPipe, SpeedPipe, DurationPipe, AgoPipe, Poster, Progress, StateBadge, Recent, Upcoming],
   templateUrl: './dashboard.html',
   styleUrl: './dashboard.scss',
 })
@@ -144,9 +146,5 @@ export class DashboardPage implements OnInit {
 
   protected resolutionLabel(resolution: number): string {
     return resolution > 0 ? `${resolution}p` : 'Unknown';
-  }
-
-  protected link(mediaType: MediaType, id: number): unknown[] {
-    return [mediaType === 'Movie' ? '/movies' : '/series', id];
   }
 }

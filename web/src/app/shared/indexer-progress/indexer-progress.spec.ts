@@ -36,6 +36,17 @@ describe('IndexerProgress', () => {
     expect(text(el)).not.toContain('Waiting');
   });
 
+  it('shows indexers skipped after failing apart from the queried ones', async () => {
+    const { el } = await render([
+      statuses[0],
+      { indexerId: 4, indexerName: 'Dead', state: 'Skipped', message: 'Skipped after failing 3 time(s) in a row (HTTP 503)' },
+    ], false);
+    expect(text(el, '[data-summary]')).toBe('1 indexer queried · 1 skipped after failing');
+    const chip = el.querySelector('[data-state="Skipped"]');
+    expect(chip?.getAttribute('title')).toContain('HTTP 503');
+    expect(el.querySelector('[data-error]')).toBeNull();
+  });
+
   it('says when there was nothing to search', async () => {
     const { el } = await render([], false);
     expect(text(el, '[data-summary]')).toBe('No enabled indexers to search');

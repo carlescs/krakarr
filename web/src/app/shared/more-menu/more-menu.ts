@@ -16,6 +16,8 @@ import { Component, ElementRef, inject, input, signal } from '@angular/core';
 })
 export class MoreMenu {
   readonly label = input('More actions');
+  /** Open above the button, for menus near the bottom of the screen (modal footers). */
+  readonly up = input(false);
   protected readonly open = signal(false);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 

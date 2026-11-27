@@ -49,6 +49,39 @@ describe('EpisodeDetailsDialog', () => {
     expect(text(root)).toContain('Adam Bernstein');
   });
 
+  it('links a downloaded episode to its Jellyfin page', async () => {
+    const { api, fixture, root } = create(mockApi({ episodeDetails: async () => null, episodeJellyfinLink: async () => ({ url: 'https://tv.example.com/web/#/details?id=ep' }) }));
+    await settle(fixture);
+
+    expect(api.episodeJellyfinLink).toHaveBeenCalledWith(5, 7);
+    expect(root.querySelector('a[data-jellyfin]')?.getAttribute('href')).toBe('https://tv.example.com/web/#/details?id=ep');
+  });
+
+  it('does not look up an episode without a file on Jellyfin', async () => {
+    const { api, fixture, root } = create(mockApi({ episodeDetails: async () => null, episodeJellyfinLink: async () => null }));
+    fixture.componentRef.setInput('episode', { ...episode, episodeFile: undefined });
+    await settle(fixture);
+
+    expect(api.episodeJellyfinLink).not.toHaveBeenCalled();
+    expect(root.querySelector('a[data-jellyfin]')).toBeNull();
+  });
+
+  it("shows the media info read from the episode's file", async () => {
+    const { api, fixture, root } = create(mockApi({
+      episodeDetails: async () => null,
+      episodeFileMediaInfo: async () => ({
+        durationSeconds: 2880, videoCodec: 'AVC', width: 1920, height: 1080, resolution: '1080p', bitDepth: 8, dynamicRange: null,
+        audio: [{ codec: 'AC3', channels: '5.1', language: 'en', languageName: 'English' }], warnings: [],
+      }),
+    }));
+    await settle(fixture);
+
+    expect(api.episodeFileMediaInfo).toHaveBeenCalledWith(5, 70);
+    expect(text(root, '[data-video]')).toBe('AVC · 1920×1080 · 1080p · 8-bit');
+    expect(text(root, '[data-audio]')).toBe('AC3 5.1 · English');
+    expect(text(root, '[data-duration]')).toBe('48 min');
+  });
+
   it('still shows the library data when TMDB has no such episode', async () => {
     const { fixture, root } = create(mockApi({ episodeDetails: async () => null }));
     await settle(fixture);
@@ -64,13 +97,22 @@ describe('EpisodeDetailsDialog', () => {
     await settle(fixture);
     const interactive = vi.fn();
     fixture.componentInstance.interactive.subscribe(interactive);
+    const openMenu = async () => { (root.querySelector('kr-more-menu button') as HTMLButtonElement).click(); await settle(fixture); };
+    await openMenu();
     button(root, 'Interactive search').click();
+    await openMenu();
     expect(interactive).toHaveBeenCalled();
     expect(button(root, 'Subtitles')).toBeTruthy();
+    const deleteFile = vi.fn();
+    fixture.componentInstance.deleteFile.subscribe(deleteFile);
+    button(root, 'Delete file').click();
+    expect(deleteFile).toHaveBeenCalled();
 
     TestBed.resetTestingModule();
     const user = create(undefined, 'User');
     await settle(user.fixture);
-    expect(() => button(user.root, 'Automatic search')).toThrow();
+    expect(() => button(user.root, 'Search')).toThrow();
+    expect(user.root.querySelector('kr-more-menu')).toBeNull();
+    expect(() => button(user.root, 'Delete file')).toThrow();
   });
 });

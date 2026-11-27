@@ -58,7 +58,7 @@
     </div>
   </div>
 
-  <div class="grid gap-6 xl:grid-cols-3">
+  <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
     <!-- Downloads (live) -->
     <section class="card overflow-hidden xl:col-span-2" data-section="downloads">
       <div class="flex items-center justify-between border-b border-surface-700 px-4 py-3 sm:px-5">
@@ -161,10 +161,13 @@
       }
     </section>
 
+    <!-- Next episodes and movie releases -->
+    <kr-upcoming class="xl:col-span-3" />
+
     <!-- Library -->
     <section class="card overflow-hidden xl:col-span-2" data-section="library">
       <h2 class="border-b border-surface-700 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-slate-400 sm:px-5">Library</h2>
-      <div class="grid gap-6 px-4 py-4 sm:px-5 md:grid-cols-2">
+      <div class="grid grid-cols-1 gap-6 px-4 py-4 sm:px-5 md:grid-cols-2">
         <div class="space-y-5">
           <div>
             <div class="mb-2 text-sm text-slate-300">Movies</div>
@@ -266,27 +269,8 @@
       </div>
     </section>
 
-    <!-- Recently imported -->
-    <section class="card overflow-hidden" data-section="recent">
-      <h2 class="border-b border-surface-700 px-4 py-3 text-sm font-semibold uppercase tracking-wide text-slate-400 sm:px-5">Recently imported</h2>
-      <div class="px-4 py-4 sm:px-5">
-        @if (s.recentlyImported.length === 0) {
-          <p class="text-sm text-slate-500">Nothing imported yet.</p>
-        } @else {
-          <ul class="grid grid-cols-3 gap-3" data-list="recently-imported">
-            @for (r of s.recentlyImported; track r.mediaType + r.id) {
-              <li>
-                <a [routerLink]="link(r.mediaType, r.id)" class="group block" [title]="r.title + ' (' + r.year + ')'">
-                  <kr-poster [url]="r.posterUrl" [title]="r.title" />
-                  <div class="mt-1 truncate text-xs text-slate-300 group-hover:text-accent-300">{{ r.title }}</div>
-                  <div class="text-[11px] text-slate-500">{{ r.date | ago }}</div>
-                </a>
-              </li>
-            }
-          </ul>
-        }
-      </div>
-    </section>
+    <!-- Recently imported or added, one tab each -->
+    <kr-recent [imported]="s.recentlyImported" [added]="s.recentlyAdded" />
   </div>
 } @else if (!error()) {
   <p class="text-sm text-slate-500">Loading…</p>

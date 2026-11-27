@@ -27,6 +27,14 @@ export interface Indexer {
   defaultLanguage?: string | null;
 }
 
+/** An indexer that failed its last query; searches skip it until `disabledUntil`. */
+export interface IndexerStatus {
+  indexerId: number; indexerName: string; failures: number; disabledUntil: string; lastFailure: string; lastError: string;
+}
+
+/** An enabled indexer that manual search can target. */
+export interface SearchIndexer { id: number; name: string; }
+
 export interface IndexerCapabilities {
   searchAvailable: boolean; movieSearchAvailable: boolean; movieSearchParams: string[];
   tvSearchAvailable: boolean; tvSearchParams: string[]; categories: IndexerCategory[];
@@ -40,7 +48,8 @@ export interface ProwlarrListResult { success: boolean; message?: string | null;
 export interface ProwlarrImportResult { added: number; updated: number; }
 export interface IndexerError { indexerId: number; indexerName: string; message: string; }
 
-export type IndexerQueryState = 'Pending' | 'Done' | 'Failed';
+/** `Skipped`: not queried because it keeps failing (it backs off; see the Indexers page). */
+export type IndexerQueryState = 'Pending' | 'Done' | 'Failed' | 'Skipped';
 /** How one indexer's query in a search stands: `releases` once done, `message` when it failed, `seconds` once finished. */
 export interface IndexerQueryStatus {
   indexerId: number; indexerName: string; state: IndexerQueryState; releases?: number | null; message?: string | null; seconds?: number | null;
@@ -65,7 +74,16 @@ export interface ReleaseInfo {
 export interface SearchResult { release: ReleaseInfo; quality: string; parsedTitle?: string; parsedYear?: number; }
 export interface ReleaseDecision { release: ReleaseInfo; quality: string; qualityWeight: number; approved: boolean; rejections: string[]; languages: string[]; }
 
-export interface MovieFile { id: number; relativePath: string; size: number; quality: string; releaseGroup?: string; dateAdded: string; }
+/** What the file's own headers say (GET movie, GET series/{id}/episodefiles/{fileId}/mediainfo). */
+export interface MediaInfo {
+  durationSeconds?: number | null; videoCodec?: string | null; width: number; height: number; resolution?: string | null;
+  bitDepth?: number | null; dynamicRange?: string | null;
+  audio: { codec?: string | null; channels?: string | null; language?: string | null; languageName?: string | null }[];
+  /** Too short for the runtime, mislabelled resolution, audio in none of the wanted languages. */
+  warnings: string[];
+}
+
+export interface MovieFile { id: number; relativePath: string; size: number; quality: string; releaseGroup?: string; dateAdded: string; mediaInfo?: MediaInfo | null; }
 
 export interface ReleaseDateRef { date: string; country: string; }
 /** A release type's date in the configured region and the earliest worldwide. */
@@ -87,10 +105,26 @@ export interface MovieListItem {
   id: number; title: string; year: number; posterUrl?: string | null; monitored: boolean; hasFile: boolean;
   quality?: string | null; downloadProgress?: number | null; collectionId?: number | null;
 }
+/** Summary of one collection section (or "Other movies") matching the current movie list filter. */
+export interface MovieCollectionGroup { key: string; collectionId: number | null; title: string; count: number; downloaded: number; }
+export type MovieFilter = 'all' | 'following' | 'missing' | 'downloading' | 'downloaded' | 'unmonitored';
+export type MovieGrouping = 'none' | 'collection';
+export type MovieSortKey = 'title' | 'year' | 'status';
+export interface MovieListQuery {
+  page?: number; pageSize?: number; q?: string; filter?: MovieFilter; sort?: MovieSortKey; desc?: boolean; groupBy?: MovieGrouping;
+}
+/** One page of the movie library list (GET /movies). */
+export interface MovieListPage {
+  items: MovieListItem[]; page: number; pageSize: number; total: number; libraryTotal: number; groups?: MovieCollectionGroup[] | null;
+}
 /** Outcome of a bulk action: how many titles it applied to, and why it couldn't for the rest. */
 export interface BulkResult { affected: number; errors: string[]; }
 /** A TMDB collection ("The Lord of the Rings Collection") with at least one movie in the library. */
 export interface MovieCollection { id: number; tmdbId: number; name: string; posterUrl?: string | null; }
+/** Collection card (GET /movies/collections): its library movies matching the list filter, and how many are downloaded. */
+export interface MovieCollectionSummary extends MovieCollection { count: number; downloaded: number; }
+/** A collection with its library movies in release order (GET /movies/collections/{id}). */
+export interface MovieCollectionDetails extends MovieCollection { fanartUrl?: string | null; movies: MovieListItem[]; }
 
 export type CalendarEntryKind = 'Movie' | 'Episode';
 export interface CalendarEntry {
@@ -122,9 +156,15 @@ export interface CrewMember { tmdbId: number; name: string; jobs: string; profil
 export interface Credits { cast: CastMember[]; crew: CrewMember[]; }
 /** Any TMDB movie, in the library or not. */
 export interface MovieDetails extends Credits {
-  movie: MovieLookup; tagline?: string; releaseDate?: string; genres: string[];
+  movie: MovieLookup; tagline?: string; releaseDate?: string;
+  releases: MovieRelease[]; releaseRegion?: string | null;
+  genres: string[];
 }
 export interface SeasonSummary { seasonNumber: number; name?: string; episodeCount: number; airDate?: string; posterUrl?: string; }
+/** One episode of a TMDB season listing (shows outside the library). */
+export interface SeasonEpisode { episodeNumber: number; title?: string; overview?: string; airDate?: string; runtime: number; stillUrl?: string; rating?: number; }
+/** A TMDB season with its episodes. */
+export interface SeasonDetails { seasonNumber: number; name?: string; overview?: string; airDate?: string; posterUrl?: string; episodes: SeasonEpisode[]; }
 /** Any TMDB show, in the library or not. */
 export interface SeriesDetails extends Credits {
   show: SeriesLookup; fanartUrl?: string; imdbId?: string; tagline?: string; firstAired?: string; lastAired?: string;
@@ -133,6 +173,11 @@ export interface SeriesDetails extends Credits {
 export interface PersonCredit {
   kind: 'movie' | 'series'; tmdbId: number; title: string; year: number; date?: string; overview?: string; posterUrl?: string; rating?: number;
   department: string; role?: string; movieId?: number; seriesId?: number;
+}
+/** A TMDB keyword ("time travel", "heist"…) that movies and shows are tagged with. */
+export interface KeywordLookup { id: number; name: string; }
+export interface PersonLookup {
+  tmdbId: number; name: string; profileUrl?: string; knownForDepartment?: string; knownFor: string[];
 }
 export interface PersonDetails {
   tmdbId: number; name: string; biography?: string; birthday?: string; deathday?: string; placeOfBirth?: string; profileUrl?: string;
@@ -156,12 +201,23 @@ export interface Series {
 /** Row of the series grid (GET /series). */
 export interface SeriesListItem {
   id: number; title: string; year: number; posterUrl?: string | null; status: SeriesStatus; monitored: boolean;
-  episodeCount: number; episodeFileCount: number; nextAiring?: string | null; downloadingCount: number;
+  episodeCount: number; episodeFileCount: number; nextAiring?: string | null; downloadingCount: number; network?: string | null;
+}
+export type SeriesFilter = 'all' | 'following' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
+export type SeriesSortKey = 'title' | 'year' | 'network' | 'status' | 'episodes' | 'nextAiring';
+export interface SeriesListQuery {
+  page?: number; pageSize?: number; q?: string; filter?: SeriesFilter; sort?: SeriesSortKey; desc?: boolean;
+}
+/** One page of the series library list (GET /series). */
+export interface SeriesListPage {
+  items: SeriesListItem[]; page: number; pageSize: number; total: number; libraryTotal: number;
 }
 export interface EpisodeFile { id: number; relativePath: string; size: number; quality: string; releaseGroup?: string; dateAdded: string; }
 export interface Episode {
   id: number; seasonNumber: number; episodeNumber: number; absoluteNumber?: number; title?: string; overview?: string; airDate?: string; runtime: number;
   monitored: boolean; hasAired: boolean; episodeFile?: EpisodeFile; downloadProgress?: number;
+  /** Info hash of the torrent downloading this episode (links to the downloads page). */
+  downloadHash?: string;
 }
 /** TMDB's page for one library episode: still, score, guest stars and crew. */
 export interface EpisodeDetails {
@@ -183,6 +239,18 @@ export interface TorrentStatus {
   /** The client that owns the torrent. */
   client: DownloadClientName;
 }
+/** The library item a download belongs to (`GET downloads/media`), keyed by the download id. */
+export interface DownloadMediaInfo {
+  id: number; movieId?: number; seriesId?: number; title: string; year?: number;
+  /** Episode codes the download should contain, e.g. "S01E01–E03" (series only). */
+  episodes?: string;
+}
+/** A download whose automatic import failed. */
+export interface ImportIssue {
+  id: number; infoHash: string; name: string; client: DownloadClientName; movieId?: number; seriesId?: number; message: string; completedAt?: string;
+  /** False once the torrent was removed from its download client. */
+  inClient: boolean;
+}
 /** `Download.Client` values on the server. */
 export type DownloadClientName = 'embedded' | 'qbittorrent';
 
@@ -190,6 +258,16 @@ export interface HistoryItem {
   id: number; eventType: HistoryEventType; date: string; sourceTitle: string; movieId?: number; seriesId?: number;
   indexer?: string; message?: string; quality?: string; language?: string;
 }
+
+export type HealthSeverity = 'Warning' | 'Error';
+/** A problem a health check found; `since` is when it appeared (with this severity). */
+export interface HealthIssue {
+  id: string; check: string; checkName: string; severity: HealthSeverity; message: string; link?: string | null; since: string;
+  /** How many things the problem sums up (e.g. failing indexers). */
+  count?: number;
+}
+/** The latest health run; `checkedAt` is null until the first one. */
+export interface HealthReport { checkedAt: string | null; issues: HealthIssue[]; }
 
 export interface ScheduledTaskInfo {
   id: string; name: string; intervalSeconds: number | null; lastRun: string | null; lastDurationSeconds: number | null;
@@ -208,9 +286,13 @@ export interface MediaManagementSettings {
 export type SeriesMetadataSource = 'Tmdb' | 'Tvdb';
 /** Scores from OMDb; each is null when the source has none. */
 export interface TitleRatings { imdb: number | null; imdbVotes: number | null; rottenTomatoes: number | null; metacritic: number | null; rottenTomatoesUrl: string | null; }
-export interface MetadataSettings { tmdbApiKey?: string; seriesSource: SeriesMetadataSource; tvdbApiKey?: string; tvdbPin?: string; omdbApiKey?: string; language: string; releaseRegion?: string | null; }
-export interface JellyfinSettings { url?: string | null; apiKey?: string | null; publicUrl?: string | null; }
-export interface JellyfinTestResult { success: boolean; serverName?: string; version?: string; message?: string; }
+export interface MetadataSettings { tmdbApiKey?: string; seriesSource: SeriesMetadataSource; tvdbApiKey?: string; tvdbPin?: string; omdbApiKey?: string; language: string; releaseRegion?: string | null; sceneMapping?: boolean; }
+/** A library path as Krakarr sees it (from) and as the media server sees it (to). */
+export interface PathMapping { from: string; to: string; }
+export interface JellyfinSettings { url?: string | null; apiKey?: string | null; publicUrl?: string | null; refreshLibrary?: boolean; pathMappings?: PathMapping[]; }
+export interface EmbySettings { url?: string | null; apiKey?: string | null; pathMappings?: PathMapping[]; }
+export interface PlexSettings { url?: string | null; token?: string | null; pathMappings?: PathMapping[]; }
+export interface MediaServerTestResult { success: boolean; serverName?: string; version?: string; message?: string; }
 export type OtlpProtocol = 'Grpc' | 'HttpProtobuf';
 export interface TelemetrySettings {
   enabled: boolean; endpoint?: string | null; protocol: OtlpProtocol; headers?: string | null; serviceName: string; resourceAttributes?: string | null;
@@ -236,6 +318,39 @@ export interface DownloadClientSettings {
 }
 export interface AutomationSettings { rssSyncIntervalMinutes: number; searchOnAdd: boolean; }
 
+/** Scheduled backups into /config/Backups. `intervalDays` 0 turns scheduled backups off. */
+export interface BackupSettings { intervalDays: number; retentionCount: number; }
+export type BackupType = 'Scheduled' | 'Manual';
+export interface BackupInfo { name: string; type: BackupType; size: number; created: string; }
+export interface RestoreOutcome { succeeded: boolean; message: string; at: string; }
+export interface BackupList { backups: BackupInfo[]; restorePending: boolean; lastRestore: RestoreOutcome | null; provider: string; }
+
+/** Switching Krakarr to another database: the tables are copied on the next start. */
+export type DatabaseProvider = 'sqlite' | 'postgres';
+/** Where to switch to: server fields for PostgreSQL, a file name in the config folder for SQLite. */
+export interface DatabaseTargetRequest {
+  provider: DatabaseProvider; host?: string; port?: number | null; database?: string; username?: string; password?: string; file?: string;
+  /** Delete the current SQLite file once the data has been copied (only when leaving SQLite). */
+  deleteSource?: boolean;
+}
+export interface DatabaseTestResult { ok: boolean; empty: boolean; message: string; }
+/** An environment variable to set by hand when environment variables choose the database. */
+export interface EnvironmentSetting { name: string; value: string; }
+export interface TableCopy { table: string; rows: number; truncated: number; }
+export interface DatabaseSwitchOutcome { succeeded: boolean; message: string; at: string; tables: TableCopy[]; }
+export interface DatabaseInfo {
+  provider: DatabaseProvider; location: string;
+  /** Database settings fixed by environment variables: Krakarr can't change them itself. */
+  pinned: string[];
+  /** `deleteSource`: the SQLite file deleted after the copy, or null to keep it. */
+  pending: { provider: DatabaseProvider; location: string; created: string; deleteSource: string | null } | null;
+  pendingEnvironment: EnvironmentSetting[] | null;
+  lastSwitch: DatabaseSwitchOutcome | null;
+  /** The SQLite file Krakarr used before a successful switch, while it still exists. */
+  oldDatabase: { file: string; size: number; switchedAt: string } | null;
+}
+export interface DatabaseSwitchStaged { message: string; environment: EnvironmentSetting[]; }
+
 export interface SystemStatus {
   version: string; runtime: string; os: string; isDocker: boolean; configDirectory: string; downloadDirectory: string;
   databaseProvider: string; environmentName: string; startTime: string;
@@ -247,8 +362,18 @@ export type HearingImpairedMode = 'PreferNormal' | 'PreferHearingImpaired' | 'Ex
 export interface SubtitleSettings {
   enabled: boolean; languages: string[]; hearingImpaired: HearingImpairedMode; minimumScoreMovies: number; minimumScoreEpisodes: number;
   searchIntervalHours: number; includeAiTranslated: boolean; useEmbeddedSubtitles: boolean;
+  /** Days after download during which subtitles scoring below upgradeBelowScore are replaced by better ones (0 = off). */
+  upgradeDays: number; upgradeBelowScore: number;
+  sync: SubtitleSyncSettings;
   openSubtitles: { enabled: boolean; apiKey?: string; username?: string; password?: string };
+  subdl: { enabled: boolean; apiKey?: string };
 }
+/** Resyncing subtitles with alass or ffsubsync (and ffmpeg); empty paths are looked up on PATH. */
+export interface SubtitleSyncSettings {
+  automatic: boolean; belowScore: number; timeoutSeconds: number; alassPath?: string | null; ffsubsyncPath?: string | null; ffmpegPath?: string | null;
+}
+/** Which sync tools the server found. */
+export interface SubtitleSyncTools { alass: boolean; ffsubsync: boolean; ffmpeg: boolean; }
 export interface Language { code: string; name: string; }
 /** Wanted audio languages, most preferred first; empty = any language. */
 export interface LanguageSettings { preferred: string[]; }
@@ -257,17 +382,47 @@ export interface SubtitleFile {
   id: number; movieFileId?: number; episodeFileId?: number; language: string; languageName: string; hearingImpaired: boolean; forced: boolean;
   /** provider 'embedded' = a track inside the video file (id 0, cannot be deleted). */
   fileName: string; provider: string; score?: number; release?: string; dateAdded: string;
+  /** Picked by hand: automatic upgrades leave it alone. */
+  manual?: boolean;
+  /** When it was last synced or shifted, and how that went (also set when a sync failed). */
+  syncedAt?: string | null; syncNote?: string | null;
 }
 export interface SubtitleCandidate {
   provider: string; payload: string; language: string; releaseNames: string[]; fileName?: string; hearingImpaired: boolean; forced: boolean;
   hashMatch: boolean; aiTranslated: boolean; trustedUploader: boolean; downloads: number;
 }
-export interface ScoredSubtitle { candidate: SubtitleCandidate; score: number; matches: string[]; rejections: string[]; acceptable: boolean; }
+export interface ScoredSubtitle {
+  candidate: SubtitleCandidate; score: number; matches: string[]; rejections: string[]; acceptable: boolean;
+  /** Interactive search only: the top pick for its language even below the minimum score (what "best match" offers). */
+  best?: boolean;
+}
+/** Interactive search results, best first. */
+export interface SubtitleCandidates { label: string; results: ScoredSubtitle[]; errors: string[]; minimumScore?: number; }
+/** Best subtitle per missing language, even below `minimumScore`; nothing is downloaded until the user confirms. */
+export interface BestSubtitleMatches { label: string; missingLanguages: string[]; minimumScore: number; results: ScoredSubtitle[]; errors: string[]; }
 export interface WantedSubtitle {
   mediaType: 'Movie' | 'Series'; movieId?: number; seriesId?: number; movieFileId?: number; episodeFileId?: number; label: string; missingLanguages: string[];
+  /** When every provider came up empty (movie files only); the scheduled search skips the file until it is retried. */
+  notFound?: string | null;
 }
+export type WantedSubtitleSortKey = 'type' | 'title' | 'missing';
+/** Filter and sort of the wanted list. notFound: true = only files marked "not found", false = only files still searched automatically. */
+export type WantedSubtitleQuery = { notFound?: boolean; sort?: WantedSubtitleSortKey; desc?: boolean; };
+/** A page of the wanted list: `total` counts the filter, `searching` and `notFound` every wanted file, `libraryTotal` both. */
+export interface WantedSubtitlePage {
+  items: WantedSubtitle[]; page: number; pageSize: number; total: number; libraryTotal: number; searching: number; notFound: number;
+}
+export interface EmbeddedSubtitle { language: string; languageName: string; hearingImpaired: boolean; forced: boolean; }
+/** An external subtitle in a language the video already has as an embedded track (same forced flag). */
+export interface RedundantSubtitle {
+  id: number; mediaType: 'Movie' | 'Series'; movieId?: number | null; seriesId?: number | null; movieFileId?: number | null; episodeFileId?: number | null;
+  label: string; language: string; languageName: string; hearingImpaired: boolean; forced: boolean; fileName: string; provider: string; dateAdded: string;
+  embedded: EmbeddedSubtitle[];
+}
+export interface RedundantSubtitlePage { items: RedundantSubtitle[]; offset: number; limit: number; total: number; }
 /** The subtitle languages Krakarr looks for (Settings › Subtitles). */
 export interface WantedSubtitleLanguages { enabled: boolean; useEmbeddedSubtitles: boolean; languages: string[]; }
+export interface SubtitleProvider { name: string; displayName: string; configured: boolean; }
 export interface SubtitleFileRef { movieFileId?: number; episodeFileId?: number; }
 
 export type MatchConfidence = 'None' | 'Low' | 'Medium' | 'High' | 'Exact';
@@ -323,6 +478,21 @@ export interface AppNotification {
   id: string; kind: string; title: string; message?: string | null; link: string; count: number; severity: NotificationSeverity; date?: string | null;
 }
 
+export type BackgroundTaskState = 'Waiting' | 'Running' | 'Cancelling' | 'Succeeded' | 'Failed' | 'Cancelled';
+/** Long-running work (e.g. a subtitle sync) in the tasks menu of the top bar, seen by whoever started it (automatic work: staff). */
+export interface BackgroundTask {
+  id: string; kind: string; title: string; link?: string | null; state: BackgroundTaskState;
+  /** What it's doing now while running; the outcome once finished. */
+  message?: string | null;
+  /** Progress of the current stage (0 to 100), null when it can't tell. */
+  percent?: number | null;
+  /** Estimated time left in the current stage, null until there is enough progress to tell. */
+  remainingSeconds?: number | null;
+  queued: string; started?: string | null; finished?: string | null; canCancel: boolean;
+}
+/** Live progress of a background task (the `backgroundTaskProgress` event). */
+export interface BackgroundTaskProgress { id: string; percent?: number | null; message?: string | null; remainingSeconds?: number | null; }
+
 /** A library title the signed-in user follows (shows in "My titles"). */
 export interface Subscription { mediaType: MediaType; libraryId: number; title: string; year: number; posterUrl?: string | null; subscribedAt: string; }
 /** Whether the caller follows a title; `subscribers` lists everyone who does, for staff only. */
@@ -346,5 +516,16 @@ export interface DashboardStats {
   };
   /** Last 7 days, plus downloads whose import failed. */
   activity: { grabbed: number; imported: number; failed: number; subtitles: number; importIssues: number };
-  recentlyImported: { mediaType: MediaType; id: number; title: string; year: number; posterUrl?: string; date: string }[];
+  recentlyImported: DashboardRecent[];
+  recentlyAdded: DashboardRecent[];
 }
+
+/** A movie or series on the dashboard, with the date it was imported or added. */
+export interface DashboardRecent { mediaType: MediaType; id: number; title: string; year: number; posterUrl?: string; date: string }
+
+/** Where an alternate title comes from: the metadata source, the user, or TheXEM scene names. */
+export type AlternateTitleSource = 'Metadata' | 'User' | 'Scene';
+/** Another name of a movie or series that releases may use. `language`: a language code, or null when unknown. */
+export interface AlternateTitle { id: number; title: string; language: string | null; source: AlternateTitleSource; }
+/** An alternate title as the user enters it. */
+export interface AlternateTitleInput { title: string; language: string | null; }

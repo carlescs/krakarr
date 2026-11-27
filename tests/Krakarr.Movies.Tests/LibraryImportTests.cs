@@ -157,4 +157,120 @@ public sealed class MovieLibraryImportTests : IAsyncLifetime
         Assert.Equal(MatchConfidence.Exact, match.Confidence);
         Assert.Equal(603, match.Movie!.TmdbId);
     }
+
+    [Fact]
+    public async Task Refresh_rescans_disk_for_added_modified_and_deleted_files()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        // 1. Add movie when its folder has no video file yet, then place a video file and sidecar subtitle on disk and refresh.
+        var folder = Path.Combine(_root.FullName, "The Matrix (1999)");
+        var originalFile = Path.Combine(folder, "The.Matrix.1999.1080p.BluRay.x264-SPARKS.mkv");
+        File.Delete(originalFile);
+
+        var added = await With(sp => sp.GetRequiredService<MovieService>().AddAsync(new AddMovieRequest(603, 1, _root.FullName), ct));
+        Assert.Null(added.MovieFile);
+
+        Write("The Matrix (1999)/The.Matrix.1999.720p.WEB-DL.x264-GRP.mkv", 2500);
+        Write("The Matrix (1999)/The.Matrix.1999.720p.WEB-DL.x264-GRP.en.srt", 50);
+
+        await With(async sp =>
+        {
+            var db = sp.GetRequiredService<KrakarrDbContext>();
+            var m = await db.Movies.Include(x => x.MovieFile).SingleAsync(x => x.Id == added.Id, ct);
+            await sp.GetRequiredService<MovieService>().RefreshAsync(m, ct);
+            return 0;
+        });
+
+        await With(async sp =>
+        {
+            var db = sp.GetRequiredService<KrakarrDbContext>();
+            var m = await db.Movies.Include(x => x.MovieFile).SingleAsync(x => x.Id == added.Id, ct);
+            Assert.NotNull(m.MovieFile);
+            Assert.Equal("The.Matrix.1999.720p.WEB-DL.x264-GRP.mkv", m.MovieFile.RelativePath);
+            Assert.Equal(2500, m.MovieFile.Size);
+            Assert.Equal(Qualities.WebDl720.Id, m.MovieFile.QualityId);
+            Assert.Equal("GRP", m.MovieFile.ReleaseGroup);
+            var subs = await db.SubtitleFiles.Where(s => s.MovieFileId == m.MovieFile.Id).ToListAsync(ct);
+            Assert.Single(subs, s => s.Language == "en" && s.Provider == "disk");
+            Assert.Contains(await db.History.Where(h => h.MovieId == m.Id).ToListAsync(ct),
+                h => h.EventType == HistoryEventType.Imported && h.SourceTitle == "The.Matrix.1999.720p.WEB-DL.x264-GRP.mkv");
+            return 0;
+        });
+
+        // 2. Replace the video file on disk with a 2160p Remux and remove the old 720p file + sidecar subtitle.
+        File.Delete(Path.Combine(folder, "The.Matrix.1999.720p.WEB-DL.x264-GRP.mkv"));
+        File.Delete(Path.Combine(folder, "The.Matrix.1999.720p.WEB-DL.x264-GRP.en.srt"));
+        Write("The Matrix (1999)/The.Matrix.1999.2160p.UHD.BluRay.REMUX.HEVC-FRAMESTOR.mkv", 9000);
+        Write("The Matrix (1999)/The.Matrix.1999.2160p.UHD.BluRay.REMUX.HEVC-FRAMESTOR.fr.forced.srt", 60);
+
+        await With(async sp =>
+        {
+            var db = sp.GetRequiredService<KrakarrDbContext>();
+            var m = await db.Movies.Include(x => x.MovieFile).SingleAsync(x => x.Id == added.Id, ct);
+            await sp.GetRequiredService<MovieService>().RefreshAsync(m, ct);
+            return 0;
+        });
+
+        await With(async sp =>
+        {
+            var db = sp.GetRequiredService<KrakarrDbContext>();
+            var m = await db.Movies.Include(x => x.MovieFile).SingleAsync(x => x.Id == added.Id, ct);
+            Assert.NotNull(m.MovieFile);
+            Assert.Equal("The.Matrix.1999.2160p.UHD.BluRay.REMUX.HEVC-FRAMESTOR.mkv", m.MovieFile.RelativePath);
+            Assert.Equal(9000, m.MovieFile.Size);
+            Assert.Equal(Qualities.Remux2160.Id, m.MovieFile.QualityId);
+            Assert.Equal("FRAMESTOR", m.MovieFile.ReleaseGroup);
+            var subs = await db.SubtitleFiles.Where(s => s.MovieFileId == m.MovieFile.Id).ToListAsync(ct);
+            var sub = Assert.Single(subs);
+            Assert.Equal("fr", sub.Language);
+            Assert.True(sub.Forced);
+            var history = await db.History.Where(h => h.MovieId == m.Id).ToListAsync(ct);
+            Assert.Contains(history, h => h.EventType == HistoryEventType.FileDeleted && h.SourceTitle == "The.Matrix.1999.720p.WEB-DL.x264-GRP.mkv");
+            Assert.Contains(history, h => h.EventType == HistoryEventType.Imported && h.SourceTitle == "The.Matrix.1999.2160p.UHD.BluRay.REMUX.HEVC-FRAMESTOR.mkv");
+            return 0;
+        });
+
+        // 3. Modify the file in-place (different byte size) and delete the sidecar subtitle on disk.
+        Write("The Matrix (1999)/The.Matrix.1999.2160p.UHD.BluRay.REMUX.HEVC-FRAMESTOR.mkv", 9500);
+        File.Delete(Path.Combine(folder, "The.Matrix.1999.2160p.UHD.BluRay.REMUX.HEVC-FRAMESTOR.fr.forced.srt"));
+
+        await With(async sp =>
+        {
+            var db = sp.GetRequiredService<KrakarrDbContext>();
+            var m = await db.Movies.Include(x => x.MovieFile).SingleAsync(x => x.Id == added.Id, ct);
+            await sp.GetRequiredService<MovieService>().RefreshAsync(m, ct);
+            return 0;
+        });
+
+        await With(async sp =>
+        {
+            var db = sp.GetRequiredService<KrakarrDbContext>();
+            var m = await db.Movies.Include(x => x.MovieFile).SingleAsync(x => x.Id == added.Id, ct);
+            Assert.Equal(9500, m.MovieFile!.Size);
+            Assert.Empty(await db.SubtitleFiles.Where(s => s.MovieFileId == m.MovieFile.Id).ToListAsync(ct));
+            return 0;
+        });
+
+        // 4. Delete the video file from disk and refresh: MovieFile is removed and FileDeleted history is recorded.
+        File.Delete(Path.Combine(folder, "The.Matrix.1999.2160p.UHD.BluRay.REMUX.HEVC-FRAMESTOR.mkv"));
+
+        await With(async sp =>
+        {
+            var db = sp.GetRequiredService<KrakarrDbContext>();
+            var m = await db.Movies.Include(x => x.MovieFile).SingleAsync(x => x.Id == added.Id, ct);
+            await sp.GetRequiredService<MovieService>().RefreshAsync(m, ct);
+            return 0;
+        });
+
+        await With(async sp =>
+        {
+            var db = sp.GetRequiredService<KrakarrDbContext>();
+            var m = await db.Movies.Include(x => x.MovieFile).SingleAsync(x => x.Id == added.Id, ct);
+            Assert.Null(m.MovieFile);
+            Assert.Equal(0, await db.MovieFiles.CountAsync(ct));
+            var history = await db.History.Where(h => h.MovieId == m.Id && h.EventType == HistoryEventType.FileDeleted).ToListAsync(ct);
+            Assert.Equal(2, history.Count);
+            return 0;
+        });
+    }
 }

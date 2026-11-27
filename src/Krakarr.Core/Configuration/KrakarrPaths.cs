@@ -9,6 +9,17 @@ public sealed class KrakarrPaths
     public string TorrentCacheDirectory => Path.Combine(ConfigDirectory, "torrent-cache");
     public string TorrentFilesDirectory => Path.Combine(ConfigDirectory, "torrents");
     public string LogsDirectory => Path.Combine(ConfigDirectory, "logs");
+    public string BackupsDirectory => Path.Combine(ConfigDirectory, "Backups");
+    /// <summary>ASP.NET Core data-protection keys (cookies, protected secrets).</summary>
+    public string KeysDirectory => Path.Combine(ConfigDirectory, "keys");
+    /// <summary>Optional bootstrap configuration (port, database, URL base); environment variables win over it.</summary>
+    public string ConfigFile => Path.Combine(ConfigDirectory, "config.json");
+    /// <summary>A validated backup waiting to be restored on the next start.</summary>
+    public string PendingRestoreFile => Path.Combine(ConfigDirectory, "restore-pending.zip");
+    /// <summary>A switch to another database, carried out on the next start.</summary>
+    public string PendingDatabaseSwitchFile => Path.Combine(ConfigDirectory, "database-switch.json");
+    /// <summary>The SQLite file Krakarr used before switching database, until it's deleted.</summary>
+    public string OldDatabaseFile => Path.Combine(ConfigDirectory, "database-old.json");
 
     public void EnsureCreated()
     {
@@ -16,6 +27,7 @@ public sealed class KrakarrPaths
         Directory.CreateDirectory(TorrentCacheDirectory);
         Directory.CreateDirectory(TorrentFilesDirectory);
         Directory.CreateDirectory(LogsDirectory);
+        Directory.CreateDirectory(BackupsDirectory);
         try
         {
             Directory.CreateDirectory(DefaultDownloadDirectory);

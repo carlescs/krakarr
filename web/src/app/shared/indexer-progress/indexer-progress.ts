@@ -24,6 +24,8 @@ export class IndexerProgress {
 
   protected readonly finished = computed(() => this.indexers().filter(s => s.state !== 'Pending').length);
   protected readonly failed = computed(() => this.indexers().filter(s => s.state === 'Failed'));
+  /** Left out because they keep failing; the Indexers page shows until when. */
+  protected readonly skipped = computed(() => this.indexers().filter(s => s.state === 'Skipped').length);
   protected readonly pending = computed(() => this.indexers().filter(s => s.state === 'Pending'));
 
   protected readonly summary = computed(() => {
@@ -33,7 +35,10 @@ export class IndexerProgress {
     }
     if (all.length === 0) return 'No enabled indexers to search';
     const failed = this.failed().length;
-    return `${all.length} indexer${all.length === 1 ? '' : 's'} queried` + (failed ? ` · ${failed} failed` : '');
+    const skipped = this.skipped();
+    const queried = all.length - skipped;
+    return `${queried} indexer${queried === 1 ? '' : 's'} queried` + (failed ? ` · ${failed} failed` : '')
+      + (skipped ? ` · ${skipped} skipped after failing` : '');
   });
 
   protected canFilter(s: IndexerQueryStatus): boolean {
@@ -54,6 +59,7 @@ export class IndexerProgress {
     switch (s.state) {
       case 'Done': return 'bg-emerald-500/10 text-emerald-300';
       case 'Failed': return 'bg-rose-500/15 text-rose-300';
+      case 'Skipped': return 'bg-surface-700 text-slate-500 line-through';
       default: return 'bg-surface-700 text-slate-400 animate-pulse';
     }
   }
@@ -63,6 +69,7 @@ export class IndexerProgress {
     switch (s.state) {
       case 'Done': return `${s.releases ?? 0} result(s)${took}` + (this.canFilter(s) ? (this.isSelected(s) ? ' · click to stop filtering by it' : ' · click to filter by it') : '');
       case 'Failed': return `Failed${took}: ${s.message ?? 'unknown error'}`;
+      case 'Skipped': return s.message ?? 'Skipped after failing';
       default: return 'Still searching…';
     }
   }

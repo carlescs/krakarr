@@ -18,7 +18,8 @@ public sealed record ReleaseDateDto(DateOnly Date, string Country);
 /// <param name="Earliest">Earliest date in any country.</param>
 public sealed record MovieReleaseDto(ReleaseDateType Type, ReleaseDateDto? Region, ReleaseDateDto? Earliest);
 
-public sealed record MovieFileDto(int Id, string RelativePath, long Size, string Quality, string? ReleaseGroup, DateTimeOffset DateAdded);
+public sealed record MovieFileDto(int Id, string RelativePath, long Size, string Quality, string? ReleaseGroup, DateTimeOffset DateAdded,
+    Krakarr.Media.Files.MediaInfoDto? MediaInfo = null);
 
 public sealed record MovieDto
 {
@@ -59,7 +60,23 @@ public sealed record MovieDto
 /// <summary>Row of the library grid: only what the movie list shows, so the whole library stays a small payload.</summary>
 public sealed record MovieListItemDto(int Id, string Title, int Year, string? PosterUrl, bool Monitored, bool HasFile, string? Quality, double? DownloadProgress, int? CollectionId);
 
-public sealed record MovieCollectionDto(int Id, int TmdbId, string Name, string? PosterUrl);
+/// <summary>Summary of one collection section (or "Other movies") matching the current movie list filter.</summary>
+public sealed record MovieCollectionGroupDto(string Key, int? CollectionId, string Title, int Count, int Downloaded);
+
+/// <summary>One page of the movie library list.</summary>
+public sealed record MovieListPageDto(
+    IReadOnlyList<MovieListItemDto> Items,
+    int Page,
+    int PageSize,
+    int Total,
+    int LibraryTotal,
+    IReadOnlyList<MovieCollectionGroupDto>? Groups = null);
+
+/// <summary>A collection card: how many of its library movies match the list filter, and how many of those are downloaded.</summary>
+public sealed record MovieCollectionDto(int Id, int TmdbId, string Name, string? PosterUrl, int Count, int Downloaded);
+
+/// <summary>A collection with its library movies, in release order.</summary>
+public sealed record MovieCollectionDetailsDto(int Id, int TmdbId, string Name, string? PosterUrl, string? FanartUrl, IReadOnlyList<MovieListItemDto> Movies);
 
 /// <param name="Languages">Wanted audio languages, most preferred first; null = use the global default.</param>
 public sealed record UpdateMovieRequest(bool Monitored, int QualityProfileId, MinimumAvailability? MinimumAvailability = null, IReadOnlyList<string>? Languages = null);
@@ -73,35 +90,122 @@ public sealed record GrabMovieReleaseRequest(ReleaseInfo Release);
 
 public static class MovieEndpoints
 {
+    public const int DefaultPageSize = 60;
+    public const int MaxPageSize = 200;
+
     public static IEndpointRouteBuilder MapMovieEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/movies").WithTags("Movies");
 
-        group.MapGet("/", async (KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
+        group.MapGet("/", async (int? page, int? pageSize, string? q, string? filter, string? sort, bool? desc, string? groupBy,
+            HttpContext http, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
         {
-            // The grid only needs a handful of columns: skip overviews, paths and release dates of the whole library.
-            var rows = await db.Movies.AsNoTracking().OrderBy(m => m.SortTitle)
-                .Select(m => new { m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, m.CollectionId, QualityId = m.MovieFile != null ? m.MovieFile.QualityId : (int?)null })
-                .ToListAsync(ct);
+            var currentPage = Math.Max(1, page ?? 1);
+            var size = Math.Clamp(pageSize ?? DefaultPageSize, 1, MaxPageSize);
             var progress = ActiveProgress(engine);
-            return rows.Select(m => new MovieListItemDto(
-                m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, m.QualityId is not null,
-                m.QualityId is { } q ? Qualities.FindById(q).Name : null,
-                progress.TryGetValue(m.Id, out var p) ? p : null,
-                m.CollectionId));
+            var downloadingIds = progress.Keys.ToList();
+            var userId = MediaSubscriptions.GetUserId(http.User);
+            var grouped = string.Equals(groupBy, "collection", StringComparison.OrdinalIgnoreCase);
+
+            var (filtered, isFiltered) = FilterMovies(db, q, filter, userId, downloadingIds);
+            var total = await filtered.CountAsync(ct);
+            var libraryTotal = isFiltered ? await db.Movies.CountAsync(ct) : total;
+
+            // Groups describe the whole result, so only the first page (which the client reads them from) carries them.
+            List<MovieCollectionGroupDto>? groups = null;
+            if (grouped && currentPage == 1)
+            {
+                groups = await LoadGroupsAsync(db, filtered, ct);
+            }
+
+            var skip = (currentPage - 1) * size;
+            IReadOnlyList<MovieListItemDto> items;
+            if (skip >= total)
+            {
+                items = [];
+            }
+            else
+            {
+                // The grid only needs a handful of columns: skip overviews, paths and release dates.
+                var rows = await SortMovies(filtered, sort, desc == true, grouped, downloadingIds)
+                    .Skip(skip).Take(size)
+                    .Select(m => new { m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, m.CollectionId, QualityId = m.MovieFile != null ? m.MovieFile.QualityId : (int?)null })
+                    .ToListAsync(ct);
+                items = rows.Select(m => new MovieListItemDto(
+                    m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, m.QualityId is not null,
+                    m.QualityId is { } qual ? Qualities.FindById(qual).Name : null,
+                    progress.TryGetValue(m.Id, out var p) ? p : null,
+                    m.CollectionId)).ToList();
+            }
+
+            return new MovieListPageDto(items, currentPage, size, total, libraryTotal, groups);
         });
 
-        // Collections that have movies in the library, for grouping the movie list.
-        group.MapGet("/collections", async (KrakarrDbContext db, CancellationToken ct) =>
-            await db.MovieCollections.AsNoTracking()
-                .OrderBy(c => c.SortName)
-                .Select(c => new MovieCollectionDto(c.Id, c.TmdbId, c.Name, c.PosterUrl))
-                .ToListAsync(ct));
+        // Matching movie ids in display order, for "Select all" and Shift+click range selection across pages.
+        group.MapGet("/ids", async (string? q, string? filter, string? sort, bool? desc, string? groupBy,
+            HttpContext http, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
+        {
+            var downloadingIds = ActiveProgress(engine).Keys.ToList();
+            var userId = MediaSubscriptions.GetUserId(http.User);
+            var grouped = string.Equals(groupBy, "collection", StringComparison.OrdinalIgnoreCase);
+            var (filtered, _) = FilterMovies(db, q, filter, userId, downloadingIds);
+            return await SortMovies(filtered, sort, desc == true, grouped, downloadingIds)
+                .Select(m => m.Id)
+                .Take(BulkLimits.MaxIds)
+                .ToListAsync(ct);
+        });
+
+        // Collections with at least one library movie matching the movie list's search and filter, as cards.
+        group.MapGet("/collections", async (string? q, string? filter, HttpContext http, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
+        {
+            var downloadingIds = ActiveProgress(engine).Keys.ToList();
+            var (filtered, _) = FilterMovies(db, q, filter, MediaSubscriptions.GetUserId(http.User), downloadingIds);
+            var counts = await filtered
+                .Where(m => m.CollectionId != null)
+                .GroupBy(m => m.CollectionId!.Value)
+                .Select(g => new { Id = g.Key, Count = g.Count(), Downloaded = g.Count(m => m.MovieFileId != null) })
+                .ToDictionaryAsync(g => g.Id, ct);
+            if (counts.Count == 0) return new List<MovieCollectionDto>();
+
+            var ids = counts.Keys.ToList();
+            var collections = await db.MovieCollections.AsNoTracking()
+                .Where(c => ids.Contains(c.Id))
+                .OrderBy(c => c.SortName).ThenBy(c => c.Id)
+                .Select(c => new { c.Id, c.TmdbId, c.Name, c.PosterUrl })
+                .ToListAsync(ct);
+            return collections
+                .Select(c => new MovieCollectionDto(c.Id, c.TmdbId, c.Name, c.PosterUrl, counts[c.Id].Count, counts[c.Id].Downloaded))
+                .ToList();
+        });
+
+        group.MapGet("/collections/{id:int}", async (int id, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
+        {
+            var collection = await db.MovieCollections.AsNoTracking()
+                .Where(c => c.Id == id)
+                .Select(c => new { c.Id, c.TmdbId, c.Name, c.PosterUrl, c.FanartUrl })
+                .FirstOrDefaultAsync(ct);
+            if (collection is null) return Results.NotFound();
+
+            var progress = ActiveProgress(engine);
+            var rows = await db.Movies.AsNoTracking()
+                .Where(m => m.CollectionId == id)
+                .OrderBy(m => m.Year == 0 ? 9999 : m.Year).ThenBy(m => m.SortTitle).ThenBy(m => m.Id)
+                .Select(m => new { m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, QualityId = m.MovieFile != null ? m.MovieFile.QualityId : (int?)null })
+                .ToListAsync(ct);
+            var movies = rows.Select(m => new MovieListItemDto(
+                m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, m.QualityId is not null,
+                m.QualityId is { } qual ? Qualities.FindById(qual).Name : null,
+                progress.TryGetValue(m.Id, out var p) ? p : null,
+                id)).ToList();
+            return Results.Ok(new MovieCollectionDetailsDto(collection.Id, collection.TmdbId, collection.Name, collection.PosterUrl, collection.FanartUrl, movies));
+        });
 
         group.MapGet("/{id:int}", async (int id, KrakarrDbContext db, ITorrentEngine engine, Krakarr.Data.ISettingsService settings, CancellationToken ct) =>
         {
             var movie = await db.Movies.AsNoTracking().Include(m => m.MovieFile).FirstOrDefaultAsync(m => m.Id == id, ct);
-            return movie is null ? Results.NotFound() : Results.Ok(ToDto(movie, ActiveProgress(engine), await ReleaseRegionAsync(settings, ct)));
+            if (movie is null) return Results.NotFound();
+            var wanted = (await settings.GetAsync<Krakarr.Core.Configuration.LanguageSettings>(ct)).For(movie.Languages);
+            return Results.Ok(ToDto(movie, ActiveProgress(engine), await ReleaseRegionAsync(settings, ct), wanted));
         });
 
         // Library import: scan a root folder for existing movie folders, then import selected ones in place.
@@ -201,11 +305,31 @@ public static class MovieEndpoints
             return Results.NoContent();
         });
 
-        group.MapDelete("/{id:int}", async (int id, bool? deleteFiles, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
+        // Alternate titles: metadata and scene titles are read-only, the user's own can be replaced.
+        group.MapGet("/{id:int}/titles", async (int id, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            if (!await db.Movies.AnyAsync(m => m.Id == id, ct)) return Results.NotFound();
+            var titles = await db.AlternateTitles.AsNoTracking().Where(t => t.MovieId == id).ToListAsync(ct);
+            return Results.Ok(Media.Parsing.AlternateTitles.ToDtos(titles));
+        });
+
+        group.MapPut("/{id:int}/titles", async (int id, UpdateAlternateTitlesRequest req, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            var movie = await db.Movies.Include(m => m.AlternateTitles).FirstOrDefaultAsync(m => m.Id == id, ct);
+            if (movie is null) return Results.NotFound();
+            var (removed, error) = Media.Parsing.AlternateTitles.SetUserTitles(
+                movie.AlternateTitles, req.Titles, [movie.Title], Media.Parsing.ReleaseParser.NormalizeTitle);
+            if (error is not null) return Results.Problem(error, statusCode: StatusCodes.Status400BadRequest);
+            db.AlternateTitles.RemoveRange(removed);
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(Media.Parsing.AlternateTitles.ToDtos(movie.AlternateTitles));
+        });
+
+        group.MapDelete("/{id:int}", async (int id, bool? deleteFiles, KrakarrDbContext db, ITorrentEngine engine, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, CancellationToken ct) =>
         {
             var movie = await db.Movies.Include(m => m.MovieFile).FirstOrDefaultAsync(m => m.Id == id, ct);
             if (movie is null) return Results.NotFound();
-            if (await DeleteAsync(db, engine, movie, deleteFiles == true, ct) is { } error)
+            if (await DeleteAsync(db, engine, mediaServers, movie, deleteFiles == true, ct) is { } error)
                 return Results.Problem(error, statusCode: StatusCodes.Status400BadRequest);
             await MovieService.PruneCollectionsAsync(db, ct);
             return Results.NoContent();
@@ -269,12 +393,18 @@ public static class MovieEndpoints
             {
                 var scopedDb = sp.GetRequiredService<KrakarrDbContext>();
                 var service = sp.GetRequiredService<MovieService>();
-                var (refreshed, failures) = (0, new List<string>());
+                var (refreshed, failures, skipMetadata) = (0, new List<string>(), false);
                 foreach (var id in ids)
                 {
                     scopedDb.ChangeTracker.Clear(); // RefreshAsync saves; keep only the current movie tracked
-                    var movie = await scopedDb.Movies.FirstOrDefaultAsync(m => m.Id == id, token);
+                    var movie = await scopedDb.Movies.Include(m => m.MovieFile).FirstOrDefaultAsync(m => m.Id == id, token);
                     if (movie is null) continue;
+                    if (skipMetadata)
+                    {
+                        await service.RescanDiskAsync(movie, token);
+                        continue;
+                    }
+
                     try
                     {
                         await service.RefreshAsync(movie, token);
@@ -283,7 +413,7 @@ public static class MovieEndpoints
                     catch (MetadataException ex)
                     {
                         failures.Add($"{movie.Title}: {ex.Message}");
-                        if (failures.Count >= 3 && refreshed == 0) break; // likely a missing API key: don't hammer TMDB
+                        if (failures.Count >= 3 && refreshed == 0) skipMetadata = true; // likely a missing API key: don't hammer TMDB, still rescan disk
                     }
                 }
 
@@ -293,7 +423,7 @@ public static class MovieEndpoints
             return Results.Accepted(value: command);
         });
 
-        group.MapPost("/bulk/delete", async (BulkDeleteRequest req, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
+        group.MapPost("/bulk/delete", async (BulkDeleteRequest req, KrakarrDbContext db, ITorrentEngine engine, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, CancellationToken ct) =>
         {
             if (BulkLimits.Clean(req.Ids) is not { } ids) return Results.Problem(BulkLimits.InvalidMessage, statusCode: 400);
             var (deleted, errors) = (0, new List<string>());
@@ -304,7 +434,7 @@ public static class MovieEndpoints
                 if (movie is null) continue;
                 try
                 {
-                    if (await DeleteAsync(db, engine, movie, req.DeleteFiles, ct) is { } error) errors.Add(error);
+                    if (await DeleteAsync(db, engine, mediaServers, movie, req.DeleteFiles, ct) is { } error) errors.Add(error);
                     else deleted++;
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -315,6 +445,25 @@ public static class MovieEndpoints
 
             await MovieService.PruneCollectionsAsync(db, ct);
             return Results.Ok(new BulkResult(deleted, errors));
+        });
+
+        group.MapPost("/{id:int}/refresh", async (int id, KrakarrDbContext db, ICommandQueue commands, CancellationToken ct) =>
+        {
+            var movie = await db.Movies.AsNoTracking().FirstOrDefaultAsync(m => m.Id == id, ct);
+            if (movie is null) return Results.NotFound();
+            var command = commands.Enqueue($"Refresh: {movie.Title}", async (sp, token) =>
+            {
+                var scopedDb = sp.GetRequiredService<KrakarrDbContext>();
+                var service = sp.GetRequiredService<MovieService>();
+                var loaded = await scopedDb.Movies.Include(m => m.MovieFile).FirstOrDefaultAsync(m => m.Id == id, token)
+                    ?? throw new KeyNotFoundException();
+                await service.RefreshAsync(loaded, token);
+                await MovieService.PruneCollectionsAsync(scopedDb, token);
+                return loaded.MovieFile is { } f
+                    ? $"{loaded.Title}: {Qualities.FindById(f.QualityId).Name}"
+                    : $"{loaded.Title}: no video file";
+            });
+            return Results.Accepted(value: command);
         });
 
         group.MapPost("/{id:int}/search", async (int id, KrakarrDbContext db, ICommandQueue commands, CancellationToken ct) =>
@@ -356,6 +505,18 @@ public static class MovieEndpoints
             }
         });
 
+        app.MapDelete("/api/v1/moviefiles/{id:int}", async (int id, bool? unmonitor, KrakarrDbContext db, Krakarr.Core.Events.IEventHub eventHub, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, CancellationToken ct) =>
+        {
+            try
+            {
+                return await MovieFileDeletion.DeleteAsync(db, eventHub, mediaServers, id, unmonitor == true, ct) ? Results.NoContent() : Results.NotFound();
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest);
+            }
+        }).WithTags("Movies");
+
         app.MapGet("/api/v1/history", async (int? movieId, int? seriesId, int? page, int? pageSize, KrakarrDbContext db, CancellationToken ct) =>
         {
             var size = Math.Clamp(pageSize ?? 50, 1, 500);
@@ -380,7 +541,7 @@ public static class MovieEndpoints
     }
 
     /// <summary>Removes a tracked movie (loaded with its file), and its folder when asked. Returns why not, or null when deleted.</summary>
-    private static async Task<string?> DeleteAsync(KrakarrDbContext db, ITorrentEngine engine, Movie movie, bool deleteFiles, CancellationToken ct)
+    private static async Task<string?> DeleteAsync(KrakarrDbContext db, ITorrentEngine engine, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, Movie movie, bool deleteFiles, CancellationToken ct)
     {
         // Downloads still in progress (or finished but not imported) are useless once the title is gone: remove them
         // and their data first, so a failure leaves the title in place to retry.
@@ -398,6 +559,7 @@ public static class MovieEndpoints
             }
 
             Directory.Delete(movie.Path, recursive: true);
+            mediaServers.PathChanged(movie.Path);
         }
 
         if (movie.MovieFile is { } file)
@@ -418,12 +580,142 @@ public static class MovieEndpoints
             .GroupBy(s => s.MovieId!.Value)
             .ToDictionary(g => g.Key, g => g.Max(s => s.Progress));
 
+    private static (IQueryable<Movie> Query, bool IsFiltered) FilterMovies(
+        KrakarrDbContext db, string? q, string? filter, int? userId, IReadOnlyCollection<int> downloadingIds)
+    {
+        IQueryable<Movie> query = db.Movies.AsNoTracking();
+        var isFiltered = false;
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var term = q.Trim().ToLowerInvariant();
+            query = query.Where(m => m.Title.ToLower().Contains(term) || (m.Collection != null && m.Collection.Name.ToLower().Contains(term)));
+            isFiltered = true;
+        }
+
+        switch (filter?.ToLowerInvariant())
+        {
+            case "following":
+                isFiltered = true;
+                query = userId is { } uid
+                    ? query.Where(m => db.MediaSubscriptions.Any(s => s.UserId == uid && s.MovieId == m.Id))
+                    : query.Where(_ => false);
+                break;
+            case "missing":
+                isFiltered = true;
+                query = query.Where(m => m.Monitored && m.MovieFileId == null);
+                break;
+            case "downloading":
+                isFiltered = true;
+                query = downloadingIds.Count == 0
+                    ? query.Where(_ => false)
+                    : query.Where(m => downloadingIds.Contains(m.Id));
+                break;
+            case "downloaded":
+                isFiltered = true;
+                query = query.Where(m => m.MovieFileId != null);
+                break;
+            case "unmonitored":
+                isFiltered = true;
+                query = query.Where(m => !m.Monitored);
+                break;
+        }
+
+        return (query, isFiltered);
+    }
+
+    private static IOrderedQueryable<Movie> SortMovies(
+        IQueryable<Movie> query, string? sort, bool desc, bool groupByCollection, IReadOnlyCollection<int> downloadingIds)
+    {
+        if (groupByCollection)
+        {
+            return query
+                .OrderBy(m => m.CollectionId == null ? 1 : 0)
+                .ThenBy(m => m.Collection != null ? m.Collection.SortName : string.Empty)
+                .ThenBy(m => m.CollectionId)
+                .ThenBy(m => m.CollectionId != null ? (m.Year == 0 ? 9999 : m.Year) : 0)
+                .ThenBy(m => m.CollectionId != null ? m.Title : m.SortTitle)
+                .ThenBy(m => m.Id);
+        }
+
+        switch (sort?.ToLowerInvariant())
+        {
+            case "year":
+            {
+                // Unknown years (0) always go last, whatever the sort direction.
+                var byKnown = query.OrderBy(m => m.Year == 0 ? 1 : 0);
+                return (desc ? byKnown.ThenByDescending(m => m.Year) : byKnown.ThenBy(m => m.Year))
+                    .ThenBy(m => m.SortTitle)
+                    .ThenBy(m => m.Id);
+            }
+            case "status":
+            {
+                // Status order: missing (0), unmonitored (1), downloading (2), downloaded (3).
+                if (downloadingIds.Count > 0)
+                {
+                    var byStatus = desc
+                        ? query.OrderByDescending(m => m.MovieFileId != null ? 3 : downloadingIds.Contains(m.Id) ? 2 : !m.Monitored ? 1 : 0)
+                        : query.OrderBy(m => m.MovieFileId != null ? 3 : downloadingIds.Contains(m.Id) ? 2 : !m.Monitored ? 1 : 0);
+                    return byStatus.ThenBy(m => m.SortTitle).ThenBy(m => m.Id);
+                }
+
+                var bySimpleStatus = desc
+                    ? query.OrderByDescending(m => m.MovieFileId != null ? 3 : !m.Monitored ? 1 : 0)
+                    : query.OrderBy(m => m.MovieFileId != null ? 3 : !m.Monitored ? 1 : 0);
+                return bySimpleStatus.ThenBy(m => m.SortTitle).ThenBy(m => m.Id);
+            }
+            default:
+                return desc
+                    ? query.OrderByDescending(m => m.SortTitle).ThenByDescending(m => m.Id)
+                    : query.OrderBy(m => m.SortTitle).ThenBy(m => m.Id);
+        }
+    }
+
+    private static async Task<List<MovieCollectionGroupDto>> LoadGroupsAsync(KrakarrDbContext db, IQueryable<Movie> filtered, CancellationToken ct)
+    {
+        var counts = await filtered
+            .GroupBy(m => m.CollectionId)
+            .Select(g => new { CollectionId = g.Key, Count = g.Count(), Downloaded = g.Count(m => m.MovieFileId != null) })
+            .ToListAsync(ct);
+
+        if (counts.Count == 0) return [];
+
+        var byId = counts.Where(g => g.CollectionId is not null).ToDictionary(g => g.CollectionId!.Value);
+        var result = new List<MovieCollectionGroupDto>(counts.Count);
+        if (byId.Count > 0)
+        {
+            var ids = byId.Keys.ToList();
+            var collections = await db.MovieCollections.AsNoTracking()
+                .Where(c => ids.Contains(c.Id))
+                .OrderBy(c => c.SortName).ThenBy(c => c.Id)
+                .Select(c => new { c.Id, c.Name })
+                .ToListAsync(ct);
+            foreach (var c in collections)
+            {
+                var stats = byId[c.Id];
+                result.Add(new MovieCollectionGroupDto($"c{c.Id}", c.Id, c.Name, stats.Count, stats.Downloaded));
+            }
+        }
+
+        if (counts.FirstOrDefault(g => g.CollectionId is null) is { } other)
+        {
+            result.Add(new MovieCollectionGroupDto("other", null, "Other movies", other.Count, other.Downloaded));
+        }
+
+        return result;
+    }
+
     private static async Task<string?> ReleaseRegionAsync(Krakarr.Data.ISettingsService settings, CancellationToken ct) =>
         MovieReleases.NormalizeRegion((await settings.GetAsync<Krakarr.Core.Configuration.MetadataSettings>(ct)).ReleaseRegion);
 
     private static ReleaseDateDto? ToDto(MovieReleaseDate? d) => d is null ? null : new ReleaseDateDto(d.Date, d.Country);
 
-    private static MovieDto ToDto(Movie m, IReadOnlyDictionary<int, double> progress, string? region) => new()
+    internal static IReadOnlyList<MovieReleaseDto> ToReleases(IReadOnlyCollection<MovieReleaseDate> dates, string? region) =>
+        MovieReleases.AllTypes
+            .Select(t => new MovieReleaseDto(t, ToDto(MovieReleases.ForRegion(dates, t, region)), ToDto(MovieReleases.Earliest(dates, t))))
+            .ToList();
+
+    private static MovieDto ToDto(Movie m, IReadOnlyDictionary<int, double> progress, string? region, IReadOnlyList<string>? wantedLanguages = null) => new()
     {
         Id = m.Id,
         TmdbId = m.TmdbId,
@@ -439,9 +731,7 @@ public static class MovieEndpoints
         InCinemas = m.InCinemas,
         DigitalRelease = m.DigitalRelease,
         PhysicalRelease = m.PhysicalRelease,
-        Releases = MovieReleases.AllTypes
-            .Select(t => new MovieReleaseDto(t, ToDto(MovieReleases.ForRegion(m.ReleaseDates, t, region)), ToDto(MovieReleases.Earliest(m.ReleaseDates, t))))
-            .ToList(),
+        Releases = ToReleases(m.ReleaseDates, region),
         ReleaseRegion = region,
         MinimumAvailability = m.MinimumAvailability,
         IsAvailable = MovieReleases.IsAvailable(m, MovieService.Today),
@@ -452,7 +742,8 @@ public static class MovieEndpoints
         Added = m.Added,
         HasFile = m.MovieFile is not null,
         MovieFile = m.MovieFile is { } f
-            ? new MovieFileDto(f.Id, f.RelativePath, f.Size, Qualities.FindById(f.QualityId).Name, f.ReleaseGroup, f.DateAdded)
+            ? new MovieFileDto(f.Id, f.RelativePath, f.Size, Qualities.FindById(f.QualityId).Name, f.ReleaseGroup, f.DateAdded,
+                Krakarr.Media.Files.MediaInfoDto.From(f.MediaInfo, m.Runtime, f.SceneName, wantedLanguages))
             : null,
         DownloadProgress = progress.TryGetValue(m.Id, out var p) ? p : null,
         CollectionId = m.CollectionId,

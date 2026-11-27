@@ -19,6 +19,10 @@ public static class MovieNaming
 
     public static string BuildFolderName(Movie movie, string format) => FileNameBuilder.Build(format, Tokens(movie));
 
-    public static string BuildFileName(Movie movie, string format, Quality quality, string? releaseGroup, string extension) =>
-        FileNameBuilder.Build(format, Tokens(movie, quality, releaseGroup)) + extension.ToLowerInvariant();
+    public static string BuildFileName(Movie movie, string format, Quality quality, string? releaseGroup, string extension, MediaInfoSummary? mediaInfo = null)
+    {
+        var tokens = Tokens(movie, quality, releaseGroup);
+        MediaInfoChecks.AddTokens(tokens, mediaInfo);
+        return FileNameBuilder.Build(format, tokens) + extension.ToLowerInvariant();
+    }
 }

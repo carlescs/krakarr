@@ -1,0 +1,47 @@
+<section class="card max-w-2xl space-y-4 p-4 sm:p-5">
+  <div>
+    <h2 class="font-semibold text-white">Passkeys</h2>
+    <p class="hint">Sign in with your fingerprint, face, device PIN or security key instead of your password.</p>
+  </div>
+
+  @if (loading()) {
+    <p class="text-sm text-slate-500">Loading…</p>
+  } @else {
+    <ul class="divide-y divide-surface-700 rounded-lg border border-surface-700" [class.hidden]="passkeys().length === 0">
+      @for (p of passkeys(); track p.id) {
+        <li class="flex flex-wrap items-center gap-2 px-3 py-2.5">
+          <div class="min-w-0 flex-1">
+            <p class="passkey-name truncate text-sm font-medium text-slate-100">{{ p.name }}</p>
+            <p class="text-xs text-slate-400">
+              Added {{ p.createdAt | date: 'mediumDate' }} · {{ p.lastUsedAt ? 'Last used ' + relativeTime(p.lastUsedAt) : 'Never used' }}
+            </p>
+          </div>
+          <button class="btn-ghost btn-sm" type="button" (click)="rename(p)" [attr.aria-label]="'Rename ' + p.name">Rename</button>
+          <button class="btn-ghost btn-sm text-rose-300" type="button" (click)="remove(p)" [attr.aria-label]="'Remove ' + p.name">Remove</button>
+        </li>
+      }
+    </ul>
+    @if (passkeys().length === 0) { <p class="text-sm text-slate-500">You haven't added a passkey yet.</p> }
+  }
+
+  @if (supported) {
+    <form class="grid grid-cols-1 gap-4 border-t border-surface-700 pt-4 sm:grid-cols-2" (ngSubmit)="add()">
+      <div>
+        <label class="label" for="pk-name">Name</label>
+        <input id="pk-name" class="input" name="name" [(ngModel)]="name" maxlength="100" placeholder="e.g. Phone, YubiKey" autocomplete="off" required />
+      </div>
+      <div>
+        <label class="label" for="pk-password">Current password</label>
+        <input id="pk-password" class="input" name="password" type="password" [(ngModel)]="password" autocomplete="current-password" required />
+      </div>
+      <div class="flex items-center gap-3 sm:col-span-2">
+        <p class="hint flex-1">Your browser or password manager will ask where to save it.</p>
+        <button class="btn-primary" type="submit" [disabled]="adding() || !name.trim() || !password">{{ adding() ? 'Waiting for passkey…' : 'Add passkey' }}</button>
+      </div>
+    </form>
+  } @else {
+    <p class="rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+      Passkeys need Krakarr to be opened through a domain name over HTTPS (or on localhost) in a browser that supports them.
+    </p>
+  }
+</section>

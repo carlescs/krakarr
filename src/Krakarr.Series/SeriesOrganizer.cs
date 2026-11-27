@@ -1,6 +1,7 @@
 using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Events;
+using Krakarr.Core.MediaServers;
 using Krakarr.Data;
 using Krakarr.Media.Files;
 using Microsoft.EntityFrameworkCore;
@@ -20,7 +21,7 @@ public sealed record OrganizeRequest(bool RenameFolder);
 /// Renames and moves the files of a series so they follow the configured naming formats (episode file, season folder and,
 /// optionally, the series folder). Subtitle files next to a video are renamed with it.
 /// </summary>
-public sealed class SeriesOrganizer(KrakarrDbContext db, ISettingsService settings, IEventHub eventHub, ILogger<SeriesOrganizer> logger)
+public sealed class SeriesOrganizer(KrakarrDbContext db, ISettingsService settings, IEventHub eventHub, IMediaServerNotifier mediaServers, ILogger<SeriesOrganizer> logger)
 {
     public async Task<OrganizePreview?> PreviewAsync(int seriesId, CancellationToken ct = default)
     {
@@ -44,8 +45,11 @@ public sealed class SeriesOrganizer(KrakarrDbContext db, ISettingsService settin
 
         if (renameFolder && await FolderTargetAsync(series, media, ct) is { } target)
         {
+            var oldFolder = series.Path;
             if (MoveSeriesFolder(series, target, subtitles, problems))
             {
+                mediaServers.PathChanged(oldFolder);
+                mediaServers.PathChanged(series.Path);
                 summary.Add($"moved folder to {target}");
                 await db.SaveChangesAsync(ct);
             }
@@ -103,7 +107,8 @@ public sealed class SeriesOrganizer(KrakarrDbContext db, ISettingsService settin
         }
 
         await db.SaveChangesAsync(ct);
-        foreach (var dir in touchedDirs) DeleteEmptyFolders(series.Path, dir);
+        foreach (var dir in touchedDirs) LibraryFiles.DeleteEmptyFolders(series.Path, dir);
+        if (renamed > 0) mediaServers.PathChanged(series.Path);
         await eventHub.PublishAsync(EventNames.SeriesUpdated, new { series.Id }, ct);
 
         summary.Insert(0, renamed == 0 && summary.Count == 0 && problems.Count == 0 ? "already organized" : $"renamed {renamed} file{(renamed == 1 ? "" : "s")}");
@@ -143,7 +148,8 @@ public sealed class SeriesOrganizer(KrakarrDbContext db, ISettingsService settin
         if (episodes.Count == 0) return null;
         var extension = Path.GetExtension(file.RelativePath);
         var fileName = media.RenameFiles
-            ? SeriesNaming.BuildEpisodeFileName(series, episodes, Qualities.FindById(file.QualityId), file.ReleaseGroup, media.EpisodeFileFormat, extension)
+            ? SeriesNaming.BuildEpisodeFileName(series, episodes, Qualities.FindById(file.QualityId), file.ReleaseGroup, media.EpisodeFileFormat, extension,
+                MediaInfoSummary.Parse(file.MediaInfo))
             : Path.GetFileName(file.RelativePath);
         return series.SeasonFolder ? Path.Combine(SeriesNaming.BuildSeasonFolder(file.SeasonNumber, media.SeasonFolderFormat), fileName) : fileName;
     }
@@ -228,25 +234,6 @@ public sealed class SeriesOrganizer(KrakarrDbContext db, ISettingsService settin
             }
 
             foreach (var row in subtitles.Where(s => string.Equals(s.Path, sidecar, StringComparison.Ordinal))) row.Path = target;
-        }
-    }
-
-    /// <summary>Removes <paramref name="dir"/> and its parents while empty, never the series folder itself or anything outside it.</summary>
-    private static void DeleteEmptyFolders(string seriesPath, string dir)
-    {
-        var current = dir;
-        while (MediaFolder.IsInside(seriesPath, current) && Directory.Exists(current) && !Directory.EnumerateFileSystemEntries(current).Any())
-        {
-            try
-            {
-                Directory.Delete(current);
-            }
-            catch (IOException)
-            {
-                return;
-            }
-
-            current = Path.GetDirectoryName(current)!;
         }
     }
 }

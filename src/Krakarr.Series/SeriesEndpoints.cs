@@ -1,9 +1,11 @@
+using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Jobs;
 using Krakarr.Core.Metadata;
 using Krakarr.Data;
 using Krakarr.Downloads;
 using Krakarr.Indexers;
+using Krakarr.Media.Files;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -49,18 +51,28 @@ public sealed record SeriesDto
 /// <summary>Row of the library grid. Counts follow <see cref="SeriesDto"/> (regular seasons only).</summary>
 public sealed record SeriesListItemDto(
     int Id, string Title, int Year, string? PosterUrl, SeriesStatus Status, bool Monitored,
-    int EpisodeCount, int EpisodeFileCount, DateOnly? NextAiring, int DownloadingCount);
+    int EpisodeCount, int EpisodeFileCount, DateOnly? NextAiring, int DownloadingCount, string? Network);
+
+/// <summary>One page of the series library list.</summary>
+public sealed record SeriesListPageDto(
+    IReadOnlyList<SeriesListItemDto> Items,
+    int Page,
+    int PageSize,
+    int Total,
+    int LibraryTotal);
 
 public sealed record EpisodeFileDto(int Id, string RelativePath, long Size, string Quality, string? ReleaseGroup, DateTimeOffset DateAdded);
 
 public sealed record EpisodeDto(
     int Id, int SeasonNumber, int EpisodeNumber, int? AbsoluteNumber, string? Title, string? Overview, DateOnly? AirDate, int Runtime,
-    bool Monitored, bool HasAired, EpisodeFileDto? EpisodeFile, double? DownloadProgress);
+    bool Monitored, bool HasAired, EpisodeFileDto? EpisodeFile, double? DownloadProgress, string? DownloadHash = null);
 
 /// <param name="Languages">Wanted audio languages, most preferred first; null = use the global default.</param>
 /// <param name="Title">New display title; null keeps the current one, blank restores the metadata title.</param>
 public sealed record UpdateSeriesRequest(bool Monitored, int QualityProfileId, bool SeasonFolder, IReadOnlyList<string>? Languages = null, string? Title = null);
 public sealed record MonitorRequest(bool Monitored);
+/// <param name="Unmonitor">Also unmonitor the episodes of the deleted files, so searches don't fetch them again.</param>
+public sealed record DeleteEpisodeFilesRequest(IReadOnlyList<int> Ids, bool Unmonitor = false);
 public sealed record SeriesSearchRequest(int? SeasonNumber, IReadOnlyList<int>? EpisodeIds);
 public sealed record EpisodeReleaseDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections, string? Episodes, bool SeasonPack, IReadOnlyList<string> Languages)
 {
@@ -71,36 +83,96 @@ public sealed record GrabEpisodeReleaseRequest(ReleaseInfo Release);
 
 public static class SeriesEndpoints
 {
+    public const int DefaultPageSize = 60;
+    public const int MaxPageSize = 200;
+
     public static IEndpointRouteBuilder MapSeriesEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1/series").WithTags("Series");
 
-        group.MapGet("/", async (KrakarrDbContext db, ITorrentEngine engine, TimeProvider time, CancellationToken ct) =>
+        group.MapGet("/", async (int? page, int? pageSize, string? q, string? filter, string? sort, bool? desc,
+            HttpContext http, KrakarrDbContext db, ITorrentEngine engine, TimeProvider time, CancellationToken ct) =>
         {
-            // Aggregate the episode counts in SQL (one row per show) rather than reading every episode of the library.
+            var currentPage = Math.Max(1, page ?? 1);
+            var size = Math.Clamp(pageSize ?? DefaultPageSize, 1, MaxPageSize);
             var today = Today(time);
-            var counts = await db.Episodes.AsNoTracking()
-                .Where(e => e.SeasonNumber > 0)
-                .GroupBy(e => e.SeriesId)
-                .Select(g => new
-                {
-                    SeriesId = g.Key,
-                    EpisodeCount = g.Count(e => e.EpisodeFileId != null || (e.Monitored && e.AirDate != null && e.AirDate <= today)),
-                    EpisodeFileCount = g.Count(e => e.EpisodeFileId != null),
-                    NextAiring = g.Where(e => e.AirDate > today).Min(e => e.AirDate),
-                })
-                .ToDictionaryAsync(x => x.SeriesId, ct);
-            var list = await db.Series.AsNoTracking().OrderBy(s => s.SortTitle)
-                .Select(s => new { s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored })
-                .ToListAsync(ct);
-            var downloading = DownloadingBySeries(engine);
-            return list.Select(s =>
+            var userId = MediaSubscriptions.GetUserId(http.User);
+
+            var (filtered, isFiltered) = FilterSeries(db, q, filter, userId, today);
+            var total = await filtered.CountAsync(ct);
+            var libraryTotal = isFiltered ? await db.Series.CountAsync(ct) : total;
+
+            var skip = (currentPage - 1) * size;
+            IReadOnlyList<SeriesListItemDto> items;
+            if (skip >= total)
             {
-                var c = counts.GetValueOrDefault(s.Id);
-                return new SeriesListItemDto(
-                    s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored,
-                    c?.EpisodeCount ?? 0, c?.EpisodeFileCount ?? 0, c?.NextAiring, downloading.GetValueOrDefault(s.Id));
-            });
+                items = [];
+            }
+            else
+            {
+                var downloading = DownloadingBySeries(engine);
+                var sortKey = sort?.ToLowerInvariant();
+                if (sortKey is "episodes" or "nextairing")
+                {
+                    var rows = await SortSeriesByEpisodeStats(filtered, sortKey, desc == true, today)
+                        .Skip(skip).Take(size)
+                        .ToListAsync(ct);
+                    items = rows.Select(s => new SeriesListItemDto(
+                        s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored,
+                        s.EpisodeCount, s.EpisodeFileCount, s.NextAiring, downloading.GetValueOrDefault(s.Id), s.Network)).ToList();
+                }
+                else
+                {
+                    var list = await SortSeries(filtered, sortKey, desc == true)
+                        .Skip(skip).Take(size)
+                        .Select(s => new { s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored, s.Network })
+                        .ToListAsync(ct);
+                    var pageIds = list.Select(s => s.Id).ToList();
+                    // Aggregate episode counts in SQL for only the shows on this page.
+                    var counts = pageIds.Count == 0
+                        ? new Dictionary<int, SeriesEpisodeStats>()
+                        : await db.Episodes.AsNoTracking()
+                            .Where(e => e.SeasonNumber > 0 && pageIds.Contains(e.SeriesId))
+                            .GroupBy(e => e.SeriesId)
+                            .Select(g => new SeriesEpisodeStats(
+                                g.Key,
+                                g.Count(e => e.EpisodeFileId != null || (e.Monitored && e.AirDate != null && e.AirDate <= today)),
+                                g.Count(e => e.EpisodeFileId != null),
+                                g.Where(e => e.AirDate > today).Min(e => e.AirDate)))
+                            .ToDictionaryAsync(x => x.SeriesId, ct);
+                    items = list.Select(s =>
+                    {
+                        var c = counts.GetValueOrDefault(s.Id);
+                        return new SeriesListItemDto(
+                            s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored,
+                            c?.EpisodeCount ?? 0, c?.EpisodeFileCount ?? 0, c?.NextAiring, downloading.GetValueOrDefault(s.Id), s.Network);
+                    }).ToList();
+                }
+            }
+
+            return new SeriesListPageDto(items, currentPage, size, total, libraryTotal);
+        });
+
+        // Matching series ids in display order, for "Select all" and Shift+click range selection across pages.
+        group.MapGet("/ids", async (string? q, string? filter, string? sort, bool? desc,
+            HttpContext http, KrakarrDbContext db, TimeProvider time, CancellationToken ct) =>
+        {
+            var today = Today(time);
+            var userId = MediaSubscriptions.GetUserId(http.User);
+            var (filtered, _) = FilterSeries(db, q, filter, userId, today);
+            var sortKey = sort?.ToLowerInvariant();
+            if (sortKey is "episodes" or "nextairing")
+            {
+                return await SortSeriesByEpisodeStats(filtered, sortKey, desc == true, today)
+                    .Select(s => s.Id)
+                    .Take(BulkLimits.MaxIds)
+                    .ToListAsync(ct);
+            }
+
+            return await SortSeries(filtered, sortKey, desc == true)
+                .Select(s => s.Id)
+                .Take(BulkLimits.MaxIds)
+                .ToListAsync(ct);
         });
 
         // Library import: scan a root folder for existing show folders, then import selected ones in place.
@@ -214,11 +286,31 @@ public static class SeriesEndpoints
             return Results.NoContent();
         });
 
-        group.MapDelete("/{id:int}", async (int id, bool? deleteFiles, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
+        // Alternate titles: metadata and scene titles are read-only, the user's own can be replaced.
+        group.MapGet("/{id:int}/titles", async (int id, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            if (!await db.Series.AnyAsync(s => s.Id == id, ct)) return Results.NotFound();
+            var titles = await db.AlternateTitles.AsNoTracking().Where(t => t.SeriesId == id).ToListAsync(ct);
+            return Results.Ok(Media.Parsing.AlternateTitles.ToDtos(titles));
+        });
+
+        group.MapPut("/{id:int}/titles", async (int id, UpdateAlternateTitlesRequest req, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            var series = await db.Series.Include(s => s.AlternateTitles).FirstOrDefaultAsync(s => s.Id == id, ct);
+            if (series is null) return Results.NotFound();
+            var (removed, error) = Media.Parsing.AlternateTitles.SetUserTitles(
+                series.AlternateTitles, req.Titles, [series.Title, series.MetadataTitle], SeriesService.NormalizeTitle);
+            if (error is not null) return Results.Problem(error, statusCode: StatusCodes.Status400BadRequest);
+            db.AlternateTitles.RemoveRange(removed);
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(Media.Parsing.AlternateTitles.ToDtos(series.AlternateTitles));
+        });
+
+        group.MapDelete("/{id:int}", async (int id, bool? deleteFiles, KrakarrDbContext db, ITorrentEngine engine, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, CancellationToken ct) =>
         {
             var series = await db.Series.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (series is null) return Results.NotFound();
-            return await DeleteAsync(db, engine, series, deleteFiles == true, ct) is { } error
+            return await DeleteAsync(db, engine, mediaServers, series, deleteFiles == true, ct) is { } error
                 ? Results.Problem(error, statusCode: StatusCodes.Status400BadRequest)
                 : Results.NoContent();
         });
@@ -280,12 +372,18 @@ public static class SeriesEndpoints
             {
                 var scopedDb = sp.GetRequiredService<KrakarrDbContext>();
                 var service = sp.GetRequiredService<SeriesService>();
-                var (refreshed, failures) = (0, new List<string>());
+                var (refreshed, failures, skipMetadata) = (0, new List<string>(), false);
                 foreach (var id in ids)
                 {
                     scopedDb.ChangeTracker.Clear(); // RefreshAsync saves; don't keep every refreshed series (and its episodes) tracked
                     var series = await service.LoadAsync(id, token);
                     if (series is null) continue;
+                    if (skipMetadata)
+                    {
+                        await service.RescanDiskAsync(series, token);
+                        continue;
+                    }
+
                     try
                     {
                         await service.RefreshAsync(series, token);
@@ -294,7 +392,7 @@ public static class SeriesEndpoints
                     catch (MetadataException ex)
                     {
                         failures.Add($"{series.Title}: {ex.Message}");
-                        if (failures.Count >= 3 && refreshed == 0) break; // likely a missing key or the source is down
+                        if (failures.Count >= 3 && refreshed == 0) skipMetadata = true; // likely a missing key or the source is down; still rescan disk
                     }
                 }
 
@@ -303,7 +401,7 @@ public static class SeriesEndpoints
             return Results.Accepted(value: command);
         });
 
-        group.MapPost("/bulk/delete", async (BulkDeleteRequest req, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
+        group.MapPost("/bulk/delete", async (BulkDeleteRequest req, KrakarrDbContext db, ITorrentEngine engine, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, CancellationToken ct) =>
         {
             if (BulkLimits.Clean(req.Ids) is not { } ids) return Results.Problem(BulkLimits.InvalidMessage, statusCode: 400);
             var (deleted, errors) = (0, new List<string>());
@@ -314,7 +412,7 @@ public static class SeriesEndpoints
                 if (series is null) continue;
                 try
                 {
-                    if (await DeleteAsync(db, engine, series, req.DeleteFiles, ct) is { } error) errors.Add(error);
+                    if (await DeleteAsync(db, engine, mediaServers, series, req.DeleteFiles, ct) is { } error) errors.Add(error);
                     else deleted++;
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -335,7 +433,20 @@ public static class SeriesEndpoints
             return episodes.Select(e => new EpisodeDto(
                 e.Id, e.SeasonNumber, e.EpisodeNumber, e.AbsoluteNumber, e.Title, e.Overview, e.AirDate, e.Runtime, e.Monitored, e.HasAired(today),
                 e.EpisodeFile is { } f ? new EpisodeFileDto(f.Id, f.RelativePath, f.Size, Qualities.FindById(f.QualityId).Name, f.ReleaseGroup, f.DateAdded) : null,
-                progress.TryGetValue(e.Id, out var p) ? p : null));
+                progress.TryGetValue(e.Id, out var p) ? p.Progress : null,
+                progress.ContainsKey(e.Id) ? p.Hash : null));
+        });
+
+        // Media info of one episode file, for the episode dialog (kept out of the episode list, which can be long).
+        group.MapGet("/{id:int}/episodefiles/{fileId:int}/mediainfo", async (int id, int fileId, KrakarrDbContext db, ISettingsService settings, CancellationToken ct) =>
+        {
+            var file = await db.EpisodeFiles.AsNoTracking().Where(f => f.Id == fileId && f.SeriesId == id)
+                .Select(f => new { f.MediaInfo, f.SceneName }).FirstOrDefaultAsync(ct);
+            if (file is null) return Results.NotFound();
+            var series = await db.Series.AsNoTracking().Where(s => s.Id == id).Select(s => new { s.Runtime, s.Languages }).FirstAsync(ct);
+            var runtimes = await db.Episodes.AsNoTracking().Where(e => e.EpisodeFileId == fileId).Select(e => e.Runtime).ToListAsync(ct);
+            var wanted = (await settings.GetAsync<LanguageSettings>(ct)).For(series.Languages);
+            return Results.Ok(MediaInfoDto.From(file.MediaInfo, runtimes.Sum(r => r > 0 ? r : series.Runtime), file.SceneName, wanted));
         });
 
         group.MapPut("/{id:int}/seasons/{season:int}", async (int id, int season, MonitorRequest req, KrakarrDbContext db, CancellationToken ct) =>
@@ -433,19 +544,17 @@ public static class SeriesEndpoints
             return updated > 0 ? Results.NoContent() : Results.NotFound();
         }).WithTags("Series");
 
-        app.MapDelete("/api/v1/episodefiles/{id:int}", async (int id, KrakarrDbContext db, CancellationToken ct) =>
+        app.MapDelete("/api/v1/episodefiles/{id:int}", async (int id, bool? unmonitor, KrakarrDbContext db, Krakarr.Core.Events.IEventHub eventHub, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, CancellationToken ct) =>
         {
-            var file = await db.EpisodeFiles.FirstOrDefaultAsync(f => f.Id == id, ct);
-            if (file is null) return Results.NotFound();
-            var series = await db.Series.AsNoTracking().FirstAsync(s => s.Id == file.SeriesId, ct);
-            var path = System.IO.Path.Combine(series.Path, file.RelativePath);
-            if (File.Exists(path)) File.Delete(path);
-            Krakarr.Media.Files.SidecarFiles.DeleteFor(path);
-            await db.Episodes.Where(e => e.EpisodeFileId == id).ExecuteUpdateAsync(s => s.SetProperty(e => e.EpisodeFileId, (int?)null), ct);
-            db.EpisodeFiles.Remove(file);
-            db.History.Add(new HistoryEntry { EventType = HistoryEventType.FileDeleted, SourceTitle = file.RelativePath, SeriesId = file.SeriesId, QualityId = file.QualityId });
-            await db.SaveChangesAsync(ct);
-            return Results.NoContent();
+            var result = await EpisodeFileDeletion.DeleteAsync(db, eventHub, mediaServers, [id], unmonitor == true, ct);
+            if (result.Errors.Count > 0) return Results.Problem(result.Errors[0], statusCode: StatusCodes.Status400BadRequest);
+            return result.Affected > 0 ? Results.NoContent() : Results.NotFound();
+        }).WithTags("Series");
+
+        app.MapPost("/api/v1/episodefiles/bulk/delete", async (DeleteEpisodeFilesRequest req, KrakarrDbContext db, Krakarr.Core.Events.IEventHub eventHub, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, CancellationToken ct) =>
+        {
+            if (BulkLimits.Clean(req.Ids) is not { } ids) return Results.Problem(BulkLimits.InvalidMessage, statusCode: 400);
+            return Results.Ok(await EpisodeFileDeletion.DeleteAsync(db, eventHub, mediaServers, ids.ToList(), req.Unmonitor, ct));
         }).WithTags("Series");
 
         app.MapSeriesDiscoveryEndpoints();
@@ -453,7 +562,7 @@ public static class SeriesEndpoints
     }
 
     /// <summary>Removes a tracked series, and its folder when asked. Returns why not, or null when deleted.</summary>
-    private static async Task<string?> DeleteAsync(KrakarrDbContext db, ITorrentEngine engine, Krakarr.Core.Domain.Series series, bool deleteFiles, CancellationToken ct)
+    private static async Task<string?> DeleteAsync(KrakarrDbContext db, ITorrentEngine engine, Krakarr.Core.MediaServers.IMediaServerNotifier mediaServers, Krakarr.Core.Domain.Series series, bool deleteFiles, CancellationToken ct)
     {
         // Downloads still in progress (or finished but not imported) are useless once the title is gone: remove them
         // and their data first, so a failure leaves the title in place to retry.
@@ -471,6 +580,7 @@ public static class SeriesEndpoints
             }
 
             Directory.Delete(series.Path, recursive: true);
+            mediaServers.PathChanged(series.Path);
         }
 
         await db.Downloads.Where(d => d.SeriesId == id)
@@ -487,16 +597,139 @@ public static class SeriesEndpoints
         engine.GetStatuses().Where(s => s.SeriesId is not null && !s.Imported)
             .GroupBy(s => s.SeriesId!.Value).ToDictionary(g => g.Key, g => g.Count());
 
-    private static async Task<Dictionary<int, double>> EpisodeProgressAsync(KrakarrDbContext db, ITorrentEngine engine, int seriesId, CancellationToken ct)
+    private sealed record SeriesEpisodeStats(int SeriesId, int EpisodeCount, int EpisodeFileCount, DateOnly? NextAiring);
+
+    private sealed record SeriesWithEpisodeStats
     {
-        var active = engine.GetStatuses().Where(s => s.SeriesId == seriesId && !s.Imported).ToDictionary(s => s.InfoHash, s => s.Progress, StringComparer.OrdinalIgnoreCase);
+        public int Id { get; init; }
+        public required string Title { get; init; }
+        public required string SortTitle { get; init; }
+        public int Year { get; init; }
+        public string? PosterUrl { get; init; }
+        public SeriesStatus Status { get; init; }
+        public bool Monitored { get; init; }
+        public string? Network { get; init; }
+        public int EpisodeCount { get; init; }
+        public int EpisodeFileCount { get; init; }
+        public DateOnly? NextAiring { get; init; }
+    }
+
+    private static (IQueryable<Core.Domain.Series> Query, bool IsFiltered) FilterSeries(
+        KrakarrDbContext db, string? q, string? filter, int? userId, DateOnly today)
+    {
+        IQueryable<Core.Domain.Series> query = db.Series.AsNoTracking();
+        var isFiltered = false;
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            var term = q.Trim().ToLowerInvariant();
+            // The network matches too, so "netflix" lists the Netflix shows.
+            query = query.Where(s => s.Title.ToLower().Contains(term) || (s.Network != null && s.Network.ToLower().Contains(term)));
+            isFiltered = true;
+        }
+
+        switch (filter?.ToLowerInvariant())
+        {
+            case "following":
+                isFiltered = true;
+                query = userId is { } uid
+                    ? query.Where(s => db.MediaSubscriptions.Any(sub => sub.UserId == uid && sub.SeriesId == s.Id))
+                    : query.Where(_ => false);
+                break;
+            case "missing":
+                isFiltered = true;
+                query = query.Where(s => s.Monitored && s.Episodes.Any(e => e.SeasonNumber > 0 && e.EpisodeFileId == null && e.Monitored && e.AirDate != null && e.AirDate <= today));
+                break;
+            case "continuing":
+                isFiltered = true;
+                query = query.Where(s => s.Status != SeriesStatus.Ended);
+                break;
+            case "ended":
+                isFiltered = true;
+                query = query.Where(s => s.Status == SeriesStatus.Ended);
+                break;
+            case "unmonitored":
+                isFiltered = true;
+                query = query.Where(s => !s.Monitored);
+                break;
+        }
+
+        return (query, isFiltered);
+    }
+
+    private static IOrderedQueryable<Core.Domain.Series> SortSeries(IQueryable<Core.Domain.Series> query, string? sort, bool desc) =>
+        sort switch
+        {
+            "year" => (desc
+                    ? query.OrderBy(s => s.Year == 0 ? 1 : 0).ThenByDescending(s => s.Year)
+                    : query.OrderBy(s => s.Year == 0 ? 1 : 0).ThenBy(s => s.Year))
+                .ThenBy(s => s.SortTitle)
+                .ThenBy(s => s.Id),
+            // Shows without a network always go last.
+            "network" => (desc
+                    ? query.OrderBy(s => s.Network == null ? 1 : 0).ThenByDescending(s => s.Network)
+                    : query.OrderBy(s => s.Network == null ? 1 : 0).ThenBy(s => s.Network))
+                .ThenBy(s => s.SortTitle)
+                .ThenBy(s => s.Id),
+            "status" => (desc
+                    ? query.OrderByDescending(s => s.Status == SeriesStatus.Ended ? 1 : 0)
+                    : query.OrderBy(s => s.Status == SeriesStatus.Ended ? 1 : 0))
+                .ThenBy(s => s.SortTitle)
+                .ThenBy(s => s.Id),
+            _ => desc
+                ? query.OrderByDescending(s => s.SortTitle).ThenByDescending(s => s.Id)
+                : query.OrderBy(s => s.SortTitle).ThenBy(s => s.Id),
+        };
+
+    private static IOrderedQueryable<SeriesWithEpisodeStats> SortSeriesByEpisodeStats(
+        IQueryable<Core.Domain.Series> query, string sort, bool desc, DateOnly today)
+    {
+        var projected = query.Select(s => new SeriesWithEpisodeStats
+        {
+            Id = s.Id,
+            Title = s.Title,
+            SortTitle = s.SortTitle,
+            Year = s.Year,
+            PosterUrl = s.PosterUrl,
+            Status = s.Status,
+            Monitored = s.Monitored,
+            Network = s.Network,
+            EpisodeCount = s.Episodes.Count(e => e.SeasonNumber > 0 && (e.EpisodeFileId != null || (e.Monitored && e.AirDate != null && e.AirDate <= today))),
+            EpisodeFileCount = s.Episodes.Count(e => e.SeasonNumber > 0 && e.EpisodeFileId != null),
+            NextAiring = s.Episodes.Where(e => e.SeasonNumber > 0 && e.AirDate > today).Min(e => e.AirDate),
+        });
+
+        if (sort == "episodes")
+        {
+            var byCompletion = desc
+                ? projected.OrderByDescending(x => x.EpisodeCount == 0 ? 0.0 : (double)x.EpisodeFileCount / x.EpisodeCount)
+                : projected.OrderBy(x => x.EpisodeCount == 0 ? 0.0 : (double)x.EpisodeFileCount / x.EpisodeCount);
+            return byCompletion.ThenBy(x => x.SortTitle).ThenBy(x => x.Id);
+        }
+
+        // nextAiring: shows with no upcoming episode always go last.
+        var byKnown = projected.OrderBy(x => x.NextAiring == null ? 1 : 0);
+        return (desc ? byKnown.ThenByDescending(x => x.NextAiring) : byKnown.ThenBy(x => x.NextAiring))
+            .ThenBy(x => x.SortTitle)
+            .ThenBy(x => x.Id);
+    }
+
+    /// <summary>Per episode being downloaded: the progress of its furthest torrent and that torrent's hash (links to the downloads page).</summary>
+    private static async Task<Dictionary<int, (double Progress, string Hash)>> EpisodeProgressAsync(KrakarrDbContext db, ITorrentEngine engine, int seriesId, CancellationToken ct)
+    {
+        var active = engine.GetStatuses().Where(s => s.SeriesId == seriesId && !s.Imported)
+            .DistinctBy(s => s.InfoHash, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(s => s.InfoHash, s => s.Progress, StringComparer.OrdinalIgnoreCase);
         if (active.Count == 0) return [];
         var rows = await db.Downloads.AsNoTracking().Where(d => d.SeriesId == seriesId && !d.Imported).Select(d => new { d.InfoHash, d.EpisodeIds }).ToListAsync(ct);
-        var result = new Dictionary<int, double>();
+        var result = new Dictionary<int, (double Progress, string Hash)>();
         foreach (var row in rows)
         {
             if (!active.TryGetValue(row.InfoHash, out var p)) continue;
-            foreach (var e in row.EpisodeIds) result[e] = Math.Max(result.GetValueOrDefault(e), p);
+            foreach (var e in row.EpisodeIds)
+            {
+                if (!result.TryGetValue(e, out var current) || p > current.Progress) result[e] = (p, row.InfoHash);
+            }
         }
 
         return result;

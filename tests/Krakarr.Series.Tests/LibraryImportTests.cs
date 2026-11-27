@@ -103,13 +103,25 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
 
         public Task<SeriesInfo> GetSeriesAsync(int tvdbId, CancellationToken ct = default) => Task.FromResult(new SeriesInfo
         {
-            TvdbId = 424242, Title = "Test Show (TVDB)", Year = 2021,
+            TvdbId = 424242, Title = "Test Show (TVDB)", Year = 2021, OriginalLanguage = "ja",
+            AlternateTitles = [new AlternateTitleInfo("Tesuto Sho", "ja"), new AlternateTitleInfo("Serie de prueba", "es"), new AlternateTitleInfo("Testserie", "de")],
             Episodes =
             [
                 new EpisodeInfo { TvdbId = 71, SeasonNumber = 1, EpisodeNumber = 1, AirDate = new DateOnly(2021, 1, 1) },
                 new EpisodeInfo { TvdbId = 72, SeasonNumber = 1, EpisodeNumber = 2, Title = "Renamed", AirDate = new DateOnly(2021, 1, 8) },
             ],
         });
+        public Task LoginAsync(CancellationToken ct = default) => Task.CompletedTask;
+    }
+
+    /// <summary>TheXEM: scene season 2 starts at TheTVDB's S01E02.</summary>
+    private sealed class FakeXem : IXemClient
+    {
+        public Task<IReadOnlyList<SceneMapping>> GetMappingsAsync(int tvdbId, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<SceneMapping>>(tvdbId == 424242 ? [new SceneMapping(1, 1, 1, 1), new SceneMapping(1, 2, 2, 1)] : []);
+
+        public Task<IReadOnlyList<string>> GetNamesAsync(int tvdbId, CancellationToken ct = default) =>
+            Task.FromResult<IReadOnlyList<string>>(tvdbId == 424242 ? ["Test Show", "Test Show Scene"] : []);
     }
 
     private sealed class Unused : IIndexerSearchService, IDownloadService
@@ -128,6 +140,7 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
         services.AddKrakarrData();
         services.AddSingleton<ITmdbTvClient, FakeTmdb>();
         services.AddSingleton<ITvdbClient, FakeTvdb>();
+        services.AddSingleton<IXemClient, FakeXem>();
         services.AddScoped<ISeriesMetadata, SeriesMetadata>();
         services.AddSingleton<IIndexerSearchService, Unused>();
         services.AddSingleton<IDownloadService, Unused>();
@@ -250,6 +263,43 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Refresh_stores_alternate_titles_and_scene_mapping_and_keeps_user_titles()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var scope = _services.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<SeriesService>();
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        var settings = scope.ServiceProvider.GetRequiredService<ISettingsService>();
+        await settings.SaveAsync(new LanguageSettings { Preferred = ["es"] }, ct);
+        var added = await service.AddAsync(new AddSeriesRequest(9001, null, 1, "/tv"), ct);
+        added.AlternateTitles.Add(new AlternateTitle { Title = "Mine", NormalizedTitle = "mine", Source = AlternateTitleSource.User });
+        await db.SaveChangesAsync(ct);
+
+        await settings.SaveAsync(new MetadataSettings { SeriesSource = SeriesMetadataSource.Tvdb, SceneMapping = true }, ct);
+        db.ChangeTracker.Clear();
+        await service.RefreshAsync((await service.LoadAsync(added.Id, ct))!, ct);
+
+        var titles = await db.AlternateTitles.AsNoTracking().Where(t => t.SeriesId == added.Id).ToListAsync(ct);
+        // Original language and wanted language kept, German dropped. The title is now TheTVDB's, so XEM's "Test Show" is an alternate.
+        Assert.Equal(
+            [("Mine", AlternateTitleSource.User), ("Serie de prueba", AlternateTitleSource.Metadata), ("Test Show", AlternateTitleSource.Scene),
+             ("Test Show Scene", AlternateTitleSource.Scene), ("Tesuto Sho", AlternateTitleSource.Metadata)],
+            titles.Select(t => (t.Title, t.Source)).OrderBy(t => t.Title, StringComparer.Ordinal));
+        Assert.Equal("testshowscene", titles.Single(t => t.Title == "Test Show Scene").NormalizedTitle);
+
+        var episodes = await db.Episodes.AsNoTracking().Where(e => e.SeriesId == added.Id).OrderBy(e => e.EpisodeNumber).ToListAsync(ct);
+        Assert.Equal([(1, 1), (2, 1)], episodes.Select(e => (e.SceneSeasonNumber!.Value, e.SceneEpisodeNumber!.Value)));
+
+        // Turning scene mapping off forgets XEM's data and keeps the rest.
+        await settings.SaveAsync(new MetadataSettings { SeriesSource = SeriesMetadataSource.Tvdb }, ct);
+        db.ChangeTracker.Clear();
+        await service.RefreshAsync((await service.LoadAsync(added.Id, ct))!, ct);
+        Assert.Equal(["Mine", "Serie de prueba", "Tesuto Sho"],
+            (await db.AlternateTitles.AsNoTracking().Where(t => t.SeriesId == added.Id).Select(t => t.Title).ToListAsync(ct)).Order(StringComparer.Ordinal));
+        Assert.All(await db.Episodes.AsNoTracking().Where(e => e.SeriesId == added.Id).ToListAsync(ct), e => Assert.Null(e.SceneSeasonNumber));
+    }
+
+    [Fact]
     public async Task Refresh_resolves_series_added_with_tvdb_metadata()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -333,5 +383,61 @@ public sealed class SeriesLibraryImportTests : IAsyncLifetime
         Assert.Equal("Test Show", added.MetadataTitle);
         Assert.NotEqual(takenPath, added.Path);
         Assert.Contains("Test Show (US)", added.Path);
+    }
+
+    [Fact]
+    public async Task Refresh_rescans_disk_for_added_modified_and_deleted_episode_files()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var scope = _services.CreateScope();
+        var import = scope.ServiceProvider.GetRequiredService<SeriesLibraryImport>();
+        var service = scope.ServiceProvider.GetRequiredService<SeriesService>();
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        var showDir = Path.Combine(_root.FullName, "Test Show (2021)");
+
+        Write(showDir, "Season 01/Test.Show.S01E01E02.1080p.WEB-DL.x264-GRP.en.srt", 10);
+        await import.ImportAsync(new SeriesImportItem(showDir, 9001, null, 1), ct);
+        var seriesId = (await db.Series.SingleAsync(ct)).Id;
+
+        // S01E01 already picked up the .en.srt sidecar on import.
+        var initialE1FileId = (await db.Episodes.SingleAsync(e => e.SeasonNumber == 1 && e.EpisodeNumber == 1, ct)).EpisodeFileId!.Value;
+        Assert.Single(await db.SubtitleFiles.Where(s => s.EpisodeFileId == initialE1FileId).ToListAsync(ct), s => s.Language == "en" && s.Provider == "disk");
+
+        // 1. Add a file for missing S01E04 + sidecar subtitle, delete S01E03's file from disk, and modify S01E01E02 in place.
+        Write(showDir, "Season 01/Test.Show.S01E04.1080p.BluRay.x264-SPARKS.mkv", 3200);
+        Write(showDir, "Season 01/Test.Show.S01E04.1080p.BluRay.x264-SPARKS.es.srt", 40);
+        File.Delete(Path.Combine(showDir, "Season 01/Test.Show.S01E03.1080p.WEB-DL.x264-GRP.mkv"));
+        // Also remove the duplicate S01E02 720p file so only the modified S01E01E02 remains for E01/E02.
+        File.Delete(Path.Combine(showDir, "Season 01/Test.Show.S01E02.720p.HDTV.x264-OLD.mkv"));
+        Write(showDir, "Season 01/Test.Show.S01E01E02.1080p.WEB-DL.x264-GRP.mkv", 4500);
+        File.Delete(Path.Combine(showDir, "Season 01/Test.Show.S01E01E02.1080p.WEB-DL.x264-GRP.en.srt"));
+
+        db.ChangeTracker.Clear();
+        await service.RefreshAsync((await service.LoadAsync(seriesId, ct))!, ct);
+
+        db.ChangeTracker.Clear();
+        var episodes = await db.Episodes.Include(e => e.EpisodeFile)
+            .Where(e => e.SeriesId == seriesId && e.SeasonNumber == 1)
+            .OrderBy(e => e.EpisodeNumber)
+            .ToListAsync(ct);
+
+        // S01E01+E02 kept and updated size to 4500; deleted .en.srt removed from SubtitleFiles.
+        Assert.Equal(4500, episodes[0].EpisodeFile!.Size);
+        Assert.Equal(episodes[0].EpisodeFileId, episodes[1].EpisodeFileId);
+        Assert.Empty(await db.SubtitleFiles.Where(s => s.EpisodeFileId == episodes[0].EpisodeFileId).ToListAsync(ct));
+
+        // S01E03 unlinked and its EpisodeFile removed; FileDeleted recorded in history.
+        Assert.Null(episodes[2].EpisodeFileId);
+        Assert.Null(episodes[2].EpisodeFile);
+        var history = await db.History.Where(h => h.SeriesId == seriesId).ToListAsync(ct);
+        Assert.Contains(history, h => h.EventType == HistoryEventType.FileDeleted && h.SourceTitle.Contains("S01E03"));
+
+        // S01E04 linked to the new BluRay-1080p file, Imported history recorded, and .es.srt synced.
+        Assert.NotNull(episodes[3].EpisodeFile);
+        Assert.Equal(Qualities.Bluray1080.Id, episodes[3].EpisodeFile!.QualityId);
+        Assert.Equal("SPARKS", episodes[3].EpisodeFile!.ReleaseGroup);
+        Assert.Equal(3200, episodes[3].EpisodeFile!.Size);
+        Assert.Contains(history, h => h.EventType == HistoryEventType.Imported && h.Message != null && h.Message.Contains("S01E04"));
+        Assert.Single(await db.SubtitleFiles.Where(s => s.EpisodeFileId == episodes[3].EpisodeFileId).ToListAsync(ct), s => s.Language == "es");
     }
 }

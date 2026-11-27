@@ -29,7 +29,11 @@ public sealed class SecurityHeadersTests(KrakarrFactory factory) : IClassFixture
         Assert.Equal("DENY", res.Headers.GetValues("X-Frame-Options").Single());
         Assert.Equal("nosniff", res.Headers.GetValues("X-Content-Type-Options").Single());
         Assert.Equal("no-referrer", res.Headers.GetValues("Referrer-Policy").Single());
-        Assert.Contains("camera=()", res.Headers.GetValues("Permissions-Policy").Single());
+        var permissions = res.Headers.GetValues("Permissions-Policy").Single();
+        Assert.Contains("camera=()", permissions);
+        // Passkey sign-in needs WebAuthn in Krakarr's own pages.
+        Assert.Contains("publickey-credentials-get=(self)", permissions);
+        Assert.Contains("publickey-credentials-create=(self)", permissions);
         Assert.False(res.Headers.Contains("Strict-Transport-Security")); // opt-in
     }
 }

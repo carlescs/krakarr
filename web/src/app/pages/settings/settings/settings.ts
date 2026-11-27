@@ -1,11 +1,12 @@
 import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { Api, errorMessage } from '../../../core/api';
+import { ActivatedRoute } from '@angular/router';
+import { Api, SettingsMap, errorMessage } from '../../../core/api';
 import { BytesPipe } from '../../../core/format';
 import { Events } from '../../../core/events';
 import {
-  AutomationSettings, DirectoryListing, Language, SubtitleSettings, DownloadClientKind, DownloadClientSettings, DownloadClientTestResult, GeneralSettings, JellyfinSettings, JellyfinTestResult, MediaManagementSettings, MetadataSettings, OtlpProtocol, Quality,
+  AutomationSettings, DirectoryListing, Language, SubtitleSettings, SubtitleSyncTools, DownloadClientKind, DownloadClientSettings, DownloadClientTestResult, GeneralSettings, MediaManagementSettings, MetadataSettings, OtlpProtocol, Quality,
   QualityProfile, RootFolder, ScheduledTaskInfo, SystemStatus, TelemetrySettings, TelemetryStatus,
 } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
@@ -18,6 +19,10 @@ import { Languages } from '../../../core/languages';
 import { Auth } from '../../../core/auth';
 import { AccountSettings } from '../account/account';
 import { UsersSettings } from '../users/users';
+import { HealthSettings } from '../health/health';
+import { BackupSettingsPanel } from '../backups/backups';
+import { DatabaseSettings } from '../database/database';
+import { MediaServerSettings } from '../media-servers/media-servers';
 
 interface TokenDoc { token: string; description: string; example: string; }
 
@@ -53,6 +58,20 @@ const NAMING_TOKENS: { title: string; usedIn: string; tokens: TokenDoc[] }[] = [
       { token: 'ImdbId', description: 'IMDb id, when known', example: 'tt0386676' },
     ],
   },
+  {
+    title: 'Media info tokens',
+    usedIn: 'Movie and episode file formats. Read from the file itself; empty when it can\'t be read.',
+    tokens: [
+      { token: 'MediaInfo VideoCodec', description: 'Video codec', example: 'HEVC' },
+      { token: 'MediaInfo VideoBitDepth', description: 'Video bit depth', example: '10' },
+      { token: 'MediaInfo VideoDynamicRange', description: 'HDR10, HDR10+, HLG, DV, DV HDR10 or DV HDR10+; empty for SDR', example: 'HDR10' },
+      { token: 'MediaInfo Resolution', description: 'Real resolution of the video', example: '2160p' },
+      { token: 'MediaInfo AudioCodec', description: 'Codec of the first audio track', example: 'EAC3 Atmos' },
+      { token: 'MediaInfo AudioChannels', description: 'Channels of the first audio track', example: '5.1' },
+      { token: 'MediaInfo AudioLanguages', description: 'Tagged audio languages, joined with "+"', example: 'EN+ES' },
+      { token: 'MediaInfo Simple', description: 'Video and audio codec', example: 'HEVC EAC3 Atmos' },
+    ],
+  },
 ];
 
 function sampleValues(tokens: TokenDoc[]): Record<string, string> {
@@ -67,11 +86,11 @@ export function buildName(format: string, values: Record<string, string>): strin
   return result.trim().replace(/\.+$/, '').replace(/\s{2,}/g, ' ').trim();
 }
 
-type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'jellyfin' | 'telemetry' | 'tasks' | 'users' | 'general' | 'account';
+type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'media-servers' | 'telemetry' | 'health' | 'tasks' | 'backups' | 'database' | 'users' | 'general' | 'account';
 
 @Component({
   selector: 'kr-settings',
-  imports: [LanguagePicker, FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings, SortHeader],
+  imports: [LanguagePicker, FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings, HealthSettings, BackupSettingsPanel, DatabaseSettings, MediaServerSettings, SortHeader],
   templateUrl: './settings.html',
   styleUrl: './settings.scss',
 })
@@ -80,6 +99,7 @@ export class SettingsPage implements OnInit {
   private readonly toasts = inject(Toasts);
   private readonly events = inject(Events);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly route = inject(ActivatedRoute);
 
   protected readonly auth = inject(Auth);
   private readonly adminTabs: { id: Tab; label: string }[] = [
@@ -88,9 +108,12 @@ export class SettingsPage implements OnInit {
     { id: 'downloads', label: 'Download client' },
     { id: 'subtitles', label: 'Subtitles' },
     { id: 'metadata', label: 'Metadata' },
-    { id: 'jellyfin', label: 'Jellyfin' },
+    { id: 'media-servers', label: 'Media servers' },
     { id: 'telemetry', label: 'Telemetry' },
+    { id: 'health', label: 'Health' },
     { id: 'tasks', label: 'Tasks' },
+    { id: 'backups', label: 'Backups' },
+    { id: 'database', label: 'Database' },
     { id: 'users', label: 'Users' },
     { id: 'general', label: 'General' },
     { id: 'account', label: 'Account' },
@@ -116,12 +139,22 @@ export class SettingsPage implements OnInit {
   ];
   protected readonly clientTest = signal<DownloadClientTestResult | null>(null);
   protected readonly subtitles = signal<SubtitleSettings | null>(null);
-  protected readonly jellyfin = signal<JellyfinSettings | null>(null);
-  protected readonly jellyfinTest = signal<JellyfinTestResult | null>(null);
-  protected readonly testingJellyfin = signal(false);
+  /** Which subtitle sync tools the server found (null while loading). */
+  protected readonly syncTools = signal<SubtitleSyncTools | null>(null);
   protected readonly telemetry = signal<TelemetrySettings | null>(null);
   protected readonly telemetryStatus = signal<TelemetryStatus | null>(null);
-  protected readonly savingTelemetry = signal(false);
+  protected readonly saving = signal(false);
+  /** Tabs whose settings are saved with the footer's Save button, once they have loaded. */
+  protected readonly saveable = computed(() => {
+    switch (this.tab()) {
+      case 'media': return !!this.media();
+      case 'downloads': return !!this.downloads() || !!this.automation();
+      case 'subtitles': return !!this.subtitles();
+      case 'metadata': return !!this.metadata();
+      case 'telemetry': return !!this.telemetry();
+      default: return false;
+    }
+  });
   /** Wait after saving before reading the status: the server restarts the exporters in the background. */
   telemetryStatusDelayMs = 1500;
   protected readonly languages = signal<Language[]>([]);
@@ -129,12 +162,13 @@ export class SettingsPage implements OnInit {
   private readonly subtitleLanguages = inject(SubtitleLanguages);
   protected wantedLanguages: string[] = [];
   protected readonly subtitleTest = signal<{ success: boolean; message: string } | null>(null);
+  protected readonly subdlTest = signal<{ success: boolean; message: string } | null>(null);
   protected readonly testingSubtitles = signal(false);
   protected readonly testingClient = signal(false);
   protected readonly selectableQualities = computed(() => this.qualities().filter(q => q.id !== 0));
   protected readonly tokenDocs = NAMING_TOKENS;
-  protected readonly sampleMovie = sampleValues(NAMING_TOKENS[0].tokens);
-  protected readonly sampleEpisode = sampleValues(NAMING_TOKENS[1].tokens);
+  protected readonly sampleMovie = { ...sampleValues(NAMING_TOKENS[0].tokens), ...sampleValues(NAMING_TOKENS[2].tokens) };
+  protected readonly sampleEpisode = { ...sampleValues(NAMING_TOKENS[1].tokens), ...sampleValues(NAMING_TOKENS[2].tokens) };
   protected readonly sampleMultiEpisode = { ...this.sampleEpisode, 'Episode': '01-E02', 'Episode Title': 'Pilot + Diversity Day' };
   /** Client-side approximation of the server's FileNameBuilder, for the examples under each format. */
   protected example(format: string, values: Record<string, string>) { return buildName(format ?? '', values); }
@@ -154,6 +188,11 @@ export class SettingsPage implements OnInit {
   private readonly now = signal(Date.now());
 
   async ngOnInit() {
+    // /settings/<tab> opens a tab directly (links from the bell and the health page).
+    this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
+      const wanted = params.get('tab');
+      if (wanted && this.tabs().some(t => t.id === wanted)) this.tab.set(wanted as Tab);
+    });
     if (!this.auth.isAdmin()) return;
     this.events.taskUpdated.pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(t => this.tasks.update(list => list.map(x => (x.id === t.id ? t : x))));
@@ -175,11 +214,15 @@ export class SettingsPage implements OnInit {
     this.general.set(general);
     this.status.set(status);
     this.api.settings('languages').then(l => this.wantedLanguages = l.preferred, () => {});
-    this.api.settings('jellyfin').then(j => this.jellyfin.set(j), () => {});
     this.api.settings('telemetry').then(t => this.telemetry.set(t), () => {});
     this.api.telemetryStatus().then(s => this.telemetryStatus.set(s), () => {});
     this.languageCatalog.load().catch(() => {});
     const [subs, langs] = await Promise.all([this.api.settings('subtitles'), this.api.subtitleLanguages()]);
+    if (subs) {
+      subs.subdl ??= { enabled: true };
+      subs.sync ??= { automatic: false, belowScore: 90, timeoutSeconds: 300 };
+    }
+    this.api.subtitleSyncTools().then(t => this.syncTools.set(t), () => {});
     this.subtitles.set(subs);
     this.languages.set(langs);
   }
@@ -228,14 +271,15 @@ export class SettingsPage implements OnInit {
   protected addLanguage(list: string[], code: string) { return code && !list.includes(code) ? [...list, code] : list; }
   protected removeLanguage(list: string[], code: string) { return list.filter(c => c !== code); }
 
-  async testSubtitles(settings: SubtitleSettings) {
+  async testSubtitles(settings: SubtitleSettings, provider: 'opensubtitles' | 'subdl' = 'opensubtitles') {
     this.testingSubtitles.set(true);
+    const target = provider === 'subdl' ? this.subdlTest : this.subtitleTest;
     try {
       const results = await this.api.testSubtitleProviders(settings);
-      const r = results[0];
-      this.subtitleTest.set(r ? { success: r.success, message: r.message } : { success: false, message: 'No providers' });
+      const r = results.find(x => x.name === provider) ?? results[0];
+      target.set(r ? { success: r.success, message: r.message } : { success: false, message: 'No providers' });
     } catch (e) {
-      this.subtitleTest.set({ success: false, message: errorMessage(e) });
+      target.set({ success: false, message: errorMessage(e) });
     } finally {
       this.testingSubtitles.set(false);
     }
@@ -245,14 +289,32 @@ export class SettingsPage implements OnInit {
     return this.qualities().filter(q => p.allowedQualityIds.includes(q.id)).sort((a, b) => b.weight - a.weight);
   }
 
-  async save<K extends 'media' | 'downloads' | 'automation' | 'metadata' | 'subtitles' | 'jellyfin'>(section: K, value: Parameters<Api['saveSettings']>[1] & object) {
+  /** Saves every section shown on the current tab (the footer's Save button). */
+  async saveTab() {
+    if (this.saving()) return;
+    this.saving.set(true);
     try {
-      await this.api.saveSettings(section, value as never);
-      if (section === 'subtitles') this.subtitleLanguages.load(true).catch(() => {});
+      switch (this.tab()) {
+        case 'media': await this.saveSection('media', this.media()); break;
+        case 'downloads': await Promise.all([this.saveSection('downloads', this.downloads()), this.saveSection('automation', this.automation())]); break;
+        case 'subtitles':
+          await this.saveSection('subtitles', this.subtitles());
+          this.subtitleLanguages.load(true).catch(() => {});
+          break;
+        case 'metadata': await this.saveSection('metadata', this.metadata()); break;
+        case 'telemetry': await this.saveTelemetry(); return;
+        default: return;
+      }
       this.toasts.success('Settings saved');
     } catch (e) {
       this.toasts.error(errorMessage(e));
+    } finally {
+      this.saving.set(false);
     }
+  }
+
+  private async saveSection<K extends 'media' | 'downloads' | 'automation' | 'metadata' | 'subtitles'>(section: K, value: SettingsMap[K] | null) {
+    if (value) await this.api.saveSettings(section, value);
   }
 
   async saveLanguages() {
@@ -272,25 +334,13 @@ export class SettingsPage implements OnInit {
     t.protocol = protocol;
   }
 
-  async saveTelemetry(settings: TelemetrySettings) {
-    this.savingTelemetry.set(true);
-    try {
-      this.telemetry.set(await this.api.saveSettings('telemetry', settings));
-      this.toasts.success('Settings saved');
-      await new Promise(resolve => setTimeout(resolve, this.telemetryStatusDelayMs));
-      this.telemetryStatus.set(await this.api.telemetryStatus());
-    } catch (e) {
-      this.toasts.error(errorMessage(e));
-    } finally {
-      this.savingTelemetry.set(false);
-    }
-  }
-
-  async testJellyfin(settings: JellyfinSettings) {
-    this.testingJellyfin.set(true);
-    try { this.jellyfinTest.set(await this.api.testJellyfin(settings)); }
-    catch (e) { this.jellyfinTest.set({ success: false, message: errorMessage(e) }); }
-    finally { this.testingJellyfin.set(false); }
+  private async saveTelemetry() {
+    const settings = this.telemetry();
+    if (!settings) return;
+    this.telemetry.set(await this.api.saveSettings('telemetry', settings));
+    this.toasts.success('Settings saved');
+    await new Promise(resolve => setTimeout(resolve, this.telemetryStatusDelayMs));
+    this.telemetryStatus.set(await this.api.telemetryStatus());
   }
 
   async testClient(settings: DownloadClientSettings) {

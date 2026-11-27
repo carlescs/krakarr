@@ -30,7 +30,7 @@ export class Notifications {
 
   start() {
     if (this.subscription) return;
-    this.subscription = merge(this.events.notificationsUpdated, this.events.requestsUpdated, interval(REFRESH_INTERVAL_MS)).subscribe(() => this.refresh());
+    this.subscription = merge(this.events.notificationsUpdated, this.events.requestsUpdated, this.events.resynced, interval(REFRESH_INTERVAL_MS)).subscribe(() => this.refresh());
     this.refresh();
   }
 
@@ -45,6 +45,24 @@ export class Notifications {
       this.items.set(await this.api.notifications());
     } catch {
       // Keep the last known state; the bell is not worth an error toast.
+    }
+  }
+
+  async dismiss(id: string) {
+    this.items.update(items => items.filter(n => n.id !== id));
+    try {
+      await this.api.dismissNotification(id);
+    } catch {
+      await this.refresh();
+    }
+  }
+
+  async dismissAll() {
+    this.items.set([]);
+    try {
+      await this.api.dismissAllNotifications();
+    } catch {
+      await this.refresh();
     }
   }
 }

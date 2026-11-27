@@ -1,18 +1,46 @@
-import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
+import { ScrollingModule } from '@angular/cdk/scrolling';
+import { Component, DestroyRef, ElementRef, Injector, OnInit, computed, effect, inject, signal, untracked } from '@angular/core';
+import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
 import { Auth } from '../../core/auth';
 import { Events } from '../../core/events';
-import { Language, SubtitleSettings, WantedSubtitle } from '../../core/models';
+import { Language, SubtitleProvider, SubtitleSettings, WantedSubtitle, WantedSubtitlePage, WantedSubtitleQuery, WantedSubtitleSortKey } from '../../core/models';
+import { PagedListCache, VirtualRowDataSource } from '../../core/paged-list';
 import { Toasts } from '../../core/toast';
+import { observeContainerWidth, KrVirtualTable } from '../../core/virtual-scroll';
+import { MultiPicker, PickerOption } from '../../shared/multi-picker/multi-picker';
 import { SubtitleManager } from '../../shared/subtitle-manager/subtitle-manager';
+import { BestMatchItem, SubtitleBestMatch } from '../../shared/subtitle-best-match/subtitle-best-match';
 import { TableSort } from '../../core/table-sort';
 import { SortHeader } from '../../shared/sort-header/sort-header';
+import { RedundantSubtitles } from './redundant-subtitles/redundant-subtitles';
+
+/** Page tab: files missing subtitles, or downloaded subtitles a video already has embedded. */
+export type SubtitlesTab = 'wanted' | 'redundant';
+
+/** Which wanted files to list: all of them, those still searched automatically, or those marked "not found". */
+export type WantedFilter = 'all' | 'searching' | 'notFound';
+
+/** A wanted file with a list id: movie file ids as they are, episode file ids negated so the two never collide. */
+type WantedRow = WantedSubtitle & { id: number };
+type WantedListQuery = Omit<WantedSubtitleQuery, 'notFound'> & { filter: WantedFilter };
+type WantedPageRows = Omit<WantedSubtitlePage, 'items'> & { items: WantedRow[] };
+
+/** Table rows are a fixed height so the list can be virtualized: one line on wider screens, title plus badges and touch-sized buttons on phones. */
+const ROW_HEIGHT = 44;
+const MOBILE_ROW_HEIGHT = 76;
+const SM_BREAKPOINT = 640;
+
+/** Files one "best match for all" run walks through (the wanted endpoint's page size limit). */
+const BEST_MATCH_LIMIT = 500;
+
+function notFoundParam(filter: WantedFilter) { return filter === 'all' ? undefined : filter === 'notFound'; }
 
 @Component({
   selector: 'kr-subtitles',
-  imports: [RouterLink, SubtitleManager, SortHeader],
+  imports: [KrVirtualTable, ScrollingModule, RouterLink, DatePipe, NgTemplateOutlet, MultiPicker, SubtitleManager, SubtitleBestMatch, SortHeader, RedundantSubtitles],
   templateUrl: './subtitles.html',
   styleUrl: './subtitles.scss',
 })
@@ -22,47 +50,187 @@ export class SubtitlesPage implements OnInit {
   private readonly toasts = inject(Toasts);
   private readonly events = inject(Events);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
 
   protected readonly settings = signal<SubtitleSettings | null>(null);
-  protected readonly wanted = signal<WantedSubtitle[]>([]);
-  protected readonly languages = signal<Language[]>([]);
-  protected readonly loading = signal(true);
-  protected readonly manage = signal<WantedSubtitle | null>(null);
-  protected readonly sort = new TableSort(this.wanted, {
-    type: w => w.mediaType,
-    title: w => w.label,
-    missing: { value: w => w.missingLanguages.length, desc: true },
+  protected readonly providers = signal<SubtitleProvider[]>([]);
+  protected readonly availableProviders = computed<PickerOption<string>[]>(() =>
+    this.providers().filter(p => p.configured).map(p => ({ id: p.name, name: p.displayName || p.name })));
+  protected readonly selectedProviders = signal<string[]>([]);
+  /** Tab and filter live in the URL (`?tab=redundant&show=notFound`) so links and the back button keep them. */
+  private readonly initialParams = this.route.snapshot.queryParamMap;
+  protected readonly tab = signal<SubtitlesTab>(this.initialParams.get('tab') === 'redundant' ? 'redundant' : 'wanted');
+  protected readonly tabs: { id: SubtitlesTab; label: string; title: string }[] = [
+    { id: 'wanted', label: 'Wanted', title: 'Files missing a wanted language' },
+    { id: 'redundant', label: 'Already embedded', title: 'Downloaded subtitles in a language the video already has as an embedded track' },
+  ];
+  /** Files marked "not found" are hidden by default: nothing will happen to them until they are retried. */
+  protected readonly filter = signal<WantedFilter>(
+    (['all', 'notFound'] as const).find(f => f === this.initialParams.get('show')) ?? 'searching');
+  protected readonly filters: { id: WantedFilter; label: string; title: string }[] = [
+    { id: 'searching', label: 'Searching', title: 'Files the scheduled search still retries' },
+    { id: 'notFound', label: 'Not found', title: 'Files no provider had subtitles for, or marked by hand; not searched automatically until retried' },
+    { id: 'all', label: 'All', title: 'Every file missing a wanted language' },
+  ];
+  /** Sort state shared with `SortHeader`; the server sorts, so the source here stays empty. */
+  protected readonly sort = new TableSort<WantedRow, WantedSubtitleSortKey>(signal<WantedRow[]>([]), {
+    type: 'source',
+    title: 'source',
+    missing: { value: () => null, desc: true },
   });
+  /** Keeps the filter by name: the cache's query key ignores `false`, so `notFound: false` would read as "all". */
+  private readonly query = computed<WantedListQuery>(() => {
+    const { key, desc } = this.sort.state();
+    return { filter: this.filter(), sort: key ?? undefined, desc: key && desc ? true : undefined };
+  });
+
+  /** Pages of the wanted list, loaded as the table scrolls and dropped again when far away (bounded). */
+  private readonly cache = new PagedListCache<WantedRow, WantedListQuery, WantedPageRows>(
+    untracked(() => this.query()),
+    async ({ filter, ...q }, page, pageSize) => {
+      const notFound = notFoundParam(filter);
+      const res = await this.api.wantedSubtitles({ ...(notFound != null ? { notFound } : {}), ...q, page, pageSize });
+      return { ...res, items: res.items.map(w => ({ ...w, id: w.movieFileId ?? -(w.episodeFileId ?? 0) })) };
+    },
+    e => this.toasts.error(errorMessage(e)),
+    undefined,
+    500, // a bulk search publishes one event per file: refresh once things settle
+  );
+  protected readonly loading = this.cache.loading;
+  /** Total for the selected filter. */
+  protected readonly total = this.cache.total;
+  /** Total for a filter, reported with every page. */
+  protected count(filter: WantedFilter): number | null {
+    const page = this.cache.meta();
+    if (!page) return null;
+    return filter === 'searching' ? page.searching : filter === 'notFound' ? page.notFound : page.libraryTotal;
+  }
+
+  private readonly viewportWidth = signal(typeof window !== 'undefined' ? window.innerWidth : 1024);
+  protected readonly rowHeight = computed(() => (this.viewportWidth() < SM_BREAKPOINT ? MOBILE_ROW_HEIGHT : ROW_HEIGHT));
+  /** One virtual row per wanted file: its index in the list. */
+  private readonly rows = computed(() => Array.from({ length: this.total() }, (_, i) => i));
+  protected readonly dataSource: VirtualRowDataSource<number>;
+
+  protected readonly languages = signal<Language[]>([]);
+  /** The file whose subtitle dialog is open. */
+  protected readonly manage = signal<WantedSubtitle | null>(null);
+  /** The missing language clicked to open it, searched first; null searches every missing language. */
+  protected readonly manageLanguage = signal<string | null>(null);
+  /** Files to review best-match subtitles for, one dialog step per file. */
+  protected readonly bestMatch = signal<BestMatchItem[] | null>(null);
+  protected readonly loadingBestMatch = signal(false);
   /** Managers can't read settings; for them the server reports a missing provider when they search. */
-  protected readonly ready = computed(() => !this.auth.isAdmin() || (!!this.settings()?.enabled && !!this.settings()?.openSubtitles.apiKey));
+  protected readonly ready = computed(() => {
+    if (!this.auth.isAdmin()) return true;
+    const s = this.settings();
+    return !!s?.enabled && ((s.openSubtitles?.enabled !== false && !!s.openSubtitles?.apiKey) || (s.subdl?.enabled !== false && !!s.subdl?.apiKey));
+  });
+
+  constructor() {
+    const host = inject(ElementRef<HTMLElement>);
+    this.dataSource = new VirtualRowDataSource(this.rows, (rows, start, end) => [rows[start], rows[end]],
+      (start, end) => this.cache.ensureRange(start, end), inject(Injector));
+    this.destroyRef.onDestroy(observeContainerWidth(host.nativeElement, (_, vw) => this.viewportWidth.set(vw)));
+    this.destroyRef.onDestroy(() => this.dataSource.destroy());
+
+    effect(() => {
+      if (this.cache.setQuery(this.query()) && typeof window !== 'undefined' && window.scrollY > 0) window.scrollTo({ top: 0 });
+    });
+  }
 
   async ngOnInit() {
+    this.api.subtitleProviders().then(list => this.providers.set(list)).catch(() => { /* search still queries all configured providers */ });
     const [s, langs] = await Promise.all([
       this.auth.isAdmin() ? this.api.settings('subtitles') : Promise.resolve(null), this.api.subtitleLanguages(),
     ]);
     this.settings.set(s);
     this.languages.set(langs);
-    await this.load();
-    this.events.subtitlesUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.load());
+    this.destroyRef.onDestroy(this.cache.attach());
+    this.events.subtitlesUpdated.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.cache.invalidate());
   }
 
-  async load() {
-    try { this.wanted.set(await this.api.wantedSubtitles()); }
-    catch (e) { this.toasts.error(errorMessage(e)); }
-    finally { this.loading.set(false); }
+  /** Reloads the loaded pages in place (after a change made here). */
+  load() { return this.cache.reload(); }
+
+  protected wantedAt(index: number): WantedRow | undefined { return this.cache.at(index); }
+
+  protected trackRow(_: number, index: number) { return index; }
+
+  protected setFilter(filter: WantedFilter) {
+    this.filter.set(filter);
+    this.syncUrl();
   }
 
-  protected languageNames(codes: string[]) {
-    return codes.map(c => this.languages().find(l => l.code === c)?.name ?? c).join(', ');
+  protected setTab(tab: SubtitlesTab) {
+    this.tab.set(tab);
+    this.syncUrl();
   }
 
+  /** Mirrors the tab and filter into the query string, leaving defaults out. */
+  private syncUrl() {
+    const tab = this.tab() === 'wanted' ? null : this.tab();
+    const show = this.tab() === 'wanted' && this.filter() !== 'searching' ? this.filter() : null;
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { tab, show }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
+  async retry(w?: WantedSubtitle) {
+    try {
+      const { count } = await this.api.retrySubtitles(w ? { movieFileId: w.movieFileId, episodeFileId: w.episodeFileId } : {});
+      this.toasts.show(w ? `${w.label} will be searched again shortly` : `${count} file(s) will be searched again shortly`);
+      await this.load();
+    } catch (e) { this.toasts.error(errorMessage(e)); }
+  }
+
+  /** Stops the scheduled search for every movie and episode still missing subtitles, until they are retried. */
+  async markAllNotFound() {
+    const n = this.count('searching');
+    if (!confirm(`Mark ${n ?? 'all'} file(s) missing subtitles as not found? They won't be searched automatically until you retry them.`)) return;
+    try {
+      const { count } = await this.api.markAllSubtitlesNotFound();
+      this.toasts.show(`${count} file(s) marked as not found`);
+      await this.load();
+    } catch (e) { this.toasts.error(errorMessage(e)); }
+  }
+
+  protected languageName(code: string) { return this.languages().find(l => l.code === code)?.name ?? code; }
+
+  protected languageNames(codes: string[]) { return codes.map(c => this.languageName(c)).join(', '); }
+
+  /** Searches one file in the background, downloading what meets the minimum score. */
   async search(w: WantedSubtitle) {
-    await this.api.searchSubtitles({ movieFileId: w.movieFileId, episodeFileId: w.episodeFileId });
-    this.toasts.show(`Searching subtitles for ${w.label}…`);
+    try {
+      await this.api.searchSubtitles({ movieFileId: w.movieFileId, episodeFileId: w.episodeFileId });
+      this.toasts.show(`Searching subtitles for ${w.label}…`);
+    } catch (e) { this.toasts.error(errorMessage(e)); }
+  }
+
+  /** Reviews the best match for every file in the current filter (in list order, up to one page), asking for each file in turn. */
+  async bestMatchAll() {
+    const { filter, ...q } = this.query();
+    const notFound = notFoundParam(filter);
+    this.loadingBestMatch.set(true);
+    try {
+      const res = await this.api.wantedSubtitles({ ...(notFound != null ? { notFound } : {}), ...q, page: 1, pageSize: BEST_MATCH_LIMIT });
+      if (res.items.length === 0) return;
+      if (res.total > res.items.length) this.toasts.show(`Going through the first ${res.items.length} of ${res.total} files`);
+      this.bestMatch.set(res.items.map(w => ({ movieFileId: w.movieFileId, episodeFileId: w.episodeFileId, label: w.label })));
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+    } finally {
+      this.loadingBestMatch.set(false);
+    }
   }
 
   async searchAll() {
-    await this.api.searchSubtitles();
-    this.toasts.show('Searching subtitles for all wanted files…');
+    const allowed = new Set(this.availableProviders().map(p => p.id));
+    const providers = this.selectedProviders().filter(id => allowed.has(id));
+    const notFound = notFoundParam(this.filter());
+    await this.api.searchSubtitles({ ...(providers.length > 0 ? { providers } : {}), ...(notFound != null ? { notFound } : {}) });
+    const names = this.availableProviders().filter(p => providers.includes(p.id)).map(p => p.name);
+    this.toasts.show(names.length > 0
+      ? `Searching subtitles for all wanted files (${names.join(', ')})…`
+      : 'Searching subtitles for all wanted files…');
   }
 }

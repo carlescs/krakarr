@@ -1,7 +1,10 @@
-import { Injectable, signal } from '@angular/core';
+import { DestroyRef, Injectable, inject, signal } from '@angular/core';
 import { HubConnection, HubConnectionBuilder, HubConnectionState, LogLevel } from '@microsoft/signalr';
 import { Subject } from 'rxjs';
-import { CommandInfo, HistoryItem, ScheduledTaskInfo, TorrentStatus } from './models';
+import { BackgroundTaskProgress, CommandInfo, HistoryItem, ScheduledTaskInfo, TorrentStatus } from './models';
+
+/** How long to wait before reopening a connection that closed for good or failed to open. */
+const RETRY_MS = 5000;
 
 /** Real-time server events over SignalR. */
 @Injectable({ providedIn: 'root' })
@@ -18,10 +21,44 @@ export class Events {
   readonly requestsUpdated = new Subject<void>();
   /** Something a notification source reports may have changed. */
   readonly notificationsUpdated = new Subject<void>();
+  /** A background task was queued, started, finished, cancelled or dismissed; sent to whoever may see it. */
+  readonly backgroundTasksUpdated = new Subject<void>();
+  /** Progress of a background task changed (e.g. a subtitle sync); sent to whoever may see it. */
+  readonly backgroundTaskProgress = new Subject<BackgroundTaskProgress>();
+  /** A health run finished (admins refetch the report). */
+  readonly healthUpdated = new Subject<void>();
+  /** An indexer started or stopped backing off after failures. */
+  readonly indexerStatusUpdated = new Subject<void>();
+
+  /**
+   * The connection was (re)established. Events sent while it was down are lost (the tab was in the background, the
+   * device slept, the network dropped), so whatever mirrors server state refetches it on this.
+   */
+  readonly resynced = new Subject<void>();
 
   private connection?: HubConnection;
+  /** False until `start()` and after `stop()`: a closed connection is only reopened in between. */
+  private running = false;
+  private retry?: ReturnType<typeof setTimeout>;
+
+  constructor() {
+    // Automatic reconnect gives up after its last delay; reopen as soon as the user is back or the network returns.
+    const wake = () => {
+      if (document.visibilityState === 'visible' && this.connection?.state === HubConnectionState.Disconnected) this.start();
+    };
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('online', wake);
+    inject(DestroyRef).onDestroy(() => {
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('online', wake);
+      clearTimeout(this.retry);
+    });
+  }
 
   async start() {
+    this.running = true;
+    clearTimeout(this.retry);
+    this.retry = undefined;
     if (this.connection && this.connection.state !== HubConnectionState.Disconnected) return;
     const baseHref = document.querySelector('base')?.getAttribute('href') ?? '/';
     this.connection = new HubConnectionBuilder()
@@ -39,23 +76,48 @@ export class Events {
     this.connection.on('taskUpdated', (t: ScheduledTaskInfo) => this.taskUpdated.next(t));
     this.connection.on('requestsUpdated', () => this.requestsUpdated.next());
     this.connection.on('notificationsUpdated', () => this.notificationsUpdated.next());
+    this.connection.on('backgroundTasksUpdated', () => this.backgroundTasksUpdated.next());
+    this.connection.on('backgroundTaskProgress', (p: BackgroundTaskProgress) => this.backgroundTaskProgress.next(p));
+    this.connection.on('healthUpdated', () => this.healthUpdated.next());
+    this.connection.on('indexerStatusUpdated', () => this.indexerStatusUpdated.next());
     this.connection.onreconnecting(() => this.connected.set(false));
-    this.connection.onreconnected(() => this.connected.set(true));
-    this.connection.onclose(() => this.connected.set(false));
-
-    try {
-      await this.connection.start();
+    this.connection.onreconnected(() => {
       this.connected.set(true);
-    } catch {
+      this.resynced.next();
+    });
+    // Closed for good: automatic reconnect ran out of attempts (or the server went away while it couldn't reconnect).
+    this.connection.onclose(() => {
       this.connected.set(false);
-      setTimeout(() => this.start(), 5000);
+      this.scheduleRetry();
+    });
+
+    const connection = this.connection;
+    try {
+      await connection.start();
+      this.connected.set(true);
+      this.resynced.next();
+    } catch {
+      if (connection === this.connection) {
+        this.connected.set(false);
+        this.scheduleRetry();
+      }
     }
   }
 
   async stop() {
+    this.running = false;
+    clearTimeout(this.retry);
+    this.retry = undefined;
     await this.connection?.stop();
     this.connection = undefined;
     this.connected.set(false);
   }
-}
 
+  private scheduleRetry() {
+    if (!this.running || this.retry) return;
+    this.retry = setTimeout(() => {
+      this.retry = undefined;
+      if (this.running) this.start();
+    }, RETRY_MS);
+  }
+}

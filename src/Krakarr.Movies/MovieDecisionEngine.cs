@@ -49,11 +49,7 @@ public static class MovieDecisionEngine
                 rejections.Add("Release is a TV episode/season");
             }
 
-            var normalized = ReleaseParser.NormalizeTitle(parsed.Title);
-            var titleMatches = normalized.Length > 0
-                && (normalized == ReleaseParser.NormalizeTitle(movie.Title)
-                    || normalized == ReleaseParser.NormalizeTitle(movie.OriginalTitle));
-            if (!titleMatches)
+            if (!TitleMatches(movie, parsed.Title))
             {
                 rejections.Add($"Title mismatch (parsed \"{parsed.Title}\")");
             }
@@ -116,6 +112,19 @@ public static class MovieDecisionEngine
             Release = release, Parsed = parsed, Rejections = rejections,
             Languages = releaseLanguages, LanguageRank = languageRank ?? int.MaxValue,
         };
+    }
+
+    /// <summary>
+    /// True when a parsed release title names the movie: its title, original title or one of its loaded
+    /// <see cref="Movie.AlternateTitles"/>, all normalised the same way.
+    /// </summary>
+    public static bool TitleMatches(Movie movie, string? parsedTitle)
+    {
+        var normalized = ReleaseParser.NormalizeTitle(parsedTitle);
+        return normalized.Length > 0
+            && (normalized == ReleaseParser.NormalizeTitle(movie.Title)
+                || normalized == ReleaseParser.NormalizeTitle(movie.OriginalTitle)
+                || movie.AlternateTitles.Any(t => normalized == ReleaseParser.NormalizeTitle(t.Title)));
     }
 
     /// <summary>Approved first, then preferred language, best quality, propers/repacks, seeders and indexer priority.</summary>

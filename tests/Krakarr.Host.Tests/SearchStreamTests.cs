@@ -86,4 +86,56 @@ public sealed class SearchStreamTests(KrakarrFactory factory) : IClassFixture<Kr
         Assert.All(done.GetProperty("indexers").EnumerateArray(), i => Assert.Equal("Done", i.GetProperty("state").GetString()));
         Assert.Null(await reader.ReadLineAsync(ct));
     }
+
+    [Fact]
+    public async Task Search_lists_enabled_indexers_and_filters_by_selected_ids()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var torznab = new FakeTorznab();
+        using var app = factory.WithWebHostBuilder(b => b.ConfigureServices(s => s.AddScoped<ITorznabClient>(_ => torznab)));
+        int fastId, secondId;
+        using (var scope = app.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+            db.Indexers.RemoveRange(await db.Indexers.ToListAsync(ct));
+            var fast = new Indexer { Name = "Fast", BaseUrl = "http://fast", ApiKey = "secret-key", Enabled = true, Priority = 10 };
+            var second = new Indexer { Name = "Second", BaseUrl = "http://second", Enabled = true, Priority = 20 };
+            var slow = new Indexer { Name = "Slow", BaseUrl = "http://slow", Enabled = true, Priority = 30 };
+            var disabled = new Indexer { Name = "Disabled", BaseUrl = "http://disabled", Enabled = false, Priority = 1 };
+            db.Indexers.AddRange(fast, second, slow, disabled);
+            await db.SaveChangesAsync(ct);
+            fastId = fast.Id;
+            secondId = second.Id;
+        }
+
+        var client = app.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+        var status = await client.GetFromJsonAsync<JsonElement>("/api/v1/auth/status", ct);
+        var auth = status.GetProperty("setupRequired").GetBoolean() ? "/api/v1/auth/setup" : "/api/v1/auth/login";
+        (await client.PostAsJsonAsync(auth, new { username = "admin", password = "correct-horse", setupToken = KrakarrFactory.TestSetupToken }, ct)).EnsureSuccessStatusCode();
+
+        // Only enabled indexers are returned, ordered by priority, without secrets.
+        var list = await client.GetFromJsonAsync<JsonElement>("/api/v1/search/indexers", ct);
+        var entries = list.EnumerateArray().ToList();
+        Assert.Equal(["Fast", "Second", "Slow"], entries.Select(e => e.GetProperty("name").GetString()));
+        Assert.All(entries, e => Assert.False(e.TryGetProperty("apiKey", out _)));
+
+        // Selecting a subset queries only those indexers ("Slow" is gated and would hang if queried).
+        var res = await client.GetFromJsonAsync<JsonElement>($"/api/v1/search?query=test&indexerIds={fastId},{secondId}", ct);
+        var queried = res.GetProperty("indexers").EnumerateArray().Select(i => i.GetProperty("indexerName").GetString()).Order().ToList();
+        Assert.Equal(["Fast", "Second"], queried);
+
+        // Streamed search with a single indexerId queries only that indexer.
+        using var streamReq = new HttpRequestMessage(HttpMethod.Get, $"/api/v1/search?query=test&indexerIds={fastId}");
+        streamReq.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(SearchStream.ContentType));
+        using var streamRes = await client.SendAsync(streamReq, HttpCompletionOption.ResponseHeadersRead, ct);
+        Assert.Equal(HttpStatusCode.OK, streamRes.StatusCode);
+        using var reader = new StreamReader(await streamRes.Content.ReadAsStreamAsync(ct));
+        var first = JsonDocument.Parse((await reader.ReadLineAsync(ct))!).RootElement;
+        var pending = first.GetProperty("indexers").EnumerateArray().Select(i => i.GetProperty("indexerName").GetString()).ToList();
+        Assert.Equal(["Fast"], pending);
+
+        // Malformed indexerIds returns 400 instead of 500.
+        var bad = await client.GetAsync("/api/v1/search?query=test&indexerIds=abc", ct);
+        Assert.Equal(HttpStatusCode.BadRequest, bad.StatusCode);
+    }
 }

@@ -22,6 +22,9 @@
       <div class="mt-2">
         @if (e.downloadProgress != null) {
           <div class="flex max-w-xs items-center gap-2"><kr-progress class="flex-1" [value]="e.downloadProgress" /><span class="text-xs text-accent-300">{{ e.downloadProgress.toFixed(0) }}%</span></div>
+          @if (auth.isStaff() && e.downloadHash) {
+            <a [routerLink]="['/downloads']" [queryParams]="{ hash: e.downloadHash }" class="mt-1 inline-block text-xs text-slate-400 hover:text-accent-300" data-download-link>Show in Downloads →</a>
+          }
         } @else if (e.episodeFile) {
           <span class="badge bg-emerald-500/15 text-emerald-300">{{ e.episodeFile.quality }}</span>
         } @else if (!e.hasAired) {
@@ -32,6 +35,12 @@
           <span class="badge bg-slate-500/15 text-slate-400">Unmonitored</span>
         }
       </div>
+      @if (jellyfinUrl(); as url) {
+        <a class="btn mt-3 bg-violet-600/90 text-white hover:bg-violet-500" [href]="url" target="_blank" rel="noopener" data-jellyfin>
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l11-6.86a1 1 0 0 0 0-1.7l-11-6.86A1 1 0 0 0 8 5.14Z"/></svg>
+          Open in Jellyfin
+        </a>
+      }
       @if (d) {
         <kr-external-links class="mt-3" kind="episode" [title]="title()" [tmdbId]="d.showTmdbId" [season]="e.seasonNumber" [episode]="e.episodeNumber"
                            [tvdbId]="d.tvdbId" [imdbId]="d.imdbId" />
@@ -51,11 +60,13 @@
         <div><dt class="text-slate-500">Release group</dt><dd class="text-slate-200">{{ f.releaseGroup || '—' }}</dd></div>
         <div><dt class="text-slate-500">Added</dt><dd class="text-slate-200">{{ f.dateAdded | date: 'mediumDate' }}</dd></div>
       </dl>
+      <kr-media-info class="mt-3 border-t border-surface-700 pt-3" [info]="mediaInfo()" />
     </section>
 
     <section class="mt-3 rounded-lg border border-surface-700 p-3" data-subtitles>
       <h4 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Subtitles</h4>
-      <kr-subtitle-list [files]="subtitles()" [deletable]="auth.isStaff()" (changed)="subtitlesChanged.emit()" />
+      <kr-subtitle-list [files]="subtitles()" [deletable]="auth.isStaff()" [searchable]="auth.isStaff() && !!e.episodeFile"
+                        (find)="manageSubtitles.emit($event)" (changed)="subtitlesChanged.emit()" />
     </section>
   }
 
@@ -67,9 +78,15 @@
 
   @if (auth.isStaff()) {
     <ng-container footer>
-      @if (e.episodeFile) { <button class="btn-ghost" (click)="manageSubtitles.emit()">Subtitles</button> }
-      <button class="btn-secondary" (click)="interactive.emit()">Interactive search</button>
-      <button class="btn-primary" (click)="search.emit()">Automatic search</button>
+      <kr-more-menu [up]="true">
+        <button class="menu-item" role="menuitem" (click)="interactive.emit()">Interactive search…</button>
+        @if (e.episodeFile) {
+          <button class="menu-item" role="menuitem" (click)="manageSubtitles.emit(null)">Subtitles…</button>
+          <div class="my-1 border-t border-surface-700"></div>
+          <button class="menu-item text-rose-300" role="menuitem" (click)="deleteFile.emit()">Delete file…</button>
+        }
+      </kr-more-menu>
+      <button class="btn-primary" (click)="search.emit()" title="Search the indexers and grab the best release">Search</button>
     </ng-container>
   }
 </kr-modal>

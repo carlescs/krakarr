@@ -37,6 +37,29 @@ public class User
     public static string NewSecurityStamp() => Guid.NewGuid().ToString("N");
 }
 
+/// <summary>
+/// A WebAuthn passkey that signs <see cref="User"/> in without a password. Only the public key is stored; the private
+/// key never leaves the user's device or password manager.
+/// </summary>
+public class UserPasskey
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public User? User { get; set; }
+    /// <summary>Credential id chosen by the authenticator (at most 1023 bytes).</summary>
+    public required byte[] CredentialId { get; set; }
+    /// <summary>The credential's public key as a COSE_Key (CBOR).</summary>
+    public required byte[] PublicKey { get; set; }
+    /// <summary>Signature counter last reported by the authenticator; synced passkeys always report 0.</summary>
+    public long SignCount { get; set; }
+    /// <summary>Transport hints ("internal", "hybrid", "usb"...), comma-separated, passed back to the browser.</summary>
+    public string? Transports { get; set; }
+    /// <summary>Label the user gave it ("Phone", "YubiKey").</summary>
+    public required string Name { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? LastUsedAt { get; set; }
+}
+
 /// <summary>Key/value settings store; values are JSON documents per section.</summary>
 public class SettingEntry
 {
@@ -140,6 +163,8 @@ public class Movie
     /// <summary>TMDB collection (franchise) the movie belongs to, if any.</summary>
     public int? CollectionId { get; set; }
     public MovieCollection? Collection { get; set; }
+    /// <summary>Other names releases use for the movie. Load it only for the movie being matched or searched.</summary>
+    public List<AlternateTitle> AlternateTitles { get; set; } = [];
 }
 
 /// <summary>A TMDB movie collection ("The Lord of the Rings Collection"). Only collections with movies in the library are kept.</summary>
@@ -153,7 +178,15 @@ public class MovieCollection
     public string? FanartUrl { get; set; }
 }
 
-public class MovieFile
+/// <summary>What movie and episode files share: the parts of a library file that are read from the file itself.</summary>
+public interface ILibraryFile
+{
+    int QualityId { get; set; }
+    string? EmbeddedSubtitles { get; set; }
+    string? MediaInfo { get; set; }
+}
+
+public class MovieFile : ILibraryFile
 {
     public int Id { get; set; }
     public int MovieId { get; set; }
@@ -170,6 +203,17 @@ public class MovieFile
     /// Subtitle tracks inside the video, as comma-separated "lang[+hi][+forced]" tokens ("" = none, null = not read yet).
     /// </summary>
     public string? EmbeddedSubtitles { get; set; }
+    /// <summary>
+    /// Video, audio and duration read from the file's headers, as compact JSON (<c>MediaInfoSummary</c> in Krakarr.Media;
+    /// "" = nothing could be read, null = not read yet).
+    /// </summary>
+    public string? MediaInfo { get; set; }
+    /// <summary>
+    /// When a search of every configured provider first found nothing for a missing wanted language, or the user marked
+    /// it by hand (null = not marked). The scheduled subtitle search skips marked files; a new or replaced file, or a change of wanted
+    /// languages or providers clears the mark, and manual searches still run.
+    /// </summary>
+    public DateTimeOffset? SubtitlesNotFound { get; set; }
 }
 
 public enum SeriesStatus
@@ -225,6 +269,42 @@ public class Series
     public DateTimeOffset? LastSearched { get; set; }
     public List<Season> Seasons { get; set; } = [];
     public List<Episode> Episodes { get; set; } = [];
+    /// <summary>Other names releases use for the series. Load it only for the series being matched or searched.</summary>
+    public List<AlternateTitle> AlternateTitles { get; set; } = [];
+}
+
+public enum AlternateTitleSource
+{
+    /// <summary>TMDB alternative titles and translations, TheTVDB aliases. Replaced on every refresh.</summary>
+    Metadata = 0,
+    /// <summary>Added by the user; refreshes never touch them.</summary>
+    User = 1,
+    /// <summary>Scene names from TheXEM. Replaced on every refresh.</summary>
+    Scene = 2,
+}
+
+/// <summary>Another name of a movie or series (local title, original title, AKA, scene name) that releases may use.</summary>
+public class AlternateTitle
+{
+    public const int MaxTitleLength = 200;
+
+    public int Id { get; set; }
+    /// <summary>Set for a movie's title; <see cref="SeriesId"/> is null then.</summary>
+    public int? MovieId { get; set; }
+    /// <summary>Set for a series' title; <see cref="MovieId"/> is null then.</summary>
+    public int? SeriesId { get; set; }
+    public required string Title { get; set; }
+    /// <summary>
+    /// <see cref="Title"/> normalised the way release names are (<c>ReleaseParser.NormalizeTitle</c>; for series without a
+    /// trailing year), so RSS sync can look titles up without loading the library.
+    /// </summary>
+    public required string NormalizedTitle { get; set; }
+    /// <summary>
+    /// Language the title is in (<see cref="MediaLanguages"/> code), when known. Text searches use titles in the indexer's
+    /// default language; a null language is searched on every indexer.
+    /// </summary>
+    public string? Language { get; set; }
+    public AlternateTitleSource Source { get; set; }
 }
 
 public class Season
@@ -245,6 +325,10 @@ public class Episode
     public int SeasonNumber { get; set; }
     public int EpisodeNumber { get; set; }
     public int? AbsoluteNumber { get; set; }
+    /// <summary>Season number scene releases use for this episode (TheXEM), when it differs or is mapped; null = not mapped.</summary>
+    public int? SceneSeasonNumber { get; set; }
+    /// <summary>Episode number scene releases use for this episode (TheXEM); set together with <see cref="SceneSeasonNumber"/>.</summary>
+    public int? SceneEpisodeNumber { get; set; }
     public string? Title { get; set; }
     public string? Overview { get; set; }
     public DateOnly? AirDate { get; set; }
@@ -257,7 +341,7 @@ public class Episode
 }
 
 /// <summary>A video file in the library holding one or more episodes of the same season.</summary>
-public class EpisodeFile
+public class EpisodeFile : ILibraryFile
 {
     public int Id { get; set; }
     public int SeriesId { get; set; }
@@ -275,6 +359,17 @@ public class EpisodeFile
     /// Subtitle tracks inside the video, as comma-separated "lang[+hi][+forced]" tokens ("" = none, null = not read yet).
     /// </summary>
     public string? EmbeddedSubtitles { get; set; }
+    /// <summary>
+    /// Video, audio and duration read from the file's headers, as compact JSON (<c>MediaInfoSummary</c> in Krakarr.Media;
+    /// "" = nothing could be read, null = not read yet).
+    /// </summary>
+    public string? MediaInfo { get; set; }
+    /// <summary>
+    /// When the user marked this file "not found" (null = not marked). Unlike movie files, episode files are only marked
+    /// by hand: the scheduled subtitle search skips them until retried; a replaced file or a change of wanted languages
+    /// or providers clears the mark, and manual searches still run.
+    /// </summary>
+    public DateTimeOffset? SubtitlesNotFound { get; set; }
 }
 
 /// <summary>An external subtitle file stored next to a movie or episode file.</summary>
@@ -294,6 +389,12 @@ public class SubtitleFile
     public int? Score { get; set; }
     public string? Release { get; set; }
     public DateTimeOffset DateAdded { get; set; } = DateTimeOffset.UtcNow;
+    /// <summary>Picked by hand in the interactive search; automatic upgrades leave it alone.</summary>
+    public bool Manual { get; set; }
+    /// <summary>When the subtitle was last resynchronised against the video (automatically or by hand).</summary>
+    public DateTimeOffset? SyncedAt { get; set; }
+    /// <summary>How the last sync went (reference and tool, or why it failed); automatic sync skips rows that have one.</summary>
+    public string? SyncNote { get; set; }
 }
 
 public enum DownloadState
@@ -428,4 +529,50 @@ public class MediaSubscription
     public int? SeriesId { get; set; }
     public Series? Series { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>
+/// A notification the user dismissed from the bell. Hides that <see cref="NotificationId"/> until its source reports
+/// newer activity (a later <c>Date</c>, or a higher <c>Count</c> at the same date).
+/// </summary>
+public class NotificationDismissal
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public User? User { get; set; }
+    public required string NotificationId { get; set; }
+    public int Count { get; set; }
+    public DateTimeOffset? DismissedAt { get; set; }
+}
+
+
+/// <summary>
+/// A browser or installed app that receives push notifications for <see cref="User"/> (Web Push). The endpoint and
+/// keys come from the browser's <c>PushManager.subscribe()</c>; the push service deletes the endpoint (404/410) when
+/// the user revokes the permission or uninstalls the app, and the subscription is then removed.
+/// </summary>
+public class PushSubscription
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public User? User { get; set; }
+    /// <summary>Push service URL to POST encrypted messages to; unique per device.</summary>
+    public required string Endpoint { get; set; }
+    /// <summary>The device's P-256 public key (base64url, uncompressed point).</summary>
+    public required string P256dh { get; set; }
+    /// <summary>The device's 16-byte authentication secret (base64url).</summary>
+    public required string Auth { get; set; }
+    /// <summary>What the device wants to be told about.</summary>
+    public Push.PushTopics Topics { get; set; } = Push.PushTopics.All;
+    /// <summary>Label shown in the device list, e.g. "Chrome on Android".</summary>
+    public string? Name { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>Column sizes of <see cref="PushSubscription"/>, checked by the endpoints before saving.</summary>
+public static class PushSubscriptionLimits
+{
+    public const int Endpoint = 2048;
+    public const int Key = 200;
+    public const int Name = 100;
 }

@@ -7,7 +7,14 @@ import { TitlePreviewPage } from './title-preview';
 
 const movieDetails = (movieId?: number) => ({
   movie: { tmdbId: 329865, title: 'Arrival', year: 2016, runtime: 116, overview: 'Linguist meets aliens.', imdbId: 'tt2543164', movieId },
-  tagline: 'Why are they here?', genres: ['Drama', 'Sci-Fi'], releaseDate: '2016-11-11', cast: [{ tmdbId: 1, name: 'Amy Adams' }], crew: [],
+  tagline: 'Why are they here?', genres: ['Drama', 'Sci-Fi'], releaseDate: '2016-11-11',
+  releaseRegion: 'ES',
+  releases: [
+    { type: 'Theatrical', region: { date: '2016-11-18', country: 'ES' }, earliest: { date: '2016-11-11', country: 'US' } },
+    { type: 'Digital', region: null, earliest: { date: '2017-01-31', country: 'US' } },
+    { type: 'Physical', region: null, earliest: null },
+  ],
+  cast: [{ tmdbId: 1, name: 'Amy Adams' }], crew: [],
 });
 
 async function render(kind: 'movie' | 'series', api: MockApi, role: UserRole = 'Admin') {
@@ -29,6 +36,10 @@ describe('TitlePreviewPage', () => {
     expect(text(el)).toContain('Why are they here?');
     expect(text(el)).toContain('116 min');
     expect(text(el)).toContain('Not in library');
+    expect(text(el)).toContain('Releases');
+    expect(text(el)).toContain('In cinemas');
+    expect(text(el)).toContain('Earliest worldwide · no date for ES');
+    expect(text(el)).toContain('Unknown');
     expect(text(el)).toContain('Amy Adams');
     expect(el.querySelector('a[href="https://www.imdb.com/title/tt2543164"]')).not.toBeNull();
 
@@ -51,12 +62,52 @@ describe('TitlePreviewPage', () => {
       requestFor: async () => ({ id: 1, requestedBy: 'kim' }),
     });
     const { el } = await render('series', api, 'User');
-    expect(text(el)).toContain('Netflix');
+    expect(text(el)).toContain('Aired on Netflix');
     expect(text(el)).toContain('26 episodes');
     expect(text(el)).toContain('Specials');
     expect(text(el)).toContain('Season 1');
     expect(text(el)).toContain('Requested by kim');
     expect(el.querySelector('a[href="/requests"]')?.textContent).toContain('View requests');
+  });
+
+  it('lists the episodes of a season and opens an episode', async () => {
+    const api = mockApi({
+      tmdbSeries: async () => ({
+        show: { tmdbId: 329865, title: 'Dark', year: 2017 }, genres: [], cast: [], crew: [], episodeCount: 10,
+        seasons: [{ seasonNumber: 1, name: 'Season 1', episodeCount: 2 }],
+      }),
+      requestFor: async () => null,
+      tmdbSeason: async () => ({
+        seasonNumber: 1, name: 'Season 1', overview: 'A child goes missing.',
+        episodes: [
+          { episodeNumber: 1, title: 'Secrets', overview: 'Jonas returns to school.', airDate: '2017-12-01', runtime: 51, rating: 7.9 },
+          { episodeNumber: 2, title: 'Lies', runtime: 0 },
+        ],
+      }),
+      tmdbEpisode: async () => ({ showTmdbId: 329865, runtime: 51, voteCount: 10, guestStars: [{ tmdbId: 3, name: 'Guest Star' }], crew: [] }),
+    });
+    const { fixture, el } = await render('series', api, 'User');
+    expect(el.querySelector('[data-season-episodes]')).toBeNull();
+
+    (el.querySelector('[data-season]') as HTMLButtonElement).click();
+    await settle(fixture);
+    expect(api.tmdbSeason).toHaveBeenCalledWith(329865, 1);
+    const episodes = text(el, '[data-season-episodes]');
+    expect(episodes).toContain('A child goes missing.');
+    expect(episodes).toContain('1. Secrets');
+    expect(episodes).toContain('51 min');
+    expect(episodes).toContain('★ 7.9');
+    expect(episodes).toContain('2. Lies');
+
+    (el.querySelectorAll('[data-episode]')[0] as HTMLButtonElement).click();
+    await settle(fixture);
+    expect(api.tmdbEpisode).toHaveBeenCalledWith(329865, 1, 1);
+    expect(text(el, 'kr-preview-episode')).toContain('Guest Star');
+
+    (el.querySelector('[data-season]') as HTMLButtonElement).click();
+    await settle(fixture);
+    expect(el.querySelector('[data-season-episodes]')).toBeNull();
+    expect(el.querySelector('kr-preview-episode')).toBeNull();
   });
 
   it('shows errors', async () => {

@@ -30,7 +30,7 @@ public sealed class SeriesRssSyncTask(
     {
         // Only the fields needed to match releases; a series (with all its episodes) is loaded only when it has candidates.
         var monitored = await db.Series.AsNoTracking().Where(s => s.Monitored)
-            .Select(s => new { s.Id, s.Title, s.TvdbId, s.TmdbId }).ToListAsync(cancellationToken);
+            .Select(s => new { s.Id, s.Title, s.MetadataTitle, s.TvdbId, s.TmdbId }).ToListAsync(cancellationToken);
         if (monitored.Count == 0) return;
 
         var feed = await indexerSearch.SearchAsync(new SearchCriteria { Type = SearchType.Tv, Rss = true }, ct: cancellationToken);
@@ -42,13 +42,18 @@ public sealed class SeriesRssSyncTask(
             .Where(x => x.Parsed.SeasonNumber is not null)
             .GroupBy(x => ReleaseParser.NormalizeTitle(x.Parsed.Title))
             .ToDictionary(g => g.Key, g => g.Select(x => x.Release).ToList());
+        var alternates = await AlternateTitleMatchesAsync(db, byTitle.Keys, cancellationToken);
 
         var today = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
         var languageSettings = await settings.GetAsync<LanguageSettings>(cancellationToken);
         var busy = await seriesService.ActiveEpisodeIdsAsync(cancellationToken);
         foreach (var info in monitored)
         {
-            var candidates = (byTitle.GetValueOrDefault(SeriesNaming.NormalizedTitle(info.Title)) ?? [])
+            var candidates = new[] { SeriesNaming.NormalizedTitle(info.Title), SeriesNaming.NormalizedTitle(info.MetadataTitle) }
+                .Concat(alternates[info.Id])
+                .Where(t => t.Length > 0)
+                .Distinct()
+                .SelectMany(t => byTitle.GetValueOrDefault(t) ?? [])
                 .Concat(feed.Releases.Where(r => (info.TvdbId is not null && r.TvdbId == info.TvdbId) || (info.TmdbId is not null && r.TmdbId == info.TmdbId)))
                 .Distinct()
                 .ToList();
@@ -76,9 +81,21 @@ public sealed class SeriesRssSyncTask(
             }
         }
     }
+
+    /// <summary>Series ids whose alternate titles equal one of the normalised release titles (a slim lookup, not the library).</summary>
+    internal static async Task<ILookup<int, string>> AlternateTitleMatchesAsync(KrakarrDbContext db, IEnumerable<string> normalizedTitles, CancellationToken ct)
+    {
+        var titles = normalizedTitles.Where(t => t.Length > 0).ToList();
+        if (titles.Count == 0) return Array.Empty<int>().ToLookup(x => x, _ => string.Empty);
+        var rows = await db.AlternateTitles.AsNoTracking()
+            .Where(t => t.SeriesId != null && titles.Contains(t.NormalizedTitle))
+            .Select(t => new { SeriesId = t.SeriesId!.Value, t.NormalizedTitle })
+            .ToListAsync(cancellationToken: ct);
+        return rows.ToLookup(r => r.SeriesId, r => r.NormalizedTitle);
+    }
 }
 
-/// <summary>Refreshes series metadata and episode lists from the configured source (TMDB or TheTVDB) twice a day.</summary>
+/// <summary>Refreshes series metadata and episode lists from the configured source (TMDB or TheTVDB) and rescans series folders twice a day.</summary>
 public sealed class SeriesRefreshTask(KrakarrDbContext db, SeriesService seriesService, ILogger<SeriesRefreshTask> logger) : IScheduledTask
 {
     public string Name => "Refresh series metadata";
@@ -93,6 +110,12 @@ public sealed class SeriesRefreshTask(KrakarrDbContext db, SeriesService seriesS
             db.ChangeTracker.Clear(); // RefreshAsync saves; don't keep every refreshed series (and its episodes) tracked
             var series = await seriesService.LoadAsync(id, cancellationToken);
             if (series is null) continue;
+            if (failures >= 3)
+            {
+                await seriesService.RescanDiskAsync(series, cancellationToken);
+                continue;
+            }
+
             try
             {
                 await seriesService.RefreshAsync(series, cancellationToken);
@@ -101,7 +124,7 @@ public sealed class SeriesRefreshTask(KrakarrDbContext db, SeriesService seriesS
             catch (MetadataException ex)
             {
                 logger.LogWarning("Could not refresh {Title}: {Message}", series.Title, ex.Message);
-                if (++failures >= 3) return; // likely a missing key or the source is down; don't spam
+                failures++; // likely a missing key or the source is down; don't spam metadata source, still rescan disk
             }
         }
     }

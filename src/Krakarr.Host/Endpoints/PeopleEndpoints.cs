@@ -11,6 +11,18 @@ public static class PeopleEndpoints
     {
         var group = app.MapGroup("/api/v1/people").WithTags("People");
 
+        group.MapGet("/lookup", async (string term, IPersonMetadata people, ISettingsService settings, CancellationToken ct) =>
+        {
+            try
+            {
+                return Results.Ok(await people.SearchAsync(await settings.GetAsync<MetadataSettings>(ct), term, ct));
+            }
+            catch (MetadataException ex)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status400BadRequest);
+            }
+        });
+
         // A person's details and filmography, with titles already in the library linked to them.
         group.MapGet("/{tmdbId:int}", async (int tmdbId, IPersonMetadata people, ISettingsService settings, KrakarrDbContext db, CancellationToken ct) =>
         {

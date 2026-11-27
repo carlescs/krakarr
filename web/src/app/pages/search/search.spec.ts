@@ -30,8 +30,8 @@ describe('SearchPage', () => {
           { type: 'done', indexers: [nyaa, broken], order: ['g1'] },
         ),
         grabRelease: async () => undefined,
-        movies: async () => [],
-        seriesList: async () => [],
+        movies: async () => ({ items: [], page: 1, pageSize: 200, total: 0, libraryTotal: 0 }),
+        seriesList: async () => ({ items: [], page: 1, pageSize: 200, total: 0, libraryTotal: 0 }),
       }),
     });
     const fixture = TestBed.createComponent(SearchPage);
@@ -134,5 +134,52 @@ describe('SearchPage', () => {
     expect(text(el)).not.toContain('Waiting for');
     expect(el.querySelectorAll('tbody tr').length).toBe(1);
     expect(text(el, 'tbody')).toContain('Slow');
+  });
+
+  it('searches only the selected indexers when one or more are picked', async () => {
+    const api = setupTest({
+      api: mockApi({
+        searchIndexers: async () => [
+          { id: 1, name: 'Nyaa' },
+          { id: 2, name: '1337x' },
+          { id: 3, name: 'TorrentLeech' },
+        ],
+        searchStream: replay(
+          { type: 'indexers', indexers: [{ ...nyaa, state: 'Pending' }] },
+          { type: 'releases', indexer: nyaa, releases: [result] },
+          { type: 'done', indexers: [nyaa], order: ['g1'] },
+        ),
+      }),
+    });
+    const fixture = TestBed.createComponent(SearchPage);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    const input = el.querySelector<HTMLInputElement>('input[name="q"]')!;
+
+    expect(input.placeholder).toBe('Search all enabled indexers…');
+
+    // Open the picker and select one indexer.
+    button(el, 'All indexers').click();
+    await settle(fixture);
+    const checkboxes = () => [...el.querySelectorAll<HTMLInputElement>('kr-multi-picker input[type="checkbox"]')];
+    checkboxes()[0].click();
+    await settle(fixture);
+
+    expect(input.placeholder).toBe('Search Nyaa…');
+    type(el, 'input[name="q"]', 'alien');
+    button(el, 'Search').click();
+    await settle(fixture);
+    expect(api.searchStream).toHaveBeenLastCalledWith('alien', 'Generic', expect.any(Function), expect.any(AbortSignal), [1]);
+
+    // Pick a second indexer and search again.
+    button(el, 'Nyaa').click();
+    await settle(fixture);
+    checkboxes()[2].click();
+    await settle(fixture);
+
+    expect(input.placeholder).toBe('Search 2 selected indexers…');
+    button(el, 'Search').click();
+    await settle(fixture);
+    expect(api.searchStream).toHaveBeenLastCalledWith('alien', 'Generic', expect.any(Function), expect.any(AbortSignal), [1, 3]);
   });
 });

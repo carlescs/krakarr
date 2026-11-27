@@ -3,12 +3,14 @@ import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../../../core/api';
 import { Auth } from '../../../core/auth';
 import { Toasts } from '../../../core/toast';
+import { PasskeySettings } from '../passkeys/passkeys';
+import { PushSettings } from '../push/push';
 import { ROLE_INFO } from '../users/users';
 
-/** The signed-in user's own username and password. */
+/** The signed-in user's own username, password, passkeys and push notifications. */
 @Component({
   selector: 'kr-account-settings',
-  imports: [FormsModule],
+  imports: [FormsModule, PasskeySettings, PushSettings],
   templateUrl: './account.html',
   styleUrl: './account.scss',
 })

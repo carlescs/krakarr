@@ -14,7 +14,7 @@ public static class UserClaims
 {
     public const string SecurityStamp = "krakarr:stamp";
 
-    /// <summary>When the password was entered (Unix seconds); kept across cookie renewals for the absolute lifetime.</summary>
+    /// <summary>When the password or passkey was entered (Unix seconds); kept across cookie renewals for the absolute lifetime.</summary>
     public const string SignedInAt = "krakarr:signed_in";
 
     public static ClaimsPrincipal Create(int id, string username, UserRole role, string securityStamp, DateTimeOffset signedInAt) =>

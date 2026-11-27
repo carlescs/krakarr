@@ -55,8 +55,7 @@ public static class EpisodeDecisionEngine
         var idMatch = (release.TvdbId is { } tvdb && tvdb == series.TvdbId) || (release.TmdbId is { } tmdb && tmdb == series.TmdbId);
         if (!idMatch)
         {
-            var normalized = ReleaseParser.NormalizeTitle(parsed.Title);
-            if (normalized.Length == 0 || normalized != SeriesNaming.NormalizedTitle(series.Title))
+            if (!TitleMatches(series, parsed.Title))
             {
                 rejections.Add($"Series mismatch (parsed \"{parsed.Title}\")");
             }
@@ -66,28 +65,40 @@ public static class EpisodeDecisionEngine
             }
         }
 
-        // Episode mapping
+        // Episode mapping (scene numbering first, see SceneNumbering)
         var mapped = new List<Episode>();
         if (parsed.IsSeasonPack)
         {
-            mapped.AddRange(episodes.Where(e => e.SeasonNumber == season && (e.HasAired(today) || e.EpisodeFileId is not null)));
+            mapped.AddRange(SceneNumbering.Season(episodes, season).Where(e => e.HasAired(today) || e.EpisodeFileId is not null));
             if (mapped.Count == 0) rejections.Add($"No aired episodes in season {season}");
         }
         else
         {
             foreach (var number in parsed.EpisodeNumbers)
             {
-                var ep = episodes.FirstOrDefault(e => e.SeasonNumber == season && e.EpisodeNumber == number);
+                var ep = SceneNumbering.Find(episodes, season, number);
                 if (ep is null) rejections.Add($"Unknown episode {SeriesNaming.EpisodeCode(season, [number])}");
-                else mapped.Add(ep);
+                else if (!mapped.Contains(ep)) mapped.Add(ep);
             }
+        }
+
+        // Never grab episodes before their air date (an unknown date counts as not aired). Season packs already
+        // leave unaired episodes out; a single-episode release for one is a fake or a leak.
+        var unaired = mapped.Where(e => !e.HasAired(today) && e.EpisodeFileId is null).ToList();
+        if (unaired.Count > 0)
+        {
+            rejections.Add($"Not aired yet: {string.Join(", ", unaired.Select(e =>
+                $"{SeriesNaming.EpisodeCode(e.SeasonNumber, [e.EpisodeNumber])} ({(e.AirDate is { } d ? d.ToString("yyyy-MM-dd") : "air date unknown")})"))}");
         }
 
         if (scope is not null)
         {
-            if (scope.SeasonNumber is { } wantedSeason && wantedSeason != season)
+            // Mapped episodes carry the library's numbering, which may differ from the release's scene numbering.
+            if (scope.SeasonNumber is { } wantedSeason
+                && (mapped.Count == 0 ? season != wantedSeason : mapped.Any(e => e.SeasonNumber != wantedSeason)))
             {
-                rejections.Add($"Wrong season ({season} instead of {wantedSeason})");
+                var actual = mapped.Count == 0 ? season.ToString() : string.Join("/", mapped.Select(e => e.SeasonNumber).Distinct().Order());
+                rejections.Add($"Wrong season ({actual} instead of {wantedSeason})");
             }
 
             if (scope.EpisodeIds is { Count: > 0 } wanted && mapped.Count > 0 && !mapped.Any(e => wanted.Contains(e.Id)))
@@ -175,11 +186,25 @@ public static class EpisodeDecisionEngine
         }
 
         return parsed.IsSeasonPack
-            ? episodes.Where(e => e.SeasonNumber == season && (e.HasAired(today) || e.EpisodeFileId is not null)).ToList()
+            ? SceneNumbering.Season(episodes, season).Where(e => e.HasAired(today) || e.EpisodeFileId is not null).ToList()
             : parsed.EpisodeNumbers
-                .Select(n => episodes.FirstOrDefault(e => e.SeasonNumber == season && e.EpisodeNumber == n))
+                .Select(n => SceneNumbering.Find(episodes, season, n))
                 .OfType<Episode>()
+                .Distinct()
                 .ToList();
+    }
+
+    /// <summary>
+    /// True when a parsed release title names the series: its title, its metadata title (when the user renamed it) or one
+    /// of its loaded <see cref="Core.Domain.Series.AlternateTitles"/>, all normalised the same way.
+    /// </summary>
+    public static bool TitleMatches(Core.Domain.Series series, string? parsedTitle)
+    {
+        var normalized = ReleaseParser.NormalizeTitle(parsedTitle);
+        return normalized.Length > 0
+            && (normalized == SeriesNaming.NormalizedTitle(series.Title)
+                || (series.MetadataTitle.Length > 0 && normalized == SeriesNaming.NormalizedTitle(series.MetadataTitle))
+                || series.AlternateTitles.Any(t => normalized == SeriesNaming.NormalizedTitle(t.Title)));
     }
 
     /// <summary>Approved first, then preferred language, best quality, larger coverage (season packs), propers, seeders, indexer priority.</summary>

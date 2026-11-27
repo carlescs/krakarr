@@ -3,6 +3,9 @@
     <InternalsVisibleTo Include="Krakarr.Subtitles.Tests" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../Krakarr.Core/Krakarr.Core.csproj" />
     <ProjectReference Include="../Krakarr.Data/Krakarr.Data.csproj" />
     <ProjectReference Include="../Krakarr.Media/Krakarr.Media.csproj" />

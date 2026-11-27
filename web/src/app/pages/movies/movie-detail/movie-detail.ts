@@ -1,4 +1,4 @@
-import { Component, DestroyRef, OnInit, computed, effect, inject, input, numberAttribute, signal, untracked } from '@angular/core';
+import { Component, DestroyRef, OnInit, computed, effect, inject, input, numberAttribute, signal, untracked, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -6,30 +6,36 @@ import { Router } from '@angular/router';
 import { Api, errorMessage } from '../../../core/api';
 import { Auth } from '../../../core/auth';
 import { Events } from '../../../core/events';
-import { AgoPipe, BytesPipe, DurationPipe, SpeedPipe } from '../../../core/format';
-import { AVAILABILITY_OPTIONS, RELEASE_LABELS } from '../../../core/calendar';
-import { HistoryItem, MinimumAvailability, Movie, QualityProfile, ReleaseDateType, ReleaseDecision, SubtitleFile } from '../../../core/models';
+import { AgoPipe, BytesPipe } from '../../../core/format';
+import { AVAILABILITY_OPTIONS } from '../../../core/calendar';
+import { HistoryItem, MinimumAvailability, Movie, QualityProfile, ReleaseDecision, SubtitleFile } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
 import { ReleaseSearch } from '../../../core/indexer-search';
 import { Languages } from '../../../core/languages';
+import { JellyfinLink } from '../../../core/jellyfin-link';
 import { LanguageOverride } from '../../../shared/language-override/language-override';
+import { AlternateTitles } from '../../../shared/alternate-titles/alternate-titles';
 import { IndexerProgress } from '../../../shared/indexer-progress/indexer-progress';
 import { Modal } from '../../../shared/modal/modal';
 import { TableSort } from '../../../core/table-sort';
 import { SortHeader } from '../../../shared/sort-header/sort-header';
 import { Poster } from '../../../shared/poster/poster';
+import { Overview } from '../../../shared/overview/overview';
 import { LibraryCredits } from '../../../shared/library-credits/library-credits';
 import { RelatedTitles } from '../../../shared/related-titles/related-titles';
-import { Progress } from '../../../shared/progress/progress';
-import { StateBadge } from '../../../shared/state-badge/state-badge';
 import { SubtitleManager } from '../../../shared/subtitle-manager/subtitle-manager';
 import { SubtitleList } from '../../../shared/subtitle-list/subtitle-list';
+import { MediaInfoView } from '../../../shared/media-info/media-info';
+import { MoreMenu } from '../../../shared/more-menu/more-menu';
 import { SubscribeButton } from '../../../shared/subscribe-button/subscribe-button';
 import { ExternalLinks } from '../../../shared/external-links/external-links';
+import { MovieReleases } from '../../../shared/movie-releases/movie-releases';
+import { MediaDownloads } from '../../../shared/media-downloads/media-downloads';
+import { DeleteFilesDialog } from '../../../shared/delete-files/delete-files';
 
 @Component({
   selector: 'kr-movie-detail',
-  imports: [ExternalLinks, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, FormsModule, DatePipe, Poster, Progress, Modal, IndexerProgress, StateBadge, SubtitleManager, SubtitleList, SortHeader, BytesPipe, SpeedPipe, DurationPipe, AgoPipe],
+  imports: [DeleteFilesDialog, MoreMenu, MediaDownloads, ExternalLinks, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, AlternateTitles, MovieReleases, FormsModule, DatePipe, Poster, Overview, Modal, IndexerProgress, SubtitleManager, SubtitleList, MediaInfoView, SortHeader, BytesPipe, AgoPipe],
   templateUrl: './movie-detail.html',
   styleUrl: './movie-detail.scss',
 })
@@ -37,6 +43,7 @@ export class MovieDetailPage implements OnInit {
   readonly id = input.required({ transform: numberAttribute });
 
   protected readonly auth = inject(Auth);
+  protected readonly icons = { search: 'm21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z' };
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
   private readonly events = inject(Events);
@@ -61,28 +68,29 @@ export class MovieDetailPage implements OnInit {
   protected readonly searching = this.releaseSearch.running;
   protected readonly grabbing = signal<string | null>(null);
   protected readonly editing = signal(false);
+  private readonly alternateTitles = viewChild(AlternateTitles);
   protected readonly confirmDelete = signal(false);
+  protected readonly confirmDeleteFile = signal(false);
   protected readonly subtitles = signal<SubtitleFile[]>([]);
   protected readonly subtitlesOpen = signal(false);
-  /** The movie's page on Jellyfin, once it's downloaded and Jellyfin is set up. */
-  protected readonly jellyfinUrl = signal<string | null>(null);
-  private jellyfinCheckedFor: number | null = null;
+  /** Language the subtitle dialog searches first (a missing one that was clicked); null = every missing language. */
+  protected readonly subtitleLanguage = signal<string | null>(null);
+  /** The movie's page on Jellyfin, once it's downloaded and Jellyfin has scanned it. */
+  private readonly jellyfin = new JellyfinLink();
+  protected readonly jellyfinUrl = this.jellyfin.url;
   protected editMonitored = true;
   protected editProfileId = 0;
   protected editAvailability: MinimumAvailability = 'Released';
   protected editLanguages: string[] | null = null;
   protected readonly languages = inject(Languages);
   protected readonly availabilityOptions = AVAILABILITY_OPTIONS;
-  protected readonly releaseLabels = RELEASE_LABELS;
-  protected readonly releaseBar: Record<ReleaseDateType, string> = {
-    Theatrical: 'border-l-amber-400', Digital: 'border-l-violet-400', Physical: 'border-l-pink-400',
-  };
   protected deleteFiles = false;
 
-  protected readonly downloads = computed(() => this.events.downloads().filter(d => d.movieId === this.id() && !d.imported));
+  protected readonly downloads = computed(() => this.events.downloads().filter(d => d.movieId === this.id()));
   protected readonly profileName = computed(() => this.profiles().find(p => p.id === this.movie()?.qualityProfileId)?.name ?? '');
 
   constructor() {
+    this.destroyRef.onDestroy(() => this.jellyfin.reset());
     // The router reuses this component when navigating between movies (/movies/1 → /movies/2),
     // so (re)load whenever the id changes rather than only once in ngOnInit.
     effect(() => {
@@ -120,9 +128,9 @@ export class MovieDetailPage implements OnInit {
     this.grabbing.set(null);
     this.editing.set(false);
     this.confirmDelete.set(false);
+    this.confirmDeleteFile.set(false);
     this.subtitlesOpen.set(false);
-    this.jellyfinUrl.set(null);
-    this.jellyfinCheckedFor = null;
+    this.jellyfin.reset();
     this.deleteFiles = false;
   }
 
@@ -135,22 +143,10 @@ export class MovieDetailPage implements OnInit {
       this.editProfileId = m.qualityProfileId;
       this.editAvailability = m.minimumAvailability;
       this.editLanguages = m.languages ? [...m.languages] : null;
-      this.loadJellyfin(id, m.hasFile);
+      this.jellyfin.watch(m.movieFile ? `${id}:${m.movieFile.id}` : null, () => this.api.movieJellyfinLink(id));
       await Promise.all([this.loadHistory(), this.loadSubtitles()]);
     } catch (e) {
       this.toasts.error(errorMessage(e));
-    }
-  }
-
-  /** Looks the title up on Jellyfin once per page, as soon as something is downloaded. Failures just hide the button. */
-  private async loadJellyfin(id: number, hasFile: boolean) {
-    if (!hasFile || this.jellyfinCheckedFor === id) return;
-    this.jellyfinCheckedFor = id;
-    try {
-      const link = await this.api.movieJellyfinLink(id);
-      if (id === this.id()) this.jellyfinUrl.set(link?.url ?? null);
-    } catch {
-      // Not configured, unreachable or unknown to Jellyfin: no button.
     }
   }
 
@@ -166,9 +162,19 @@ export class MovieDetailPage implements OnInit {
     this.toasts.show('Search started — results will appear in History');
   }
 
+  protected openSubtitles(language: string | null) {
+    this.subtitleLanguage.set(language);
+    this.subtitlesOpen.set(true);
+  }
+
   async searchSubtitles() {
     await this.api.searchSubtitles({ movieId: this.id() });
     this.toasts.show('Searching subtitles — new ones will appear under Subtitles');
+  }
+
+  async refresh() {
+    await this.api.refreshMovie(this.id());
+    this.toasts.show('Refreshing metadata and scanning disk…');
   }
 
   async interactiveSearch() {
@@ -210,11 +216,20 @@ export class MovieDetailPage implements OnInit {
   async saveEdit() {
     try {
       await this.api.updateMovie(this.id(), this.editMonitored, this.editProfileId, this.editAvailability, this.editLanguages);
+      await this.alternateTitles()?.save();
       this.editing.set(false);
       await this.load();
     } catch (e) {
       this.toasts.error(errorMessage(e));
     }
+  }
+
+  protected readonly deleteFile = (unmonitor: boolean) => this.api.deleteMovieFile(this.movie()!.movieFile!.id, unmonitor);
+
+  protected async fileDeleted() {
+    this.confirmDeleteFile.set(false);
+    this.toasts.success('File deleted');
+    await this.load();
   }
 
   async delete() {

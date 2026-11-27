@@ -1,34 +1,38 @@
-<section class="card max-w-2xl space-y-4 p-4 sm:p-5">
-  <div class="flex flex-wrap items-center gap-2">
-    <h2 class="flex-1 font-semibold text-white">Your account</h2>
-    <span class="badge" [class]="roleInfo[auth.role()].badge" [title]="roleInfo[auth.role()].description">{{ roleInfo[auth.role()].label }}</span>
-  </div>
-  <form class="space-y-4" (ngSubmit)="save()">
-    <div class="grid gap-4 sm:grid-cols-2">
-      <div>
-        <label class="label" for="acc-username">Username</label>
-        <input id="acc-username" class="input" name="username" [(ngModel)]="username" autocomplete="username" required />
-      </div>
-      <div>
-        <label class="label" for="acc-current">Current password</label>
-        <input id="acc-current" class="input" name="current" type="password" [(ngModel)]="currentPassword" autocomplete="current-password" required />
-      </div>
-      <div>
-        <label class="label" for="acc-new">New password</label>
-        <input id="acc-new" class="input" name="new" type="password" [(ngModel)]="newPassword" autocomplete="new-password" placeholder="Leave empty to keep" />
-      </div>
-      <div>
-        <label class="label" for="acc-confirm">Confirm new password</label>
-        <input id="acc-confirm" class="input" name="confirm" type="password" [(ngModel)]="confirmPassword" autocomplete="new-password" />
-      </div>
+<div class="space-y-4">
+  <section class="card max-w-2xl space-y-4 p-4 sm:p-5">
+    <div class="flex flex-wrap items-center gap-2">
+      <h2 class="flex-1 font-semibold text-white">Your account</h2>
+      <span class="badge" [class]="roleInfo[auth.role()].badge" [title]="roleInfo[auth.role()].description">{{ roleInfo[auth.role()].label }}</span>
     </div>
-    <p class="hint">Changing your password signs you out on every other device.</p>
-    <div class="flex justify-end">
-      <button class="btn-primary" type="submit" [disabled]="saving() || !currentPassword || !username.trim()">Save</button>
+    <form class="space-y-4" (ngSubmit)="save()">
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label class="label" for="acc-username">Username</label>
+          <input id="acc-username" class="input" name="username" [(ngModel)]="username" autocomplete="username" required />
+        </div>
+        <div>
+          <label class="label" for="acc-current">Current password</label>
+          <input id="acc-current" class="input" name="current" type="password" [(ngModel)]="currentPassword" autocomplete="current-password" required />
+        </div>
+        <div>
+          <label class="label" for="acc-new">New password</label>
+          <input id="acc-new" class="input" name="new" type="password" [(ngModel)]="newPassword" autocomplete="new-password" placeholder="Leave empty to keep" />
+        </div>
+        <div>
+          <label class="label" for="acc-confirm">Confirm new password</label>
+          <input id="acc-confirm" class="input" name="confirm" type="password" [(ngModel)]="confirmPassword" autocomplete="new-password" />
+        </div>
+      </div>
+      <p class="hint">Changing your password signs you out on every other device.</p>
+      <div class="flex justify-end">
+        <button class="btn-primary" type="submit" [disabled]="saving() || !currentPassword || !username.trim()">Save</button>
+      </div>
+    </form>
+    <div class="flex flex-wrap items-center gap-3 border-t border-surface-700 pt-4">
+      <p class="hint flex-1">Lost a device or signed in somewhere you shouldn't have? Sign out everywhere except this browser.</p>
+      <button class="btn-secondary" type="button" (click)="revokeOthers()" [disabled]="revoking()">Sign out other sessions</button>
     </div>
-  </form>
-  <div class="flex flex-wrap items-center gap-3 border-t border-surface-700 pt-4">
-    <p class="hint flex-1">Lost a device or signed in somewhere you shouldn't have? Sign out everywhere except this browser.</p>
-    <button class="btn-secondary" type="button" (click)="revokeOthers()" [disabled]="revoking()">Sign out other sessions</button>
-  </div>
-</section>
+  </section>
+  <kr-push-settings />
+  <kr-passkey-settings />
+</div>

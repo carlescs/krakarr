@@ -1,6 +1,6 @@
 import { signal } from '@angular/core';
-import { afterEach, describe, expect, it } from 'vitest';
-import { Selection, storeView, storedView } from './selection';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { PagedSelection, Selection, storeView, storedView } from './selection';
 
 const items = (...ids: number[]) => ids.map(id => ({ id }));
 
@@ -51,5 +51,72 @@ describe('Selection', () => {
     selection.toggle('c', true);
     expect(selection.selected()).toEqual(['a', 'b', 'c']);
     expect(selection.all()).toBe(true);
+  });
+});
+
+describe('PagedSelection', () => {
+  it('selects local ranges synchronously and falls back to fetchAllIds across unloaded gaps', async () => {
+    const total = signal(5);
+    const loaded = [1, 2, 5];
+    const fetchAllIds = vi.fn(async () => [1, 2, 3, 4, 5]);
+    const selection = new PagedSelection(
+      total,
+      () => loaded,
+      () => false,
+      (a, b) => (a <= 2 && b <= 2 ? [1, 2] : null),
+      fetchAllIds,
+    );
+
+    selection.toggle(1);
+    selection.toggle(2, true);
+    expect(selection.selected()).toEqual([1, 2]);
+    expect(fetchAllIds).not.toHaveBeenCalled();
+
+    await selection.toggle(5, true);
+    expect(fetchAllIds).toHaveBeenCalledTimes(1);
+    expect(selection.selected().sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5]);
+    expect(selection.all()).toBe(true);
+  });
+
+  it('uses loadedIds when allLoaded is true and fetches all ids when paginated', async () => {
+    const total = signal(3);
+    let loadedAll = true;
+    let serverIds = [10, 20, 30];
+    const fetchAllIds = vi.fn(async () => serverIds);
+    const selection = new PagedSelection(total, () => [10, 20, 30], () => loadedAll, () => null, fetchAllIds);
+
+    await selection.toggleAll();
+    expect(selection.selected()).toEqual([10, 20, 30]);
+    expect(fetchAllIds).not.toHaveBeenCalled();
+
+    await selection.toggleAll();
+    expect(selection.count()).toBe(0);
+
+    loadedAll = false;
+    total.set(4);
+    serverIds = [10, 20, 30, 40];
+    await selection.toggleAll();
+    expect(fetchAllIds).toHaveBeenCalledTimes(1);
+    expect(selection.count()).toBe(4);
+
+    // Narrow filter and reconcile against server ids
+    total.set(2);
+    serverIds = [20, 40];
+    await selection.reconcile();
+    expect(selection.selected().sort((a, b) => a - b)).toEqual([20, 40]);
+  });
+
+  it('treats a capped "Select all" as everything and reports the cap', async () => {
+    const total = signal(5);
+    const onTruncated = vi.fn();
+    const selection = new PagedSelection(total, () => [], () => false, () => null, async () => [1, 2, 3], undefined, onTruncated);
+
+    await selection.toggleAll();
+    expect(selection.count()).toBe(3);
+    expect(selection.all()).toBe(true);
+    expect(onTruncated).toHaveBeenCalledWith(3, 5);
+
+    await selection.toggleAll();
+    expect(selection.count()).toBe(0);
   });
 });

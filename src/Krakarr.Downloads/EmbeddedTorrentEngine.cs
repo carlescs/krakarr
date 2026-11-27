@@ -297,7 +297,8 @@ public sealed class EmbeddedTorrentEngine(
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
             if (await db.Downloads.AnyAsync(d => d.InfoHash == row.InfoHash, ct))
             {
-                throw new InvalidOperationException("Torrent already exists");
+                // A row without a torrent in this engine: another client's, or left behind (the router sorts it out).
+                throw new StaleDownloadException(row.InfoHash);
             }
 
             Directory.CreateDirectory(row.SavePath);
@@ -515,6 +516,12 @@ public sealed class EmbeddedTorrentEngine(
                 await manager!.StopAsync();
                 row.State = DownloadState.Completed;
             }
+            else if (manager is not null && status.State == DownloadState.Seeding && SeedingPolicy.ImportFailed(row))
+            {
+                logger.LogInformation("Import of {Name} failed, stopping it instead of seeding", row.Name);
+                await manager.StopAsync();
+                row.State = DownloadState.Completed;
+            }
 
             if (_rows.TryGetValue(row.InfoHash, out var cached))
             {
@@ -526,6 +533,9 @@ public sealed class EmbeddedTorrentEngine(
                 cached.ImportedAt = row.ImportedAt;
                 cached.Paused = row.Paused;
                 cached.ImportMessage = row.ImportMessage;
+                cached.MovieId = row.MovieId; // dismissing a failed import unlinks the download
+                cached.SeriesId = row.SeriesId;
+                cached.MediaType = row.MediaType;
             }
         }
 

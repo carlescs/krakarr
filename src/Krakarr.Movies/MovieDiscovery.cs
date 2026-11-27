@@ -1,5 +1,6 @@
 using System.Globalization;
 using Krakarr.Core.Configuration;
+using Krakarr.Core.Domain;
 using Krakarr.Core.Metadata;
 using Krakarr.Data;
 using Microsoft.AspNetCore.Builder;
@@ -17,6 +18,9 @@ public sealed record MovieDetails
     public required MovieLookup Movie { get; init; }
     public string? Tagline { get; init; }
     public DateOnly? ReleaseDate { get; init; }
+    /// <summary>Theatrical, digital and physical dates: in the release region and earliest worldwide.</summary>
+    public IReadOnlyList<MovieReleaseDto> Releases { get; init; } = [];
+    public string? ReleaseRegion { get; init; }
     public IReadOnlyList<string> Genres { get; init; } = [];
     public IReadOnlyList<CastMember> Cast { get; init; } = [];
     public IReadOnlyList<CrewMember> Crew { get; init; } = [];
@@ -26,6 +30,8 @@ public sealed record MovieDetails
 public interface IMovieDiscovery
 {
     Task<DiscoverPage<MovieLookup>> ListAsync(MovieList list, int page, CancellationToken ct = default);
+    /// <summary>Movies tagged with every one of the TMDB keywords, most popular first.</summary>
+    Task<DiscoverPage<MovieLookup>> KeywordsAsync(IReadOnlyList<int> keywordIds, int page, CancellationToken ct = default);
     Task<IReadOnlyList<MovieLookup>> RecommendationsAsync(int tmdbId, CancellationToken ct = default);
     Task<IReadOnlyList<MovieLookup>> SimilarAsync(int tmdbId, CancellationToken ct = default);
     /// <summary>Recommendations for several titles at once (missing titles yield an empty list), in the order given.</summary>
@@ -33,6 +39,8 @@ public interface IMovieDiscovery
     /// <summary>Details with cast and key crew, for any TMDB movie.</summary>
     Task<MovieDetails> DetailsAsync(int tmdbId, CancellationToken ct = default);
     Task<Credits> CreditsAsync(int tmdbId, CancellationToken ct = default);
+    /// <summary>Every movie in a TMDB collection, in the order TMDB lists them.</summary>
+    Task<IReadOnlyList<MovieLookup>> CollectionPartsAsync(int collectionTmdbId, CancellationToken ct = default);
 }
 
 public sealed class TmdbMovieDiscovery(TmdbApi api, ISettingsService settings, TimeProvider time) : IMovieDiscovery
@@ -50,6 +58,15 @@ public sealed class TmdbMovieDiscovery(TmdbApi api, ISettingsService settings, T
             // Theatrical or digital releases from today on, most anticipated first.
             _ => $"3/discover/movie?page={p}&primary_release_date.gte={today}&sort_by=popularity.desc&with_release_type=2|3&include_adult=false",
         };
+        var meta = await settings.GetAsync<MetadataSettings>(ct);
+        var result = await api.GetAsync<TmdbPaged<TmdbClient.TmdbMovie>>(meta, path, ct);
+        return new DiscoverPage<MovieLookup>(result.Results.Select(TmdbClient.Map).ToList(), result.Page, Math.Min(result.TotalPages, 500));
+    }
+
+    public async Task<DiscoverPage<MovieLookup>> KeywordsAsync(IReadOnlyList<int> keywordIds, int page, CancellationToken ct = default)
+    {
+        var p = Math.Clamp(page, 1, 500).ToString(CultureInfo.InvariantCulture);
+        var path = $"3/discover/movie?page={p}&with_keywords={KeywordIds.ToTmdb(keywordIds)}&sort_by=popularity.desc&include_adult=false";
         var meta = await settings.GetAsync<MetadataSettings>(ct);
         var result = await api.GetAsync<TmdbPaged<TmdbClient.TmdbMovie>>(meta, path, ct);
         return new DiscoverPage<MovieLookup>(result.Results.Select(TmdbClient.Map).ToList(), result.Page, Math.Min(result.TotalPages, 500));
@@ -80,14 +97,18 @@ public sealed class TmdbMovieDiscovery(TmdbApi api, ISettingsService settings, T
     public async Task<MovieDetails> DetailsAsync(int tmdbId, CancellationToken ct = default)
     {
         var meta = await settings.GetAsync<MetadataSettings>(ct);
-        var m = await api.GetAsync<TmdbClient.TmdbMovie>(meta, $"3/movie/{tmdbId.ToString(CultureInfo.InvariantCulture)}?append_to_response=credits", ct);
+        var m = await api.GetAsync<TmdbClient.TmdbMovie>(meta, $"3/movie/{tmdbId.ToString(CultureInfo.InvariantCulture)}?append_to_response=credits,release_dates", ct);
         var lookup = TmdbClient.Map(m) with { Collection = TmdbClient.MapCollection(m.Collection) };
         var credits = TmdbCredits.Map(m.Credits);
+        var releaseDates = TmdbClient.MapReleaseDates(m.ReleaseDates);
+        var region = MovieReleases.NormalizeRegion(meta.ReleaseRegion);
         return new MovieDetails
         {
             Movie = lookup,
             Tagline = string.IsNullOrWhiteSpace(m.Tagline) ? null : m.Tagline,
             ReleaseDate = DateOnly.TryParseExact(m.ReleaseDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d) ? d : null,
+            Releases = MovieEndpoints.ToReleases(releaseDates, region),
+            ReleaseRegion = region,
             Genres = (m.Genres ?? []).Select(g => g.Name).OfType<string>().ToList(),
             Cast = credits.Cast,
             Crew = credits.Crew,
@@ -99,6 +120,15 @@ public sealed class TmdbMovieDiscovery(TmdbApi api, ISettingsService settings, T
         var meta = await settings.GetAsync<MetadataSettings>(ct);
         return TmdbCredits.Map(await api.GetAsync<TmdbCreditList>(meta, $"3/movie/{tmdbId.ToString(CultureInfo.InvariantCulture)}/credits", ct));
     }
+
+    public async Task<IReadOnlyList<MovieLookup>> CollectionPartsAsync(int collectionTmdbId, CancellationToken ct = default)
+    {
+        var meta = await settings.GetAsync<MetadataSettings>(ct);
+        var result = await api.GetAsync<TmdbCollectionParts>(meta, $"3/collection/{collectionTmdbId.ToString(CultureInfo.InvariantCulture)}", ct);
+        return (result.Parts ?? []).Select(TmdbClient.Map).ToList();
+    }
+
+    private sealed record TmdbCollectionParts([property: System.Text.Json.Serialization.JsonPropertyName("parts")] List<TmdbClient.TmdbMovie>? Parts);
 
     private async Task<IReadOnlyList<MovieLookup>> RelatedAsync(MetadataSettings meta, int tmdbId, string kind, CancellationToken ct)
     {
@@ -126,6 +156,18 @@ public static class MovieDiscoveryEndpoints
                 var lists = await discovery.RecommendationsAsync(seeds, ct);
                 var owned = library.Select(m => m.TmdbId).ToHashSet();
                 return RecommendationRanker.Rank(lists, m => m.TmdbId, owned, 40);
+            });
+        });
+
+        // Comma-separated TMDB keyword ids, all of which must match.
+        group.MapGet("/discover/keywords", async (string? keywords, int? page, IMovieDiscovery discovery, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            var ids = KeywordIds.Parse(keywords);
+            if (ids.Count == 0) return Results.Problem("Pick at least one keyword.", statusCode: StatusCodes.Status400BadRequest);
+            return await Run(async () =>
+            {
+                var result = await discovery.KeywordsAsync(ids, page ?? 1, ct);
+                return result with { Results = await MarkLibraryAsync(db, result.Results, ct) };
             });
         });
 
@@ -165,8 +207,23 @@ public static class MovieDiscoveryEndpoints
         group.MapGet("/tmdb/{tmdbId:int}/similar", (int tmdbId, IMovieDiscovery discovery, KrakarrDbContext db, CancellationToken ct) =>
             Run(async () => await MarkLibraryAsync(db, await discovery.SimilarAsync(tmdbId, ct), ct)));
 
+        // Movies of a library collection that are not in the library yet (from TMDB), in release order.
+        group.MapGet("/collections/{id:int}/missing", async (int id, IMovieDiscovery discovery, KrakarrDbContext db, CancellationToken ct) =>
+        {
+            var tmdbId = await db.MovieCollections.AsNoTracking().Where(c => c.Id == id).Select(c => (int?)c.TmdbId).FirstOrDefaultAsync(ct);
+            if (tmdbId is null) return Results.NotFound();
+            return await Run(async () => MissingParts(await MarkLibraryAsync(db, await discovery.CollectionPartsAsync(tmdbId.Value, ct), ct)));
+        });
+
         return app;
     }
+
+    /// <summary>Collection parts not in the library, oldest first; unreleased titles without a date go last.</summary>
+    internal static IReadOnlyList<MovieLookup> MissingParts(IReadOnlyList<MovieLookup> parts) =>
+        parts.Where(p => p.MovieId is null)
+            .DistinctBy(p => p.TmdbId)
+            .OrderBy(p => p.Year == 0 ? 9999 : p.Year).ThenBy(p => p.Title, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
     public static MovieList? ParseList(string list) => list.ToLowerInvariant() switch
     {

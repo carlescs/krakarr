@@ -1,32 +1,86 @@
 <div class="mb-6 flex flex-wrap items-center gap-3">
   <h1 class="page-title mr-auto">Subtitles</h1>
-  <button class="btn-primary" (click)="searchAll()" [disabled]="!ready() || wanted().length === 0">Search all missing</button>
+  @if (tab() === 'wanted') {
+  <div class="flex items-center gap-2" [class.max-sm:w-full]="availableProviders().length > 0">
+    @if (availableProviders().length > 0) {
+      <kr-multi-picker class="min-w-0 flex-1 sm:w-48 sm:flex-none"
+                       [options]="availableProviders()" [(selected)]="selectedProviders"
+                       [disabled]="!ready() || total() === 0"
+                       plural="providers" qualifier="configured" />
+    }
+    <button class="btn-primary shrink-0" (click)="searchAll()" [disabled]="!ready() || total() === 0">Search all missing</button>
+  </div>
+  }
+</div>
+
+<div class="mb-4 inline-flex rounded-lg border border-surface-700 bg-surface-900 p-0.5" role="tablist" aria-label="Subtitles">
+  @for (t of tabs; track t.id) {
+    <button type="button" class="rounded-md px-3 py-1.5 text-sm font-medium transition" [title]="t.title"
+            [class]="tab() === t.id ? 'bg-surface-700 text-white' : 'text-slate-400 hover:text-slate-200'"
+            role="tab" [attr.aria-selected]="tab() === t.id" (click)="setTab(t.id)">{{ t.label }}</button>
+  }
 </div>
 
 @if (settings(); as s) {
-  @if (!s.enabled || !s.openSubtitles.apiKey) {
+  @if (!ready()) {
     <div class="card mb-6 border-amber-500/30 px-5 py-4 text-sm text-amber-200">
       Automatic subtitles are {{ s.enabled ? 'enabled but no provider is configured' : 'disabled' }}.
-      Configure languages and an OpenSubtitles.com API key in <a routerLink="/settings" class="underline">Settings → Subtitles</a>.
+      Configure languages and a subtitle provider in <a routerLink="/settings" class="underline">Settings → Subtitles</a>.
     </div>
   } @else {
     <p class="mb-4 text-sm text-slate-400">
       Wanted languages: <span class="text-slate-200">{{ languageNames(s.languages) }}</span>.
-      New files are searched right after import; files still missing subtitles are retried every {{ s.searchIntervalHours }} h.
+      New files are searched right after import; files still missing subtitles are retried every {{ s.searchIntervalHours }} h,
+      except movies no provider had subtitles for and files you marked (<span class="text-amber-300">Not found</span>), which wait until you retry them.
     </p>
   }
 }
 
-<section class="card overflow-hidden">
-  <h2 class="border-b border-surface-700 px-5 py-3 text-sm font-semibold uppercase tracking-wide text-slate-400">
-    Wanted <span class="ml-1 font-normal normal-case text-slate-500">{{ wanted().length }}</span>
-  </h2>
+@if (tab() === 'redundant') {
+  <kr-redundant-subtitles />
+} @else {
+<section class="card">
+  <div class="flex flex-wrap items-center gap-3 border-b border-surface-700 px-5 py-3">
+    <h2 class="mr-auto text-sm font-semibold uppercase tracking-wide text-slate-400">
+      Wanted <span class="ml-1 font-normal normal-case text-slate-500">{{ total() }}</span>
+    </h2>
+    @if (total() > 0) {
+      <button class="btn-secondary btn-sm" (click)="bestMatchAll()" [disabled]="!ready() || loadingBestMatch()"
+              title="Go through these files one by one and confirm the best subtitle for each, even below the minimum score">
+        {{ loadingBestMatch() ? 'Loading…' : 'Review one by one' }}
+      </button>
+    }
+    @if (filter() === 'notFound' && total() > 0) {
+      <button class="btn-ghost btn-sm" (click)="retry()" title="Let the scheduled search try every file marked not found again">Retry all</button>
+    }
+    @if (filter() === 'searching' && total() > 0) {
+      <button class="btn-ghost btn-sm" (click)="markAllNotFound()"
+              title="Stop searching automatically for every movie and episode still missing subtitles, until retried">Mark all not found</button>
+    }
+    <div class="inline-flex rounded-lg border border-surface-700 bg-surface-900 p-0.5" role="radiogroup" aria-label="Show">
+      @for (f of filters; track f.id) {
+        <button class="rounded-md px-2.5 py-1 text-xs font-medium transition" [title]="f.title"
+                [class]="filter() === f.id ? 'bg-surface-700 text-white' : 'text-slate-400 hover:text-slate-200'"
+                role="radio" [attr.aria-checked]="filter() === f.id" (click)="setFilter(f.id)">
+          {{ f.label }}@if (count(f.id) !== null) {
+            {{ ' ' }}<span class="ml-0.5 tabular-nums opacity-60">{{ count(f.id) }}</span>
+          }
+        </button>
+      }
+    </div>
+  </div>
   @if (loading()) {
     <p class="px-5 py-8 text-sm text-slate-500">Loading…</p>
-  } @else if (wanted().length === 0) {
-    <p class="px-5 py-8 text-sm text-slate-500">Every library file has subtitles in all wanted languages.</p>
+  } @else if (total() === 0) {
+    <p class="px-5 py-8 text-sm text-slate-500">
+      @switch (filter()) {
+        @case ('notFound') { No files are marked as not found. }
+        @case ('searching') { No files are waiting for an automatic search. }
+        @default { Every library file has subtitles in all wanted languages. }
+      }
+    </p>
   } @else {
-    <div class="overflow-x-auto">
+    <cdk-virtual-scroll-viewport krVirtualTable scrollWindow [itemSize]="rowHeight()" [minBufferPx]="600" [maxBufferPx]="1200">
       <table class="table">
         <thead>
           <tr>
@@ -37,32 +91,60 @@
           </tr>
         </thead>
         <tbody>
-          @for (w of sort.rows(); track (w.movieFileId ?? 0) + ':' + (w.episodeFileId ?? 0)) {
-            <tr>
+          <tr *cdkVirtualFor="let index of dataSource; trackBy: trackRow" class="[&>td]:py-1.5" [style.height.px]="rowHeight()">
+            @if (wantedAt(index); as w) {
               <td class="max-sm:hidden"><span class="badge" [class]="w.mediaType === 'Movie' ? 'bg-accent-500/15 text-accent-300' : 'bg-violet-500/15 text-violet-300'">{{ w.mediaType === 'Movie' ? 'Movie' : 'Episode' }}</span></td>
               <td class="w-full max-w-0">
-                <a class="block hover:text-accent-300 sm:truncate" [routerLink]="w.movieId ? ['/movies', w.movieId] : ['/series', w.seriesId]" [title]="w.label">{{ w.label }}</a>
-                <div class="mt-1 flex flex-wrap gap-1 sm:hidden">
-                  <span class="badge" [class]="w.mediaType === 'Movie' ? 'bg-accent-500/15 text-accent-300' : 'bg-violet-500/15 text-violet-300'">{{ w.mediaType === 'Movie' ? 'Movie' : 'Episode' }}</span>
-                  @for (l of w.missingLanguages; track l) { <span class="badge bg-rose-500/15 text-rose-300">{{ l }}</span> }
+                <a class="block truncate hover:text-accent-300" [routerLink]="w.movieId ? ['/movies', w.movieId] : ['/series', w.seriesId]" [title]="'Open ' + w.label">{{ w.label }}</a>
+                <div class="mt-1 flex items-center gap-2 sm:hidden">
+                  <div class="flex min-w-0 flex-1 gap-1 overflow-hidden">
+                    <span class="badge shrink-0" [class]="w.mediaType === 'Movie' ? 'bg-accent-500/15 text-accent-300' : 'bg-violet-500/15 text-violet-300'">{{ w.mediaType === 'Movie' ? 'Movie' : 'Episode' }}</span>
+                    @if (w.notFound) { <span class="badge shrink-0 bg-amber-500/15 text-amber-300">Not found</span> }
+                    @for (l of w.missingLanguages; track l) { <span class="badge shrink-0 bg-rose-500/15 text-rose-300">{{ l }}</span> }
+                  </div>
+                  <div class="flex shrink-0">
+                    <ng-container *ngTemplateOutlet="actions; context: { $implicit: w }" />
+                  </div>
                 </div>
               </td>
               <td class="whitespace-nowrap max-sm:hidden">
-                @for (l of w.missingLanguages; track l) { <span class="badge mr-1 bg-rose-500/15 text-rose-300">{{ l }}</span> }
+                @for (l of w.missingLanguages; track l) {
+                  <button type="button" class="badge mr-1 bg-rose-500/15 text-rose-300 transition hover:bg-rose-500/25" (click)="manage.set(w); manageLanguage.set(l)"
+                          [title]="'Find ' + languageName(l) + ' subtitles'" [disabled]="!ready()">{{ l }}</button>
+                }
+                @if (w.notFound) {
+                  <span class="badge bg-amber-500/15 text-amber-300"
+                        [title]="'Marked not found (' + (w.notFound | date: 'medium') + '); not searched automatically until retried'">Not found</span>
+                }
               </td>
-              <td class="text-right sm:whitespace-nowrap">
-                <button class="btn-ghost btn-sm" (click)="search(w)" [disabled]="!ready()">Search</button>
-                <button class="btn-ghost btn-sm" (click)="manage.set(w)">Manual</button>
+              <td class="whitespace-nowrap text-right max-sm:hidden">
+                <ng-container *ngTemplateOutlet="actions; context: { $implicit: w }" />
               </td>
-            </tr>
-          }
+            } @else {
+              <td colspan="4"><div class="h-4 w-48 animate-pulse rounded bg-surface-800"></div></td>
+            }
+          </tr>
         </tbody>
       </table>
-    </div>
+    </cdk-virtual-scroll-viewport>
   }
+  <ng-template #actions let-w>
+    @if (w.notFound) {
+      <button class="btn-ghost btn-sm" (click)="retry(w)" title="Let the scheduled search try this file again">Retry</button>
+    }
+    <button class="btn-ghost btn-sm" (click)="search(w)" [disabled]="!ready()"
+            title="Search in the background and download the best subtitles that meet the minimum score">Search</button>
+    <button class="btn-secondary btn-sm" (click)="manage.set(w); manageLanguage.set(null)" [disabled]="!ready()"
+            title="See every result, with the top pick per language, and choose what to download">Choose…</button>
+  </ng-template>
 </section>
+}
 
 @if (manage(); as w) {
-  <kr-subtitle-manager [fileRef]="{ movieFileId: w.movieFileId, episodeFileId: w.episodeFileId }" [label]="w.label"
+  <kr-subtitle-manager [fileRef]="{ movieFileId: w.movieFileId, episodeFileId: w.episodeFileId }" [label]="w.label" [language]="manageLanguage()"
                        (closed)="manage.set(null); load()" (changed)="load()" />
+}
+
+@if (bestMatch(); as items) {
+  <kr-subtitle-best-match [items]="items" (closed)="bestMatch.set(null); load()" />
 }

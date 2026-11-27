@@ -17,7 +17,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261122085202_EmbeddedSubtitles";
+    public override string LastMigrationId => "20261127110142_PushSubscriptions";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -27,6 +27,48 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
             .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
         NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+        modelBuilder.Entity("Krakarr.Core.Domain.AlternateTitle", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
+
+                b.Property<string>("Language")
+                    .HasMaxLength(16)
+                    .HasColumnType("character varying(16)");
+
+                b.Property<int?>("MovieId")
+                    .HasColumnType("integer");
+
+                b.Property<string>("NormalizedTitle")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)");
+
+                b.Property<int?>("SeriesId")
+                    .HasColumnType("integer");
+
+                b.Property<int>("Source")
+                    .HasColumnType("integer");
+
+                b.Property<string>("Title")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)");
+
+                b.HasKey("Id");
+
+                b.HasIndex("MovieId");
+
+                b.HasIndex("NormalizedTitle");
+
+                b.HasIndex("SeriesId");
+
+                b.ToTable("AlternateTitles");
+            });
 
         modelBuilder.Entity("Krakarr.Core.Domain.Download", b =>
             {
@@ -159,6 +201,12 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<int>("Runtime")
                     .HasColumnType("integer");
 
+                b.Property<int?>("SceneEpisodeNumber")
+                    .HasColumnType("integer");
+
+                b.Property<int?>("SceneSeasonNumber")
+                    .HasColumnType("integer");
+
                 b.Property<int>("SeasonNumber")
                     .HasColumnType("integer");
 
@@ -207,6 +255,10 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<DateTimeOffset?>("LastSubtitleSearch")
                     .HasColumnType("timestamp with time zone");
 
+                b.Property<string>("MediaInfo")
+                    .HasMaxLength(2048)
+                    .HasColumnType("character varying(2048)");
+
                 b.Property<int>("QualityId")
                     .HasColumnType("integer");
 
@@ -228,6 +280,9 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<long>("Size")
                     .HasColumnType("bigint");
+
+                b.Property<DateTimeOffset?>("SubtitlesNotFound")
+                    .HasColumnType("timestamp with time zone");
 
                 b.HasKey("Id");
 
@@ -600,6 +655,10 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<DateTimeOffset?>("LastSubtitleSearch")
                     .HasColumnType("timestamp with time zone");
 
+                b.Property<string>("MediaInfo")
+                    .HasMaxLength(2048)
+                    .HasColumnType("character varying(2048)");
+
                 b.Property<int>("MovieId")
                     .HasColumnType("integer");
 
@@ -619,11 +678,90 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<long>("Size")
                     .HasColumnType("bigint");
 
+                b.Property<DateTimeOffset?>("SubtitlesNotFound")
+                    .HasColumnType("timestamp with time zone");
+
                 b.HasKey("Id");
 
                 b.HasIndex("MovieId");
 
                 b.ToTable("MovieFiles");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.NotificationDismissal", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
+
+                b.Property<int>("Count")
+                    .HasColumnType("integer");
+
+                b.Property<DateTimeOffset?>("DismissedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("NotificationId")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("character varying(100)");
+
+                b.Property<int>("UserId")
+                    .HasColumnType("integer");
+
+                b.HasKey("Id");
+
+                b.HasIndex("UserId", "NotificationId")
+                    .IsUnique();
+
+                b.ToTable("NotificationDismissals");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.PushSubscription", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
+
+                b.Property<string>("Auth")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Endpoint")
+                    .IsRequired()
+                    .HasMaxLength(2048)
+                    .HasColumnType("character varying(2048)");
+
+                b.Property<string>("Name")
+                    .HasMaxLength(100)
+                    .HasColumnType("character varying(100)");
+
+                b.Property<string>("P256dh")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)");
+
+                b.Property<int>("Topics")
+                    .HasColumnType("integer");
+
+                b.Property<int>("UserId")
+                    .HasColumnType("integer");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Endpoint")
+                    .IsUnique();
+
+                b.HasIndex("UserId");
+
+                b.ToTable("PushSubscriptions");
             });
 
         modelBuilder.Entity("Krakarr.Core.Domain.QualityProfile", b =>
@@ -837,6 +975,9 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .HasMaxLength(16)
                     .HasColumnType("character varying(16)");
 
+                b.Property<bool>("Manual")
+                    .HasColumnType("boolean");
+
                 b.Property<int?>("MovieFileId")
                     .HasColumnType("integer");
 
@@ -854,6 +995,13 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<int?>("Score")
                     .HasColumnType("integer");
+
+                b.Property<string>("SyncNote")
+                    .HasMaxLength(512)
+                    .HasColumnType("character varying(512)");
+
+                b.Property<DateTimeOffset?>("SyncedAt")
+                    .HasColumnType("timestamp with time zone");
 
                 b.HasKey("Id");
 
@@ -898,6 +1046,68 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .IsUnique();
 
                 b.ToTable("Users");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.UserPasskey", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<byte[]>("CredentialId")
+                    .IsRequired()
+                    .HasMaxLength(1023)
+                    .HasColumnType("bytea");
+
+                b.Property<DateTimeOffset?>("LastUsedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("character varying(100)");
+
+                b.Property<byte[]>("PublicKey")
+                    .IsRequired()
+                    .HasMaxLength(2048)
+                    .HasColumnType("bytea");
+
+                b.Property<long>("SignCount")
+                    .HasColumnType("bigint");
+
+                b.Property<string>("Transports")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)");
+
+                b.Property<int>("UserId")
+                    .HasColumnType("integer");
+
+                b.HasKey("Id");
+
+                b.HasIndex("CredentialId")
+                    .IsUnique();
+
+                b.HasIndex("UserId");
+
+                b.ToTable("UserPasskeys");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.AlternateTitle", b =>
+            {
+                b.HasOne("Krakarr.Core.Domain.Movie", null)
+                    .WithMany("AlternateTitles")
+                    .HasForeignKey("MovieId")
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                b.HasOne("Krakarr.Core.Domain.Series", null)
+                    .WithMany("AlternateTitles")
+                    .HasForeignKey("SeriesId")
+                    .OnDelete(DeleteBehavior.Cascade);
             });
 
         modelBuilder.Entity("Krakarr.Core.Domain.Episode", b =>
@@ -993,6 +1203,28 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Navigation("QualityProfile");
             });
 
+        modelBuilder.Entity("Krakarr.Core.Domain.NotificationDismissal", b =>
+            {
+                b.HasOne("Krakarr.Core.Domain.User", "User")
+                    .WithMany()
+                    .HasForeignKey("UserId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.Navigation("User");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.PushSubscription", b =>
+            {
+                b.HasOne("Krakarr.Core.Domain.User", "User")
+                    .WithMany()
+                    .HasForeignKey("UserId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.Navigation("User");
+            });
+
         modelBuilder.Entity("Krakarr.Core.Domain.Season", b =>
             {
                 b.HasOne("Krakarr.Core.Domain.Series", null)
@@ -1026,8 +1258,26 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
+        modelBuilder.Entity("Krakarr.Core.Domain.UserPasskey", b =>
+            {
+                b.HasOne("Krakarr.Core.Domain.User", "User")
+                    .WithMany()
+                    .HasForeignKey("UserId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.Navigation("User");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.Movie", b =>
+            {
+                b.Navigation("AlternateTitles");
+            });
+
         modelBuilder.Entity("Krakarr.Core.Domain.Series", b =>
             {
+                b.Navigation("AlternateTitles");
+
                 b.Navigation("Episodes");
 
                 b.Navigation("Seasons");

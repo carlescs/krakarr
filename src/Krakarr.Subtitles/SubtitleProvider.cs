@@ -3,7 +3,19 @@ using Krakarr.Core.Domain;
 
 namespace Krakarr.Subtitles;
 
-public sealed class SubtitleProviderException(string message) : Exception(message);
+public class SubtitleProviderException(string message) : Exception(message);
+
+/// <summary>The provider asked us to back off (rate limit or download quota); nothing was sent.</summary>
+public sealed class SubtitleRateLimitException(string message, DateTimeOffset until) : SubtitleProviderException(message)
+{
+    public DateTimeOffset Until { get; } = until;
+
+    public static SubtitleRateLimitException RateLimited(DateTimeOffset until) =>
+        new($"OpenSubtitles rate limit reached; paused until {until.ToLocalTime():HH:mm:ss}", until);
+
+    public static SubtitleRateLimitException QuotaReached(DateTimeOffset until) =>
+        new($"OpenSubtitles download quota reached; downloads paused until {until.ToLocalTime():g}", until);
+}
 
 /// <summary>What we know about the video we need subtitles for.</summary>
 public sealed record SubtitleQuery
@@ -51,9 +63,15 @@ public sealed record SubtitleContent(byte[] Data, string Extension);
 public interface ISubtitleProvider
 {
     string Name { get; }
+    string DisplayName => Name;
     bool IsConfigured(SubtitleSettings settings);
     Task<IReadOnlyList<SubtitleCandidate>> SearchAsync(SubtitleQuery query, SubtitleSettings settings, CancellationToken ct = default);
     Task<SubtitleContent> DownloadAsync(SubtitleCandidate candidate, SubtitleSettings settings, CancellationToken ct = default);
+    /// <summary>
+    /// While set, the provider asked us to back off (rate limit or download quota) and automatic searches should wait
+    /// until then instead of querying it.
+    /// </summary>
+    DateTimeOffset? BackoffUntil => null;
     /// <summary>Checks credentials/connectivity; returns a human readable status.</summary>
     Task<string> TestAsync(SubtitleSettings settings, CancellationToken ct = default);
 }

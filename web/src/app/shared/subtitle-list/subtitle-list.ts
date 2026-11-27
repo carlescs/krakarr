@@ -1,4 +1,5 @@
 import { Component, OnInit, computed, inject, input, output, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../../core/api';
 import { AgoPipe } from '../../core/format';
 import { SubtitleFile } from '../../core/models';
@@ -11,20 +12,32 @@ import { Toasts } from '../../core/toast';
  */
 @Component({
   selector: 'kr-subtitle-list',
-  imports: [AgoPipe],
+  imports: [AgoPipe, FormsModule],
   templateUrl: './subtitle-list.html',
   styleUrl: './subtitle-list.scss',
 })
 export class SubtitleList implements OnInit {
   readonly files = input<SubtitleFile[]>([]);
-  /** Shows a delete button on external subtitles (tracks inside the video can't be deleted). */
+  /**
+   * Shows delete and timing tools (sync against the video, shift by hand) on external subtitles; tracks inside the
+   * video can't be changed.
+   */
   readonly deletable = input(false);
+  /** Turns each missing wanted language into a button that asks to find subtitles in it (`find`). */
+  readonly searchable = input(false);
   readonly changed = output<void>();
+  /** A missing language was clicked: find subtitles in it. */
+  readonly find = output<string>();
 
   private readonly api = inject(Api);
   private readonly toasts = inject(Toasts);
   protected readonly languages = inject(SubtitleLanguages);
   protected readonly deleting = signal<number | null>(null);
+  /** The subtitle whose timing tools are open. */
+  protected readonly timing = signal<number | null>(null);
+  protected readonly busy = signal(false);
+  /** Shift to apply, in seconds (negative = earlier). */
+  protected seconds = 0;
 
   /** Embedded tracks after external files, each group by language. */
   protected readonly sorted = computed(() => [...this.files()].sort((a, b) =>
@@ -46,6 +59,45 @@ export class SubtitleList implements OnInit {
 
   protected scoreClass(score: number) {
     return score >= 80 ? 'bg-emerald-500/15 text-emerald-300' : score >= 60 ? 'bg-amber-500/15 text-amber-300' : 'bg-rose-500/15 text-rose-300';
+  }
+
+  protected toggleTiming(s: SubtitleFile) {
+    this.seconds = 0;
+    this.timing.set(this.timing() === s.id ? null : s.id);
+  }
+
+  /** The shift in whole milliseconds. */
+  protected offsetMs() { return Math.round((Number(this.seconds) || 0) * 1000); }
+
+  protected nudge(ms: number) { this.seconds = (this.offsetMs() + ms) / 1000; }
+
+  async shift(s: SubtitleFile) {
+    const offset = this.offsetMs();
+    if (offset === 0) return;
+    this.busy.set(true);
+    try {
+      await this.api.shiftSubtitle(s.id, offset);
+      this.toasts.success(`Shifted ${subtitleLabel(s)} subtitle by ${offset > 0 ? '+' : ''}${offset / 1000} s`);
+      this.seconds = 0;
+      this.changed.emit();
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  async sync(s: SubtitleFile) {
+    this.busy.set(true);
+    try {
+      await this.api.syncSubtitle(s.id);
+      this.toasts.show(`Syncing ${subtitleLabel(s)} subtitle — the result will show here when it is done`);
+      this.timing.set(null);
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   async remove(s: SubtitleFile) {

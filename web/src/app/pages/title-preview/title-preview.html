@@ -26,7 +26,7 @@
           }
           @for (g of p.genres; track g) { <span class="badge bg-surface-700 text-slate-300">{{ g }}</span> }
         </div>
-        @if (p.overview) { <p class="mt-4 max-w-3xl text-sm leading-relaxed text-slate-300">{{ p.overview }}</p> }
+        @if (p.overview) { <kr-overview class="mt-4" [text]="p.overview" /> }
         <div class="mt-5 flex flex-wrap gap-2">
           @if (canAdd()) {
             <button class="btn-primary" (click)="adding.set(true)">+ Add to library</button>
@@ -41,28 +41,82 @@
     </div>
   </div>
 
+  <!-- Release dates (movies) -->
+  @if (kind() === 'movie' && p.releases.length > 0) {
+    <kr-movie-releases [releases]="p.releases" [releaseRegion]="p.releaseRegion" />
+  }
+
   <!-- Seasons (series) -->
   @if (p.seasons.length > 0) {
     <section class="mb-8">
       <h2 class="mb-3 text-lg font-semibold text-white">Seasons</h2>
       <div class="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6 xl:grid-cols-8">
         @for (s of p.seasons; track s.seasonNumber) {
-          <div class="min-w-0">
-            <kr-poster [url]="s.posterUrl ?? p.posterUrl" [title]="s.name ?? 'Season ' + s.seasonNumber" />
-            <div class="mt-1.5 truncate text-sm font-medium text-slate-100">{{ s.name ?? (s.seasonNumber === 0 ? 'Specials' : 'Season ' + s.seasonNumber) }}</div>
+          <button type="button" class="group min-w-0 text-left" [attr.aria-pressed]="selectedSeason() === s.seasonNumber"
+                  [title]="(selectedSeason() === s.seasonNumber ? 'Hide' : 'Show') + ' episodes'" (click)="toggleSeason(s.seasonNumber)" data-season>
+            <kr-poster class="transition" [class]="selectedSeason() === s.seasonNumber ? 'ring-2 ring-accent-400' : 'group-hover:opacity-80'"
+                       [url]="s.posterUrl ?? p.posterUrl" [title]="seasonName(s)" />
+            <div class="mt-1.5 truncate text-sm font-medium" [class]="selectedSeason() === s.seasonNumber ? 'text-accent-300' : 'text-slate-100 group-hover:text-accent-300'">{{ seasonName(s) }}</div>
             <div class="text-xs text-slate-500">
               {{ s.episodeCount }} {{ s.episodeCount === 1 ? 'episode' : 'episodes' }}
               @if (s.airDate) { · {{ s.airDate | date: 'y' }} }
             </div>
-          </div>
+          </button>
         }
       </div>
+
+      @if (selectedSeason() !== null) {
+        <div class="card mt-4 p-4" data-season-episodes>
+          @if (seasonError()) {
+            <p class="text-sm text-rose-300">{{ seasonError() }}</p>
+          } @else if (season(); as season) {
+            <div class="mb-3 flex items-baseline justify-between gap-3">
+              <h3 class="font-semibold text-white">{{ seasonName(season) }}</h3>
+              <button class="btn-ghost text-sm" (click)="toggleSeason(season.seasonNumber)">Hide</button>
+            </div>
+            @if (season.overview) { <kr-overview class="mb-3" [text]="season.overview" /> }
+            @if (season.episodes.length === 0) {
+              <p class="text-sm text-slate-500">TMDB lists no episodes for this season yet.</p>
+            }
+            <ul class="divide-y divide-surface-700">
+              @for (e of season.episodes; track e.episodeNumber) {
+                <li>
+                  <button type="button" class="group flex w-full gap-3 py-3 text-left" (click)="episode.set(e)" data-episode>
+                    @if (e.stillUrl) {
+                      <img [src]="e.stillUrl" alt="" loading="lazy" class="aspect-video w-28 shrink-0 rounded bg-surface-800 object-cover ring-1 ring-surface-700 sm:w-40" />
+                    } @else {
+                      <div class="aspect-video w-28 shrink-0 rounded bg-surface-800 ring-1 ring-surface-700 sm:w-40"></div>
+                    }
+                    <div class="min-w-0 flex-1">
+                      <div class="truncate text-sm font-medium text-slate-100 group-hover:text-accent-300">
+                        <span class="text-slate-500">{{ e.episodeNumber }}.</span> {{ e.title || 'TBA' }}
+                      </div>
+                      <div class="mt-0.5 flex flex-wrap gap-x-2 text-xs text-slate-500">
+                        <span>{{ e.airDate ? (e.airDate | date: 'mediumDate') : 'TBA' }}</span>
+                        @if (e.runtime) { <span>· {{ e.runtime }} min</span> }
+                        @if (e.rating) { <span>· <span class="text-amber-300">★</span> {{ e.rating.toFixed(1) }}</span> }
+                      </div>
+                      @if (e.overview) { <p class="mt-1 line-clamp-2 text-sm text-slate-400">{{ e.overview }}</p> }
+                    </div>
+                  </button>
+                </li>
+              }
+            </ul>
+          } @else if (seasonLoading()) {
+            <p class="text-sm text-slate-500">Loading episodes…</p>
+          }
+        </div>
+      }
     </section>
   }
 
   <kr-credits [cast]="p.cast" [crew]="p.crew" />
 
   <kr-related-titles [kind]="kind()" [id]="tmdbId()" source="tmdb" />
+
+  @if (episode(); as e) {
+    <kr-preview-episode [tmdbId]="tmdbId()" [seasonNumber]="selectedSeason() ?? 0" [episode]="e" (closed)="episode.set(null)" />
+  }
 
   @if (adding()) {
     <kr-discover-add [item]="p.item" (closed)="adding.set(false)" (added)="openLibrary($event)" (requested)="requested($event)" />

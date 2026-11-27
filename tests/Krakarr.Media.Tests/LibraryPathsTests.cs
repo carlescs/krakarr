@@ -6,18 +6,21 @@ public class LibraryPathsTests
 {
     private static readonly string[] Roots = ["/data/media/movies", "/data/media/tv/"];
 
+    private static string Rooted(params string[] segments) =>
+        Path.Combine([Path.GetPathRoot(Environment.CurrentDirectory)!, .. segments]);
+
     [Fact]
     public void Builds_folder_inside_a_configured_root()
     {
         var path = LibraryPaths.ResolveItemFolder(Roots, "/data/media/movies", null, () => "The Matrix (1999)");
-        Assert.Equal("/data/media/movies/The Matrix (1999)", path);
+        Assert.Equal(Rooted("data", "media", "movies", "The Matrix (1999)"), path);
     }
 
     [Fact]
     public void Accepts_existing_folder_directly_inside_a_root_and_normalizes_it()
     {
-        Assert.Equal("/data/media/tv/Show", LibraryPaths.ResolveItemFolder(Roots, null, "/data/media/tv/Show/", () => "unused"));
-        Assert.Equal("/data/media/tv/Show", LibraryPaths.ResolveItemFolder(Roots, null, "/data/media/movies/../tv/Show", () => "unused"));
+        Assert.Equal(Rooted("data", "media", "tv", "Show"), LibraryPaths.ResolveItemFolder(Roots, null, "/data/media/tv/Show/", () => "unused"));
+        Assert.Equal(Rooted("data", "media", "tv", "Show"), LibraryPaths.ResolveItemFolder(Roots, null, "/data/media/movies/../tv/Show", () => "unused"));
     }
 
     [Theory]

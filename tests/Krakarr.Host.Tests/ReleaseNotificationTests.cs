@@ -32,7 +32,7 @@ public sealed class ReleaseNotificationTests : IClassFixture<KrakarrFactory>
     {
         var ct = TestContext.Current.CancellationToken;
         if (await db.Movies.AnyAsync(ct)) return;
-        var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+        var profile = await db.QualityProfiles.MinAsync(p => p.Id, ct);
         var tmdb = 500;
 
         Movie AddMovie(string title, bool monitored, params MovieReleaseDate[] dates)
@@ -141,5 +141,32 @@ public sealed class ReleaseNotificationTests : IClassFixture<KrakarrFactory>
         Assert.Equal("A", ReleaseNotificationSource.Summarize(["A"], 1));
         Assert.Equal("A, B and C", ReleaseNotificationSource.Summarize(["A", "B", "C"], 3));
         Assert.Equal("A, B, C and 2 more", ReleaseNotificationSource.Summarize(["A", "B", "C", "D", "E"], 5));
+    }
+
+    [Fact]
+    public void Stays_dismissed_until_date_or_count_increases()
+    {
+        var day = new DateTimeOffset(2031, 5, 10, 0, 0, 0, TimeSpan.Zero);
+        var dismissal = new NotificationDismissal { NotificationId = "releases.movies", Count = 2, DismissedAt = day };
+        Notification Note(int count, DateTimeOffset? date) => new("releases.movies", "movie", "t", null, "/calendar", count, Date: date);
+
+        Assert.True(NotificationEndpoints.IsDismissed(Note(2, day), dismissal));
+        Assert.True(NotificationEndpoints.IsDismissed(Note(1, day), dismissal)); // yesterday's title aged out
+        Assert.True(NotificationEndpoints.IsDismissed(Note(3, day.AddDays(-1)), dismissal));
+        Assert.False(NotificationEndpoints.IsDismissed(Note(3, day), dismissal)); // another title released today
+        Assert.False(NotificationEndpoints.IsDismissed(Note(1, day.AddDays(1)), dismissal)); // a title released tomorrow
+    }
+
+    [Fact]
+    public void A_dismissal_matches_a_date_the_database_stored_with_less_precision()
+    {
+        // Health notifications are dated from the clock to the tick; SQLite keeps 0.1 ms and Postgres 1 µs.
+        var since = new DateTimeOffset(2026, 11, 25, 10, 0, 0, TimeSpan.Zero).AddTicks(1_234_567);
+        var stored = since.AddTicks(-(since.Ticks % 1000));
+        var dismissal = new NotificationDismissal { NotificationId = "health.indexers.1", Count = 1, DismissedAt = stored };
+        var n = new Notification("health.indexers.1", "health", "Indexers", null, "/settings/health", Date: since);
+
+        Assert.True(NotificationEndpoints.IsDismissed(n, dismissal));
+        Assert.False(NotificationEndpoints.IsDismissed(n with { Date = since.AddMilliseconds(1) }, dismissal));
     }
 }

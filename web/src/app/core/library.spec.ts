@@ -1,34 +1,50 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ListCache } from './library';
+import { PagedListCache, PagedResponse } from './paged-list';
 
-describe('ListCache', () => {
+interface Item { id: number; label: string; }
+interface Query { filter?: string; q?: string; }
+
+function pageOf(items: Item[], page: number, pageSize: number, total = items.length, libraryTotal = total): PagedResponse<Item> {
+  const start = (page - 1) * pageSize;
+  return { items: items.slice(start, start + pageSize), page, pageSize, total, libraryTotal };
+}
+
+describe('PagedListCache', () => {
   beforeEach(() => vi.useFakeTimers());
   afterEach(() => vi.useRealTimers());
 
-  function cache() {
-    let n = 0;
-    const fetch = vi.fn(async () => [++n]);
+  function makeCache(pageSize = 2, delayMs = 1000, maxCachedPages = 20) {
+    let calls = 0;
+    const fetch = vi.fn(async (_q: Query, page: number, size: number): Promise<PagedResponse<Item>> => {
+      calls++;
+      const total = 6;
+      const items: Item[] = Array.from({ length: total }, (_, i) => ({ id: i + 1, label: `v${calls}-${i + 1}` }));
+      return pageOf(items, page, size, total, total);
+    });
     const onError = vi.fn();
-    return { list: new ListCache<number>(fetch, onError, 1000), fetch, onError };
+    const list = new PagedListCache<Item, Query>({ filter: 'all' }, fetch, onError, pageSize, delayMs, maxCachedPages);
+    return { list, fetch, onError };
   }
 
-  it('keeps the last list across visits and refreshes on attach', async () => {
-    const { list, fetch } = cache();
-    expect(list.items()).toBeNull();
+  it('keeps cached pages across visits and refreshes in the background on attach', async () => {
+    const { list, fetch } = makeCache();
+    expect(list.loading()).toBe(true);
     const detach = list.attach();
     await vi.runAllTimersAsync();
-    expect(list.items()).toEqual([1]);
+    expect(list.loading()).toBe(false);
+    expect(list.at(0)?.label).toBe('v1-1');
+    expect(list.total()).toBe(6);
     detach();
 
     list.attach();
-    expect(list.items()).toEqual([1]); // shown straight away
+    expect(list.at(0)?.label).toBe('v1-1'); // shown straight away
     await vi.runAllTimersAsync();
-    expect(list.items()).toEqual([2]);
+    expect(list.at(0)?.label).toBe('v2-1');
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
   it('collapses a burst of updates into one reload', async () => {
-    const { list, fetch } = cache();
+    const { list, fetch } = makeCache();
     list.attach();
     await vi.runAllTimersAsync();
     for (let i = 0; i < 50; i++) list.invalidate();
@@ -39,7 +55,7 @@ describe('ListCache', () => {
   });
 
   it('ignores updates while no page shows the list', async () => {
-    const { list, fetch } = cache();
+    const { list, fetch } = makeCache();
     list.attach()();
     await vi.runAllTimersAsync();
     list.invalidate();
@@ -47,23 +63,144 @@ describe('ListCache', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
-  it('reloads again when an update arrives during a load', async () => {
-    let resolve!: (v: number[]) => void;
-    const fetch = vi.fn(() => new Promise<number[]>(r => (resolve = r)));
-    const list = new ListCache<number>(fetch, () => {}, 0);
+  it('reloads again when an update arrives during a reload', async () => {
+    let resolveReload!: (v: PagedResponse<Item>) => void;
+    let calls = 0;
+    const fetch = vi.fn((_q: Query, page: number, size: number) => {
+      calls++;
+      if (calls === 2) return new Promise<PagedResponse<Item>>(r => (resolveReload = r));
+      return Promise.resolve(pageOf([{ id: 1, label: `c${calls}` }], page, size, 1, 1));
+    });
+    const list = new PagedListCache<Item, Query>({}, fetch, () => {}, 2, 0);
     list.attach();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toBe(1);
+
+    void list.reload();
     list.invalidate();
     await vi.advanceTimersByTimeAsync(0);
-    expect(fetch).toHaveBeenCalledTimes(1);
-    resolve([1]);
+    expect(calls).toBe(2);
+
+    resolveReload(pageOf([{ id: 1, label: 'c2' }], 1, 2, 1, 1));
     await vi.advanceTimersByTimeAsync(0);
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(calls).toBe(3);
   });
 
-  it('shows an empty list when the first load fails', async () => {
-    const list = new ListCache<number>(() => Promise.reject(new Error('down')), () => {}, 0);
+  it('fetches missing pages via ensureRange and evicts LRU pages beyond maxCachedPages', async () => {
+    const { list, fetch } = makeCache(2, 1000, 2);
     list.attach();
     await vi.runAllTimersAsync();
-    expect(list.items()).toEqual([]);
+    expect(list.at(0)?.id).toBe(1);
+    expect(list.at(2)).toBeUndefined();
+
+    // Load page 2 (indices 2..3)
+    list.ensureRange(2, 3);
+    await vi.runAllTimersAsync();
+    expect(list.at(2)?.id).toBe(3);
+    expect(list.idsBetween(1, 4)).toEqual([1, 2, 3, 4]);
+
+    // Load page 3 (indices 4..5) -> maxCachedPages = 2 so page 1 (LRU) is evicted
+    list.ensureRange(4, 5);
+    await vi.runAllTimersAsync();
+    expect(list.at(4)?.id).toBe(5);
+    expect(list.at(0)).toBeUndefined();
+    expect(list.idsBetween(1, 5)).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps pages that scrolling loaded while a reload was in flight', async () => {
+    let calls = 0;
+    let resolveReload: (() => void) | undefined;
+    const fetch = vi.fn((_q: Query, page: number, size: number) => {
+      calls++;
+      const items = Array.from({ length: 6 }, (_, i) => ({ id: i + 1, label: `v${calls}-${i + 1}` }));
+      const res = pageOf(items, page, size, 6, 6);
+      // The reload (call 2) hangs until released; everything else answers straight away.
+      if (calls === 2) return new Promise<PagedResponse<Item>>(r => (resolveReload = () => r(res)));
+      return Promise.resolve(res);
+    });
+    const list = new PagedListCache<Item, Query>({}, fetch, () => {}, 2, 0);
+    list.attach();
+    await vi.runAllTimersAsync();
+
+    void list.reload(); // snapshot: page 1 only
+    list.ensureRange(4, 5); // the user scrolls to page 3 meanwhile
+    await vi.runAllTimersAsync();
+    expect(list.at(4)?.id).toBe(5);
+
+    resolveReload!();
+    await vi.runAllTimersAsync();
+    expect(list.at(0)?.id).toBe(1);
+    expect(list.at(4)?.id).toBe(5);
+  });
+
+  it('requests the visible range again once a new query commits', async () => {
+    const { list, fetch } = makeCache();
+    list.attach();
+    await vi.runAllTimersAsync();
+    list.ensureRange(0, 3);
+    await vi.runAllTimersAsync();
+    expect(fetch).toHaveBeenCalledTimes(2);
+
+    // Same total, no scroll: the view doesn't ask again, so the cache must fetch page 2 itself.
+    list.setQuery({ filter: 'missing' });
+    await vi.runAllTimersAsync();
+    expect(fetch.mock.calls.slice(2).map(c => c[1])).toEqual([1, 2]);
+    expect(list.at(2)?.id).toBe(3);
+  });
+
+  it('bumps queryRevision only when a different query commits', async () => {
+    const { list } = makeCache();
+    list.attach();
+    await vi.runAllTimersAsync();
+    expect(list.queryRevision()).toBe(1);
+
+    await list.reload();
+    expect(list.revision()).toBe(2);
+    expect(list.queryRevision()).toBe(1);
+
+    list.setQuery({ filter: 'missing' });
+    await vi.runAllTimersAsync();
+    expect(list.queryRevision()).toBe(2);
+  });
+
+  it('drops responses of the old query when the query changes with no page attached', async () => {
+    const pending: Array<(v: PagedResponse<Item>) => void> = [];
+    const fetch = vi.fn(() => new Promise<PagedResponse<Item>>(resolve => pending.push(resolve)));
+    const list = new PagedListCache<Item, Query>({ filter: 'all' }, fetch, () => {}, 2, 0);
+    const detach = list.attach();
+    detach();
+    list.setQuery({ filter: 'missing' });
+    pending[0](pageOf([{ id: 1, label: 'all' }], 1, 2, 1, 1));
+    await vi.runAllTimersAsync();
+    expect(list.at(0)).toBeUndefined();
+    expect(list.loading()).toBe(true);
+  });
+
+  it('discards stale responses when the query changes mid-flight', async () => {
+    const pending: Array<{ q: Query; resolve: (v: PagedResponse<Item>) => void }> = [];
+    const fetch = vi.fn((q: Query) => new Promise<PagedResponse<Item>>(resolve => pending.push({ q, resolve })));
+    const list = new PagedListCache<Item, Query>({ filter: 'all' }, fetch, () => {}, 2, 0);
+    list.attach();
+    list.setQuery({ filter: 'missing' });
+
+    // Resolve the second query first, then the stale first query.
+    pending[1].resolve(pageOf([{ id: 9, label: 'missing' }], 1, 2, 1, 5));
+    await vi.runAllTimersAsync();
+    expect(list.at(0)?.id).toBe(9);
+
+    pending[0].resolve(pageOf([{ id: 1, label: 'all' }], 1, 2, 1, 5));
+    await vi.runAllTimersAsync();
+    expect(list.at(0)?.id).toBe(9);
+  });
+
+  it('stops loading and reports error when the first load fails', async () => {
+    const onError = vi.fn();
+    const list = new PagedListCache<Item, Query>({}, () => Promise.reject(new Error('down')), onError, 2, 0);
+    list.attach();
+    await vi.runAllTimersAsync();
+    expect(list.loading()).toBe(false);
+    expect(list.total()).toBe(0);
+    expect(onError).toHaveBeenCalledTimes(1);
   });
 });

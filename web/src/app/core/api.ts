@@ -4,16 +4,22 @@ import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { Auth } from './auth';
 import { readNdjson } from './ndjson';
+import type { Passkey, PasskeyCreationOptionsJson, PasskeyCredentialJson, PasskeyRequestOptionsJson } from './passkeys';
+import type { PushDevice, PushStatus, PushTestResult, PushTopic } from './push';
 import {
-  AuthStatus, AutomationSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer,
-  IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, SubtitleCandidate, SubtitleFile, SubtitleFileRef, SubtitleSettings, WantedSubtitle, WantedSubtitleLanguages, Episode, EpisodeDetails, EpisodeRelease, MediaType, MonitorMode, Series, SeriesListItem, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollection, MovieListItem, MovieLookup, Quality, QualityProfile,
-  ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
-  DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, JellyfinTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction,
+  AuthStatus, AutomationSettings, BackupInfo, BackupList, BackupSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
+  IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, BestSubtitleMatches, SubtitleCandidate, SubtitleCandidates, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, SubtitleSyncTools, RedundantSubtitlePage, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, SeasonDetails, EpisodeRelease, MediaInfo, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
+  ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, KeywordLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
+  DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, EmbySettings, PlexSettings, MediaServerTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, BackgroundTask, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus,
+  AlternateTitle, AlternateTitleInput, DatabaseInfo, DatabaseTargetRequest, DatabaseTestResult, DatabaseSwitchStaged
 } from './models';
 
 const API = 'api/v1';
 
 const libraryPath = (mediaType: MediaType) => mediaType === 'Movie' ? 'movies' : 'series';
+
+/** URL that downloads a backup (a plain link: the browser sends the session cookie). */
+export const backupUrl = (name: string) => `${API}/system/backups/${encodeURIComponent(name)}`;
 
 /** Optional library item a manual download is imported into. */
 export interface DownloadLink { movieId?: number; seriesId?: number; }
@@ -34,10 +40,10 @@ export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-type SettingsMap = {
+export type SettingsMap = {
   general: GeneralSettings; media: MediaManagementSettings; metadata: MetadataSettings;
   downloads: DownloadClientSettings; automation: AutomationSettings; subtitles: SubtitleSettings; languages: LanguageSettings;
-  jellyfin: JellyfinSettings; telemetry: TelemetrySettings;
+  jellyfin: JellyfinSettings; emby: EmbySettings; plex: PlexSettings; telemetry: TelemetrySettings; backup: BackupSettings;
 };
 
 @Injectable({ providedIn: 'root' })
@@ -93,6 +99,27 @@ export class Api {
     return this.post<void>('auth/password', { username, currentPassword, newPassword: newPassword || null });
   }
 
+  // Passkeys
+  passkeyLoginOptions() { return this.post<PasskeyRequestOptionsJson>('auth/passkeys/login/options'); }
+  passkeyLogin(credential: PasskeyCredentialJson) { return this.post<void>('auth/passkeys/login', { credential }); }
+  passkeys() { return this.get<Passkey[]>('auth/passkeys'); }
+  /** Starts adding a passkey; needs the current password. */
+  passkeyRegistrationOptions(currentPassword: string) {
+    return this.post<PasskeyCreationOptionsJson>('auth/passkeys/register/options', { currentPassword });
+  }
+  addPasskey(name: string, credential: PasskeyCredentialJson) { return this.post<Passkey>('auth/passkeys', { name, credential }); }
+  renamePasskey(id: number, name: string) { return this.put<Passkey>(`auth/passkeys/${id}`, { name }); }
+  deletePasskey(id: number) { return this.delete<void>(`auth/passkeys/${id}`); }
+
+  // Push notifications (this user's devices)
+  pushStatus() { return this.get<PushStatus>('push'); }
+  addPushDevice(device: { endpoint: string; p256dh: string; auth: string; name?: string }) { return this.post<PushDevice>('push/devices', device); }
+  updatePushDevice(id: number, topics: PushTopic[]) { return this.put<PushDevice>(`push/devices/${id}`, { topics }); }
+  deletePushDevice(id: number) { return this.delete<void>(`push/devices/${id}`); }
+  /** Forgets this browser by its push endpoint (on sign-out). */
+  forgetPushDevice(endpoint: string) { return this.delete<void>('push/devices', { endpoint }); }
+  testPushDevice(id: number) { return this.post<PushTestResult>(`push/devices/${id}/test`); }
+
   // Users (admin)
   users() { return this.get<UserAccount[]>('users'); }
   createUser(user: { username: string; password: string; role: UserRole }) { return this.post<UserAccount>('users', user); }
@@ -105,12 +132,39 @@ export class Api {
   tasks() { return this.get<ScheduledTaskInfo[]>('system/tasks'); }
   dashboard() { return this.get<DashboardStats>('dashboard'); }
   runTask(id: string) { return this.post<void>(`system/tasks/${encodeURIComponent(id)}/run`); }
+  health() { return this.get<HealthReport>('system/health'); }
+  /** Runs every health check now (API keys are validated again) and returns the new report. */
+  checkHealth() { return this.post<HealthReport>('system/health/check'); }
+
+  // Backups (admin)
+  backups() { return this.get<BackupList>('system/backups'); }
+  createBackup() { return this.post<BackupInfo>('system/backups'); }
+  deleteBackup(name: string) { return this.delete<void>(`system/backups/${encodeURIComponent(name)}`); }
+  /** Uploads a backup zip, sent as the raw body so the server streams it to disk; it is restored on the next start. */
+  uploadBackup(file: Blob) {
+    return firstValueFrom(this.http.post<void>(`${API}/system/backups/restore`, file, { headers: { 'Content-Type': 'application/zip' } }));
+  }
+  /** Restores one of the stored backups on the next start. */
+  restoreBackup(name: string) { return this.post<void>(`system/backups/${encodeURIComponent(name)}/restore`); }
+  cancelRestore() { return this.delete<void>('system/backups/restore'); }
+
+  // Database switch (admin)
+  database() { return this.get<DatabaseInfo>('system/database'); }
+  /** Connects to the database and checks it holds no Krakarr data; changes nothing. */
+  testDatabase(target: DatabaseTargetRequest) { return this.post<DatabaseTestResult>('system/database/test', target); }
+  /** Stages the switch: the tables are copied into the new database on the next start. */
+  switchDatabase(target: DatabaseTargetRequest) { return this.post<DatabaseSwitchStaged>('system/database/switch', target); }
+  cancelDatabaseSwitch() { return this.delete<void>('system/database/switch'); }
+  /** Deletes the SQLite file left behind by a switch. */
+  deleteOldDatabase() { return this.delete<void>('system/database/old'); }
 
   // Settings
   settings<K extends keyof SettingsMap>(section: K) { return this.get<SettingsMap[K]>(`settings/${section}`); }
   saveSettings<K extends keyof SettingsMap>(section: K, value: SettingsMap[K]) { return this.put<SettingsMap[K]>(`settings/${section}`, value); }
   telemetryStatus() { return this.get<TelemetryStatus>('settings/telemetry/status'); }
-  testJellyfin(settings: JellyfinSettings) { return this.post<JellyfinTestResult>('settings/jellyfin/test', settings); }
+  testJellyfin(settings: JellyfinSettings) { return this.post<MediaServerTestResult>('settings/jellyfin/test', settings); }
+  testEmby(settings: EmbySettings) { return this.post<MediaServerTestResult>('settings/emby/test', settings); }
+  testPlex(settings: PlexSettings) { return this.post<MediaServerTestResult>('settings/plex/test', settings); }
   regenerateApiKey() { return this.post<GeneralSettings>('settings/general/regenerate-api-key'); }
   qualities() { return this.get<Quality[]>('qualities'); }
   qualityProfiles() { return this.get<QualityProfile[]>('qualityprofiles'); }
@@ -125,15 +179,20 @@ export class Api {
   indexers() { return this.get<Indexer[]>('indexers'); }
   saveIndexer(i: Indexer) { return i.id ? this.put<Indexer>(`indexers/${i.id}`, i) : this.post<Indexer>('indexers', i); }
   deleteIndexer(id: number) { return this.delete<void>(`indexers/${id}`); }
+  /** Indexers backing off after failures. */
+  indexerStatus() { return this.get<IndexerStatus[]>('indexers/status'); }
   testIndexer(i: Indexer) { return this.post<IndexerTestResult>('indexers/test', i); }
   indexerCapabilities(i: Indexer) { return this.post<IndexerTestResult>('indexers/capabilities', i); }
   prowlarrIndexers(url: string, apiKey: string) { return this.post<ProwlarrListResult>('indexers/prowlarr/list', { url, apiKey }); }
   importProwlarrIndexers(url: string, apiKey: string, indexerIds: number[]) {
     return this.post<ProwlarrImportResult>('indexers/prowlarr/import', { url, apiKey, indexerIds });
   }
+  /** Enabled indexers that manual search can target. */
+  searchIndexers() { return this.get<SearchIndexer[]>('search/indexers'); }
   /** Streamed: results arrive as each indexer answers (see `ReleaseSearch`). */
-  searchStream(query: string, type: SearchType, onEvent: (e: SearchStreamEvent<SearchResult>) => void, signal: AbortSignal) {
-    return this.stream('search', { query, type }, onEvent, signal);
+  searchStream(query: string, type: SearchType, onEvent: (e: SearchStreamEvent<SearchResult>) => void, signal: AbortSignal,
+    indexerIds?: readonly number[]) {
+    return this.stream('search', { query, type, indexerIds: indexerIds?.length ? indexerIds.join(',') : null }, onEvent, signal);
   }
 
   // Downloads
@@ -157,10 +216,21 @@ export class Api {
     return this.post<BulkResult>('downloads/bulk', { hashes, action, deleteData });
   }
   removeDownload(hash: string, deleteData: boolean) { return this.delete<void>(`downloads/${hash}`, { deleteData }); }
+  downloadMedia() { return this.get<DownloadMediaInfo[]>('downloads/media'); }
+  importIssues() { return this.get<ImportIssue[]>('downloads/import-issues'); }
+  retryImport(id: number) { return this.post<void>(`downloads/import-issues/${id}/retry`); }
+  dismissImportIssue(id: number) { return this.delete<void>(`downloads/import-issues/${id}`); }
 
   // Movies
-  movies() { return this.get<MovieListItem[]>('movies'); }
-  movieCollections() { return this.get<MovieCollection[]>('movies/collections'); }
+  movies(query?: MovieListQuery) { return this.get<MovieListPage>('movies', query as Record<string, string | number | boolean | null | undefined>); }
+  movieIds(query?: Omit<MovieListQuery, 'page' | 'pageSize'>) {
+    return this.get<number[]>('movies/ids', query as Record<string, string | number | boolean | null | undefined>);
+  }
+  /** Collections with library movies matching the movie list's search and filter. */
+  movieCollections(query?: { q?: string; filter?: MovieFilter }) { return this.get<MovieCollectionSummary[]>('movies/collections', query); }
+  movieCollection(id: number) { return this.get<MovieCollectionDetails>(`movies/collections/${id}`); }
+  /** Movies of the collection that are not in the library (asks TMDB). */
+  movieCollectionMissing(id: number) { return this.get<MovieLookup[]>(`movies/collections/${id}/missing`); }
   movie(id: number) { return this.get<Movie>(`movies/${id}`); }
   /** The movie's Jellyfin page; null (HTTP 204) when Jellyfin isn't set up or doesn't have it. */
   movieJellyfinLink(id: number) { return this.get<{ url: string } | null>(`movies/${id}/jellyfin`); }
@@ -181,7 +251,16 @@ export class Api {
   updateMovie(id: number, monitored: boolean, qualityProfileId: number, minimumAvailability: MinimumAvailability | undefined, languages: string[] | null) {
     return this.put<void>(`movies/${id}`, { monitored, qualityProfileId, minimumAvailability: minimumAvailability ?? null, languages });
   }
+  /** Alternate titles of a movie or series: metadata and scene titles, then the user's own. */
+  alternateTitles(kind: 'movies' | 'series', id: number) { return this.get<AlternateTitle[]>(`${kind}/${id}/titles`); }
+  /** Replaces the user's own alternate titles; metadata and scene titles stay. */
+  setAlternateTitles(kind: 'movies' | 'series', id: number, titles: AlternateTitleInput[]) {
+    return this.put<AlternateTitle[]>(`${kind}/${id}/titles`, { titles });
+  }
   deleteMovie(id: number, deleteFiles: boolean) { return this.delete<void>(`movies/${id}`, { deleteFiles }); }
+  /** Deletes a movie's file from disk; `unmonitor` also unmonitors the movie. */
+  deleteMovieFile(id: number, unmonitor = false) { return this.delete<void>(`moviefiles/${id}`, { unmonitor }); }
+  refreshMovie(id: number) { return this.post<CommandInfo>(`movies/${id}/refresh`); }
   searchMovie(id: number) { return this.post<CommandInfo>(`movies/${id}/search`); }
   /** Interactive search, streamed (see `ReleaseSearch`). */
   movieReleasesStream(id: number, onEvent: (e: SearchStreamEvent<ReleaseDecision>) => void, signal: AbortSignal) {
@@ -194,6 +273,16 @@ export class Api {
 
   // Notifications (the bell): everything the signed-in user should look at.
   notifications() { return this.get<AppNotification[]>('notifications'); }
+  dismissNotification(id: string) { return this.delete<void>(`notifications/${encodeURIComponent(id)}`); }
+  dismissAllNotifications() { return this.delete<void>('notifications'); }
+
+  // Background tasks (the tasks menu in the top bar): long-running work such as subtitle syncs, the caller's own (plus automatic ones for staff).
+  backgroundTasks() { return this.get<BackgroundTask[]>('system/background-tasks'); }
+  cancelBackgroundTask(id: string) { return this.post<void>(`system/background-tasks/${encodeURIComponent(id)}/cancel`); }
+  /** Hides a finished task. */
+  dismissBackgroundTask(id: string) { return this.delete<void>(`system/background-tasks/${encodeURIComponent(id)}`); }
+  /** Hides every finished task. */
+  dismissFinishedBackgroundTasks() { return this.delete<void>('system/background-tasks'); }
 
   // Requests: users ask for titles, staff approve (adds them) or decline.
   requests(status?: RequestStatus, page = 1) { return this.get<MediaRequestPage>('requests', { status, page }); }
@@ -230,11 +319,16 @@ export class Api {
   }
 
   // Series
-  seriesList() { return this.get<SeriesListItem[]>('series'); }
+  seriesList(query?: SeriesListQuery) { return this.get<SeriesListPage>('series', query as Record<string, string | number | boolean | null | undefined>); }
+  seriesIds(query?: Omit<SeriesListQuery, 'page' | 'pageSize'>) {
+    return this.get<number[]>('series/ids', query as Record<string, string | number | boolean | null | undefined>);
+  }
   series(id: number) { return this.get<Series>(`series/${id}`); }
   /** The series' Jellyfin page; null (HTTP 204) when Jellyfin isn't set up or doesn't have it. */
   seriesJellyfinLink(id: number) { return this.get<{ url: string } | null>(`series/${id}/jellyfin`); }
   episodes(seriesId: number) { return this.get<Episode[]>(`series/${seriesId}/episodes`); }
+  /** The episode's Jellyfin page; null (HTTP 204) when Jellyfin isn't set up or doesn't have it. */
+  episodeJellyfinLink(seriesId: number, episodeId: number) { return this.get<{ url: string } | null>(`series/${seriesId}/episodes/${episodeId}/jellyfin`); }
   lookupSeries(term: string) { return this.get<SeriesLookup[]>('series/lookup', { term }); }
   addSeries(req: { tmdbId?: number; tvdbId?: number; qualityProfileId: number; rootFolderPath: string; monitor: MonitorMode; seasonFolder: boolean; searchForMissing: boolean; title?: string }) {
     return this.post<Series>('series', req);
@@ -246,12 +340,25 @@ export class Api {
   seriesCredits(id: number) { return this.get<Credits>(`series/${id}/credits`); }
   /** TMDB details of a library episode; null when TMDB doesn't know it. */
   episodeDetails(seriesId: number, episodeId: number) { return this.get<EpisodeDetails | null>(`series/${seriesId}/episodes/${episodeId}/details`); }
+  /** Media info read from an episode file; null when it hasn't been read (or couldn't be). */
+  episodeFileMediaInfo(seriesId: number, fileId: number) { return this.get<MediaInfo | null>(`series/${seriesId}/episodefiles/${fileId}/mediainfo`); }
   /** Any TMDB show, whether or not it is in the library. */
   tmdbSeries(tmdbId: number) { return this.get<SeriesDetails>(`series/tmdb/${tmdbId}`); }
+  tmdbSeason(tmdbId: number, season: number) { return this.get<SeasonDetails>(`series/tmdb/${tmdbId}/season/${season}`); }
+  tmdbEpisode(tmdbId: number, season: number, episode: number) { return this.get<EpisodeDetails>(`series/tmdb/${tmdbId}/season/${season}/episode/${episode}`); }
   tmdbSeriesRecommendations(tmdbId: number) { return this.get<SeriesLookup[]>(`series/tmdb/${tmdbId}/recommendations`); }
   tmdbSimilarSeries(tmdbId: number) { return this.get<SeriesLookup[]>(`series/tmdb/${tmdbId}/similar`); }
 
   // People
+  lookupPeople(term: string) { return this.get<PersonLookup[]>('people/lookup', { term }); }
+
+  // Keywords
+  lookupKeywords(term: string) { return this.get<KeywordLookup[]>('keywords/lookup', { term }); }
+  keyword(id: number) { return this.get<KeywordLookup>(`keywords/${id}`); }
+  /** Movies tagged with every one of the keywords, most popular first. */
+  moviesByKeywords(ids: readonly number[], page = 1) { return this.get<DiscoverPage<MovieLookup>>('movies/discover/keywords', { keywords: ids.join(','), page }); }
+  /** Shows tagged with every one of the keywords, most popular first. */
+  seriesByKeywords(ids: readonly number[], page = 1) { return this.get<DiscoverPage<SeriesLookup>>('series/discover/keywords', { keywords: ids.join(','), page }); }
   person(tmdbId: number) { return this.get<PersonDetails>(`people/${tmdbId}`); }
   /** IMDb, Rotten Tomatoes and Metacritic scores; null (HTTP 204) when no OMDb key is set or they are unavailable. */
   ratings(imdbId: string) { return this.get<TitleRatings | null>(`ratings/${encodeURIComponent(imdbId)}`); }
@@ -275,7 +382,10 @@ export class Api {
     return this.stream(`series/${id}/releases`, { season, episodeId }, onEvent, signal);
   }
   grabSeriesRelease(id: number, release: ReleaseInfo) { return this.post<unknown>(`series/${id}/releases/grab`, { release }); }
-  deleteEpisodeFile(id: number) { return this.delete<void>(`episodefiles/${id}`); }
+  /** Deletes an episode file from disk; `unmonitor` also unmonitors its episodes. */
+  deleteEpisodeFile(id: number, unmonitor = false) { return this.delete<void>(`episodefiles/${id}`, { unmonitor }); }
+  /** Deletes several episode files from disk (a season's); `unmonitor` also unmonitors their episodes. */
+  deleteEpisodeFiles(ids: number[], unmonitor = false) { return this.post<BulkResult>('episodefiles/bulk/delete', { ids, unmonitor }); }
 
   // Calendar
   /** Library releases between two ISO dates (inclusive); `user` = 'me' or a user id limits them to that user's titles. */
@@ -285,25 +395,55 @@ export class Api {
   /** Audio languages releases can be filtered by, plus the global wanted ones. */
   languages() { return this.get<LanguageCatalog>('languages'); }
   subtitleLanguages() { return this.get<Language[]>('subtitles/languages'); }
+  subtitleProviders() { return this.get<SubtitleProvider[]>('subtitles/providers'); }
   testSubtitleProviders(settings: SubtitleSettings) {
     return this.post<{ name: string; success: boolean; message: string }[]>('subtitles/providers/test', settings);
   }
-  subtitleFiles(filter: { movieId?: number; seriesId?: number }) { return this.get<SubtitleFile[]>('subtitles/files', filter); }
+  /** Subtitles (external files plus tracks inside the video) of a movie, a whole series or one video file. */
+  subtitleFiles(filter: { movieId?: number; seriesId?: number; movieFileId?: number; episodeFileId?: number }) { return this.get<SubtitleFile[]>('subtitles/files', filter); }
+  /** A slice of the external subtitles that duplicate an embedded track, sorted by title. */
+  redundantSubtitles(query: { offset: number; limit: number }) { return this.get<RedundantSubtitlePage>('subtitles/redundant', query); }
   wantedSubtitleLanguages() { return this.get<WantedSubtitleLanguages>('subtitles/wanted-languages'); }
-  wantedSubtitles() { return this.get<WantedSubtitle[]>('subtitles/wanted'); }
+  /** One page of the files missing a wanted language, sorted on the server, with the totals per filter. */
+  wantedSubtitles(query: WantedSubtitleQuery & { page: number; pageSize: number }) {
+    return this.get<WantedSubtitlePage>('subtitles/wanted', query as Record<string, string | number | boolean | null | undefined>);
+  }
+  /** Lets the scheduled search try a movie or episode file marked "not found" again (every marked file when omitted). */
+  retrySubtitles(ref: SubtitleFileRef = {}) {
+    return this.post<{ count: number }>('subtitles/retry', { movieFileId: ref.movieFileId ?? null, episodeFileId: ref.episodeFileId ?? null });
+  }
+  /** Marks every movie and episode file missing a wanted language "not found": the scheduled search stops retrying them. */
+  markAllSubtitlesNotFound() { return this.post<{ count: number }>('subtitles/not-found', {}); }
+  /** Marks one movie or episode file "not found": the scheduled search stops retrying it until it is retried. */
+  markSubtitlesNotFound(ref: SubtitleFileRef) {
+    return this.post<{ count: number }>('subtitles/not-found', { movieFileId: ref.movieFileId ?? null, episodeFileId: ref.episodeFileId ?? null });
+  }
   /** Searches one file, a whole movie or series (every wanted language, upgrading existing ones), or all wanted files when empty. */
-  searchSubtitles(ref: SubtitleFileRef & { movieId?: number; seriesId?: number } = {}) {
+  searchSubtitles(ref: SubtitleFileRef & { movieId?: number; seriesId?: number; providers?: string[]; notFound?: boolean } = {}) {
     return this.post<CommandInfo>('subtitles/search', {
       movieFileId: ref.movieFileId ?? null, episodeFileId: ref.episodeFileId ?? null, movieId: ref.movieId ?? null, seriesId: ref.seriesId ?? null,
+      ...(ref.providers?.length ? { providers: ref.providers } : {}),
+      ...(ref.notFound != null ? { notFound: ref.notFound } : {}),
     });
   }
-  subtitleCandidates(ref: SubtitleFileRef, language?: string) {
-    return this.get<{ label: string; results: ScoredSubtitle[]; errors: string[] }>('subtitles/candidates', { ...ref, language });
+  /** Every provider result for a file, scored; `language` narrows it to one or a few languages (all wanted ones otherwise). */
+  subtitleCandidates(ref: SubtitleFileRef, language?: string | readonly string[]) {
+    const languages = typeof language === 'string' ? language : language?.length ? language.join(',') : undefined;
+    return this.get<SubtitleCandidates>('subtitles/candidates', { ...ref, language: languages });
   }
-  downloadSubtitle(ref: SubtitleFileRef, candidate: SubtitleCandidate, score: number) {
-    return this.post<SubtitleFile>('subtitles/download', { ...ref, candidate, score });
+  /** Best subtitle per missing language, ignoring the minimum score; downloads nothing. */
+  bestSubtitleMatches(ref: SubtitleFileRef) { return this.get<BestSubtitleMatches>('subtitles/best-match', { ...ref }); }
+  /** manual: picked by hand (automatic upgrades leave it alone); false for best-match picks, which may still be upgraded. */
+  downloadSubtitle(ref: SubtitleFileRef, candidate: SubtitleCandidate, score: number, manual = true) {
+    return this.post<SubtitleFile>('subtitles/download', { ...ref, candidate, score, manual });
   }
   deleteSubtitle(id: number) { return this.delete<void>(`subtitles/${id}`); }
+  deleteSubtitles(ids: number[]) { return this.post<BulkResult>('subtitles/bulk/delete', { ids }); }
+  /** Resyncs a subtitle against the video in the background; the result lands on the subtitle (syncNote). */
+  syncSubtitle(id: number) { return this.post<CommandInfo>(`subtitles/${id}/sync`, {}); }
+  /** Moves every cue by offsetMs (negative = earlier). */
+  shiftSubtitle(id: number, offsetMs: number) { return this.post<SubtitleFile>(`subtitles/${id}/shift`, { offsetMs }); }
+  subtitleSyncTools() { return this.get<SubtitleSyncTools>('subtitles/sync/tools'); }
 
   // Library import
   scanMovieImport(rootFolderId: number) { return this.get<MovieImportCandidate[]>('movies/import/scan', { rootFolderId }); }

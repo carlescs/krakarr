@@ -239,7 +239,7 @@ public sealed class TelemetryTests(KrakarrFactory factory) : IClassFixture<Kraka
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-            var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+            var profile = await db.QualityProfiles.MinAsync(p => p.Id, ct);
             var movie = new Movie { TmdbId = 9101, Title = "Stats Movie", Year = 2020, Path = "/m/stats", QualityProfileId = profile };
             var missing = new Movie { TmdbId = 9102, Title = "Stats Missing", Year = 2020, Path = "/m/stats2", QualityProfileId = profile };
             var series = new Krakarr.Core.Domain.Series { TvdbId = 9201, Title = "Stats Show", Year = 2020, Path = "/tv/stats", QualityProfileId = profile, Monitored = false };
@@ -295,7 +295,7 @@ public sealed class TelemetryTests(KrakarrFactory factory) : IClassFixture<Kraka
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-            var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(ct);
+            var profile = await db.QualityProfiles.MinAsync(p => p.Id, ct);
             var movie = new Movie { TmdbId = 9301, Title = "Counted", Year = 2021, Path = "/m/counted", QualityProfileId = profile };
             db.Movies.Add(movie);
             await db.SaveChangesAsync(ct);

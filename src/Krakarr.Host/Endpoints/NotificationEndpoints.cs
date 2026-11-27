@@ -1,4 +1,5 @@
 using Krakarr.Core.Domain;
+using Krakarr.Core.Events;
 using Krakarr.Core.Notifications;
 using Krakarr.Data;
 using Krakarr.Host.Auth;
@@ -10,21 +11,118 @@ public static class NotificationEndpoints
 {
     public static IEndpointRouteBuilder MapNotificationEndpoints(this IEndpointRouteBuilder app)
     {
+        var group = app.MapGroup("/api/v1/notifications").WithTags("Notifications");
+
         // Everything the caller should look at, from every registered source, most severe and most recent first.
-        app.MapGet("/api/v1/notifications", async (HttpContext http, IEnumerable<INotificationSource> sources, CancellationToken ct) =>
+        group.MapGet("/", async (HttpContext http, KrakarrDbContext db, IEnumerable<INotificationSource> sources, CancellationToken ct) =>
         {
             var context = new NotificationContext(http.User.GetUserId(), http.User.GetRole());
-            var all = new List<Notification>();
-            foreach (var source in sources)
+            var all = await ActiveAsync(sources, context, ct);
+            if (all.Count > 0 && context.UserId is { } userId)
             {
-                all.AddRange(await source.GetAsync(context, ct));
+                var dismissed = await db.NotificationDismissals.AsNoTracking()
+                    .Where(d => d.UserId == userId)
+                    .ToDictionaryAsync(d => d.NotificationId, ct);
+                all.RemoveAll(n => dismissed.TryGetValue(n.Id, out var d) && IsDismissed(n, d));
             }
 
-            return Results.Ok(all.Where(n => n.Count > 0)
+            return Results.Ok(all
                 .OrderByDescending(n => n.Severity).ThenByDescending(n => n.Date ?? DateTimeOffset.MinValue).ToList());
-        }).WithTags("Notifications");
+        });
+
+        group.MapDelete("/", (HttpContext http, KrakarrDbContext db, IEnumerable<INotificationSource> sources, IEventHub events, CancellationToken ct) =>
+            DismissAsync(http, db, sources, events, null, ct));
+
+        group.MapDelete("/{id}", (string id, HttpContext http, KrakarrDbContext db, IEnumerable<INotificationSource> sources, IEventHub events, CancellationToken ct) =>
+            DismissAsync(http, db, sources, events, id, ct));
 
         return app;
+    }
+
+    /// <summary>
+    /// True when <paramref name="n"/> has no activity newer than what the user dismissed. Dates are compared to the
+    /// millisecond: the database truncates the stored dismissal (SQLite keeps 0.1 ms, Postgres 1 µs), while sources
+    /// such as health checks date notifications from the clock at full precision.
+    /// </summary>
+    public static bool IsDismissed(Notification n, NotificationDismissal d)
+    {
+        if (n.Date is not { } date) return d.DismissedAt is null && n.Count <= d.Count;
+        if (d.DismissedAt is not { } dismissedAt) return false;
+        var (shown, dismissed) = (ToMilliseconds(date), ToMilliseconds(dismissedAt));
+        return shown < dismissed || (shown == dismissed && (n.Count <= d.Count || !n.CountRenotifies));
+    }
+
+    private static DateTimeOffset ToMilliseconds(DateTimeOffset d) => d.AddTicks(-(d.Ticks % TimeSpan.TicksPerMillisecond));
+
+    private static async Task<List<Notification>> ActiveAsync(IEnumerable<INotificationSource> sources, NotificationContext context, CancellationToken ct)
+    {
+        var all = new List<Notification>();
+        foreach (var source in sources)
+        {
+            all.AddRange(await source.GetAsync(context, ct));
+        }
+
+        all.RemoveAll(n => n.Count <= 0);
+        return all;
+    }
+
+    private static async Task<IResult> DismissAsync(HttpContext http, KrakarrDbContext db, IEnumerable<INotificationSource> sources,
+        IEventHub events, string? id, CancellationToken ct)
+    {
+        if (http.User.GetUserId() is not { } userId) return Results.NoContent();
+        var changed = 0;
+
+        // Result notifications come from MediaRequest.ResultUnseen; clearing that flag dismisses the handled requests
+        // themselves so a later approval or decline reports only the new ones.
+        if (id is null or "requests.approved")
+        {
+            changed += await db.MediaRequests
+                .Where(r => r.RequestedById == userId && r.ResultUnseen && r.Status == RequestStatus.Approved)
+                .ExecuteUpdateAsync(s => s.SetProperty(r => r.ResultUnseen, false), ct);
+        }
+
+        if (id is null or "requests.declined")
+        {
+            changed += await db.MediaRequests
+                .Where(r => r.RequestedById == userId && r.ResultUnseen && r.Status == RequestStatus.Declined)
+                .ExecuteUpdateAsync(s => s.SetProperty(r => r.ResultUnseen, false), ct);
+        }
+
+        var context = new NotificationContext(userId, http.User.GetRole());
+        var target = (await ActiveAsync(sources, context, ct))
+            .Where(n => id is null || n.Id == id)
+            .ToList();
+        if (target.Count > 0)
+        {
+            var existing = await db.NotificationDismissals
+                .Where(d => d.UserId == userId)
+                .ToDictionaryAsync(d => d.NotificationId, ct);
+            foreach (var n in target)
+            {
+                if (existing.TryGetValue(n.Id, out var row))
+                {
+                    row.Count = n.Count;
+                    row.DismissedAt = n.Date;
+                }
+                else
+                {
+                    db.NotificationDismissals.Add(new NotificationDismissal
+                    {
+                        UserId = userId,
+                        NotificationId = n.Id,
+                        Count = n.Count,
+                        DismissedAt = n.Date,
+                    });
+                }
+
+                changed++;
+            }
+
+            await db.SaveChangesAsync(ct);
+        }
+
+        if (changed > 0) await events.PublishAsync(EventNames.NotificationsUpdated, null, ct);
+        return Results.NoContent();
     }
 }
 
@@ -61,7 +159,7 @@ public sealed class RequestNotificationSource(KrakarrDbContext db) : INotificati
 
         var summary = await pending.GroupBy(_ => 1)
             .Select(g => new { Count = g.Count(), Latest = g.Max(r => r.RequestedAt) })
-            .FirstOrDefaultAsync(ct);
+            .SingleOrDefaultAsync(ct);
         if (summary is null) return null;
 
         var n = summary.Count;

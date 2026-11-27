@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Krakarr.Core.Configuration;
+using Krakarr.Core.Domain;
 using Krakarr.Core.Metadata;
 using Krakarr.Data;
 
@@ -13,6 +14,9 @@ public interface ITvdbClient
 {
     Task<IReadOnlyList<SeriesLookup>> SearchAsync(string query, CancellationToken ct = default);
     Task<SeriesInfo> GetSeriesAsync(int tvdbId, CancellationToken ct = default);
+
+    /// <summary>Logs in with the configured API key and PIN; throws <see cref="MetadataException"/> when that fails.</summary>
+    Task LoginAsync(CancellationToken ct = default);
 }
 
 /// <summary>TheTVDB v4 client (optional series metadata source): search, series details (with translations and artwork) and the default episode order.</summary>
@@ -21,6 +25,9 @@ public sealed class TvdbClient(IHttpClientFactory httpClientFactory, ISettingsSe
     public const string HttpClientName = "tvdb";
     private static readonly SemaphoreSlim TokenLock = new(1, 1);
     private static (string Key, string Token, DateTimeOffset Expires)? _token;
+
+    public async Task LoginAsync(CancellationToken ct = default) =>
+        await GetTokenAsync(httpClientFactory.CreateClient(HttpClientName), force: true, ct);
 
     public async Task<IReadOnlyList<SeriesLookup>> SearchAsync(string query, CancellationToken ct = default)
     {
@@ -108,8 +115,41 @@ public sealed class TvdbClient(IHttpClientFactory httpClientFactory, ISettingsSe
             ImdbId = imdb,
             FirstAired = firstAired,
             Episodes = await GetEpisodesAsync(id, lang, ct),
+            OriginalLanguage = FromTvdbLanguage(Str(s, "originalLanguage")),
+            AlternateTitles = MapAlternateTitles(s),
         };
     }
+
+    /// <summary>The series' own name (in its original language) and its aliases.</summary>
+    internal static List<AlternateTitleInfo> MapAlternateTitles(JsonElement series)
+    {
+        var list = new List<AlternateTitleInfo>();
+        if (Str(series, "name") is { } name) list.Add(new AlternateTitleInfo(name, FromTvdbLanguage(Str(series, "originalLanguage"))));
+        if (series.TryGetProperty("aliases", out var aliases) && aliases.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var alias in aliases.EnumerateArray())
+            {
+                // Aliases are objects ({"language": "spa", "name": "..."}); older answers list bare names.
+                var aliasName = alias.ValueKind == JsonValueKind.String ? alias.GetString() : Str(alias, "name");
+                if (!string.IsNullOrWhiteSpace(aliasName)) list.Add(new AlternateTitleInfo(aliasName, FromTvdbLanguage(Str(alias, "language"))));
+            }
+        }
+
+        return list;
+    }
+
+    /// <summary>Krakarr language code for a TheTVDB language ("spa", ISO 639-2); null when unknown.</summary>
+    public static string? FromTvdbLanguage(string? code) => code?.Trim().ToLowerInvariant() switch
+    {
+        null or "" => null,
+        "eng" => "en", "spa" => "es", "fra" => "fr", "deu" => "de", "ita" => "it", "por" => "pt", "pt" => "pt-br", "nld" => "nl",
+        "cat" => "ca", "swe" => "sv", "dan" => "da", "nor" => "no", "fin" => "fi", "pol" => "pl", "rus" => "ru", "jpn" => "ja",
+        "kor" => "ko", "zho" => "zh", "ces" => "cs", "hun" => "hu", "tur" => "tr", "ell" => "el", "heb" => "he", "ukr" => "uk",
+        "ron" => "ro", "bul" => "bg", "hrv" => "hr", "srp" => "sr", "slv" => "sl", "slk" => "sk", "est" => "et", "lav" => "lv",
+        "lit" => "lt", "ara" => "ar", "fas" => "fa", "hin" => "hi", "tam" => "ta", "tel" => "te", "vie" => "vi", "tha" => "th",
+        "ind" => "id", "isl" => "is", "eus" => "eu", "glg" => "gl",
+        var other => MediaLanguages.Normalize(other),
+    };
 
     private async Task<List<EpisodeInfo>> GetEpisodesAsync(string seriesId, string lang, CancellationToken ct)
     {
@@ -171,7 +211,7 @@ public sealed class TvdbClient(IHttpClientFactory httpClientFactory, ISettingsSe
                 if (response.StatusCode == HttpStatusCode.Unauthorized && attempt == 0) continue; // token expired
                 if (!response.IsSuccessStatusCode)
                 {
-                    throw new MetadataException($"TheTVDB request failed with HTTP {(int)response.StatusCode}");
+                    throw new MetadataException($"TheTVDB request failed with HTTP {(int)response.StatusCode}", response.StatusCode);
                 }
 
                 return await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
@@ -199,7 +239,7 @@ public sealed class TvdbClient(IHttpClientFactory httpClientFactory, ISettingsSe
             using var response = await http.PostAsJsonAsync("login", body, ct);
             if (!response.IsSuccessStatusCode)
             {
-                throw new MetadataException($"TheTVDB login failed (HTTP {(int)response.StatusCode}); check the API key/PIN");
+                throw new MetadataException($"TheTVDB login failed (HTTP {(int)response.StatusCode}); check the API key/PIN", response.StatusCode);
             }
 
             using var doc = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);

@@ -213,6 +213,25 @@ public sealed class QBittorrentEngineTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Stops_a_torrent_whose_import_failed_even_without_limits()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await AddRowAsync(Hash, movieId: 1, imported: false);
+        await WithDb(db => db.Downloads.ExecuteUpdateAsync(x => x
+            .SetProperty(d => d.ImportMessage, "Import failed: no video file found in download")
+            .SetProperty(d => d.CompletedAt, DateTimeOffset.UtcNow), ct));
+        _fake.Torrents.Add(new(Hash, "Broken", "krakarr", Progress: 1, State: "uploading", Ratio: 0.1));
+
+        await _engine.SyncAsync(_settings with { SeedRatioLimit = 0, SeedTimeLimitMinutes = 0 }, ct);
+
+        Assert.DoesNotContain(_fake.Requests, r => r.Path == "/api/v2/torrents/delete");
+        Assert.Single(_fake.Requests, r => r.Path is "/api/v2/torrents/pause" or "/api/v2/torrents/stop");
+        var row = await WithDb(db => db.Downloads.SingleAsync(ct));
+        Assert.Equal(DownloadState.Paused, row.State);
+        Assert.NotNull(row.ImportMessage); // still listed, so the import can be retried
+    }
+
+    [Fact]
     public async Task No_limits_leave_seeding_to_qbittorrent()
     {
         var ct = TestContext.Current.CancellationToken;

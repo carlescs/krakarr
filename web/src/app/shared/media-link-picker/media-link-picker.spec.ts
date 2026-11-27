@@ -42,8 +42,8 @@ describe('MediaLinkPicker', () => {
   it('suggests library items from the hint, filters as you type and picks one', async () => {
     setupTest({
       api: mockApi({
-        movies: async () => [{ id: 4, title: 'Dune', year: 2021 }],
-        seriesList: async () => [{ id: 1, title: 'The Office', year: 2005 }],
+        movies: async () => ({ items: [{ id: 4, title: 'Dune', year: 2021 }], page: 1, pageSize: 200, total: 1, libraryTotal: 1 }),
+        seriesList: async () => ({ items: [{ id: 1, title: 'The Office', year: 2005 }], page: 1, pageSize: 200, total: 1, libraryTotal: 1 }),
       }),
     });
     const fixture = TestBed.createComponent(MediaLinkPicker);
@@ -69,7 +69,12 @@ describe('MediaLinkPicker', () => {
   });
 
   it('still works when the library cannot be loaded', async () => {
-    setupTest({ api: mockApi({ movies: async () => { throw new Error('x'); }, seriesList: async () => [] }) });
+    setupTest({
+      api: mockApi({
+        movies: async () => { throw new Error('x'); },
+        seriesList: async () => ({ items: [], page: 1, pageSize: 200, total: 0, libraryTotal: 0 }),
+      }),
+    });
     const fixture = TestBed.createComponent(MediaLinkPicker);
     await settle(fixture);
     const input = fixture.nativeElement.querySelector('input') as HTMLInputElement;

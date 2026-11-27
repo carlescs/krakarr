@@ -1,4 +1,5 @@
 using Krakarr.Core.Domain;
+using Krakarr.Core.Events;
 using Krakarr.Data;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -11,6 +12,9 @@ public sealed class IndexerSearchServiceTests : IAsyncLifetime
 {
     private readonly SqliteConnection _connection = new("Data Source=:memory:");
     private readonly FakeTorznab _torznab = new();
+    private readonly ManualTime _time = new();
+    private readonly RecordingHealthMonitor _health = new();
+    private readonly IndexerBackoff _backoff;
     private ServiceProvider _services = null!;
 
     /// <summary>"Good" returns one release, "Broken" throws, "Slow" times out (cancelled) once <see cref="Gate"/> opens.</summary>
@@ -36,6 +40,9 @@ public sealed class IndexerSearchServiceTests : IAsyncLifetime
             throw new NotSupportedException();
     }
 
+    public IndexerSearchServiceTests() =>
+        _backoff = new IndexerBackoff(_time, new NullEventHub(), _health, NullLogger<IndexerBackoff>.Instance);
+
     public async ValueTask InitializeAsync()
     {
         await _connection.OpenAsync();
@@ -60,7 +67,7 @@ public sealed class IndexerSearchServiceTests : IAsyncLifetime
     }
 
     private IndexerSearchService Service(IServiceScope scope) =>
-        new(scope.ServiceProvider.GetRequiredService<KrakarrDbContext>(), _torznab, NullLogger<IndexerSearchService>.Instance);
+        new(scope.ServiceProvider.GetRequiredService<KrakarrDbContext>(), _torznab, _backoff, NullLogger<IndexerSearchService>.Instance);
 
     private static readonly SearchCriteria Criteria = new() { Type = SearchType.Movie, Query = "movie" };
 
@@ -116,4 +123,75 @@ public sealed class IndexerSearchServiceTests : IAsyncLifetime
         Assert.Single(result.Releases);
         Assert.Equal(["Broken", "Slow"], result.Errors.Select(e => e.IndexerName).Order());
     }
+
+    [Fact]
+    public async Task Search_filters_to_requested_enabled_indexers()
+    {
+        using var scope = _services.CreateScope();
+        var ct = TestContext.Current.CancellationToken;
+        var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
+        var byName = await db.Indexers.AsNoTracking().ToDictionaryAsync(i => i.Name, i => i.Id, ct);
+
+        // Single enabled indexer plus a disabled one: only the enabled one is queried.
+        var single = await Service(scope).SearchAsync(Criteria, [byName["Good"], byName["Disabled"]], ct);
+        Assert.Equal(["Good"], single.Indexers.Select(s => s.IndexerName));
+        Assert.Single(single.Releases);
+        Assert.Empty(single.Errors);
+
+        // Multiple enabled indexers: only those two are queried ("Slow" is never touched).
+        var multiple = await Service(scope).SearchAsync(Criteria, [byName["Good"], byName["Broken"]], ct);
+        Assert.Equal(["Broken", "Good"], multiple.Indexers.Select(s => s.IndexerName).Order());
+        Assert.Single(multiple.Releases);
+        Assert.Equal(["Broken"], multiple.Errors.Select(e => e.IndexerName));
+    }
+
+    [Fact]
+    public async Task Failures_start_a_backoff_and_a_success_ends_it()
+    {
+        using var scope = _services.CreateScope();
+        var ct = TestContext.Current.CancellationToken;
+        var ids = await IdsAsync(scope, ct);
+        _torznab.Gate.SetResult();
+        _backoff.RecordFailure(ids["Good"], "Good", "earlier failure");
+
+        await Service(scope).SearchAsync(Criteria, ct: ct);
+
+        // "Good" was skipped (still backing off), the two that failed now back off too.
+        Assert.Equal(["Broken", "Good", "Slow"], _backoff.All.Select(s => s.IndexerName));
+        Assert.Equal("401 Unauthorized", _backoff.Get(ids["Broken"])!.LastError);
+        Assert.True(_backoff.IsDisabled(ids["Broken"]));
+
+        // Once its wait is over it is queried again, and answering clears it.
+        _time.Advance(IndexerBackoff.FirstDelay);
+        var result = await Service(scope).SearchAsync(Criteria, ct: ct);
+        Assert.Equal(IndexerQueryState.Done, result.Indexers.Single(s => s.IndexerName == "Good").State);
+        Assert.Null(_backoff.Get(ids["Good"]));
+        Assert.Equal(2, _backoff.Get(ids["Broken"])!.Failures);
+        Assert.True(_health.Requests > 0);
+    }
+
+    [Fact]
+    public async Task Backing_off_indexers_are_skipped_unless_chosen_explicitly()
+    {
+        using var scope = _services.CreateScope();
+        var ct = TestContext.Current.CancellationToken;
+        var ids = await IdsAsync(scope, ct);
+        _torznab.Gate.SetResult();
+        _backoff.RecordFailure(ids["Good"], "Good", "HTTP 503");
+
+        var all = await Service(scope).SearchAsync(Criteria, ct: ct);
+        var good = all.Indexers.Single(s => s.IndexerName == "Good");
+        Assert.Equal(IndexerQueryState.Skipped, good.State);
+        Assert.Contains("HTTP 503", good.Message);
+        Assert.Empty(all.Releases);
+        Assert.DoesNotContain(all.Errors, e => e.IndexerName == "Good"); // skipping isn't a new failure
+
+        var chosen = await Service(scope).SearchAsync(Criteria, [ids["Good"]], ct);
+        Assert.Equal(IndexerQueryState.Done, Assert.Single(chosen.Indexers).State);
+        Assert.Single(chosen.Releases);
+        Assert.False(_backoff.IsDisabled(ids["Good"]));
+    }
+
+    private static async Task<Dictionary<string, int>> IdsAsync(IServiceScope scope, CancellationToken ct) =>
+        await scope.ServiceProvider.GetRequiredService<KrakarrDbContext>().Indexers.AsNoTracking().ToDictionaryAsync(i => i.Name, i => i.Id, ct);
 }

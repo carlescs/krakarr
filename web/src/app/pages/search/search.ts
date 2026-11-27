@@ -1,11 +1,12 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Api, errorMessage } from '../../core/api';
 import { AgoPipe, BytesPipe } from '../../core/format';
 import { ReleaseSearch } from '../../core/indexer-search';
-import { SearchResult, SearchType } from '../../core/models';
+import { SearchIndexer, SearchResult, SearchType } from '../../core/models';
 import { Toasts } from '../../core/toast';
 import { MediaLink, MediaLinkPicker, linkFields } from '../../shared/media-link-picker/media-link-picker';
+import { MultiPicker } from '../../shared/multi-picker/multi-picker';
 import { IndexerProgress } from '../../shared/indexer-progress/indexer-progress';
 import { Modal } from '../../shared/modal/modal';
 import { TableSort } from '../../core/table-sort';
@@ -13,7 +14,7 @@ import { SortHeader } from '../../shared/sort-header/sort-header';
 
 @Component({
   selector: 'kr-search',
-  imports: [FormsModule, BytesPipe, AgoPipe, Modal, MediaLinkPicker, IndexerProgress, SortHeader],
+  imports: [FormsModule, BytesPipe, AgoPipe, Modal, MediaLinkPicker, MultiPicker, IndexerProgress, SortHeader],
   templateUrl: './search.html',
   styleUrl: './search.scss',
 })
@@ -22,6 +23,15 @@ export class SearchPage {
   private readonly toasts = inject(Toasts);
   protected query = '';
   protected type: SearchType = 'Generic';
+  protected readonly availableIndexers = signal<SearchIndexer[]>([]);
+  protected readonly selectedIndexerIds = signal<number[]>([]);
+  protected readonly placeholder = computed(() => {
+    const ids = new Set(this.selectedIndexerIds());
+    const picked = this.availableIndexers().filter(i => ids.has(i.id));
+    if (picked.length === 0) return 'Search all enabled indexers…';
+    if (picked.length === 1) return `Search ${picked[0].name}…`;
+    return `Search ${picked.length} selected indexers…`;
+  });
   protected readonly searched = signal(false);
   /** Most seeders first, also while indexers are still answering. */
   protected readonly releaseSearch = new ReleaseSearch<SearchResult>((a, b) => (b.release.seeders ?? 0) - (a.release.seeders ?? 0));
@@ -36,10 +46,18 @@ export class SearchPage {
     quality: r => r.quality,
   });
 
+  constructor() {
+    this.api.searchIndexers().then(list => this.availableIndexers.set(list)).catch(() => { /* search still queries all enabled indexers */ });
+  }
+
   async search() {
     this.searched.set(true);
+    const ids = this.selectedIndexerIds();
     try {
-      await this.releaseSearch.run((onEvent, signal) => this.api.searchStream(this.query, this.type, onEvent, signal));
+      await this.releaseSearch.run((onEvent, signal) =>
+        ids.length > 0
+          ? this.api.searchStream(this.query, this.type, onEvent, signal, ids)
+          : this.api.searchStream(this.query, this.type, onEvent, signal));
     } catch (e) {
       this.toasts.error(errorMessage(e));
     }

@@ -21,6 +21,7 @@ function stats(overrides: Partial<DashboardStats> = {}): DashboardStats {
     },
     activity: { grabbed: 12, imported: 10, failed: 1, subtitles: 5, importIssues: 2 },
     recentlyImported: [{ mediaType: 'Movie', id: 3, title: 'Alien', year: 1979, date: '2026-01-01T00:00:00Z' }],
+    recentlyAdded: [{ mediaType: 'Series', id: 8, title: 'Andor', year: 2022, date: '2026-01-02T00:00:00Z' }],
     ...overrides,
   };
 }
@@ -37,7 +38,7 @@ describe('DashboardPage', () => {
   it('shows library, request, user and activity figures', async () => {
     const api = setupTest({
       api: mockApi({
-        dashboard: async () => stats(),
+        dashboard: async () => stats(), calendar: async () => [],
         rootFolders: async () => [{ id: 1, path: '/media/movies', mediaType: 'Movie', accessible: true, freeSpace: 1024 ** 4 }],
       }),
     });
@@ -63,7 +64,7 @@ describe('DashboardPage', () => {
   });
 
   it('summarises live downloads', async () => {
-    setupTest({ api: mockApi({ dashboard: async () => stats(), rootFolders: async () => [] }) });
+    setupTest({ api: mockApi({ dashboard: async () => stats(), rootFolders: async () => [], calendar: async () => [] }) });
     const fixture = TestBed.createComponent(DashboardPage);
     const events = TestBed.inject(Events);
     const active = Array.from({ length: TOP_DOWNLOADS + 2 }, (_, i) => torrent(i + 1, { downloadRate: i * 10, movieId: i + 1 }));
@@ -87,6 +88,7 @@ describe('DashboardPage', () => {
         dashboard: async () => stats({
           requests: { total: 0, pending: 0, approved: 0, declined: 0, last30Days: 0, recent: [] },
           recentlyImported: [],
+          recentlyAdded: [],
           users: { total: 1, admins: 1, managers: 0, users: 0, topRequesters: [] },
         }),
         rootFolders: async () => [],

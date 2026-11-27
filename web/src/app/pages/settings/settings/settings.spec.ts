@@ -1,4 +1,6 @@
 import { TestBed } from '@angular/core/testing';
+import { ActivatedRoute, convertToParamMap } from '@angular/router';
+import { of } from 'rxjs';
 import { describe, expect, it } from 'vitest';
 import { Events } from '../../../core/events';
 import { ScheduledTaskInfo } from '../../../core/models';
@@ -27,7 +29,7 @@ describe('SettingsPage', () => {
     const el = fixture.nativeElement as HTMLElement;
     expect(text(el, 'h1')).toBe('Settings');
     expect([...el.querySelectorAll('h1 + div button')].map(b => b.textContent)).toEqual([
-      'Media management', 'Quality profiles', 'Download client', 'Subtitles', 'Metadata', 'Jellyfin', 'Telemetry', 'Tasks', 'Users', 'General', 'Account',
+      'Media management', 'Quality profiles', 'Download client', 'Subtitles', 'Metadata', 'Media servers', 'Telemetry', 'Health', 'Tasks', 'Backups', 'Database', 'Users', 'General', 'Account',
     ]);
     expect(api.settings).toHaveBeenCalledWith('media');
     expect(api.settings).toHaveBeenCalledWith('general');
@@ -35,6 +37,25 @@ describe('SettingsPage', () => {
     button(el, 'Users').click();
     await settle(fixture);
     expect(el.querySelector('kr-users-settings')).not.toBeNull();
+  });
+
+  it('opens the tab named in the URL', async () => {
+    setupTest({
+      api: mockApi({ health: async () => ({ checkedAt: null, issues: [] }) }),
+      providers: [{ provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ tab: 'health' })) } }],
+    });
+    const fixture = TestBed.createComponent(SettingsPage);
+    await settle(fixture);
+    expect((fixture.nativeElement as HTMLElement).querySelector('kr-health-settings')).not.toBeNull();
+  });
+
+  it('ignores tabs a plain user may not open', async () => {
+    setupTest({ role: 'User', providers: [{ provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ tab: 'health' })) } }] });
+    const fixture = TestBed.createComponent(SettingsPage);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('kr-health-settings')).toBeNull();
+    expect(el.querySelector('kr-account-settings')).not.toBeNull();
   });
 
   it('lists scheduled tasks, runs one and follows live updates', async () => {
@@ -98,5 +119,58 @@ describe('SettingsPage', () => {
     await settle(fixture);
     expect(api.saveSettings).toHaveBeenCalledWith('telemetry', expect.objectContaining({ enabled: true, protocol: 'HttpProtobuf', endpoint: 'http://otel:4318' }));
     expect(text(el)).toContain('Exporting traces, metrics to http://otel:4318 (HTTP)');
+  });
+
+  it('saves the whole subtitles tab from the footer', async () => {
+    const subtitles = {
+      enabled: false, languages: ['en'], hearingImpaired: 'PreferNormal', minimumScoreMovies: 70, minimumScoreEpisodes: 80, searchIntervalHours: 24,
+      includeAiTranslated: false, useEmbeddedSubtitles: true, upgradeDays: 7, upgradeBelowScore: 90,
+      sync: { automatic: false, belowScore: 90, timeoutSeconds: 300 }, openSubtitles: { enabled: true }, subdl: { enabled: true },
+    };
+    const api = setupTest({
+      api: mockApi({
+        settings: async (section: string) => (section === 'subtitles' ? { ...subtitles } : section === 'languages' ? { preferred: [] } : {}),
+        subtitleLanguages: async () => [{ code: 'en', name: 'English' }],
+        rootFolders: async () => [], qualityProfiles: async () => [], qualities: async () => [], systemStatus: async () => ({}),
+        saveSettings: async (_: string, value: unknown) => value,
+        subtitleSyncTools: async () => ({ alass: true, ffsubsync: false, ffmpeg: true }),
+      }),
+    });
+    const fixture = TestBed.createComponent(SettingsPage);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    button(el, 'Subtitles').click();
+    await settle(fixture);
+    expect(text(el, '[data-sync-tools]')).toContain('alass · found');
+    expect(text(el, '[data-sync-tools]')).toContain('ffsubsync · not found');
+    [...el.querySelectorAll('[data-sync-settings] label')].find(l => l.textContent?.includes('Sync new subtitles automatically'))!.querySelector('input')!.click();
+
+    const options = el.querySelector('section.card') as HTMLElement;
+    [...options.querySelectorAll('label')].find(l => l.textContent?.includes('Download subtitles automatically'))!.querySelector('input')!.click();
+    await settle(fixture);
+    expect([...el.querySelectorAll('button')].filter(b => b.textContent?.trim() === 'Save')).toHaveLength(1);
+    button(el, 'Save').click();
+    await settle(fixture);
+    expect(api.saveSettings).toHaveBeenCalledTimes(1);
+    expect(api.saveSettings).toHaveBeenCalledWith('subtitles', expect.objectContaining({ enabled: true, sync: expect.objectContaining({ automatic: true }) }));
+  });
+
+  it('saves the download client and automation settings together', async () => {
+    const api = setupTest({
+      api: mockApi({
+        settings: async (section: string) => (section === 'downloads' ? { client: 'Embedded', qBittorrent: {} } : section === 'automation' ? { rssSyncIntervalMinutes: 15 } : section === 'languages' ? { preferred: [] } : {}),
+        rootFolders: async () => [], qualityProfiles: async () => [], qualities: async () => [], systemStatus: async () => ({}),
+        saveSettings: async (_: string, value: unknown) => value,
+      }),
+    });
+    const fixture = TestBed.createComponent(SettingsPage);
+    await settle(fixture);
+    const el = fixture.nativeElement as HTMLElement;
+    button(el, 'Download client').click();
+    await settle(fixture);
+    button(el, 'Save').click();
+    await settle(fixture);
+    expect(api.saveSettings).toHaveBeenCalledWith('downloads', expect.objectContaining({ client: 'Embedded' }));
+    expect(api.saveSettings).toHaveBeenCalledWith('automation', { rssSyncIntervalMinutes: 15 });
   });
 });

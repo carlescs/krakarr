@@ -22,7 +22,8 @@ public static partial class SeriesNaming
     public static string BuildSeasonFolder(int season, string format) =>
         season == 0 ? "Specials" : FileNameBuilder.Build(format, new Dictionary<string, string?> { ["Season"] = Two(season) });
 
-    public static string BuildEpisodeFileName(Core.Domain.Series series, IReadOnlyList<Episode> episodes, Quality quality, string? releaseGroup, string format, string extension)
+    public static string BuildEpisodeFileName(Core.Domain.Series series, IReadOnlyList<Episode> episodes, Quality quality, string? releaseGroup, string format, string extension,
+        MediaInfoSummary? mediaInfo = null)
     {
         var ordered = episodes.OrderBy(e => e.EpisodeNumber).ToList();
         var tokens = SeriesTokens(series);
@@ -31,6 +32,7 @@ public static partial class SeriesNaming
         tokens["Episode Title"] = string.Join(" + ", ordered.Select(e => e.Title).Where(t => !string.IsNullOrWhiteSpace(t)).Distinct());
         tokens["Quality"] = quality.Name;
         tokens["Release Group"] = releaseGroup;
+        MediaInfoChecks.AddTokens(tokens, mediaInfo);
         return FileNameBuilder.Build(format, tokens) + extension.ToLowerInvariant();
     }
 

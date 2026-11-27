@@ -1,3 +1,4 @@
+using Krakarr.Core.Health;
 using Krakarr.Downloads.QBittorrent;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -26,6 +27,12 @@ public static class DownloadsServiceCollectionExtensions
 
         services.AddScoped<IDownloadService, DownloadService>();
         services.AddScoped<ManualDownloadLinks>();
+        services.AddScoped<ImportIssues>();
+        services.AddScoped<DownloadMedia>();
+        services.AddScoped<IHealthCheck, DownloadClientHealthCheck>();
+        services.AddScoped<IHealthCheck, RootFolderHealthCheck>();
+        services.AddScoped<IHealthCheck, DownloadFolderHealthCheck>();
+        services.AddScoped<IHealthCheck, DiskSpaceHealthCheck>();
         services.AddHttpClient(DownloadService.HttpClientName, c =>
             {
                 c.Timeout = TimeSpan.FromSeconds(60);

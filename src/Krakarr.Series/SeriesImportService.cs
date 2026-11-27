@@ -3,11 +3,14 @@ using Krakarr.Core.Configuration;
 using Krakarr.Core.Domain;
 using Krakarr.Core.Events;
 using Krakarr.Core.Jobs;
+using Krakarr.Core.MediaServers;
+using Krakarr.Core.Push;
 using Krakarr.Core.Telemetry;
 using Krakarr.Data;
 using Krakarr.Downloads;
 using Krakarr.Media.Files;
 using Krakarr.Media.Parsing;
+using Krakarr.Subtitles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -21,6 +24,8 @@ public sealed class SeriesImportService(
     IFileTransfer fileTransfer,
     ISettingsService settings,
     IEventHub eventHub,
+    IMediaServerNotifier mediaServers,
+    IPushNotifier push,
     ILogger<SeriesImportService> logger) : IScheduledTask
 {
     public string Name => "Import completed series downloads";
@@ -81,6 +86,8 @@ public sealed class SeriesImportService(
         var downloadParsed = ReleaseParser.Parse(download.Name);
         var imported = new List<Episode>();
         var problems = new List<string>();
+        var notes = new List<string>();
+        var wanted = (await settings.GetAsync<LanguageSettings>(ct)).For(series.Languages);
 
         foreach (var (path, _) in files)
         {
@@ -97,8 +104,10 @@ public sealed class SeriesImportService(
                 continue;
             }
 
+            // Scene numbering first: the file is named like the release (see SceneNumbering).
             var episodes = parsed.EpisodeNumbers
-                .Select(n => series.Episodes.FirstOrDefault(e => e.SeasonNumber == season && e.EpisodeNumber == n))
+                .Select(n => SceneNumbering.Find(series.Episodes, season, n))
+                .Distinct()
                 .ToList();
             if (episodes.Count == 0 || episodes.Any(e => e is null))
             {
@@ -111,6 +120,17 @@ public sealed class SeriesImportService(
                 : downloadParsed.Quality;
 
             var targets = episodes.Cast<Episode>().ToList();
+
+            // The headers tell the real resolution and length: a fake "2160p" is judged as what it is, and samples are refused.
+            var mediaInfo = MediaInfoReader.Read(path);
+            var summary = MediaInfoSummary.From(mediaInfo);
+            quality = MediaInfoChecks.Correct(quality, summary);
+            if (MediaInfoChecks.TooShort(summary, Runtime(series, targets)) is { } tooShort)
+            {
+                problems.Add($"{fileName}: {tooShort}");
+                continue;
+            }
+
             var better = targets.Where(e => e.EpisodeFile is { } f && Qualities.FindById(f.QualityId).Weight > quality.Weight).ToList();
             if (better.Count > 0)
             {
@@ -120,21 +140,27 @@ public sealed class SeriesImportService(
 
             // Keep the file's own release name when it is informative (season packs), for subtitle matching later.
             var sceneName = ReleaseParser.Parse(fileName).IsEpisode ? Path.GetFileNameWithoutExtension(fileName) : download.Name;
-            await ImportFileAsync(series, targets, path, quality, parsed.ReleaseGroup ?? downloadParsed.ReleaseGroup, sceneName, media, ct);
+            await ImportFileAsync(series, targets, path, quality, parsed.ReleaseGroup ?? downloadParsed.ReleaseGroup, sceneName, mediaInfo, summary, media, ct);
+            if (MediaInfoChecks.Mislabelled(summary, sceneName) is { } mislabelled) notes.Add($"{fileName}: {mislabelled}");
+            if (MediaInfoChecks.UnwantedAudio(summary, wanted) is { } audio) notes.Add($"{fileName}: {audio}");
             imported.AddRange(targets);
         }
 
-        await FinishAsync(download, series, imported, problems, ct);
+        await FinishAsync(download, series, imported, problems, notes, ct);
     }
+
+    /// <summary>Runtime the file should roughly have: its episodes' runtimes, or the series runtime where an episode has none.</summary>
+    private static int Runtime(Core.Domain.Series series, IReadOnlyList<Episode> episodes) =>
+        episodes.Sum(e => e.Runtime > 0 ? e.Runtime : series.Runtime);
 
     private async Task ImportFileAsync(
         Core.Domain.Series series, List<Episode> episodes, string sourcePath, Quality quality, string? releaseGroup, string sceneName,
-        MediaManagementSettings media, CancellationToken ct)
+        MediaInfo mediaInfo, MediaInfoSummary? summary, MediaManagementSettings media, CancellationToken ct)
     {
         var season = episodes[0].SeasonNumber;
         var ext = Path.GetExtension(sourcePath);
         var fileName = media.RenameFiles
-            ? SeriesNaming.BuildEpisodeFileName(series, episodes, quality, releaseGroup, media.EpisodeFileFormat, ext)
+            ? SeriesNaming.BuildEpisodeFileName(series, episodes, quality, releaseGroup, media.EpisodeFileFormat, ext, summary)
             : Path.GetFileName(sourcePath);
         var relative = series.SeasonFolder ? Path.Combine(SeriesNaming.BuildSeasonFolder(season, media.SeasonFolderFormat), fileName) : fileName;
         var destination = Path.Combine(series.Path, relative);
@@ -169,6 +195,8 @@ public sealed class SeriesImportService(
             QualityId = quality.Id,
             ReleaseGroup = releaseGroup,
             SceneName = sceneName,
+            MediaInfo = MediaInfoSummary.Serialize(summary),
+            EmbeddedSubtitles = EmbeddedSubtitleList.Format(EmbeddedSubtitleList.FromTracks(mediaInfo.Subtitles)),
         };
         db.EpisodeFiles.Add(episodeFile);
         await db.SaveChangesAsync(ct);
@@ -181,9 +209,14 @@ public sealed class SeriesImportService(
 
         await db.SaveChangesAsync(ct);
         logger.LogInformation("Imported {Source} to {Destination} ({Mode})", sourcePath, destination, mode);
+        mediaServers.PathChanged(Path.GetDirectoryName(destination) ?? series.Path);
     }
 
-    private async Task FinishAsync(Download download, Core.Domain.Series? series, List<Episode> imported, List<string> problems, CancellationToken ct)
+    private Task FinishAsync(Download download, Core.Domain.Series? series, List<Episode> imported, List<string> problems, CancellationToken ct) =>
+        FinishAsync(download, series, imported, problems, [], ct);
+
+    /// <param name="notes">Media info warnings about imported files, added to the history entry.</param>
+    private async Task FinishAsync(Download download, Core.Domain.Series? series, List<Episode> imported, List<string> problems, List<string> notes, CancellationToken ct)
     {
         HistoryEntry entry;
         if (imported.Count > 0)
@@ -197,7 +230,8 @@ public sealed class SeriesImportService(
                 SeriesId = download.SeriesId,
                 QualityId = download.QualityId,
                 Indexer = download.IndexerName,
-                Message = $"Imported {SeriesService.Codes(imported)}" + (problems.Count > 0 ? $" · skipped: {string.Join("; ", problems)}" : string.Empty),
+                Message = $"Imported {SeriesService.Codes(imported)}" + (problems.Count > 0 ? $" · skipped: {string.Join("; ", problems)}" : string.Empty)
+                    + (notes.Count > 0 ? $" · {string.Join("; ", notes)}" : string.Empty),
             };
         }
         else
@@ -222,5 +256,19 @@ public sealed class SeriesImportService(
         if (download.Imported) engine.MarkImported(download.InfoHash);
         if (series is not null) await eventHub.PublishAsync(EventNames.SeriesUpdated, new { series.Id }, ct);
         await eventHub.PublishAsync(EventNames.HistoryAdded, entry, ct);
+        push.Send(PushFor(download, series, imported));
+    }
+
+    private static PushMessage PushFor(Download download, Core.Domain.Series? series, List<Episode> imported)
+    {
+        if (!download.Imported || series is null)
+        {
+            return new PushMessage(PushKind.ImportFailed, download.Name, download.ImportMessage, "/activity", $"failed-{download.Id}",
+                SeriesId: download.SeriesId);
+        }
+
+        var quality = download.QualityId is { } qid && qid > 0 ? Qualities.FindById(qid) : Qualities.Unknown;
+        var body = $"{SeriesService.Codes(imported)} downloaded" + (quality == Qualities.Unknown ? string.Empty : $" in {quality.Name}");
+        return new PushMessage(PushKind.Imported, series.Title, body, $"/series/{series.Id}", $"import-{download.Id}", SeriesId: series.Id);
     }
 }

@@ -1,14 +1,18 @@
-import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { DatePipe } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../../core/api';
 import { Auth } from '../../../core/auth';
 import { BytesPipe } from '../../../core/format';
-import { Episode, EpisodeDetails, SubtitleFile } from '../../../core/models';
+import { JellyfinLink } from '../../../core/jellyfin-link';
+import { Episode, EpisodeDetails, MediaInfo, SubtitleFile } from '../../../core/models';
 import { Modal } from '../../../shared/modal/modal';
+import { MoreMenu } from '../../../shared/more-menu/more-menu';
 import { CreditsView } from '../../../shared/credits/credits';
 import { ExternalLinks } from '../../../shared/external-links/external-links';
 import { Progress } from '../../../shared/progress/progress';
 import { SubtitleList } from '../../../shared/subtitle-list/subtitle-list';
+import { MediaInfoView } from '../../../shared/media-info/media-info';
 
 /**
  * Dialog with everything about one library episode: what the library stores (file, subtitles, status) plus TMDB's
@@ -16,7 +20,7 @@ import { SubtitleList } from '../../../shared/subtitle-list/subtitle-list';
  */
 @Component({
   selector: 'kr-episode-details',
-  imports: [Modal, CreditsView, ExternalLinks, Progress, SubtitleList, DatePipe, BytesPipe],
+  imports: [RouterLink, Modal, MoreMenu, CreditsView, ExternalLinks, Progress, SubtitleList, MediaInfoView, DatePipe, BytesPipe],
   templateUrl: './episode-details.html',
   styleUrl: './episode-details.scss',
 })
@@ -32,13 +36,22 @@ export class EpisodeDetailsDialog {
   readonly closed = output<void>();
   readonly search = output<void>();
   readonly interactive = output<void>();
-  readonly manageSubtitles = output<void>();
+  /** Opens the subtitle dialog, searching the given missing language first (or every missing one). */
+  readonly manageSubtitles = output<string | null>();
+  /** Asks to delete the episode's file. */
+  readonly deleteFile = output<void>();
   /** A subtitle was deleted from the dialog. */
   readonly subtitlesChanged = output<void>();
 
   protected readonly details = signal<EpisodeDetails | null>(null);
   protected readonly loading = signal(true);
   protected readonly error = signal<string | null>(null);
+  /** Media info of the episode's file (null while loading, when there is no file or it couldn't be read). */
+  protected readonly mediaInfo = signal<MediaInfo | null>(null);
+  /** The episode's page on Jellyfin, once it is downloaded and Jellyfin has scanned it. */
+  private readonly jellyfin = new JellyfinLink();
+  protected readonly jellyfinUrl = this.jellyfin.url;
+  private readonly fileId = computed(() => this.episode().episodeFile?.id);
 
   protected readonly code = computed(() => {
     const e = this.episode();
@@ -49,11 +62,32 @@ export class EpisodeDetailsDialog {
   protected readonly runtime = computed(() => this.episode().runtime || this.details()?.runtime || 0);
 
   constructor() {
+    inject(DestroyRef).onDestroy(() => this.jellyfin.reset());
     // Reload only when another episode is shown, not when the same one is refreshed (download progress).
     effect(() => {
       const seriesId = this.seriesId(), episodeId = this.episode().id;
       untracked(() => this.load(seriesId, episodeId));
     });
+    // The file's media info, only when the file changes (a computed id ignores refreshes of the same episode).
+    effect(() => {
+      const seriesId = this.seriesId(), fileId = this.fileId();
+      untracked(() => {
+        this.loadMediaInfo(seriesId, fileId);
+        const episodeId = this.episode().id;
+        this.jellyfin.watch(fileId == null ? null : `${seriesId}:${episodeId}:${fileId}`, () => this.api.episodeJellyfinLink(seriesId, episodeId));
+      });
+    });
+  }
+
+  private async loadMediaInfo(seriesId: number, fileId: number | undefined) {
+    this.mediaInfo.set(null);
+    if (fileId == null) return;
+    try {
+      const info = await this.api.episodeFileMediaInfo(seriesId, fileId);
+      if (fileId === this.episode().episodeFile?.id) this.mediaInfo.set(info ?? null);
+    } catch {
+      // Optional detail: the dialog works without it.
+    }
   }
 
   private async load(seriesId: number, episodeId: number) {

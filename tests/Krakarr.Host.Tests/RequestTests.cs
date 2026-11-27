@@ -16,11 +16,14 @@ namespace Krakarr.Host.Tests;
 /// <summary>Own host with fake TMDB clients, so requests can be created without network access.</summary>
 public sealed class RequestsFactory : KrakarrFactory
 {
+    public RecordingPushNotifier Push { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         base.ConfigureWebHost(builder);
         builder.ConfigureTestServices(services =>
         {
+            services.AddSingleton<Krakarr.Core.Push.IPushNotifier>(Push);
             services.AddSingleton<ITmdbClient, FakeTmdb>();
             services.AddSingleton<ISeriesDiscovery, FakeSeriesDiscovery>();
         });
@@ -42,11 +45,13 @@ public sealed class RequestsFactory : KrakarrFactory
             Task.FromResult(new SeriesDetails { Show = new SeriesLookup { TmdbId = tmdbId, TvdbId = tmdbId + 100_000, Title = $"Show {tmdbId}", Year = 2019 } });
 
         public Task<DiscoverPage<SeriesLookup>> ListAsync(SeriesList list, int page, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<DiscoverPage<SeriesLookup>> KeywordsAsync(IReadOnlyList<int> keywordIds, int page, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<SeriesLookup>> RecommendationsAsync(SeriesIds ids, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<SeriesLookup>> SimilarAsync(SeriesIds ids, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<IReadOnlyList<SeriesLookup>>> RecommendationsAsync(IReadOnlyList<SeriesIds> shows, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<Credits> CreditsAsync(SeriesIds ids, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<EpisodeDetails?> EpisodeDetailsAsync(SeriesIds ids, int season, int episode, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<SeasonDetails?> SeasonAsync(int tmdbId, int season, CancellationToken ct = default) => throw new NotSupportedException();
     }
 }
 
@@ -83,6 +88,9 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
         Assert.Equal(HttpStatusCode.Created, res.StatusCode);
         return await res.Content.ReadFromJsonAsync<JsonElement>(Ct);
     }
+
+    /// <summary>Push notifications sent so far whose body mentions <paramref name="title"/>.</summary>
+    private Krakarr.Core.Push.PushMessage[] Pushes(string title) => factory.Push.Sent.Where(m => m.Body?.Contains(title) == true).ToArray();
 
     private static async Task<JsonElement?> BellAsync(HttpClient client, string id)
     {
@@ -145,6 +153,16 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
         Assert.Equal("Not on any indexer", row.GetProperty("declineReason").GetString());
         Assert.Equal("mona", row.GetProperty("processedBy").GetString());
 
+        // Staff were told about the request on their phones, and alice about the decline.
+        var pushes = Pushes("Movie 1001 (2020)");
+        Assert.Equal(2, pushes.Length);
+        Assert.Equal(Krakarr.Core.Push.PushKind.RequestCreated, pushes[0].Kind);
+        Assert.Equal("alice requested the movie Movie 1001 (2020)", pushes[0].Body);
+        Assert.Equal(Krakarr.Core.Push.PushKind.RequestResult, pushes[1].Kind);
+        Assert.Equal("Request declined", pushes[1].Title);
+        Assert.Equal("Movie 1001 (2020): Not on any indexer", pushes[1].Body);
+        Assert.Equal("/requests", pushes[1].Link);
+
         // Alice hears about the decline until she opens her requests; bob, whose request is untouched, doesn't.
         var declinedBell = (await BellAsync(alice, "requests.declined"))!.Value;
         Assert.Equal(1, declinedBell.GetProperty("count").GetInt32());
@@ -173,7 +191,7 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
             db.RootFolders.Add(new RootFolder { Path = root, MediaType = MediaType.Movie });
             await db.SaveChangesAsync(Ct);
-            profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(Ct);
+            profile = await db.QualityProfiles.MinAsync(p => p.Id, Ct);
         }
 
         var id = (await CreateAsync(carol, "Movie", 2001)).GetProperty("id").GetInt32();
@@ -188,6 +206,11 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
         Assert.Equal(HttpStatusCode.OK, (await carol.GetAsync($"/api/v1/movies/{movieId}", Ct)).StatusCode);
         var approvedBell = (await BellAsync(carol, "requests.approved"))!.Value;
         Assert.Equal("Your request was approved", approvedBell.GetProperty("title").GetString());
+
+        // One push about the approval (adding the title sent it), opening the movie.
+        var result = Assert.Single(Pushes("Movie 2001 (2020)"), p => p.Kind == Krakarr.Core.Push.PushKind.RequestResult);
+        Assert.Equal("Request approved", result.Title);
+        Assert.Equal($"/movies/{movieId}", result.Link);
         Assert.Equal("Movie 2001", approvedBell.GetProperty("message").GetString());
 
         // In the library now: no new requests, and approving twice is refused.
@@ -201,6 +224,7 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
             new { tmdbId = 2002, qualityProfileId = profile, rootFolderPath = root, searchForMovie = false }, Ct);
         Assert.Equal(HttpStatusCode.Created, added.StatusCode);
         Assert.Contains(other, await ListIdsAsync(carol, "approved"));
+        Assert.Single(Pushes("Movie 2002 (2020)"), p => p.Kind == Krakarr.Core.Push.PushKind.RequestResult);
 
         // Requests fulfilled by adding the title directly count as approved too.
         approvedBell = (await BellAsync(carol, "requests.approved"))!.Value;
@@ -233,7 +257,7 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
         using (var scope = factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<KrakarrDbContext>();
-            var profile = await db.QualityProfiles.Select(p => p.Id).FirstAsync(Ct);
+            var profile = await db.QualityProfiles.MinAsync(p => p.Id, Ct);
             var movie = new Movie { TmdbId = 5001, Title = "Followed Movie", Year = 2031, Path = "/m/followed", QualityProfileId = profile,
                 InCinemas = new DateOnly(2031, 2, 3), ReleaseDates = [new("US", ReleaseDateType.Theatrical, new DateOnly(2031, 2, 3))] };
             var other = new Movie { TmdbId = 5002, Title = "Other Movie", Year = 2031, Path = "/m/other", QualityProfileId = profile,
@@ -280,5 +304,44 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
         Assert.Equal(HttpStatusCode.NoContent, (await admin.DeleteAsync($"/api/v1/movies/{movieId}", Ct)).StatusCode);
         Assert.Empty((await dave.GetFromJsonAsync<JsonElement[]>("/api/v1/subscriptions", Ct))!);
         Assert.Empty((await dave.GetFromJsonAsync<JsonElement[]>(range + "&user=me", Ct))!);
+    }
+
+    [Fact]
+    public async Task Notifications_can_be_dismissed_and_reappear_on_new_activity()
+    {
+        var frank = await UserAsync("frank");
+        var grace = await UserAsync("grace");
+        var manager = await UserAsync("maya", "Manager");
+
+        var r1 = (await CreateAsync(frank, "Movie", 3001)).GetProperty("id").GetInt32();
+        var r2 = (await CreateAsync(frank, "Movie", 3002)).GetProperty("id").GetInt32();
+        Assert.Equal(2, (await BellAsync(frank, "requests.mine"))!.Value.GetProperty("count").GetInt32());
+
+        // Dismissing hides the notification for that user only, until a newer request arrives.
+        Assert.Equal(HttpStatusCode.NoContent, (await frank.DeleteAsync("/api/v1/notifications/requests.mine", Ct)).StatusCode);
+        Assert.Null(await BellAsync(frank, "requests.mine"));
+        Assert.NotNull(await BellAsync(manager, "requests.pending"));
+
+        var r3 = (await CreateAsync(frank, "Movie", 3003)).GetProperty("id").GetInt32();
+        Assert.Equal(3, (await BellAsync(frank, "requests.mine"))!.Value.GetProperty("count").GetInt32());
+
+        // Dismissing a result notification clears the handled requests so the next decline only counts the new one.
+        Assert.Equal(HttpStatusCode.OK, (await manager.PostAsJsonAsync($"/api/v1/requests/{r1}/decline", new { }, Ct)).StatusCode);
+        Assert.Equal(1, (await BellAsync(frank, "requests.declined"))!.Value.GetProperty("count").GetInt32());
+        Assert.Equal(HttpStatusCode.NoContent, (await frank.DeleteAsync("/api/v1/notifications/requests.declined", Ct)).StatusCode);
+        Assert.Null(await BellAsync(frank, "requests.declined"));
+
+        Assert.Equal(HttpStatusCode.OK, (await manager.PostAsJsonAsync($"/api/v1/requests/{r2}/decline", new { }, Ct)).StatusCode);
+        var declined = (await BellAsync(frank, "requests.declined"))!.Value;
+        Assert.Equal(1, declined.GetProperty("count").GetInt32());
+        Assert.Equal("Movie 3002", declined.GetProperty("message").GetString());
+
+        // Dismiss all clears every notification in the caller's bell without touching other users'.
+        await CreateAsync(grace, "Movie", 3004);
+        Assert.Equal(HttpStatusCode.NoContent, (await frank.DeleteAsync("/api/v1/notifications", Ct)).StatusCode);
+        Assert.Empty((await frank.GetFromJsonAsync<JsonElement[]>("/api/v1/notifications", Ct))!);
+        Assert.NotNull(await BellAsync(grace, "requests.mine"));
+
+        Assert.Equal(HttpStatusCode.NoContent, (await manager.DeleteAsync($"/api/v1/requests/{r3}", Ct)).StatusCode);
     }
 }

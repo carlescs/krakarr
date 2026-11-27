@@ -17,6 +17,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
     };
 
     public DbSet<User> Users => Set<User>();
+    public DbSet<UserPasskey> UserPasskeys => Set<UserPasskey>();
     public DbSet<SettingEntry> Settings => Set<SettingEntry>();
     public DbSet<RootFolder> RootFolders => Set<RootFolder>();
     public DbSet<QualityProfile> QualityProfiles => Set<QualityProfile>();
@@ -33,6 +34,9 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
     public DbSet<HistoryEntry> History => Set<HistoryEntry>();
     public DbSet<MediaRequest> MediaRequests => Set<MediaRequest>();
     public DbSet<MediaSubscription> MediaSubscriptions => Set<MediaSubscription>();
+    public DbSet<NotificationDismissal> NotificationDismissals => Set<NotificationDismissal>();
+    public DbSet<AlternateTitle> AlternateTitles => Set<AlternateTitle>();
+    public DbSet<PushSubscription> PushSubscriptions => Set<PushSubscription>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
     {
@@ -67,6 +71,16 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
             e.HasIndex(x => x.Username).IsUnique();
             e.Property(x => x.Username).HasMaxLength(100);
             e.Property(x => x.SecurityStamp).HasMaxLength(64);
+        });
+
+        b.Entity<UserPasskey>(e =>
+        {
+            e.Property(x => x.CredentialId).HasMaxLength(1023);
+            e.HasIndex(x => x.CredentialId).IsUnique();
+            e.Property(x => x.PublicKey).HasMaxLength(2048);
+            e.Property(x => x.Transports).HasMaxLength(200);
+            e.Property(x => x.Name).HasMaxLength(100);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         b.Entity<SettingEntry>(e =>
@@ -108,6 +122,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
         {
             e.HasIndex(x => x.MovieId);
             e.Property(x => x.EmbeddedSubtitles).HasMaxLength(512);
+            e.Property(x => x.MediaInfo).HasMaxLength(2048);
         });
 
         b.Entity<Series>(e =>
@@ -134,6 +149,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
         {
             e.HasIndex(x => x.SeriesId);
             e.Property(x => x.EmbeddedSubtitles).HasMaxLength(512);
+            e.Property(x => x.MediaInfo).HasMaxLength(2048);
             e.HasOne<Series>().WithMany().HasForeignKey(x => x.SeriesId).OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -141,6 +157,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
         {
             e.Property(x => x.Language).HasMaxLength(16);
             e.Property(x => x.Provider).HasMaxLength(32);
+            e.Property(x => x.SyncNote).HasMaxLength(512);
             e.HasOne<MovieFile>().WithMany().HasForeignKey(x => x.MovieFileId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne<EpisodeFile>().WithMany().HasForeignKey(x => x.EpisodeFileId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => x.MovieFileId);
@@ -186,6 +203,37 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
             e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Movie).WithMany().HasForeignKey(x => x.MovieId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Series).WithMany().HasForeignKey(x => x.SeriesId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<AlternateTitle>(e =>
+        {
+            e.Property(x => x.Title).HasMaxLength(AlternateTitle.MaxTitleLength);
+            e.Property(x => x.NormalizedTitle).HasMaxLength(AlternateTitle.MaxTitleLength);
+            e.Property(x => x.Language).HasMaxLength(16);
+            e.HasIndex(x => x.NormalizedTitle);
+            e.HasIndex(x => x.MovieId);
+            e.HasIndex(x => x.SeriesId);
+            // Removing the title removes its alternate titles.
+            e.HasOne<Movie>().WithMany(x => x.AlternateTitles).HasForeignKey(x => x.MovieId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<Series>().WithMany(x => x.AlternateTitles).HasForeignKey(x => x.SeriesId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<NotificationDismissal>(e =>
+        {
+            e.Property(x => x.NotificationId).HasMaxLength(100);
+            e.HasIndex(x => new { x.UserId, x.NotificationId }).IsUnique();
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        b.Entity<PushSubscription>(e =>
+        {
+            e.Property(x => x.Endpoint).HasMaxLength(PushSubscriptionLimits.Endpoint);
+            e.HasIndex(x => x.Endpoint).IsUnique();
+            e.Property(x => x.P256dh).HasMaxLength(PushSubscriptionLimits.Key);
+            e.Property(x => x.Auth).HasMaxLength(PushSubscriptionLimits.Key);
+            e.Property(x => x.Name).HasMaxLength(PushSubscriptionLimits.Name);
+            e.HasIndex(x => x.UserId);
+            e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

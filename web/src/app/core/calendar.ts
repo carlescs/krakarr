@@ -1,3 +1,4 @@
+import { UrlMatchResult, UrlSegment } from '@angular/router';
 import { CalendarEntry, MinimumAvailability, ReleaseDateType } from './models';
 
 export type CalendarView = 'month' | 'week' | 'agenda';
@@ -46,6 +47,26 @@ export type ItemState = 'downloaded' | 'downloading' | 'missing' | 'upcoming' | 
 
 export const RELEASE_LABELS: Record<ReleaseDateType, string> = { Theatrical: 'In cinemas', Digital: 'Digital', Physical: 'Physical' };
 
+export type StyleKey = 'episodes' | 'Theatrical' | 'Digital' | 'Physical';
+
+/** Colour per kind of release: left bar, chip background and legend dot. */
+export const CALENDAR_STYLES: Record<StyleKey, { bar: string; chip: string; dot: string; label: string }> = {
+  episodes: { bar: 'border-l-accent-400', chip: 'bg-accent-500/10 hover:bg-accent-500/20', dot: 'bg-accent-400', label: 'Episodes' },
+  Theatrical: { bar: 'border-l-amber-400', chip: 'bg-amber-500/10 hover:bg-amber-500/20', dot: 'bg-amber-400', label: RELEASE_LABELS.Theatrical },
+  Digital: { bar: 'border-l-violet-400', chip: 'bg-violet-500/10 hover:bg-violet-500/20', dot: 'bg-violet-400', label: RELEASE_LABELS.Digital },
+  Physical: { bar: 'border-l-pink-400', chip: 'bg-pink-500/10 hover:bg-pink-500/20', dot: 'bg-pink-400', label: RELEASE_LABELS.Physical },
+};
+
+export const CALENDAR_STATES: Record<ItemState, { label: string; badge: string; icon: string }> = {
+  downloaded: { label: 'Downloaded', badge: 'bg-emerald-500/15 text-emerald-300', icon: '✓' },
+  downloading: { label: 'Downloading', badge: 'bg-accent-500/15 text-accent-300', icon: '↓' },
+  missing: { label: 'Missing', badge: 'bg-rose-500/15 text-rose-300', icon: '!' },
+  upcoming: { label: 'Upcoming', badge: 'bg-surface-700 text-slate-300', icon: '' },
+  unmonitored: { label: 'Unmonitored', badge: 'bg-slate-500/15 text-slate-400', icon: '' },
+};
+
+export function styleKey(item: CalendarItem): StyleKey { return item.kind === 'episodes' ? 'episodes' : item.releaseType ?? 'Theatrical'; }
+
 // ---- Dates (local, yyyy-MM-dd) -------------------------------------------------------------
 
 export function toIsoDate(d: Date): string {
@@ -87,6 +108,35 @@ export function viewRange(view: CalendarView, anchor: Date, firstDay: number): {
   if (view === 'agenda') return { start: first, end: last };
   const start = startOfWeek(first, firstDay);
   return { start, end: addDays(startOfWeek(last, firstDay), 6) };
+}
+
+export const CALENDAR_VIEWS: readonly CalendarView[] = ['month', 'week', 'agenda'];
+
+export function isCalendarView(value: string | null | undefined): value is CalendarView {
+  return CALENDAR_VIEWS.includes(value as CalendarView);
+}
+
+/** The period in the calendar URL: the month (`yyyy-MM`) for month and agenda, the week's first day (`yyyy-MM-dd`) for week. */
+export function periodParam(view: CalendarView, anchor: Date, firstDay: number): string {
+  return view === 'week' ? toIsoDate(startOfWeek(anchor, firstDay)) : toIsoDate(anchor).slice(0, 7);
+}
+
+/** Parses a `yyyy-MM` or `yyyy-MM-dd` URL period; null when it isn't a real date. */
+export function parsePeriodParam(value: string | null | undefined): Date | null {
+  const m = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/.exec(value ?? '');
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3] ?? 1)];
+  const date = new Date(y, mo - 1, d);
+  return date.getFullYear() === y && date.getMonth() === mo - 1 && date.getDate() === d ? date : null;
+}
+
+/** Matches `calendar`, `calendar/:view` and `calendar/:view/:date` as one route, so changing period reuses the page. */
+export function calendarRouteMatcher(segments: UrlSegment[]): UrlMatchResult | null {
+  if (segments.length === 0 || segments.length > 3 || segments[0].path !== 'calendar') return null;
+  const posParams: Record<string, UrlSegment> = {};
+  if (segments[1]) posParams['view'] = segments[1];
+  if (segments[2]) posParams['date'] = segments[2];
+  return { consumed: segments, posParams };
 }
 
 /** Moves the anchor one period (month or week) forwards or backwards. */

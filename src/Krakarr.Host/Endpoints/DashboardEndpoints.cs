@@ -24,13 +24,16 @@ public sealed record DashboardActivity(int Grabbed, int Imported, int Failed, in
 
 public sealed record DashboardRecent(MediaType MediaType, int Id, string Title, int Year, string? PosterUrl, DateTimeOffset Date);
 
-public sealed record DashboardDto(DashboardLibrary Library, DashboardUsers Users, DashboardRequests Requests, DashboardActivity Activity, IReadOnlyList<DashboardRecent> RecentlyImported);
+public sealed record DashboardDto(DashboardLibrary Library, DashboardUsers Users, DashboardRequests Requests, DashboardActivity Activity, IReadOnlyList<DashboardRecent> RecentlyImported,
+    IReadOnlyList<DashboardRecent> RecentlyAdded);
 
 public static class DashboardEndpoints
 {
     internal const int ActivityDays = 7;
     internal const int RecentRequests = 5;
-    internal const int RecentImports = 6;
+    /// <summary>Three pages of six on the dashboard.</summary>
+    internal const int RecentImports = 18;
+    internal const int RecentAdditions = 18;
     internal const int TopRequesters = 5;
 
     public static IEndpointRouteBuilder MapDashboardEndpoints(this IEndpointRouteBuilder app)
@@ -45,7 +48,8 @@ public static class DashboardEndpoints
                 await UsersAsync(db, ct),
                 await RequestsAsync(db, now, ct),
                 await ActivityAsync(db, now, ct),
-                await RecentlyImportedAsync(db, ct)));
+                await RecentlyImportedAsync(db, ct),
+                await RecentlyAddedAsync(db, ct)));
         }).WithTags("Dashboard");
 
         return app;
@@ -59,7 +63,7 @@ public static class DashboardEndpoints
                 g.Count(m => m.Monitored),
                 g.Count(m => m.MovieFileId != null),
                 g.Count(m => m.Monitored && m.MovieFileId == null)))
-            .FirstOrDefaultAsync(ct) ?? new DashboardMovieStats(0, 0, 0, 0);
+            .SingleOrDefaultAsync(ct) ?? new DashboardMovieStats(0, 0, 0, 0);
 
         var series = await db.Series.AsNoTracking().GroupBy(_ => 1)
             .Select(g => new DashboardSeriesStats(
@@ -67,7 +71,7 @@ public static class DashboardEndpoints
                 g.Count(s => s.Monitored),
                 g.Count(s => s.Status == SeriesStatus.Continuing),
                 g.Count(s => s.Status == SeriesStatus.Ended)))
-            .FirstOrDefaultAsync(ct) ?? new DashboardSeriesStats(0, 0, 0, 0);
+            .SingleOrDefaultAsync(ct) ?? new DashboardSeriesStats(0, 0, 0, 0);
 
         // Regular episodes only: specials are rarely wanted and would make "missing" look worse than it is.
         var weekEnd = today.AddDays(7);
@@ -77,7 +81,7 @@ public static class DashboardEndpoints
                 g.Count(e => e.EpisodeFileId != null),
                 g.Count(e => e.Monitored && e.EpisodeFileId == null && e.AirDate != null && e.AirDate <= today),
                 g.Count(e => e.AirDate != null && e.AirDate > today && e.AirDate <= weekEnd)))
-            .FirstOrDefaultAsync(ct) ?? new DashboardEpisodeStats(0, 0, 0, 0);
+            .SingleOrDefaultAsync(ct) ?? new DashboardEpisodeStats(0, 0, 0, 0);
 
         // One row per quality (a couple of dozen at most), folded into resolutions here.
         var movieQualities = await db.MovieFiles.AsNoTracking().GroupBy(f => f.QualityId)
@@ -178,5 +182,23 @@ public static class DashboardEndpoints
         }
 
         return result;
+    }
+
+    /// <summary>The movies and series added to the library most recently, newest first.</summary>
+    private static async Task<IReadOnlyList<DashboardRecent>> RecentlyAddedAsync(KrakarrDbContext db, CancellationToken ct)
+    {
+        // The newest few of each, merged: never more than twice the rows shown.
+        var movies = await db.Movies.AsNoTracking()
+            .OrderByDescending(m => m.Added).ThenByDescending(m => m.Id)
+            .Take(RecentAdditions)
+            .Select(m => new DashboardRecent(MediaType.Movie, m.Id, m.Title, m.Year, m.PosterUrl, m.Added))
+            .ToListAsync(ct);
+        var shows = await db.Series.AsNoTracking()
+            .OrderByDescending(s => s.Added).ThenByDescending(s => s.Id)
+            .Take(RecentAdditions)
+            .Select(s => new DashboardRecent(MediaType.Series, s.Id, s.Title, s.Year, s.PosterUrl, s.Added))
+            .ToListAsync(ct);
+
+        return movies.Concat(shows).OrderByDescending(r => r.Date).Take(RecentAdditions).ToList();
     }
 }

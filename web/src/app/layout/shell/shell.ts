@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { filter, map } from 'rxjs';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
@@ -6,7 +6,10 @@ import { Auth } from '../../core/auth';
 import { Events } from '../../core/events';
 import { SpeedPipe } from '../../core/format';
 import { Notifications } from '../../core/notifications';
+import { PushNavigation } from '../../core/push';
 import { NotificationBell } from '../../shared/notification-bell/notification-bell';
+import { BackgroundTasksMenu } from '../../shared/background-tasks/background-tasks';
+import { BackgroundTasks } from '../../core/background-tasks';
 
 interface NavItem { path: string; label: string; icon: string; section?: string; access?: 'staff' | 'admin'; }
 
@@ -30,7 +33,7 @@ const ICONS: Record<string, string> = {
 @Component({
   selector: 'kr-shell',
   host: { '(document:keydown.escape)': 'menuOpen.set(false)' },
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, SpeedPipe, NotificationBell],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, SpeedPipe, NotificationBell, BackgroundTasksMenu],
   templateUrl: './shell.html',
   styleUrl: './shell.scss',
 })
@@ -40,6 +43,7 @@ export class Shell implements OnInit, OnDestroy {
   private readonly router = inject(Router);
   protected readonly icons = ICONS;
   private readonly notifications = inject(Notifications);
+  private readonly backgroundTasks = inject(BackgroundTasks);
   /** Requests waiting for approval (staff), for the sidebar badge. */
   protected readonly pendingRequests = computed(() => this.notifications.count('requests.pending'));
   protected readonly menuOpen = signal(false);
@@ -83,18 +87,25 @@ export class Shell implements OnInit, OnDestroy {
   protected readonly totalDown = computed(() => this.events.downloads().reduce((s, d) => s + d.downloadRate, 0));
   protected readonly totalUp = computed(() => this.events.downloads().reduce((s, d) => s + d.uploadRate, 0));
 
+  private readonly pushNavigation = inject(PushNavigation);
+  private readonly destroyRef = inject(DestroyRef);
+
   ngOnInit() {
     this.events.start();
     this.notifications.start();
+    this.backgroundTasks.start();
+    this.pushNavigation.listen(this.destroyRef);
   }
   ngOnDestroy() {
     this.notifications.stop();
+    this.backgroundTasks.stop();
     this.events.stop();
   }
 
   async logout() {
     await this.auth.logout();
     this.notifications.stop();
+    this.backgroundTasks.stop();
     await this.events.stop();
     this.router.navigateByUrl('/login');
   }

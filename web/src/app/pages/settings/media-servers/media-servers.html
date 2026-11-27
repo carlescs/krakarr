@@ -1,0 +1,106 @@
+<div class="space-y-6">
+  @if (jellyfin(); as j) {
+    <section class="card grid grid-cols-1 gap-4 p-4 sm:p-5 sm:grid-cols-2" data-server="jellyfin">
+      <div class="sm:col-span-2">
+        <h2 class="font-semibold text-white">Jellyfin</h2>
+        <p class="hint">Downloaded movies and series get an <span class="text-slate-200">Open in Jellyfin</span> button, for every user. Leave the URL empty to turn it off.</p>
+      </div>
+      <div>
+        <label class="label" for="jellyfin-url">URL</label>
+        <input id="jellyfin-url" class="input" [(ngModel)]="j.url" placeholder="http://jellyfin:8096" />
+        <p class="hint">How Krakarr reaches Jellyfin.</p>
+      </div>
+      <div>
+        <label class="label" for="jellyfin-public-url">Public URL (optional)</label>
+        <input id="jellyfin-public-url" class="input" [(ngModel)]="j.publicUrl" placeholder="https://jellyfin.example.com" />
+        <p class="hint">What the browser opens, when it differs from the URL above.</p>
+      </div>
+      <div class="sm:col-span-2">
+        <label class="label" for="jellyfin-key">API key</label>
+        <input id="jellyfin-key" class="input font-mono" type="password" autocomplete="off" [(ngModel)]="j.apiKey" />
+        <p class="hint">Jellyfin → Dashboard → API Keys.</p>
+      </div>
+      <label class="flex items-center gap-2 text-sm sm:col-span-2">
+        <input id="jellyfin-refresh" type="checkbox" class="accent-accent-500" [(ngModel)]="j.refreshLibrary" /> Rescan the affected folder after imports, renames and deletes
+      </label>
+      <ng-container *ngTemplateOutlet="mappings; context: { $implicit: j.pathMappings, server: 'jellyfin' }" />
+      <ng-container *ngTemplateOutlet="testRow; context: { $implicit: 'jellyfin', name: 'Jellyfin' }" />
+    </section>
+  }
+
+  @if (emby(); as e) {
+    <section class="card grid grid-cols-1 gap-4 p-4 sm:p-5 sm:grid-cols-2" data-server="emby">
+      <div class="sm:col-span-2">
+        <h2 class="font-semibold text-white">Emby</h2>
+        <p class="hint">Emby rescans the affected folder after imports, renames and deletes. Leave the URL empty to turn it off.</p>
+      </div>
+      <div>
+        <label class="label" for="emby-url">URL</label>
+        <input id="emby-url" class="input" [(ngModel)]="e.url" placeholder="http://emby:8096" />
+      </div>
+      <div>
+        <label class="label" for="emby-key">API key</label>
+        <input id="emby-key" class="input font-mono" type="password" autocomplete="off" [(ngModel)]="e.apiKey" />
+        <p class="hint">Emby → Settings → Advanced → API Keys.</p>
+      </div>
+      <ng-container *ngTemplateOutlet="mappings; context: { $implicit: e.pathMappings, server: 'emby' }" />
+      <ng-container *ngTemplateOutlet="testRow; context: { $implicit: 'emby', name: 'Emby' }" />
+    </section>
+  }
+
+  @if (plex(); as p) {
+    <section class="card grid grid-cols-1 gap-4 p-4 sm:p-5 sm:grid-cols-2" data-server="plex">
+      <div class="sm:col-span-2">
+        <h2 class="font-semibold text-white">Plex</h2>
+        <p class="hint">Plex rescans the affected folder of the library that contains it. Leave the URL empty to turn it off.</p>
+      </div>
+      <div>
+        <label class="label" for="plex-url">URL</label>
+        <input id="plex-url" class="input" [(ngModel)]="p.url" placeholder="http://plex:32400" />
+      </div>
+      <div>
+        <label class="label" for="plex-token">Token</label>
+        <input id="plex-token" class="input font-mono" type="password" autocomplete="off" [(ngModel)]="p.token" />
+        <p class="hint">The server owner's <code>X-Plex-Token</code>.</p>
+      </div>
+      <ng-container *ngTemplateOutlet="mappings; context: { $implicit: p.pathMappings, server: 'plex' }" />
+      <ng-container *ngTemplateOutlet="testRow; context: { $implicit: 'plex', name: 'Plex' }" />
+    </section>
+  }
+
+  @if (jellyfin() && emby() && plex()) {
+    <div class="flex justify-end">
+      <button type="button" class="btn-primary" [disabled]="saving()" (click)="save()">{{ saving() ? 'Saving…' : 'Save' }}</button>
+    </div>
+  }
+</div>
+
+<ng-template #mappings let-list let-server="server">
+  <div class="space-y-2 sm:col-span-2" [attr.data-mappings]="server">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <span class="label mb-0">Path mappings</span>
+      <button type="button" class="btn-ghost btn-sm" (click)="addMapping(list)">Add mapping</button>
+    </div>
+    @for (m of list; track $index) {
+      <div class="flex flex-wrap items-center gap-2 sm:flex-nowrap" data-mapping>
+        <input class="input min-w-0 flex-1 font-mono text-xs" [(ngModel)]="m.from" placeholder="Krakarr path, e.g. /data/movies" aria-label="Krakarr path" />
+        <span class="text-slate-500" aria-hidden="true">→</span>
+        <input class="input min-w-0 flex-1 font-mono text-xs" [(ngModel)]="m.to" placeholder="Server path, e.g. /media/movies" aria-label="Server path" />
+        <button type="button" class="btn-ghost btn-sm" aria-label="Remove mapping" (click)="removeMapping(list, $index)">✕</button>
+      </div>
+    } @empty {
+      <p class="hint mt-0">Only needed when the server sees the library under another path than Krakarr.</p>
+    }
+  </div>
+</ng-template>
+
+<ng-template #testRow let-server let-name="name">
+  @if (resultFor(server); as t) {
+    <div class="rounded-lg px-3 py-2 text-sm wrap-anywhere sm:col-span-2" [class]="t.success ? 'bg-emerald-500/10 text-emerald-300' : 'bg-rose-500/10 text-rose-300'" [attr.data-result]="server">
+      {{ t.success ? 'Connected to ' + (t.serverName || name) + (t.version ? ' ' + t.version : '') + (t.message ? '. ' + t.message : '') : t.message }}
+    </div>
+  }
+  <div class="flex justify-end sm:col-span-2">
+    <button type="button" class="btn-secondary" (click)="test(server)" [disabled]="testing() !== null">{{ testing() === server ? 'Testing…' : 'Test ' + name }}</button>
+  </div>
+</ng-template>

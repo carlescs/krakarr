@@ -49,7 +49,7 @@ public class SearchStreamTests
         [
             new(b with { State = IndexerQueryState.Done, Releases = 2 }, [Release("b1", "Low", priority: 50, seeders: 1), Release("b2", "Dup", priority: 50, seeders: 3)]),
             new(a with { State = IndexerQueryState.Done, Releases = 1 }, [Release("a1", "Dup", priority: 10, seeders: 2)]),
-        ]));
+        ], TestContext.Current.CancellationToken));
 
         // Rows are the guids, ranked by seeders.
         IReadOnlyList<string> Evaluate(IReadOnlyList<ReleaseInfo> releases) =>

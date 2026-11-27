@@ -9,6 +9,7 @@ using Krakarr.Downloads;
 using Krakarr.Indexers;
 using Krakarr.Media.Files;
 using Krakarr.Media.Parsing;
+using Krakarr.Subtitles;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -28,7 +29,9 @@ public sealed class SeriesService(
     IDownloadService downloads,
     IEventHub eventHub,
     TimeProvider time,
-    ILogger<SeriesService> logger)
+    IXemClient xem,
+    ILogger<SeriesService> logger,
+    Krakarr.Core.Push.IPushNotifier? push = null)
 {
     private DateOnly Today => DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
 
@@ -38,6 +41,7 @@ public sealed class SeriesService(
             .Include(s => s.QualityProfile)
             .Include(s => s.Seasons)
             .Include(s => s.Episodes).ThenInclude(e => e.EpisodeFile)
+            .Include(s => s.AlternateTitles)
             .AsSplitQuery()
             .FirstOrDefaultAsync(s => s.Id == id, ct);
 
@@ -91,12 +95,14 @@ public sealed class SeriesService(
         }
 
         ApplyMonitorMode(series, request.Monitor, Today);
+        await ApplyAlternateTitlesAsync(series, info, ct);
+        await ApplySceneMappingAsync(series, ct);
 
         db.Series.Add(series);
         await db.SaveChangesAsync(ct);
         logger.LogInformation("Added series {Title} ({Episodes} episodes)", series.Title, series.Episodes.Count);
         await eventHub.PublishAsync(EventNames.SeriesUpdated, new { series.Id }, ct);
-        if (await MediaRequestUpdates.ApproveMatchingAsync(db, MediaType.Series, series.TmdbId, series.TvdbId, series.Id, ct) > 0)
+        if (await MediaRequestUpdates.ApproveMatchingAsync(db, MediaType.Series, series.TmdbId, series.TvdbId, series.Id, ct, push) > 0)
         {
             await eventHub.PublishAsync(EventNames.RequestsUpdated, null, ct);
         }
@@ -137,56 +143,246 @@ public sealed class SeriesService(
     }
 
     /// <summary>
-    /// Re-reads metadata and episodes from the configured source. New episodes inherit their season's monitoring.
-    /// After switching sources, episodes are matched by the new source's id when known, else by season/episode number.
+    /// Re-reads metadata and episodes from the configured source and rescans the series folder on disk.
+    /// New episodes inherit their season's monitoring. After switching sources, episodes are matched by
+    /// the new source's id when known, else by season/episode number.
     /// </summary>
     public async Task RefreshAsync(Core.Domain.Series series, CancellationToken ct = default)
     {
-        var info = await metadata.GetSeriesAsync(new SeriesIds(series.TmdbId, series.TvdbId), ct);
-        if (await InLibraryAsync(new SeriesIds(info.TmdbId, info.TvdbId), series.Id, ct))
-            throw new MetadataException($"{series.Title}: another series in the library has the same TMDB/TheTVDB id");
-        ApplyInfo(series, info);
-
-        var byTmdb = series.Episodes.Where(e => e.TmdbId is not null).GroupBy(e => e.TmdbId!.Value).ToDictionary(g => g.Key, g => g.First());
-        var byTvdb = series.Episodes.Where(e => e.TvdbId is not null).GroupBy(e => e.TvdbId!.Value).ToDictionary(g => g.Key, g => g.First());
-        var seen = new HashSet<Episode>();
-        foreach (var e in info.Episodes)
+        HashSet<Episode>? seen = null;
+        MetadataException? metadataError = null;
+        try
         {
-            var episode = (e.TmdbId is { } tmdbEp ? byTmdb.GetValueOrDefault(tmdbEp) : null)
-                ?? (e.TvdbId is { } tvdbEp ? byTvdb.GetValueOrDefault(tvdbEp) : null);
-            if (episode is not null && seen.Contains(episode)) episode = null;
-            episode ??= series.Episodes.FirstOrDefault(x => x.SeasonNumber == e.SeasonNumber && x.EpisodeNumber == e.EpisodeNumber && !seen.Contains(x));
-            if (episode is null)
+            var info = await metadata.GetSeriesAsync(new SeriesIds(series.TmdbId, series.TvdbId), ct);
+            if (await InLibraryAsync(new SeriesIds(info.TmdbId, info.TvdbId), series.Id, ct))
+                throw new MetadataException($"{series.Title}: another series in the library has the same TMDB/TheTVDB id");
+            ApplyInfo(series, info);
+
+            var byTmdb = series.Episodes.Where(e => e.TmdbId is not null).GroupBy(e => e.TmdbId!.Value).ToDictionary(g => g.Key, g => g.First());
+            var byTvdb = series.Episodes.Where(e => e.TvdbId is not null).GroupBy(e => e.TvdbId!.Value).ToDictionary(g => g.Key, g => g.First());
+            seen = [];
+            foreach (var e in info.Episodes)
             {
-                var season = series.Seasons.FirstOrDefault(s => s.SeasonNumber == e.SeasonNumber);
-                if (season is null)
+                var episode = (e.TmdbId is { } tmdbEp ? byTmdb.GetValueOrDefault(tmdbEp) : null)
+                    ?? (e.TvdbId is { } tvdbEp ? byTvdb.GetValueOrDefault(tvdbEp) : null);
+                if (episode is not null && seen.Contains(episode)) episode = null;
+                episode ??= series.Episodes.FirstOrDefault(x => x.SeasonNumber == e.SeasonNumber && x.EpisodeNumber == e.EpisodeNumber && !seen.Contains(x));
+                if (episode is null)
                 {
-                    season = new Season { SeasonNumber = e.SeasonNumber, Monitored = series.Monitored && e.SeasonNumber > 0 };
-                    series.Seasons.Add(season);
+                    var season = series.Seasons.FirstOrDefault(s => s.SeasonNumber == e.SeasonNumber);
+                    if (season is null)
+                    {
+                        season = new Season { SeasonNumber = e.SeasonNumber, Monitored = series.Monitored && e.SeasonNumber > 0 };
+                        series.Seasons.Add(season);
+                    }
+
+                    episode = new Episode { Monitored = series.Monitored && season.Monitored && e.SeasonNumber > 0 };
+                    series.Episodes.Add(episode);
                 }
 
-                episode = new Episode { Monitored = series.Monitored && season.Monitored && e.SeasonNumber > 0 };
-                series.Episodes.Add(episode);
+                episode.TmdbId = e.TmdbId ?? episode.TmdbId;
+                episode.TvdbId = e.TvdbId ?? episode.TvdbId;
+                episode.SeasonNumber = e.SeasonNumber;
+                episode.EpisodeNumber = e.EpisodeNumber;
+                Update(episode, e);
+                seen.Add(episode);
             }
 
-            episode.TmdbId = e.TmdbId ?? episode.TmdbId;
-            episode.TvdbId = e.TvdbId ?? episode.TvdbId;
-            episode.SeasonNumber = e.SeasonNumber;
-            episode.EpisodeNumber = e.EpisodeNumber;
-            Update(episode, e);
-            seen.Add(episode);
+            var titles = db.Entry(series).Collection(x => x.AlternateTitles);
+            if (!titles.IsLoaded) await titles.LoadAsync(ct);
+            await ApplyAlternateTitlesAsync(series, info, ct);
+            await ApplySceneMappingAsync(series, ct);
+            series.LastRefreshed = time.GetUtcNow();
         }
-
-        // Episodes removed upstream are dropped unless we hold a file for them.
-        foreach (var gone in series.Episodes.Where(e => !seen.Contains(e) && e.EpisodeFileId is null).ToList())
+        catch (MetadataException ex)
         {
-            series.Episodes.Remove(gone);
-            db.Episodes.Remove(gone);
+            metadataError = ex;
         }
 
-        series.LastRefreshed = time.GetUtcNow();
+        await RescanDiskCoreAsync(series, seen, ct);
+        if (metadataError is not null) throw metadataError;
+    }
+
+    /// <summary>Syncs the series' episode files and sidecar/embedded subtitles with what is currently in <see cref="Core.Domain.Series.Path"/>.</summary>
+    public Task RescanDiskAsync(Core.Domain.Series series, CancellationToken ct = default) =>
+        RescanDiskCoreAsync(series, seen: null, ct);
+
+    private async Task RescanDiskCoreAsync(Core.Domain.Series series, HashSet<Episode>? seen, CancellationToken ct)
+    {
+        var existingFiles = await db.EpisodeFiles.Where(f => f.SeriesId == series.Id).ToListAsync(ct);
+        var historyEntries = new List<HistoryEntry>();
+        var subtitlesChanged = false;
+        var survivingFiles = new List<EpisodeFile>();
+
+        foreach (var file in existingFiles)
+        {
+            var fullPath = Path.Combine(series.Path, file.RelativePath);
+            if (!File.Exists(fullPath))
+            {
+                foreach (var e in series.Episodes.Where(e => e.EpisodeFileId == file.Id))
+                {
+                    e.EpisodeFileId = null;
+                    e.EpisodeFile = null;
+                }
+
+                db.EpisodeFiles.Remove(file);
+                var deleted = new HistoryEntry
+                {
+                    EventType = HistoryEventType.FileDeleted,
+                    SourceTitle = file.RelativePath,
+                    SeriesId = series.Id,
+                    QualityId = file.QualityId,
+                    Message = "File no longer on disk",
+                };
+                db.History.Add(deleted);
+                historyEntries.Add(deleted);
+                subtitlesChanged = true;
+                continue;
+            }
+
+            if (!series.Episodes.Any(e => e.EpisodeFileId == file.Id))
+            {
+                db.EpisodeFiles.Remove(file);
+                subtitlesChanged = true;
+                continue;
+            }
+
+            var length = new FileInfo(fullPath).Length;
+            if (file.Size != length)
+            {
+                file.Size = length;
+                var parsed = ReleaseParser.Parse(Path.GetFileName(fullPath));
+                if (parsed.Quality != Qualities.Unknown) file.QualityId = parsed.Quality.Id;
+                if (parsed.ReleaseGroup is not null) file.ReleaseGroup = parsed.ReleaseGroup;
+                file.EmbeddedSubtitles = null;
+                file.MediaInfo = null; // read again below, which also corrects the quality
+                file.LastSubtitleSearch = null;
+                file.SubtitlesNotFound = null;
+                subtitlesChanged = true;
+            }
+
+            survivingFiles.Add(file);
+        }
+
+        // A surviving multi-episode file may cover an episode that was just added from metadata.
+        foreach (var file in survivingFiles)
+        {
+            var fullPath = Path.Combine(series.Path, file.RelativePath);
+            if (LibraryImport.SeriesLibraryImport.Identify(series.Path, fullPath) is not { } id) continue;
+            foreach (var epNum in id.Episodes)
+            {
+                var ep = series.Episodes.FirstOrDefault(e => e.SeasonNumber == id.Season && e.EpisodeNumber == epNum);
+                if (ep is not null && ep.EpisodeFileId is null)
+                {
+                    ep.EpisodeFileId = file.Id;
+                    ep.EpisodeFile = file;
+                }
+            }
+        }
+
+        var comparison = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        var knownPaths = survivingFiles
+            .Select(f => MediaFolder.Normalize(Path.Combine(series.Path, f.RelativePath)))
+            .ToHashSet(comparison);
+        var untrackedFiles = MediaFolder.VideoFiles(series.Path)
+            .Where(f => !knownPaths.Contains(MediaFolder.Normalize(f.Path)))
+            .ToList();
+
+        if (untrackedFiles.Count > 0)
+        {
+            var (linked, _) = await LibraryImport.SeriesLibraryImport.LinkFilesAsync(db, series, untrackedFiles, ct);
+            if (linked.Count > 0)
+            {
+                var imported = new HistoryEntry
+                {
+                    EventType = HistoryEventType.Imported,
+                    SourceTitle = Path.GetFileName(Path.TrimEndingDirectorySeparator(series.Path)),
+                    SeriesId = series.Id,
+                    Message = $"Imported existing files: {Codes(linked)}",
+                };
+                db.History.Add(imported);
+                historyEntries.Add(imported);
+                subtitlesChanged = true;
+            }
+        }
+
+        foreach (var file in survivingFiles)
+        {
+            if (await SubtitleService.SyncEpisodeFileAsync(db, series.Path, file, ct))
+            {
+                subtitlesChanged = true;
+            }
+        }
+
+        if (seen is not null)
+        {
+            // Episodes removed upstream are dropped unless we hold a file for them on disk.
+            foreach (var gone in series.Episodes.Where(e => !seen.Contains(e) && e.EpisodeFileId is null).ToList())
+            {
+                series.Episodes.Remove(gone);
+                db.Episodes.Remove(gone);
+            }
+        }
+
         await db.SaveChangesAsync(ct);
+        foreach (var entry in historyEntries)
+        {
+            await eventHub.PublishAsync(EventNames.HistoryAdded, entry, ct);
+        }
+
+        if (subtitlesChanged)
+        {
+            await eventHub.PublishAsync(EventNames.SubtitlesUpdated, new { MovieId = (int?)null, SeriesId = (int?)series.Id }, ct);
+        }
+
         await eventHub.PublishAsync(EventNames.SeriesUpdated, new { series.Id }, ct);
+    }
+
+    /// <summary>Normalises a series' alternate title the way the decision engine compares series titles.</summary>
+    public static string NormalizeTitle(string title) => SeriesNaming.NormalizedTitle(title);
+
+    /// <summary>
+    /// Replaces the series' metadata alternate titles with the ones from the metadata source in the languages worth
+    /// keeping. <see cref="Core.Domain.Series.AlternateTitles"/> must be loaded. Does not save.
+    /// </summary>
+    private async Task ApplyAlternateTitlesAsync(Core.Domain.Series series, SeriesInfo info, CancellationToken ct)
+    {
+        var keep = await AlternateTitleLanguages.ForAsync(db, settings, series.Languages, info.OriginalLanguage, ct);
+        var titles = AlternateTitles.Select(info.AlternateTitles, [series.Title, series.MetadataTitle], NormalizeTitle, keep);
+        db.AlternateTitles.RemoveRange(AlternateTitles.Sync(series.AlternateTitles, AlternateTitleSource.Metadata, titles, NormalizeTitle));
+    }
+
+    /// <summary>
+    /// Reads scene names and numbering from TheXEM when enabled (numbering only with TheTVDB metadata, whose order XEM
+    /// maps). The result is kept on the series until the next refresh; when XEM cannot be reached the previous mapping
+    /// stays. <see cref="Core.Domain.Series.AlternateTitles"/> must be loaded. Does not save.
+    /// </summary>
+    private async Task ApplySceneMappingAsync(Core.Domain.Series series, CancellationToken ct)
+    {
+        var meta = await settings.GetAsync<MetadataSettings>(ct);
+        if (!meta.SceneMapping || series.TvdbId is not { } tvdbId)
+        {
+            SceneNumbering.Apply(series.Episodes, []);
+            db.AlternateTitles.RemoveRange(AlternateTitles.Sync(series.AlternateTitles, AlternateTitleSource.Scene, [], NormalizeTitle));
+            return;
+        }
+
+        try
+        {
+            var names = (await xem.GetNamesAsync(tvdbId, ct)).Select(n => new AlternateTitleInfo(n));
+            var titles = AlternateTitles.Select(names, [series.Title, series.MetadataTitle], NormalizeTitle);
+            db.AlternateTitles.RemoveRange(AlternateTitles.Sync(series.AlternateTitles, AlternateTitleSource.Scene, titles, NormalizeTitle));
+            var mappings = meta.SeriesSource == SeriesMetadataSource.Tvdb ? await xem.GetMappingsAsync(tvdbId, ct) : [];
+            SceneNumbering.Apply(series.Episodes, mappings);
+        }
+        catch (MetadataException ex)
+        {
+            logger.LogWarning("Could not read TheXEM scene mapping for {Title}: {Message}", series.Title, ex.Message);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            logger.LogWarning("Could not read TheXEM scene mapping for {Title}: timed out", series.Title);
+        }
     }
 
     /// <summary>True when another series (not <paramref name="exceptId"/>) has one of these ids.</summary>
@@ -293,16 +489,33 @@ public sealed class SeriesService(
         await foreach (var e in events) yield return e;
     }
 
-    private static SearchCriteria Criteria(Core.Domain.Series series, int? season, Episode? episode) => new()
+    /// <summary>Search for a season or an episode, in the scene numbering releases use (see <see cref="SceneNumbering"/>).</summary>
+    internal static SearchCriteria Criteria(Core.Domain.Series series, int? season, Episode? episode)
     {
-        Type = SearchType.Tv,
-        Query = SeriesNaming.BaseTitle(series.Title),
-        TvdbId = series.TvdbId,
-        // Only fall back to the TMDB id: indexers that know both prefer it, but TV releases are mostly tagged by TVDB id.
-        TmdbId = series.TvdbId is null ? series.TmdbId : null,
-        Season = season,
-        Episode = episode?.EpisodeNumber,
-    };
+        int? searchSeason = season, searchEpisode = null;
+        if (episode is not null)
+        {
+            (searchSeason, searchEpisode) = SceneNumbering.SceneNumbers(episode);
+        }
+        else if (season is { } s)
+        {
+            searchSeason = SceneNumbering.SearchSeason(series.Episodes.Where(e => e.SeasonNumber == s), s);
+        }
+
+        return new SearchCriteria
+        {
+            Type = SearchType.Tv,
+            Query = SeriesNaming.BaseTitle(series.Title),
+            TvdbId = series.TvdbId,
+            // Only fall back to the TMDB id: indexers that know both prefer it, but TV releases are mostly tagged by TVDB id.
+            TmdbId = series.TvdbId is null ? series.TmdbId : null,
+            Season = searchSeason,
+            Episode = searchEpisode,
+            AlternateTitles = series.AlternateTitles
+                .Select(t => new AlternateTitleInfo(SeriesNaming.BaseTitle(t.Title), t.Language))
+                .ToList(),
+        };
+    }
 
     /// <summary>
     /// Automatic search: for each season with wanted episodes, search the season (packs and single episodes),

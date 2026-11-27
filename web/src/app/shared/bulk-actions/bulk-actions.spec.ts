@@ -25,9 +25,8 @@ async function render(role: UserRole = 'Admin', mediaType: MediaType = 'Movie') 
       bulkSearch: async () => ({ id: 'c', name: 'Search: 2 movie(s)', status: 'Queued', queued: '' }),
       bulkDelete: async () => ({ affected: 2, errors: [] }),
       qualityProfiles: async () => [{ id: 4, name: 'HD' }],
-      movies: async () => [],
-      movieCollections: async () => [],
-      seriesList: async () => [],
+      movies: async () => ({ items: [], page: 1, pageSize: 60, total: 0, libraryTotal: 0 }),
+      seriesList: async () => ({ items: [], page: 1, pageSize: 60, total: 0, libraryTotal: 0 }),
     }),
   });
   const fixture = TestBed.createComponent(Host);
