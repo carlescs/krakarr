@@ -11,7 +11,7 @@ import {
   IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, BestSubtitleMatches, SubtitleCandidate, SubtitleCandidates, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, SubtitleSyncTools, RedundantSubtitlePage, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, SeasonDetails, EpisodeRelease, MediaInfo, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, KeywordLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
   DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, EmbySettings, PlexSettings, MediaServerTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, BackgroundTask, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus,
-  AlternateTitle, AlternateTitleInput, DatabaseInfo, DatabaseTargetRequest, DatabaseTestResult, DatabaseSwitchStaged
+  AlternateTitle, AlternateTitleInput, DatabaseDetails, DatabaseInfo, DatabaseTargetRequest, DatabaseTestResult, DatabaseSwitchStaged
 } from './models';
 
 const API = 'api/v1';
@@ -150,6 +150,8 @@ export class Api {
 
   // Database switch (admin)
   database() { return this.get<DatabaseInfo>('system/database'); }
+  /** Version, size, connection fields and row counts of the current database. */
+  databaseDetails() { return this.get<DatabaseDetails>('system/database/details'); }
   /** Connects to the database and checks it holds no Krakarr data; changes nothing. */
   testDatabase(target: DatabaseTargetRequest) { return this.post<DatabaseTestResult>('system/database/test', target); }
   /** Stages the switch: the tables are copied into the new database on the next start. */

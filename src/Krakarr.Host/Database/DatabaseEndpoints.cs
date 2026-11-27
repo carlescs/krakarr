@@ -200,6 +200,7 @@ public static class DatabaseEndpoints
     {
         services.AddSingleton(status);
         services.AddScoped<DatabaseSwitchService>();
+        services.AddScoped<DatabaseDetailsService>();
         return services;
     }
 
@@ -209,6 +210,9 @@ public static class DatabaseEndpoints
         var group = app.MapGroup("/api/v1/system/database").WithTags("Database");
 
         group.MapGet("/", (DatabaseSwitchService service) => service.Info());
+
+        // Version, size, connection fields and row counts of the database Krakarr runs on.
+        group.MapGet("/details", (DatabaseDetailsService service, CancellationToken ct) => service.GetAsync(ct));
 
         group.MapPost("/test", async (DatabaseTargetRequest request, DatabaseSwitchService service, CancellationToken ct) =>
         {

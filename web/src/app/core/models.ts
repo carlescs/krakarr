@@ -349,6 +349,16 @@ export interface DatabaseInfo {
   /** The SQLite file Krakarr used before a successful switch, while it still exists. */
   oldDatabase: { file: string; size: number; switchedAt: string } | null;
 }
+/** A closer look at the database Krakarr runs on; values it couldn't read are null. */
+export interface DatabaseDetails {
+  provider: DatabaseProvider; version: string | null; size: number | null;
+  /** SQLite only. */
+  file: string | null; journalMode: string | null;
+  /** PostgreSQL only (never the password). */
+  host: string | null; port: number | null; database: string | null; username: string | null; sslMode: string | null;
+  lastMigration: string | null; appliedMigrations: number; pendingMigrations: number;
+  rows: { movies: number; movieFiles: number; series: number; episodes: number; episodeFiles: number; subtitleFiles: number; history: number; users: number } | null;
+}
 export interface DatabaseSwitchStaged { message: string; environment: EnvironmentSetting[]; }
 
 export interface SystemStatus {

@@ -19,12 +19,50 @@
       </div>
     }
 
-    <section class="card space-y-2 p-4 sm:p-5">
-      <h2 class="font-semibold text-white">Current database</h2>
-      <p class="text-sm text-slate-300" data-current>
-        <span class="font-medium text-white">{{ providerNames[i.provider] }}</span>
-        <span class="ml-2 font-mono text-xs text-slate-400 wrap-anywhere">{{ i.location }}</span>
-      </p>
+    <section class="card space-y-4 p-4 sm:p-5">
+      <div>
+        <h2 class="font-semibold text-white">Current database</h2>
+        <p class="text-sm text-slate-300" data-current>
+          <span class="font-medium text-white">{{ providerNames[i.provider] }}</span>
+          @if (details()?.version; as v) { <span class="ml-1 text-slate-400" data-version>{{ v }}</span> }
+          @if (!details()) { <span class="ml-2 font-mono text-xs text-slate-400 wrap-anywhere">{{ i.location }}</span> }
+        </p>
+      </div>
+
+      @if (details(); as d) {
+        <dl class="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-3" data-details>
+          @if (d.provider === 'postgres') {
+            <div><dt class="hint">Server</dt><dd class="font-mono text-xs text-slate-200 wrap-anywhere" data-host>{{ d.host }}:{{ d.port }}</dd></div>
+            <div><dt class="hint">Database</dt><dd class="font-mono text-xs text-slate-200 wrap-anywhere">{{ d.database }}</dd></div>
+            <div><dt class="hint">User</dt><dd class="font-mono text-xs text-slate-200 wrap-anywhere">{{ d.username }}</dd></div>
+            @if (d.sslMode) { <div><dt class="hint">SSL mode</dt><dd class="text-slate-200">{{ d.sslMode }}</dd></div> }
+          } @else {
+            <div class="sm:col-span-2"><dt class="hint">File</dt><dd class="font-mono text-xs text-slate-200 wrap-anywhere">{{ d.file ?? 'In memory' }}</dd></div>
+            @if (d.journalMode) { <div><dt class="hint">Journal mode</dt><dd class="text-slate-200 uppercase">{{ d.journalMode }}</dd></div> }
+          }
+          <div><dt class="hint">Size</dt><dd class="text-slate-200" data-size>{{ d.size === null ? '—' : (d.size | bytes) }}</dd></div>
+          <div><dt class="hint">Schema</dt>
+            <dd class="text-slate-200" data-schema>
+              {{ d.appliedMigrations | number }} migrations
+              @if (d.lastMigration) { <span class="hint block font-mono wrap-anywhere">latest: {{ migrationName(d.lastMigration) }}</span> }
+              @if (d.pendingMigrations) { <span class="block text-amber-300">{{ d.pendingMigrations }} not applied yet</span> }
+            </dd></div>
+          <div><dt class="hint">Configured in</dt>
+            <dd class="text-slate-200" data-configured>{{ i.pinned.length ? 'Environment variables' : 'config.json' }}</dd></div>
+        </dl>
+
+        @if (d.rows; as r) {
+          <div class="grid grid-cols-2 gap-2 sm:grid-cols-4" data-rows>
+            @for (c of rowCounts(r); track c.label) {
+              <div class="rounded-lg bg-surface-800 px-3 py-2" [attr.data-row]="c.label">
+                <p class="text-lg font-semibold text-white">{{ c.count | number }}</p>
+                <p class="hint">{{ c.label }}</p>
+              </div>
+            }
+          </div>
+        }
+      }
+
       @if (i.pinned.length) {
         <p class="hint" data-pinned>
           Environment variables (<code>{{ i.pinned.join(', ') }}</code>) choose the database, so after a switch you change them yourself;
@@ -76,9 +114,13 @@
         </ol>
       </section>
     } @else {
-      <section class="card space-y-5 p-4 sm:p-5" data-assistant>
+      <details class="group card p-4 sm:p-5" data-assistant>
+        <summary class="flex cursor-pointer list-none items-center justify-between gap-3 text-sm text-slate-400 hover:text-slate-200">
+          <span>Switch to another database…</span>
+          <span class="text-xs transition-transform group-open:rotate-180" aria-hidden="true">▾</span>
+        </summary>
+        <div class="mt-4 space-y-5">
         <div>
-          <h2 class="font-semibold text-white">Switch database</h2>
           <p class="hint">Move all of Krakarr's data (library, history, users, settings) to another database. Nothing is copied until
             Krakarr restarts. Make a backup first, from the Backups tab.</p>
         </div>
@@ -141,7 +183,8 @@
             {{ staging() ? 'Preparing…' : 'Switch on next restart' }}
           </button>
         </div>
-      </section>
+        </div>
+      </details>
     }
   } @else {
     <p class="text-sm text-slate-500">Loading…</p>
