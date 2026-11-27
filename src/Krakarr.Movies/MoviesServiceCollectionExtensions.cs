@@ -13,6 +13,7 @@ public static class MoviesServiceCollectionExtensions
         services.AddTmdbApi();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IMediaServerNotifier, NullMediaServerNotifier>();
+        services.TryAddSingleton<Krakarr.Core.Push.IPushNotifier, Krakarr.Core.Push.NullPushNotifier>();
         services.AddScoped<ITmdbClient, TmdbClient>();
         services.AddScoped<IMovieDiscovery, TmdbMovieDiscovery>();
         services.AddScoped<MovieService>();

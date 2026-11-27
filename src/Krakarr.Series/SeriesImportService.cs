@@ -4,6 +4,7 @@ using Krakarr.Core.Domain;
 using Krakarr.Core.Events;
 using Krakarr.Core.Jobs;
 using Krakarr.Core.MediaServers;
+using Krakarr.Core.Push;
 using Krakarr.Core.Telemetry;
 using Krakarr.Data;
 using Krakarr.Downloads;
@@ -24,6 +25,7 @@ public sealed class SeriesImportService(
     ISettingsService settings,
     IEventHub eventHub,
     IMediaServerNotifier mediaServers,
+    IPushNotifier push,
     ILogger<SeriesImportService> logger) : IScheduledTask
 {
     public string Name => "Import completed series downloads";
@@ -254,5 +256,19 @@ public sealed class SeriesImportService(
         if (download.Imported) engine.MarkImported(download.InfoHash);
         if (series is not null) await eventHub.PublishAsync(EventNames.SeriesUpdated, new { series.Id }, ct);
         await eventHub.PublishAsync(EventNames.HistoryAdded, entry, ct);
+        push.Send(PushFor(download, series, imported));
+    }
+
+    private static PushMessage PushFor(Download download, Core.Domain.Series? series, List<Episode> imported)
+    {
+        if (!download.Imported || series is null)
+        {
+            return new PushMessage(PushKind.ImportFailed, download.Name, download.ImportMessage, "/activity", $"failed-{download.Id}",
+                SeriesId: download.SeriesId);
+        }
+
+        var quality = download.QualityId is { } qid && qid > 0 ? Qualities.FindById(qid) : Qualities.Unknown;
+        var body = $"{SeriesService.Codes(imported)} downloaded" + (quality == Qualities.Unknown ? string.Empty : $" in {quality.Name}");
+        return new PushMessage(PushKind.Imported, series.Title, body, $"/series/{series.Id}", $"import-{download.Id}", SeriesId: series.Id);
     }
 }

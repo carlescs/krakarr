@@ -545,3 +545,34 @@ public class NotificationDismissal
     public DateTimeOffset? DismissedAt { get; set; }
 }
 
+
+/// <summary>
+/// A browser or installed app that receives push notifications for <see cref="User"/> (Web Push). The endpoint and
+/// keys come from the browser's <c>PushManager.subscribe()</c>; the push service deletes the endpoint (404/410) when
+/// the user revokes the permission or uninstalls the app, and the subscription is then removed.
+/// </summary>
+public class PushSubscription
+{
+    public int Id { get; set; }
+    public int UserId { get; set; }
+    public User? User { get; set; }
+    /// <summary>Push service URL to POST encrypted messages to; unique per device.</summary>
+    public required string Endpoint { get; set; }
+    /// <summary>The device's P-256 public key (base64url, uncompressed point).</summary>
+    public required string P256dh { get; set; }
+    /// <summary>The device's 16-byte authentication secret (base64url).</summary>
+    public required string Auth { get; set; }
+    /// <summary>What the device wants to be told about.</summary>
+    public Push.PushTopics Topics { get; set; } = Push.PushTopics.All;
+    /// <summary>Label shown in the device list, e.g. "Chrome on Android".</summary>
+    public string? Name { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>Column sizes of <see cref="PushSubscription"/>, checked by the endpoints before saving.</summary>
+public static class PushSubscriptionLimits
+{
+    public const int Endpoint = 2048;
+    public const int Key = 200;
+    public const int Name = 100;
+}

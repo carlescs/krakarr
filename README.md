@@ -371,6 +371,28 @@ follows a title next to the button. Removing a title (or a user) removes its fol
 - The notification bell tells you when monitored titles you follow are released (movies out on digital or physical
   media) or air (episodes), today or yesterday.
 
+### Push notifications
+
+Anyone can get **push notifications** on their phone or computer, even with Krakarr closed: *Settings → Account → Push
+notifications → Turn on for this device*. Each device picks what it is told about, among what the user's role covers:
+
+| Topic | Who | Default |
+|---|---|---|
+| A title you follow is ready to watch (imported) | Everyone | On |
+| Your request is approved or declined | Everyone | On |
+| Someone requests a title | Admins and managers | On |
+| A download fails to import | Admins and managers | On |
+| Any download is imported | Admins and managers | Off |
+| A health check reports an error (at most every 6 hours per problem) | Admins | On |
+
+- It uses the browsers' standard Web Push: Chrome, Edge, Firefox and Safari, on Android and desktops. On **iPhone and
+  iPad** (iOS 16.4+), add Krakarr to the Home Screen first (*Share → Add to Home Screen*) and turn it on from there.
+- Like passkeys, it needs HTTPS (or `localhost`). Krakarr posts to the browser vendors' push services
+  (`fcm.googleapis.com`, `push.services.mozilla.com`, `push.apple.com`, `notify.windows.com`), so it needs outbound
+  access to them; messages are end-to-end encrypted for the device.
+- Signing out turns notifications off for that device. *Send test* checks a device, and other devices can be removed
+  from the same page.
+
 ### Health checks
 
 *Settings → Health* (admins) lists setup problems that would otherwise go unnoticed, and each one also shows in the
@@ -548,4 +570,4 @@ API documentation (OpenAPI) is served at `/api/openapi/v1.json`.
 - **Subtitles (Bazarr):** more providers (Podnapisi, Addic7ed, …), embedded subtitle detection, per-series language profiles, encoding fixes
 - **Indexers (Prowlarr):** native tracker definitions (Cardigann-style), per-indexer stats, Torznab proxy for other apps
 - **Downloads:** per-torrent limits, file selection, Usenet (NZB) support
-- Lists (Trakt/IMDb), notifications (including request updates), per-season requests, optional renaming of imported libraries
+- Lists (Trakt/IMDb), notifications to Discord, Telegram, ntfy and webhooks, per-season requests, optional renaming of imported libraries

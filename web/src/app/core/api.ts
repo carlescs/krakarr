@@ -5,6 +5,7 @@ import { firstValueFrom } from 'rxjs';
 import { Auth } from './auth';
 import { readNdjson } from './ndjson';
 import type { Passkey, PasskeyCreationOptionsJson, PasskeyCredentialJson, PasskeyRequestOptionsJson } from './passkeys';
+import type { PushDevice, PushStatus, PushTestResult, PushTopic } from './push';
 import {
   AuthStatus, AutomationSettings, BackupInfo, BackupList, BackupSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
   IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, BestSubtitleMatches, SubtitleCandidate, SubtitleCandidates, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, SubtitleSyncTools, RedundantSubtitlePage, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, EpisodeRelease, MediaInfo, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
@@ -109,6 +110,15 @@ export class Api {
   addPasskey(name: string, credential: PasskeyCredentialJson) { return this.post<Passkey>('auth/passkeys', { name, credential }); }
   renamePasskey(id: number, name: string) { return this.put<Passkey>(`auth/passkeys/${id}`, { name }); }
   deletePasskey(id: number) { return this.delete<void>(`auth/passkeys/${id}`); }
+
+  // Push notifications (this user's devices)
+  pushStatus() { return this.get<PushStatus>('push'); }
+  addPushDevice(device: { endpoint: string; p256dh: string; auth: string; name?: string }) { return this.post<PushDevice>('push/devices', device); }
+  updatePushDevice(id: number, topics: PushTopic[]) { return this.put<PushDevice>(`push/devices/${id}`, { topics }); }
+  deletePushDevice(id: number) { return this.delete<void>(`push/devices/${id}`); }
+  /** Forgets this browser by its push endpoint (on sign-out). */
+  forgetPushDevice(endpoint: string) { return this.delete<void>('push/devices', { endpoint }); }
+  testPushDevice(id: number) { return this.post<PushTestResult>(`push/devices/${id}/test`); }
 
   // Users (admin)
   users() { return this.get<UserAccount[]>('users'); }

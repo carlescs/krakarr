@@ -75,6 +75,7 @@ public sealed class DatabaseCopyTests : IDisposable
         db.MediaRequests.Add(new MediaRequest { MediaType = MediaType.Movie, TmdbId = 300, Title = "Wanted", RequestedById = user.Id });
         db.MediaSubscriptions.Add(new MediaSubscription { UserId = user.Id, MovieId = movie.Id });
         db.NotificationDismissals.Add(new NotificationDismissal { UserId = user.Id, NotificationId = "health:disk" });
+        db.PushSubscriptions.Add(new PushSubscription { UserId = user.Id, Endpoint = "https://fcm.googleapis.com/fcm/send/x", P256dh = "k", Auth = "a" });
         await db.SaveChangesAsync(ct);
     }
 

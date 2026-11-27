@@ -21,6 +21,13 @@ public sealed class SeriesImportTests : IAsyncLifetime
     private readonly FakeEngine _engine = new();
     private ServiceProvider _services = null!;
     private readonly RecordingNotifier _mediaServers = new();
+    private readonly RecordingPush _push = new();
+
+    private sealed class RecordingPush : Krakarr.Core.Push.IPushNotifier
+    {
+        public List<Krakarr.Core.Push.PushMessage> Sent { get; } = [];
+        public void Send(Krakarr.Core.Push.PushMessage message) => Sent.Add(message);
+    }
 
     private sealed class FakeEngine : ITorrentEngine
     {
@@ -63,6 +70,7 @@ public sealed class SeriesImportTests : IAsyncLifetime
         services.AddSingleton<ITorrentEngine>(_engine);
         services.AddSingleton<IEventHub, NullEventHub>();
         services.AddSingleton<Krakarr.Core.MediaServers.IMediaServerNotifier>(_mediaServers);
+        services.AddSingleton<Krakarr.Core.Push.IPushNotifier>(_push);
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<SeriesService>();
         services.AddScoped<SeriesImportService>();
@@ -152,6 +160,13 @@ public sealed class SeriesImportTests : IAsyncLifetime
         Assert.StartsWith("Imported S01E01E02E03", history.Message);
         // One season folder for media servers to rescan, however many episodes landed in it.
         Assert.Equal([Path.Combine(series.Path, "Season 01")], _mediaServers.Paths.Distinct());
+        // Followers and staff hear about it once, for the whole pack.
+        var push = Assert.Single(_push.Sent);
+        Assert.Equal(Krakarr.Core.Push.PushKind.Imported, push.Kind);
+        Assert.Equal("Test Show", push.Title);
+        Assert.Equal("S01E01E02E03 downloaded in WEBDL-1080p", push.Body);
+        Assert.Equal($"/series/{series.Id}", push.Link);
+        Assert.Equal(series.Id, push.SeriesId);
     }
 
     [Fact]

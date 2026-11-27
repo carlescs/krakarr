@@ -4,6 +4,7 @@ using Krakarr.Core.Domain;
 using Krakarr.Core.Events;
 using Krakarr.Core.Jobs;
 using Krakarr.Core.MediaServers;
+using Krakarr.Core.Push;
 using Krakarr.Core.Telemetry;
 using Krakarr.Data;
 using Krakarr.Downloads;
@@ -23,6 +24,7 @@ public sealed class MovieImportService(
     ISettingsService settings,
     IEventHub eventHub,
     IMediaServerNotifier mediaServers,
+    IPushNotifier push,
     ILogger<MovieImportService> logger) : IScheduledTask
 {
     public string Name => "Import completed movie downloads";
@@ -104,6 +106,7 @@ public sealed class MovieImportService(
         var destination = Path.Combine(movie.Path, fileName);
 
         // Remove the old file if we are upgrading.
+        var upgraded = movie.MovieFile is not null;
         if (movie.MovieFile is { } old)
         {
             var oldPath = Path.Combine(movie.Path, old.RelativePath);
@@ -155,6 +158,9 @@ public sealed class MovieImportService(
         mediaServers.PathChanged(movie.Path);
         await eventHub.PublishAsync(EventNames.MovieUpdated, new { movie.Id }, ct);
         await eventHub.PublishAsync(EventNames.HistoryAdded, entry, ct);
+        push.Send(new PushMessage(PushKind.Imported, movie.Year > 0 ? $"{movie.Title} ({movie.Year})" : movie.Title,
+            upgraded ? $"Upgraded to {quality.Name}" : $"Downloaded in {quality.Name}", $"/movies/{movie.Id}", $"movie-{movie.Id}",
+            MovieId: movie.Id));
     }
 
     /// <summary>Media info warnings worth keeping in the history entry (mislabelled resolution, unwanted audio).</summary>
@@ -190,5 +196,6 @@ public sealed class MovieImportService(
         await db.SaveChangesAsync(ct);
         logger.LogWarning("{Message} ({Name})", message, download.Name);
         await eventHub.PublishAsync(EventNames.HistoryAdded, entry, ct);
+        push.Send(new PushMessage(PushKind.ImportFailed, download.Name, message, "/activity", $"failed-{download.Id}", MovieId: download.MovieId));
     }
 }

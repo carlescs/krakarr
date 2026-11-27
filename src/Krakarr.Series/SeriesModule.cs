@@ -15,6 +15,7 @@ public static class SeriesModule
         services.AddTmdbApi();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IMediaServerNotifier, NullMediaServerNotifier>();
+        services.TryAddSingleton<Krakarr.Core.Push.IPushNotifier, Krakarr.Core.Push.NullPushNotifier>();
         services.AddHttpClient(TvdbClient.HttpClientName, c =>
         {
             c.BaseAddress = new Uri((configuration["Tvdb:BaseUrl"] ?? "https://api4.thetvdb.com/v4/").TrimEnd('/') + "/");
