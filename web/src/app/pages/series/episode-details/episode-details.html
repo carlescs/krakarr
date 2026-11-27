@@ -78,12 +78,15 @@
 
   @if (auth.isStaff()) {
     <ng-container footer>
-      @if (e.episodeFile) {
-        <button class="btn-ghost text-rose-300 sm:mr-auto" (click)="deleteFile.emit()">Delete file</button>
-        <button class="btn-ghost" (click)="manageSubtitles.emit(null)">Subtitles</button>
-      }
-      <button class="btn-secondary" (click)="interactive.emit()">Interactive search</button>
-      <button class="btn-primary" (click)="search.emit()">Automatic search</button>
+      <kr-more-menu [up]="true">
+        <button class="menu-item" role="menuitem" (click)="interactive.emit()">Interactive search…</button>
+        @if (e.episodeFile) {
+          <button class="menu-item" role="menuitem" (click)="manageSubtitles.emit(null)">Subtitles…</button>
+          <div class="my-1 border-t border-surface-700"></div>
+          <button class="menu-item text-rose-300" role="menuitem" (click)="deleteFile.emit()">Delete file…</button>
+        }
+      </kr-more-menu>
+      <button class="btn-primary" (click)="search.emit()" title="Search the indexers and grab the best release">Search</button>
     </ng-container>
   }
 </kr-modal>

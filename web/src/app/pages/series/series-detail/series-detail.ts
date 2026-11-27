@@ -23,6 +23,7 @@ import { RelatedTitles } from '../../../shared/related-titles/related-titles';
 import { Progress } from '../../../shared/progress/progress';
 import { SubtitleManager } from '../../../shared/subtitle-manager/subtitle-manager';
 import { SubtitleLanguages } from '../../../core/subtitles';
+import { MoreMenu } from '../../../shared/more-menu/more-menu';
 import { SubscribeButton } from '../../../shared/subscribe-button/subscribe-button';
 import { ExternalLinks } from '../../../shared/external-links/external-links';
 import { EpisodeDetailsDialog } from '../episode-details/episode-details';
@@ -57,7 +58,7 @@ export function episodeCodes(episodes: readonly Pick<Episode, 'seasonNumber' | '
 
 @Component({
   selector: 'kr-series-detail',
-  imports: [DeleteFilesDialog, MediaDownloads, RouterLink, ExternalLinks, EpisodeDetailsDialog, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, AlternateTitles, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, IndexerProgress, BytesPipe, AgoPipe, SubtitleManager, SortHeader],
+  imports: [DeleteFilesDialog, MoreMenu, MediaDownloads, RouterLink, ExternalLinks, EpisodeDetailsDialog, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, AlternateTitles, FormsModule, DatePipe, NgTemplateOutlet, Poster, Progress, Modal, IndexerProgress, BytesPipe, AgoPipe, SubtitleManager, SortHeader],
   templateUrl: './series-detail.html',
   styleUrl: './series-detail.scss',
 })

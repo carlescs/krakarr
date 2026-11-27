@@ -6,6 +6,7 @@ import { Auth } from '../../../core/auth';
 import { BytesPipe } from '../../../core/format';
 import { Episode, EpisodeDetails, MediaInfo, SubtitleFile } from '../../../core/models';
 import { Modal } from '../../../shared/modal/modal';
+import { MoreMenu } from '../../../shared/more-menu/more-menu';
 import { CreditsView } from '../../../shared/credits/credits';
 import { ExternalLinks } from '../../../shared/external-links/external-links';
 import { Progress } from '../../../shared/progress/progress';
@@ -18,7 +19,7 @@ import { MediaInfoView } from '../../../shared/media-info/media-info';
  */
 @Component({
   selector: 'kr-episode-details',
-  imports: [RouterLink, Modal, CreditsView, ExternalLinks, Progress, SubtitleList, MediaInfoView, DatePipe, BytesPipe],
+  imports: [RouterLink, Modal, MoreMenu, CreditsView, ExternalLinks, Progress, SubtitleList, MediaInfoView, DatePipe, BytesPipe],
   templateUrl: './episode-details.html',
   styleUrl: './episode-details.scss',
 })
