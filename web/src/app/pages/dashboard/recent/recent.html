@@ -13,10 +13,12 @@
     @if (pages().length === 0) {
       <p class="text-sm text-slate-500">{{ tab() === 'imported' ? 'Nothing imported yet.' : 'Nothing in the library yet.' }}</p>
     } @else {
-      <!-- Pages sit side by side; the track slides to the current one and follows the pointer during a swipe. -->
+      <!-- Pages sit side by side; the track slides to the current one and follows the pointer during a swipe.
+           Native drag of the links and poster images is blocked, or a mouse drag would pick up the image instead. -->
       <div class="touch-pan-y select-none overflow-hidden" aria-roledescription="carousel"
            (pointerdown)="onPointerDown($event)" (pointermove)="onPointerMove($event)"
-           (pointerup)="onPointerUp($event)" (pointercancel)="onPointerUp($event)">
+           (pointerup)="onPointerUp($event)" (pointercancel)="onPointerUp($event)"
+           (dragstart)="$event.preventDefault()">
         <div class="flex" [class.transition-transform]="dragOffset() === 0" [class.duration-300]="dragOffset() === 0"
              [style.transform]="'translateX(calc(' + -page() * 100 + '% + ' + dragOffset() + 'px))'">
           @for (p of pages(); track $index; let i = $index) {
@@ -25,7 +27,7 @@
                 aria-roledescription="slide" [attr.aria-label]="'Page ' + (i + 1) + ' of ' + pages().length">
               @for (r of p; track r.mediaType + r.id) {
                 <li>
-                  <a [routerLink]="link(r.mediaType, r.id)" class="group block" draggable="false" [title]="r.title + ' (' + r.year + ')'">
+                  <a [routerLink]="link(r.mediaType, r.id)" class="group block" [title]="r.title + ' (' + r.year + ')'">
                     <kr-poster [url]="r.posterUrl" [title]="r.title" />
                     <div class="mt-1 truncate text-xs text-slate-300 group-hover:text-accent-300">{{ r.title }}</div>
                     <div class="text-[11px] text-slate-500">

@@ -94,6 +94,13 @@ describe('Recent', () => {
     expect(next.defaultPrevented).toBe(false);
   });
 
+  it('keeps the browser from dragging poster images, so a mouse drag swipes', async () => {
+    const { el } = await render([item(1, { posterUrl: '/poster.jpg' })]);
+    const drag = new Event('dragstart', { bubbles: true, cancelable: true });
+    el.querySelector('[data-page="0"] img')!.dispatchEvent(drag);
+    expect(drag.defaultPrevented).toBe(true);
+  });
+
   it('reacts to the next tap after a swipe that ends without a click', async () => {
     const { fixture, el } = await render(many(PAGE_SIZE * 3));
     await swipe(fixture, el, -(SWIPE_THRESHOLD + 10));
