@@ -9,6 +9,7 @@ import { CastMember, CrewMember, DiscoverItem, MediaRequest, MovieDetails, Movie
 import { CreditsView } from '../../shared/credits/credits';
 import { DiscoverAdd } from '../../shared/discover-add/discover-add';
 import { Poster } from '../../shared/poster/poster';
+import { Overview } from '../../shared/overview/overview';
 import { RelatedTitles } from '../../shared/related-titles/related-titles';
 import { ExternalLinks } from '../../shared/external-links/external-links';
 import { MovieReleases } from '../../shared/movie-releases/movie-releases';
@@ -42,7 +43,7 @@ interface Preview {
  */
 @Component({
   selector: 'kr-title-preview',
-  imports: [ExternalLinks, MovieReleases, DatePipe, RouterLink, Poster, CreditsView, RelatedTitles, DiscoverAdd],
+  imports: [ExternalLinks, MovieReleases, DatePipe, RouterLink, Poster, Overview, CreditsView, RelatedTitles, DiscoverAdd],
   templateUrl: './title-preview.html',
   styleUrl: './title-preview.scss',
 })

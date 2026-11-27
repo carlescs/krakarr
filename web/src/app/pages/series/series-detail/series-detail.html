@@ -25,7 +25,7 @@
           </span>
           @if (s.sizeOnDisk) { <span class="badge bg-surface-700 text-slate-300">{{ s.sizeOnDisk | bytes }}</span> }
         </div>
-        <p class="mt-4 line-clamp-4 max-w-3xl text-sm leading-relaxed text-slate-300">{{ s.overview }}</p>
+        @if (s.overview) { <kr-overview class="mt-4" [text]="s.overview" /> }
         <div class="mt-5 flex flex-wrap items-center gap-2" data-actions>
           @if (jellyfinUrl(); as url) {
             <a class="btn bg-violet-600/90 text-white hover:bg-violet-500" [href]="url" target="_blank" rel="noopener" title="Open in Jellyfin" data-jellyfin>
