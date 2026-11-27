@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { Events } from '../../core/events';
 import { TorrentStatus } from '../../core/models';
 import { button, mockApi, settle, setupTest, text, type } from '../../../testing/test-setup';
-import { DownloadsPage, isFinished, mediaLabel, sortTorrents } from './downloads';
+import { DownloadsPage, isFinished, matchesFilter, mediaLabel, sortTorrents } from './downloads';
 
 const torrent = (t: Partial<TorrentStatus>): TorrentStatus => ({
   id: 1, infoHash: 'h1', name: 'Alien.1979.1080p', state: 'Downloading', progress: 42, size: 1024, downloaded: 0, uploaded: 0, downloadRate: 0, uploadRate: 0,
@@ -165,6 +165,45 @@ describe('DownloadsPage', () => {
     button(el, 'Seeding (1)').click();
     await settle(fixture);
     expect(text(el)).toContain('Select all (1)');
+  });
+
+  it('filters torrents and selects all of the matching ones only', async () => {
+    const list = [
+      torrent({ infoHash: 'a', name: 'Alien.1979.1080p' }),
+      torrent({ infoHash: 'b', name: 'Aliens.1986.2160p' }),
+      torrent({ infoHash: 'c', name: 'Heat.1995' }),
+    ];
+    const { api, fixture, el } = await render({ downloads: async () => list, bulkDownloads: async () => ({ affected: 2, errors: [] }) });
+    (el.querySelector('input[aria-label="Select Heat.1995"]') as HTMLInputElement).click();
+    type(el, 'input[aria-label="Filter torrents"]', 'alien');
+    await settle(fixture);
+    expect(text(el)).not.toContain('Heat.1995');
+    // The hidden torrent drops out of the selection.
+    expect(text(el)).toContain('Select all (2 of 3)');
+
+    (el.querySelector('input[aria-label="Select all torrents"]') as HTMLInputElement).click();
+    await settle(fixture);
+    expect(text(el)).toContain('2 selected');
+    button(el.querySelector('[role="toolbar"]') as HTMLElement, 'Pause').click();
+    await settle(fixture);
+    expect(api.bulkDownloads).toHaveBeenCalledWith(['a', 'b'], 'Pause', false);
+
+    type(el, 'input[aria-label="Filter torrents"]', 'zzz');
+    await settle(fixture);
+    expect(text(el)).toContain('No torrents match the filter');
+    button(el, 'clear it').click();
+    await settle(fixture);
+    expect(text(el)).toContain('Heat.1995');
+  });
+
+  it('matches every filter word against the name, category and linked title', () => {
+    const t = torrent({ name: 'Alien.1979.1080p', category: 'movies' });
+    expect(matchesFilter(t, 'alien 1080P')).toBe(true);
+    expect(matchesFilter(t, 'alien 1979.1080')).toBe(true);
+    expect(matchesFilter(t, 'movies')).toBe(true);
+    expect(matchesFilter(t, 'alien 720p')).toBe(false);
+    expect(matchesFilter(t, 'ridley', { id: 1, title: 'Alien by Ridley' })).toBe(true);
+    expect(matchesFilter(t, '  ')).toBe(true);
   });
 
   it('sorts by ETA, soonest first, with unknown ETAs last', async () => {
