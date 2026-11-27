@@ -2,6 +2,7 @@ using Krakarr.Core.Domain;
 using Krakarr.Core.Events;
 using Krakarr.Core.Jobs;
 using Krakarr.Core.Metadata;
+using Krakarr.Core.Push;
 using Krakarr.Data;
 using Krakarr.Host.Auth;
 using Krakarr.Movies;
@@ -97,7 +98,7 @@ public static class RequestEndpoints
         });
 
         group.MapPost("/", async (CreateMediaRequest req, HttpContext http, KrakarrDbContext db, ITmdbClient tmdb, ISeriesDiscovery seriesDiscovery,
-            IEventHub events, TimeProvider time, CancellationToken ct) =>
+            IEventHub events, IPushNotifier push, TimeProvider time, CancellationToken ct) =>
         {
             if (http.User.GetUserId() is not { } userId)
                 return Results.Problem("Requests are made by user accounts, not the API key.", statusCode: StatusCodes.Status400BadRequest);
@@ -137,6 +138,7 @@ public static class RequestEndpoints
             db.MediaRequests.Add(request);
             await db.SaveChangesAsync(ct);
             await events.PublishAsync(EventNames.RequestsUpdated, null, ct);
+            push.Send(RequestPush.Created(http.User.Identity?.Name ?? "Someone", request.Title, request.Year, request.MediaType));
             var dto = await DtoAsync(db, request.Id, Today(time), ct);
             return Results.Created($"/api/v1/requests/{request.Id}", dto);
         });
@@ -173,15 +175,18 @@ public static class RequestEndpoints
         // Staff only (RoleAccess): adds the title with the chosen options, or just marks the request approved when
         // the title is in the library already.
         group.MapPost("/{id:int}/approve", async (int id, ApproveMediaRequest req, HttpContext http, KrakarrDbContext db, MovieService movies,
-            SeriesService series, ICommandQueue commands, IEventHub events, TimeProvider time, CancellationToken ct) =>
+            SeriesService series, ICommandQueue commands, IEventHub events, IPushNotifier push, TimeProvider time, CancellationToken ct) =>
         {
             var request = await db.MediaRequests.FirstOrDefaultAsync(r => r.Id == id, ct);
             if (request is null) return Results.NotFound();
             if (request.Status == RequestStatus.Approved)
                 return Results.Problem("This request has already been approved.", statusCode: StatusCodes.Status409Conflict);
 
+            // Adding the title approves its pending requests and tells their requesters (MediaRequestUpdates).
+            var toldByAdd = false;
             if (!await InLibraryAsync(db, request.MediaType, request.TmdbId, request.TvdbId, ct))
             {
+                toldByAdd = request.Status == RequestStatus.Pending;
                 try
                 {
                     if (request.MediaType == MediaType.Movie)
@@ -213,8 +218,9 @@ public static class RequestEndpoints
 
             // AddAsync already approved matching pending requests and subscribed their requesters; cover a title that
             // was in the library already, then record who approved this one.
-            if (await LibraryIdAsync(db, request.MediaType, request.TmdbId, request.TvdbId, ct) is { } libraryId)
-                await MediaSubscriptions.SubscribeAsync(db, [request.RequestedById], request.MediaType, libraryId, ct);
+            var libraryId = await LibraryIdAsync(db, request.MediaType, request.TmdbId, request.TvdbId, ct);
+            if (libraryId is { } inLibrary)
+                await MediaSubscriptions.SubscribeAsync(db, [request.RequestedById], request.MediaType, inLibrary, ct);
             request.Status = RequestStatus.Approved;
             request.ProcessedById = http.User.GetUserId();
             request.ProcessedAt = time.GetUtcNow();
@@ -222,10 +228,13 @@ public static class RequestEndpoints
             request.ResultUnseen = request.RequestedById != request.ProcessedById;
             await db.SaveChangesAsync(ct);
             await events.PublishAsync(EventNames.RequestsUpdated, null, ct);
+            if (request.ResultUnseen && !toldByAdd)
+                push.Send(RequestPush.Result(request.RequestedById, request.Title, request.Year, approved: true, request.MediaType, libraryId, null));
             return Results.Ok(await DtoAsync(db, request.Id, Today(time), ct));
         });
 
-        group.MapPost("/{id:int}/decline", async (int id, DeclineMediaRequest? req, HttpContext http, KrakarrDbContext db, IEventHub events, TimeProvider time, CancellationToken ct) =>
+        group.MapPost("/{id:int}/decline", async (int id, DeclineMediaRequest? req, HttpContext http, KrakarrDbContext db, IEventHub events,
+            IPushNotifier push, TimeProvider time, CancellationToken ct) =>
         {
             var request = await db.MediaRequests.FirstOrDefaultAsync(r => r.Id == id, ct);
             if (request is null) return Results.NotFound();
@@ -239,6 +248,8 @@ public static class RequestEndpoints
             request.ResultUnseen = request.RequestedById != request.ProcessedById;
             await db.SaveChangesAsync(ct);
             await events.PublishAsync(EventNames.RequestsUpdated, null, ct);
+            if (request.ResultUnseen)
+                push.Send(RequestPush.Result(request.RequestedById, request.Title, request.Year, approved: false, request.MediaType, null, request.DeclineReason));
             return Results.Ok(await DtoAsync(db, request.Id, Today(time), ct));
         });
 

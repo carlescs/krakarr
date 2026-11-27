@@ -1,4 +1,5 @@
 using Krakarr.Core.Events;
+using Krakarr.Core.Push;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -9,13 +10,15 @@ namespace Krakarr.Core.Health;
 /// <summary>
 /// Runs every <see cref="IHealthCheck"/> every <see cref="Interval"/> and shortly after <see cref="RequestCheck"/>, keeps
 /// the latest <see cref="HealthReport"/>, and tells the UI when it changes (<see cref="EventNames.HealthUpdated"/>, plus
-/// <see cref="EventNames.NotificationsUpdated"/> when problems appear, go away or change severity).
+/// <see cref="EventNames.NotificationsUpdated"/> when problems appear, go away or change severity). New errors are also
+/// pushed to admins' phones.
 /// </summary>
 public sealed class HealthMonitor(
     IServiceScopeFactory scopeFactory,
     IEventHub events,
     TimeProvider time,
-    ILogger<HealthMonitor> logger) : BackgroundService, IHealthMonitor
+    ILogger<HealthMonitor> logger,
+    IPushNotifier? push = null) : BackgroundService, IHealthMonitor
 {
     public static readonly TimeSpan Interval = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan InitialDelay = TimeSpan.FromSeconds(15);
@@ -34,6 +37,14 @@ public sealed class HealthMonitor(
     /// once their interval is over, so it holds a handful of ids at most.
     /// </summary>
     private readonly Dictionary<string, (DateTimeOffset At, TimeSpan Every)> _notified = [];
+
+    /// <summary>
+    /// When each error was last pushed to phones, so one that flaps between runs pushes at most once per
+    /// <see cref="PushEvery"/>. Only touched under <see cref="_gate"/>; pruned on every run.
+    /// </summary>
+    private readonly Dictionary<string, DateTimeOffset> _pushed = [];
+
+    private static readonly TimeSpan PushEvery = TimeSpan.FromHours(6);
 
     public HealthReport Current => _current;
 
@@ -155,7 +166,15 @@ public sealed class HealthMonitor(
         foreach (var issue in current.Issues.Where(i => !before.TryGetValue(i.Id, out var old) || old.Severity != i.Severity))
         {
             logger.LogWarning("Health {Severity}: {CheckName}: {Message}", issue.Severity, issue.CheckName, issue.Message);
+            if (issue.Severity == HealthSeverity.Error && push is not null && !_pushed.ContainsKey(issue.Id))
+            {
+                _pushed[issue.Id] = current.CheckedAt ?? time.GetUtcNow();
+                push.Send(new PushMessage(PushKind.Health, issue.CheckName, issue.Message, issue.Link ?? "/settings/health", $"health-{issue.Id}"));
+            }
         }
+
+        var now = time.GetUtcNow();
+        foreach (var (id, at) in _pushed.Where(p => now - p.Value >= PushEvery).ToList()) _pushed.Remove(id);
 
         foreach (var issue in previous.Issues.Where(i => !after.ContainsKey(i.Id)))
         {

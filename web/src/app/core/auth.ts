@@ -5,6 +5,7 @@ import { catchError, throwError } from 'rxjs';
 import { Api } from './api';
 import { AuthStatus, UserRole } from './models';
 import { credentialToJson, toRequestOptions } from './passkeys';
+import { forgetThisDevice } from './push';
 
 @Injectable({ providedIn: 'root' })
 export class Auth {
@@ -42,6 +43,7 @@ export class Auth {
   }
 
   async logout() {
+    await forgetThisDevice(this.api);
     await this.api.logout();
     this.status.set({ setupRequired: false, authenticated: false });
   }

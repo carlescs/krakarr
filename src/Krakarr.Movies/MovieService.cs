@@ -33,7 +33,8 @@ public sealed class MovieService(
     IIndexerSearchService indexerSearch,
     IDownloadService downloads,
     IEventHub eventHub,
-    ILogger<MovieService> logger)
+    ILogger<MovieService> logger,
+    Krakarr.Core.Push.IPushNotifier? push = null)
 {
     public async Task<Movie> AddAsync(AddMovieRequest request, CancellationToken ct = default)
     {
@@ -83,7 +84,7 @@ public sealed class MovieService(
         await db.SaveChangesAsync(ct);
         logger.LogInformation("Added movie {Title} ({Year})", movie.Title, movie.Year);
         await eventHub.PublishAsync(EventNames.MovieUpdated, new { movie.Id }, ct);
-        if (await MediaRequestUpdates.ApproveMatchingAsync(db, MediaType.Movie, movie.TmdbId, null, movie.Id, ct) > 0)
+        if (await MediaRequestUpdates.ApproveMatchingAsync(db, MediaType.Movie, movie.TmdbId, null, movie.Id, ct, push) > 0)
         {
             await eventHub.PublishAsync(EventNames.RequestsUpdated, null, ct);
         }

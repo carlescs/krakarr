@@ -17,7 +17,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261126172019_AlternateTitlesAndSceneMapping";
+    public override string LastMigrationId => "20261127110142_PushSubscriptions";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -718,6 +718,52 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.ToTable("NotificationDismissals");
             });
 
+        modelBuilder.Entity("Krakarr.Core.Domain.PushSubscription", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
+
+                b.Property<string>("Auth")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)");
+
+                b.Property<DateTimeOffset>("CreatedAt")
+                    .HasColumnType("timestamp with time zone");
+
+                b.Property<string>("Endpoint")
+                    .IsRequired()
+                    .HasMaxLength(2048)
+                    .HasColumnType("character varying(2048)");
+
+                b.Property<string>("Name")
+                    .HasMaxLength(100)
+                    .HasColumnType("character varying(100)");
+
+                b.Property<string>("P256dh")
+                    .IsRequired()
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)");
+
+                b.Property<int>("Topics")
+                    .HasColumnType("integer");
+
+                b.Property<int>("UserId")
+                    .HasColumnType("integer");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Endpoint")
+                    .IsUnique();
+
+                b.HasIndex("UserId");
+
+                b.ToTable("PushSubscriptions");
+            });
+
         modelBuilder.Entity("Krakarr.Core.Domain.QualityProfile", b =>
             {
                 var id = b.Property<int>("Id")
@@ -1158,6 +1204,17 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
             });
 
         modelBuilder.Entity("Krakarr.Core.Domain.NotificationDismissal", b =>
+            {
+                b.HasOne("Krakarr.Core.Domain.User", "User")
+                    .WithMany()
+                    .HasForeignKey("UserId")
+                    .OnDelete(DeleteBehavior.Cascade)
+                    .IsRequired();
+
+                b.Navigation("User");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.PushSubscription", b =>
             {
                 b.HasOne("Krakarr.Core.Domain.User", "User")
                     .WithMany()

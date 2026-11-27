@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Claims;
 using Krakarr.Core.Domain;
+using Krakarr.Core.Push;
 using Microsoft.EntityFrameworkCore;
 
 namespace Krakarr.Data;
@@ -12,21 +13,45 @@ public static class MediaRequestUpdates
     /// request, adding it directly or a library import), subscribes their requesters to library title
     /// <paramref name="libraryId"/> and flags the result for their notification bell. Returns how many requests changed.
     /// </summary>
-    public static async Task<int> ApproveMatchingAsync(KrakarrDbContext db, MediaType type, int? tmdbId, int? tvdbId, int libraryId, CancellationToken ct = default)
+    /// <param name="push">Tells each requester on their phone, when given.</param>
+    public static async Task<int> ApproveMatchingAsync(KrakarrDbContext db, MediaType type, int? tmdbId, int? tvdbId, int libraryId,
+        CancellationToken ct = default, IPushNotifier? push = null)
     {
         if (tmdbId is null && tvdbId is null) return 0;
         var matching = db.MediaRequests
             .Where(r => r.Status == RequestStatus.Pending && r.MediaType == type
                 && ((tmdbId != null && r.TmdbId == tmdbId) || (tvdbId != null && r.TvdbId == tvdbId)));
 
-        var requesters = await matching.Select(r => r.RequestedById).Distinct().ToListAsync(ct);
-        if (requesters.Count == 0) return 0;
-        await MediaSubscriptions.SubscribeAsync(db, requesters, type, libraryId, ct);
+        // A title has a request or two at most (one pending request per title, plus duplicates by TheTVDB id).
+        var handled = await matching.Select(r => new { r.RequestedById, r.Title, r.Year }).ToListAsync(ct);
+        if (handled.Count == 0) return 0;
+        await MediaSubscriptions.SubscribeAsync(db, handled.Select(r => r.RequestedById).Distinct().ToList(), type, libraryId, ct);
 
         var now = DateTimeOffset.UtcNow;
-        return await matching.ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, RequestStatus.Approved).SetProperty(r => r.ProcessedAt, now)
+        var changed = await matching.ExecuteUpdateAsync(s => s.SetProperty(r => r.Status, RequestStatus.Approved).SetProperty(r => r.ProcessedAt, now)
             .SetProperty(r => r.ResultUnseen, true), ct);
+        foreach (var r in handled) push?.Send(RequestPush.Result(r.RequestedById, r.Title, r.Year, approved: true, type, libraryId, null));
+        return changed;
     }
+}
+
+/// <summary>Push notifications about requests, shared by the request endpoints and <see cref="MediaRequestUpdates"/>.</summary>
+public static class RequestPush
+{
+    /// <summary>Tells <paramref name="userId"/> how their request was handled; approved ones open the library title.</summary>
+    public static PushMessage Result(int userId, string title, int year, bool approved, MediaType type, int? libraryId, string? reason)
+    {
+        var name = year > 0 ? $"{title} ({year})" : title;
+        var link = approved && libraryId is { } id ? (type == MediaType.Movie ? $"/movies/{id}" : $"/series/{id}") : "/requests";
+        return approved
+            ? new PushMessage(PushKind.RequestResult, "Request approved", $"{name} was added to the library. You'll be told when it's ready to watch.",
+                link, UserId: userId)
+            : new PushMessage(PushKind.RequestResult, "Request declined", reason is null ? name : $"{name}: {reason}", link, UserId: userId);
+    }
+
+    public static PushMessage Created(string username, string title, int year, MediaType type) =>
+        new(PushKind.RequestCreated, "New request", $"{username} requested the {(type == MediaType.Movie ? "movie" : "series")} {(year > 0 ? $"{title} ({year})" : title)}",
+            "/requests", "requests");
 }
 
 public static class MediaSubscriptions

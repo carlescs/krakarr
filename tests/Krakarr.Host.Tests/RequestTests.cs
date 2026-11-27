@@ -16,11 +16,14 @@ namespace Krakarr.Host.Tests;
 /// <summary>Own host with fake TMDB clients, so requests can be created without network access.</summary>
 public sealed class RequestsFactory : KrakarrFactory
 {
+    public RecordingPushNotifier Push { get; } = new();
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         base.ConfigureWebHost(builder);
         builder.ConfigureTestServices(services =>
         {
+            services.AddSingleton<Krakarr.Core.Push.IPushNotifier>(Push);
             services.AddSingleton<ITmdbClient, FakeTmdb>();
             services.AddSingleton<ISeriesDiscovery, FakeSeriesDiscovery>();
         });
@@ -85,6 +88,9 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
         return await res.Content.ReadFromJsonAsync<JsonElement>(Ct);
     }
 
+    /// <summary>Push notifications sent so far whose body mentions <paramref name="title"/>.</summary>
+    private Krakarr.Core.Push.PushMessage[] Pushes(string title) => factory.Push.Sent.Where(m => m.Body?.Contains(title) == true).ToArray();
+
     private static async Task<JsonElement?> BellAsync(HttpClient client, string id)
     {
         var all = await client.GetFromJsonAsync<JsonElement[]>("/api/v1/notifications", Ct);
@@ -146,6 +152,16 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
         Assert.Equal("Not on any indexer", row.GetProperty("declineReason").GetString());
         Assert.Equal("mona", row.GetProperty("processedBy").GetString());
 
+        // Staff were told about the request on their phones, and alice about the decline.
+        var pushes = Pushes("Movie 1001 (2020)");
+        Assert.Equal(2, pushes.Length);
+        Assert.Equal(Krakarr.Core.Push.PushKind.RequestCreated, pushes[0].Kind);
+        Assert.Equal("alice requested the movie Movie 1001 (2020)", pushes[0].Body);
+        Assert.Equal(Krakarr.Core.Push.PushKind.RequestResult, pushes[1].Kind);
+        Assert.Equal("Request declined", pushes[1].Title);
+        Assert.Equal("Movie 1001 (2020): Not on any indexer", pushes[1].Body);
+        Assert.Equal("/requests", pushes[1].Link);
+
         // Alice hears about the decline until she opens her requests; bob, whose request is untouched, doesn't.
         var declinedBell = (await BellAsync(alice, "requests.declined"))!.Value;
         Assert.Equal(1, declinedBell.GetProperty("count").GetInt32());
@@ -189,6 +205,11 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
         Assert.Equal(HttpStatusCode.OK, (await carol.GetAsync($"/api/v1/movies/{movieId}", Ct)).StatusCode);
         var approvedBell = (await BellAsync(carol, "requests.approved"))!.Value;
         Assert.Equal("Your request was approved", approvedBell.GetProperty("title").GetString());
+
+        // One push about the approval (adding the title sent it), opening the movie.
+        var result = Assert.Single(Pushes("Movie 2001 (2020)"), p => p.Kind == Krakarr.Core.Push.PushKind.RequestResult);
+        Assert.Equal("Request approved", result.Title);
+        Assert.Equal($"/movies/{movieId}", result.Link);
         Assert.Equal("Movie 2001", approvedBell.GetProperty("message").GetString());
 
         // In the library now: no new requests, and approving twice is refused.
@@ -202,6 +223,7 @@ public sealed class RequestTests(RequestsFactory factory) : IClassFixture<Reques
             new { tmdbId = 2002, qualityProfileId = profile, rootFolderPath = root, searchForMovie = false }, Ct);
         Assert.Equal(HttpStatusCode.Created, added.StatusCode);
         Assert.Contains(other, await ListIdsAsync(carol, "approved"));
+        Assert.Single(Pushes("Movie 2002 (2020)"), p => p.Kind == Krakarr.Core.Push.PushKind.RequestResult);
 
         // Requests fulfilled by adding the title directly count as approved too.
         approvedBell = (await BellAsync(carol, "requests.approved"))!.Value;
