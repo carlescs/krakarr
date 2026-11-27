@@ -304,7 +304,7 @@
                 <a [routerLink]="link(r.mediaType, r.id)" class="group block" [title]="r.title + ' (' + r.year + ')'">
                   <kr-poster [url]="r.posterUrl" [title]="r.title" />
                   <div class="mt-1 truncate text-xs text-slate-300 group-hover:text-accent-300">{{ r.title }}</div>
-                  <div class="truncate text-[11px] text-slate-500">{{ r.mediaType }} · {{ r.date | ago }}</div>
+                  <div class="text-[11px] text-slate-500">{{ r.mediaType }} · <span class="whitespace-nowrap">{{ r.date | ago }}</span></div>
                 </a>
               </li>
             }
