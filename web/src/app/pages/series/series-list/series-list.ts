@@ -6,7 +6,7 @@ import { RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../../core/api';
 import { Auth } from '../../../core/auth';
 import { Library, SeriesQuery } from '../../../core/library';
-import { SeriesFilter, SeriesListItem, SeriesSortKey } from '../../../core/models';
+import { MIN_RATINGS, SeriesFilter, SeriesListItem, SeriesSortKey } from '../../../core/models';
 import { SEARCH_DEBOUNCE_MS, VirtualRowDataSource } from '../../../core/paged-list';
 import { PagedSelection, ViewMode, storeView, storedView } from '../../../core/selection';
 import { Subscriptions } from '../../../core/subscriptions';
@@ -63,6 +63,9 @@ export class SeriesListPage {
   protected readonly query = signal('');
   private readonly committedQuery = signal('');
   protected readonly filter = signal<SeriesFilter>('all');
+  /** Minimum IMDb rating (from OMDb); null = any. */
+  protected readonly minRating = signal<number | null>(null);
+  protected readonly minRatings = MIN_RATINGS;
   protected readonly view = signal<ViewMode>(storedView(VIEW_KEY));
   /** Grid selection mode: cards toggle selection instead of opening the series. The table always has checkboxes. */
   protected readonly selecting = signal(false);
@@ -80,6 +83,8 @@ export class SeriesListPage {
       status: s => s.status === 'Ended',
       episodes: s => this.percent(s),
       nextAiring: s => (s.nextAiring ? Date.parse(s.nextAiring) : null),
+      imdb: s => s.imdbRating ?? null,
+      tomatoes: s => s.rottenTomatoes ?? null,
     },
     { key: 'title' },
   );
@@ -92,6 +97,7 @@ export class SeriesListPage {
       filter: this.filter(),
       sort: s.key ?? 'title',
       desc: s.desc || undefined,
+      minRating: this.minRating() ?? undefined,
     };
   });
 

@@ -1,0 +1,8 @@
+@if (facts().length) {
+  <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+    @for (fact of facts(); track fact.label) {
+      <dt class="text-slate-500">{{ fact.label }}</dt>
+      <dd class="text-slate-300">{{ fact.value }}</dd>
+    }
+  </dl>
+}

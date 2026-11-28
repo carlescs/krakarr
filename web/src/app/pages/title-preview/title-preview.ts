@@ -12,6 +12,8 @@ import { Poster } from '../../shared/poster/poster';
 import { Overview } from '../../shared/overview/overview';
 import { RelatedTitles } from '../../shared/related-titles/related-titles';
 import { ExternalLinks } from '../../shared/external-links/external-links';
+import { OmdbFacts } from '../../shared/omdb-facts/omdb-facts';
+import { OmdbState } from '../../core/omdb';
 import { MovieReleases } from '../../shared/movie-releases/movie-releases';
 import { PreviewEpisodeDialog } from './preview-episode/preview-episode';
 
@@ -44,7 +46,7 @@ interface Preview {
  */
 @Component({
   selector: 'kr-title-preview',
-  imports: [ExternalLinks, MovieReleases, DatePipe, RouterLink, Poster, Overview, CreditsView, RelatedTitles, DiscoverAdd, PreviewEpisodeDialog],
+  imports: [ExternalLinks, OmdbFacts, MovieReleases, DatePipe, RouterLink, Poster, Overview, CreditsView, RelatedTitles, DiscoverAdd, PreviewEpisodeDialog],
   templateUrl: './title-preview.html',
   styleUrl: './title-preview.scss',
 })
@@ -61,6 +63,8 @@ export class TitlePreviewPage {
   /** Adding to the library is for admins and managers; plain users request titles instead. */
   protected readonly canAdd = inject(Auth).isStaff;
   protected readonly preview = signal<Preview | null>(null);
+  /** OMDb data the external links fetched for this title. */
+  protected readonly omdb = new OmdbState(() => this.preview());
   protected readonly error = signal<string | null>(null);
   protected readonly adding = signal(false);
   /** Pending request for this title, by anyone. */

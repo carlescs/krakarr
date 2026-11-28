@@ -28,6 +28,19 @@ describe('ExternalLinks', () => {
     ]);
   });
 
+  it('uses the OMDb data stored with a library title instead of fetching it', async () => {
+    const api = setupTest({ api: mockApi({ ratings: async () => null }) });
+    const fixture = TestBed.createComponent(ExternalLinks);
+    fixture.componentRef.setInput('kind', 'movie');
+    fixture.componentRef.setInput('title', 'The Matrix');
+    fixture.componentRef.setInput('imdbId', 'tt0133093');
+    fixture.componentRef.setInput('stored', { imdb: 8.7, imdbVotes: 2_000_000, rottenTomatoes: 83, metacritic: null, rottenTomatoesUrl: null });
+    await settle(fixture);
+
+    expect(api.ratings).not.toHaveBeenCalled();
+    expect(links(fixture.nativeElement).find(l => l.label === 'IMDb')?.text).toBe('IMDb8.72.0M');
+  });
+
   it('falls back to a Rotten Tomatoes search without scores, and skips ratings for people', async () => {
     const api = setupTest({ api: mockApi({ ratings: async () => null }) });
     const fixture = TestBed.createComponent(ExternalLinks);

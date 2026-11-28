@@ -29,13 +29,15 @@ import { MediaInfoView } from '../../../shared/media-info/media-info';
 import { MoreMenu } from '../../../shared/more-menu/more-menu';
 import { SubscribeButton } from '../../../shared/subscribe-button/subscribe-button';
 import { ExternalLinks } from '../../../shared/external-links/external-links';
+import { OmdbFacts } from '../../../shared/omdb-facts/omdb-facts';
+import { OmdbState } from '../../../core/omdb';
 import { MovieReleases } from '../../../shared/movie-releases/movie-releases';
 import { MediaDownloads } from '../../../shared/media-downloads/media-downloads';
 import { DeleteFilesDialog } from '../../../shared/delete-files/delete-files';
 
 @Component({
   selector: 'kr-movie-detail',
-  imports: [DeleteFilesDialog, MoreMenu, MediaDownloads, ExternalLinks, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, AlternateTitles, MovieReleases, FormsModule, DatePipe, Poster, Overview, Modal, IndexerProgress, SubtitleManager, SubtitleList, MediaInfoView, SortHeader, BytesPipe, AgoPipe],
+  imports: [DeleteFilesDialog, MoreMenu, MediaDownloads, ExternalLinks, OmdbFacts, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, AlternateTitles, MovieReleases, FormsModule, DatePipe, Poster, Overview, Modal, IndexerProgress, SubtitleManager, SubtitleList, MediaInfoView, SortHeader, BytesPipe, AgoPipe],
   templateUrl: './movie-detail.html',
   styleUrl: './movie-detail.scss',
 })
@@ -51,6 +53,8 @@ export class MovieDetailPage implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly movie = signal<Movie | null>(null);
+  /** Stored OMDb data, or what the external links fetched when the movie has none yet. */
+  protected readonly omdb = new OmdbState(() => this.movie());
   protected readonly history = signal<HistoryItem[]>([]);
   protected readonly profiles = signal<QualityProfile[]>([]);
   protected readonly releaseSearch = new ReleaseSearch<ReleaseDecision>();

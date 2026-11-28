@@ -54,6 +54,10 @@ Then open <http://localhost:8787>:
    sub-folder by its name (see [Library import](#library-import)).
 7. **Series:** add a root folder of type *Series* (e.g. `/data/media/tv`), then **Series → Add series**. Series use the
    same TMDB key by default; pick TheTVDB as *Series metadata source* in *Settings → Metadata* to use it instead.
+8. **Optional, OMDb:** an [OMDb API key](https://www.omdbapi.com/apikey.aspx) in *Settings → Metadata* adds IMDb, Rotten
+   Tomatoes and Metacritic scores, content ratings, credits, awards and box office. TMDB/TheTVDB stay the metadata
+   sources; OMDb is looked up by the IMDb id they give. A background task stores the scores on library titles (within a
+   daily request budget, 500 by default; free keys allow 1,000), so the movie and series lists can sort and filter by them.
 
 ### Volumes & ports
 

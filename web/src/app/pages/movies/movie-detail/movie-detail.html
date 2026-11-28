@@ -10,10 +10,11 @@
       <div class="min-w-0 flex-1">
         <h1 class="text-2xl font-bold tracking-tight text-white sm:text-3xl">{{ m.title }} <span class="font-normal text-slate-400">({{ m.year }})</span></h1>
         <div class="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-400">
+          @if (omdb.info()?.rated; as rated) { <span class="rounded border border-slate-500 px-1 text-xs leading-4 text-slate-300" title="Content rating" data-rated>{{ rated }}</span><span>·</span> }
           @if (m.runtime) { <span>{{ m.runtime }} min</span><span>·</span> }
           <span>{{ m.status === 'InCinemas' ? 'In cinemas' : m.status }}</span>
         </div>
-        <kr-external-links class="mt-3" kind="movie" [title]="m.title" [tmdbId]="m.tmdbId" [imdbId]="m.imdbId" />
+        <kr-external-links class="mt-3" kind="movie" [title]="m.title" [tmdbId]="m.tmdbId" [imdbId]="m.imdbId" [stored]="m.omdb" (loaded)="omdb.loaded($event)" />
         <div class="mt-3 flex flex-wrap gap-2">
           @if (m.hasFile) {
             <span class="badge bg-emerald-500/15 text-emerald-300">Downloaded · {{ m.movieFile?.quality }}</span>
@@ -28,7 +29,8 @@
             {{ languages.describe(m.languages ?? languages.preferred()) }}
           </span>
         </div>
-        @if (m.overview) { <kr-overview class="mt-4" [text]="m.overview" /> }
+        @if (m.overview || omdb.info()?.plot; as text) { <kr-overview class="mt-4" [text]="text" /> }
+        <kr-omdb-facts class="mt-4" [info]="omdb.info()" />
         <div class="mt-5 flex flex-wrap items-center gap-2" data-actions>
           @if (jellyfinUrl(); as url) {
             <a class="btn bg-violet-600/90 text-white hover:bg-violet-500" [href]="url" target="_blank" rel="noopener" title="Open in Jellyfin" data-jellyfin>

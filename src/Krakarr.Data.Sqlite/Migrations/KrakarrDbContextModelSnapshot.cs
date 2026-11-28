@@ -15,7 +15,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261127110139_PushSubscriptions";
+    public override string LastMigrationId => "20261128080013_OmdbInfo";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -482,10 +482,26 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<long>("Added")
                     .HasColumnType("INTEGER");
 
+                b.Property<string>("Awards")
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("BoxOffice")
+                    .HasMaxLength(32)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Certification")
+                    .HasMaxLength(32)
+                    .HasColumnType("TEXT");
+
                 b.Property<int?>("CollectionId")
                     .HasColumnType("INTEGER");
 
                 b.Property<DateOnly?>("DigitalRelease")
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Director")
+                    .HasMaxLength(512)
                     .HasColumnType("TEXT");
 
                 b.Property<string>("FanartUrl")
@@ -493,6 +509,12 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<string>("ImdbId")
                     .HasColumnType("TEXT");
+
+                b.Property<double?>("ImdbRating")
+                    .HasColumnType("REAL");
+
+                b.Property<long?>("ImdbVotes")
+                    .HasColumnType("INTEGER");
 
                 b.Property<DateOnly?>("InCinemas")
                     .HasColumnType("TEXT");
@@ -503,6 +525,9 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<long?>("LastSearched")
                     .HasColumnType("INTEGER");
 
+                b.Property<int?>("Metacritic")
+                    .HasColumnType("INTEGER");
+
                 b.Property<int>("MinimumAvailability")
                     .HasColumnType("INTEGER");
 
@@ -510,6 +535,13 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("INTEGER");
 
                 b.Property<int?>("MovieFileId")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("OmdbPlot")
+                    .HasMaxLength(2048)
+                    .HasColumnType("TEXT");
+
+                b.Property<long?>("OmdbUpdated")
                     .HasColumnType("INTEGER");
 
                 b.Property<string>("OriginalTitle")
@@ -537,6 +569,13 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("TEXT")
                     .HasDefaultValue("[]");
 
+                b.Property<int?>("RottenTomatoes")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("RottenTomatoesUrl")
+                    .HasMaxLength(512)
+                    .HasColumnType("TEXT");
+
                 b.Property<int>("Runtime")
                     .HasColumnType("INTEGER");
 
@@ -553,6 +592,10 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<int>("TmdbId")
                     .HasColumnType("INTEGER");
+
+                b.Property<string>("Writer")
+                    .HasMaxLength(512)
+                    .HasColumnType("TEXT");
 
                 b.Property<int>("Year")
                     .HasColumnType("INTEGER");
@@ -816,6 +859,22 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<long>("Added")
                     .HasColumnType("INTEGER");
 
+                b.Property<string>("Awards")
+                    .HasMaxLength(256)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("BoxOffice")
+                    .HasMaxLength(32)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Certification")
+                    .HasMaxLength(32)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Director")
+                    .HasMaxLength(512)
+                    .HasColumnType("TEXT");
+
                 b.Property<string>("FanartUrl")
                     .HasColumnType("TEXT");
 
@@ -825,6 +884,12 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<string>("ImdbId")
                     .HasColumnType("TEXT");
 
+                b.Property<double?>("ImdbRating")
+                    .HasColumnType("REAL");
+
+                b.Property<long?>("ImdbVotes")
+                    .HasColumnType("INTEGER");
+
                 b.PrimitiveCollection<string>("Languages")
                     .HasColumnType("TEXT");
 
@@ -832,6 +897,9 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("INTEGER");
 
                 b.Property<long?>("LastSearched")
+                    .HasColumnType("INTEGER");
+
+                b.Property<int?>("Metacritic")
                     .HasColumnType("INTEGER");
 
                 b.Property<string>("MetadataTitle")
@@ -843,6 +911,13 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<string>("Network")
                     .HasColumnType("TEXT");
+
+                b.Property<string>("OmdbPlot")
+                    .HasMaxLength(2048)
+                    .HasColumnType("TEXT");
+
+                b.Property<long?>("OmdbUpdated")
+                    .HasColumnType("INTEGER");
 
                 b.Property<string>("Overview")
                     .HasColumnType("TEXT");
@@ -856,6 +931,13 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<int>("QualityProfileId")
                     .HasColumnType("INTEGER");
+
+                b.Property<int?>("RottenTomatoes")
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("RottenTomatoesUrl")
+                    .HasMaxLength(512)
+                    .HasColumnType("TEXT");
 
                 b.Property<int>("Runtime")
                     .HasColumnType("INTEGER");
@@ -879,6 +961,10 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<int?>("TvdbId")
                     .HasColumnType("INTEGER");
+
+                b.Property<string>("Writer")
+                    .HasMaxLength(512)
+                    .HasColumnType("TEXT");
 
                 b.Property<int>("Year")
                     .HasColumnType("INTEGER");

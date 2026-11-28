@@ -46,12 +46,15 @@ public sealed record SeriesDto
     public DateOnly? NextAiring { get; init; }
     public int DownloadingCount { get; init; }
     public IReadOnlyList<SeasonDto> Seasons { get; init; } = [];
+    /// <summary>Scores and facts from OMDb, as last stored; null when OMDb hasn't been asked yet.</summary>
+    public OmdbInfo? Omdb { get; init; }
 }
 
 /// <summary>Row of the library grid. Counts follow <see cref="SeriesDto"/> (regular seasons only).</summary>
 public sealed record SeriesListItemDto(
     int Id, string Title, int Year, string? PosterUrl, SeriesStatus Status, bool Monitored,
-    int EpisodeCount, int EpisodeFileCount, DateOnly? NextAiring, int DownloadingCount, string? Network);
+    int EpisodeCount, int EpisodeFileCount, DateOnly? NextAiring, int DownloadingCount, string? Network,
+    double? ImdbRating = null, int? RottenTomatoes = null);
 
 /// <summary>One page of the series library list.</summary>
 public sealed record SeriesListPageDto(
@@ -90,7 +93,7 @@ public static class SeriesEndpoints
     {
         var group = app.MapGroup("/api/v1/series").WithTags("Series");
 
-        group.MapGet("/", async (int? page, int? pageSize, string? q, string? filter, string? sort, bool? desc,
+        group.MapGet("/", async (int? page, int? pageSize, string? q, string? filter, string? sort, bool? desc, double? minRating,
             HttpContext http, KrakarrDbContext db, ITorrentEngine engine, TimeProvider time, CancellationToken ct) =>
         {
             var currentPage = Math.Max(1, page ?? 1);
@@ -98,7 +101,7 @@ public static class SeriesEndpoints
             var today = Today(time);
             var userId = MediaSubscriptions.GetUserId(http.User);
 
-            var (filtered, isFiltered) = FilterSeries(db, q, filter, userId, today);
+            var (filtered, isFiltered) = FilterSeries(db, q, filter, userId, today, minRating);
             var total = await filtered.CountAsync(ct);
             var libraryTotal = isFiltered ? await db.Series.CountAsync(ct) : total;
 
@@ -119,13 +122,13 @@ public static class SeriesEndpoints
                         .ToListAsync(ct);
                     items = rows.Select(s => new SeriesListItemDto(
                         s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored,
-                        s.EpisodeCount, s.EpisodeFileCount, s.NextAiring, downloading.GetValueOrDefault(s.Id), s.Network)).ToList();
+                        s.EpisodeCount, s.EpisodeFileCount, s.NextAiring, downloading.GetValueOrDefault(s.Id), s.Network, s.ImdbRating, s.RottenTomatoes)).ToList();
                 }
                 else
                 {
                     var list = await SortSeries(filtered, sortKey, desc == true)
                         .Skip(skip).Take(size)
-                        .Select(s => new { s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored, s.Network })
+                        .Select(s => new { s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored, s.Network, s.ImdbRating, s.RottenTomatoes })
                         .ToListAsync(ct);
                     var pageIds = list.Select(s => s.Id).ToList();
                     // Aggregate episode counts in SQL for only the shows on this page.
@@ -145,7 +148,7 @@ public static class SeriesEndpoints
                         var c = counts.GetValueOrDefault(s.Id);
                         return new SeriesListItemDto(
                             s.Id, s.Title, s.Year, s.PosterUrl, s.Status, s.Monitored,
-                            c?.EpisodeCount ?? 0, c?.EpisodeFileCount ?? 0, c?.NextAiring, downloading.GetValueOrDefault(s.Id), s.Network);
+                            c?.EpisodeCount ?? 0, c?.EpisodeFileCount ?? 0, c?.NextAiring, downloading.GetValueOrDefault(s.Id), s.Network, s.ImdbRating, s.RottenTomatoes);
                     }).ToList();
                 }
             }
@@ -154,12 +157,12 @@ public static class SeriesEndpoints
         });
 
         // Matching series ids in display order, for "Select all" and Shift+click range selection across pages.
-        group.MapGet("/ids", async (string? q, string? filter, string? sort, bool? desc,
+        group.MapGet("/ids", async (string? q, string? filter, string? sort, bool? desc, double? minRating,
             HttpContext http, KrakarrDbContext db, TimeProvider time, CancellationToken ct) =>
         {
             var today = Today(time);
             var userId = MediaSubscriptions.GetUserId(http.User);
-            var (filtered, _) = FilterSeries(db, q, filter, userId, today);
+            var (filtered, _) = FilterSeries(db, q, filter, userId, today, minRating);
             var sortKey = sort?.ToLowerInvariant();
             if (sortKey is "episodes" or "nextairing")
             {
@@ -609,16 +612,26 @@ public static class SeriesEndpoints
         public SeriesStatus Status { get; init; }
         public bool Monitored { get; init; }
         public string? Network { get; init; }
+        public double? ImdbRating { get; init; }
+        public int? RottenTomatoes { get; init; }
         public int EpisodeCount { get; init; }
         public int EpisodeFileCount { get; init; }
         public DateOnly? NextAiring { get; init; }
     }
 
     private static (IQueryable<Core.Domain.Series> Query, bool IsFiltered) FilterSeries(
-        KrakarrDbContext db, string? q, string? filter, int? userId, DateOnly today)
+        KrakarrDbContext db, string? q, string? filter, int? userId, DateOnly today, double? minRating = null)
     {
         IQueryable<Core.Domain.Series> query = db.Series.AsNoTracking();
         var isFiltered = false;
+
+        // Minimum IMDb rating (from OMDb): shows without a rating don't match.
+        if (minRating is > 0)
+        {
+            var min = minRating.Value;
+            query = query.Where(s => s.ImdbRating != null && s.ImdbRating >= min);
+            isFiltered = true;
+        }
 
         if (!string.IsNullOrWhiteSpace(q))
         {
@@ -660,6 +673,17 @@ public static class SeriesEndpoints
     private static IOrderedQueryable<Core.Domain.Series> SortSeries(IQueryable<Core.Domain.Series> query, string? sort, bool desc) =>
         sort switch
         {
+            // Scores from OMDb; shows without one always go last.
+            "imdb" => (desc
+                    ? query.OrderBy(s => s.ImdbRating == null ? 1 : 0).ThenByDescending(s => s.ImdbRating).ThenByDescending(s => s.ImdbVotes)
+                    : query.OrderBy(s => s.ImdbRating == null ? 1 : 0).ThenBy(s => s.ImdbRating).ThenBy(s => s.ImdbVotes))
+                .ThenBy(s => s.SortTitle)
+                .ThenBy(s => s.Id),
+            "tomatoes" => (desc
+                    ? query.OrderBy(s => s.RottenTomatoes == null ? 1 : 0).ThenByDescending(s => s.RottenTomatoes)
+                    : query.OrderBy(s => s.RottenTomatoes == null ? 1 : 0).ThenBy(s => s.RottenTomatoes))
+                .ThenBy(s => s.SortTitle)
+                .ThenBy(s => s.Id),
             "year" => (desc
                     ? query.OrderBy(s => s.Year == 0 ? 1 : 0).ThenByDescending(s => s.Year)
                     : query.OrderBy(s => s.Year == 0 ? 1 : 0).ThenBy(s => s.Year))
@@ -694,6 +718,8 @@ public static class SeriesEndpoints
             Status = s.Status,
             Monitored = s.Monitored,
             Network = s.Network,
+            ImdbRating = s.ImdbRating,
+            RottenTomatoes = s.RottenTomatoes,
             EpisodeCount = s.Episodes.Count(e => e.SeasonNumber > 0 && (e.EpisodeFileId != null || (e.Monitored && e.AirDate != null && e.AirDate <= today))),
             EpisodeFileCount = s.Episodes.Count(e => e.SeasonNumber > 0 && e.EpisodeFileId != null),
             NextAiring = s.Episodes.Where(e => e.SeasonNumber > 0 && e.AirDate > today).Min(e => e.AirDate),
@@ -759,7 +785,8 @@ public static class SeriesEndpoints
             Title = s.Title,
             MetadataTitle = s.MetadataTitle.Length > 0 ? s.MetadataTitle : s.Title,
             Year = s.Year,
-            Overview = s.Overview,
+            // The metadata source may have no overview (or none in the metadata language): fall back to OMDb's English plot.
+            Overview = string.IsNullOrWhiteSpace(s.Overview) ? s.OmdbPlot : s.Overview,
             PosterUrl = s.PosterUrl,
             FanartUrl = s.FanartUrl,
             Network = s.Network,
@@ -781,6 +808,7 @@ public static class SeriesEndpoints
                 var eps = all.Where(e => e.SeasonNumber == season.SeasonNumber).ToList();
                 return new SeasonDto(season.SeasonNumber, season.Monitored, eps.Count(e => Counts(e, today)), eps.Count(e => e.EpisodeFileId is not null), eps.Count, Size(eps));
             }).ToList(),
+            Omdb = OmdbInfo.From(s),
         };
     }
 }

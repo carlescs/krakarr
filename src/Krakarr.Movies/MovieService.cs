@@ -98,7 +98,11 @@ public sealed class MovieService(
         try
         {
             var lookup = await tmdb.GetMovieAsync(movie.TmdbId, ct);
-            movie.ImdbId = lookup.ImdbId ?? movie.ImdbId;
+            if (lookup.ImdbId is not null && lookup.ImdbId != movie.ImdbId)
+            {
+                movie.ImdbId = lookup.ImdbId;
+                OmdbInfo.Reset(movie); // scores of the old id; the OMDb task looks the new one up
+            }
             movie.Title = lookup.Title;
             movie.OriginalTitle = lookup.OriginalTitle;
             movie.SortTitle = ReleaseSortTitle(lookup.Title);

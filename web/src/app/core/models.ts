@@ -98,20 +98,25 @@ export interface Movie {
   collectionId?: number | null;
   /** Wanted audio languages for this movie; null = the global default. */
   languages?: string[] | null;
+  /** Scores and facts from OMDb as last stored; null until OMDb has been asked. */
+  omdb?: OmdbInfo | null;
 }
 
 /** Row of the movie grid (GET /movies). */
 export interface MovieListItem {
   id: number; title: string; year: number; posterUrl?: string | null; monitored: boolean; hasFile: boolean;
   quality?: string | null; downloadProgress?: number | null; collectionId?: number | null;
+  imdbRating?: number | null; rottenTomatoes?: number | null;
 }
 /** Summary of one collection section (or "Other movies") matching the current movie list filter. */
 export interface MovieCollectionGroup { key: string; collectionId: number | null; title: string; count: number; downloaded: number; }
 export type MovieFilter = 'all' | 'following' | 'missing' | 'downloading' | 'downloaded' | 'unmonitored';
 export type MovieGrouping = 'none' | 'collection';
-export type MovieSortKey = 'title' | 'year' | 'status';
+export type MovieSortKey = 'title' | 'year' | 'status' | 'imdb' | 'tomatoes';
 export interface MovieListQuery {
   page?: number; pageSize?: number; q?: string; filter?: MovieFilter; sort?: MovieSortKey; desc?: boolean; groupBy?: MovieGrouping;
+  /** Minimum IMDb rating (from OMDb); unrated titles don't match. */
+  minRating?: number;
 }
 /** One page of the movie library list (GET /movies). */
 export interface MovieListPage {
@@ -197,16 +202,21 @@ export interface Series {
   seasons: SeasonInfo[];
   /** Wanted audio languages for this series; null = the global default. */
   languages?: string[] | null;
+  /** Scores and facts from OMDb as last stored; null until OMDb has been asked. */
+  omdb?: OmdbInfo | null;
 }
 /** Row of the series grid (GET /series). */
 export interface SeriesListItem {
   id: number; title: string; year: number; posterUrl?: string | null; status: SeriesStatus; monitored: boolean;
   episodeCount: number; episodeFileCount: number; nextAiring?: string | null; downloadingCount: number; network?: string | null;
+  imdbRating?: number | null; rottenTomatoes?: number | null;
 }
 export type SeriesFilter = 'all' | 'following' | 'missing' | 'continuing' | 'ended' | 'unmonitored';
-export type SeriesSortKey = 'title' | 'year' | 'network' | 'status' | 'episodes' | 'nextAiring';
+export type SeriesSortKey = 'title' | 'year' | 'network' | 'status' | 'episodes' | 'nextAiring' | 'imdb' | 'tomatoes';
 export interface SeriesListQuery {
   page?: number; pageSize?: number; q?: string; filter?: SeriesFilter; sort?: SeriesSortKey; desc?: boolean;
+  /** Minimum IMDb rating (from OMDb); unrated titles don't match. */
+  minRating?: number;
 }
 /** One page of the series library list (GET /series). */
 export interface SeriesListPage {
@@ -284,9 +294,22 @@ export interface MediaManagementSettings {
   seriesFolderFormat: string; seasonFolderFormat: string; episodeFileFormat: string;
 }
 export type SeriesMetadataSource = 'Tmdb' | 'Tvdb';
-/** Scores from OMDb; each is null when the source has none. */
-export interface TitleRatings { imdb: number | null; imdbVotes: number | null; rottenTomatoes: number | null; metacritic: number | null; rottenTomatoesUrl: string | null; }
-export interface MetadataSettings { tmdbApiKey?: string; seriesSource: SeriesMetadataSource; tvdbApiKey?: string; tvdbPin?: string; omdbApiKey?: string; language: string; releaseRegion?: string | null; sceneMapping?: boolean; }
+/** Scores and facts from OMDb (looked up by IMDb id); each is null when OMDb has none. */
+export interface OmdbInfo {
+  imdb: number | null; imdbVotes: number | null; rottenTomatoes: number | null; metacritic: number | null; rottenTomatoesUrl: string | null;
+  /** Content rating ("PG-13", "TV-MA"). */
+  rated?: string | null; awards?: string | null; boxOffice?: string | null; director?: string | null; writer?: string | null;
+  /** English plot; pages show it only when the metadata source has no overview. */
+  plot?: string | null;
+}
+/** Minimum IMDb ratings offered by the library filters. */
+export const MIN_RATINGS = [5, 6, 7, 8] as const;
+export interface MetadataSettings {
+  tmdbApiKey?: string; seriesSource: SeriesMetadataSource; tvdbApiKey?: string; tvdbPin?: string; omdbApiKey?: string;
+  /** OMDb requests the background refresh may make per day; 0 = off. */
+  omdbDailyLimit?: number;
+  language: string; releaseRegion?: string | null; sceneMapping?: boolean;
+}
 /** A library path as Krakarr sees it (from) and as the media server sees it (to). */
 export interface PathMapping { from: string; to: string; }
 export interface JellyfinSettings { url?: string | null; apiKey?: string | null; publicUrl?: string | null; refreshLibrary?: boolean; pathMappings?: PathMapping[]; }

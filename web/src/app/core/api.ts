@@ -10,7 +10,7 @@ import {
   AuthStatus, AutomationSettings, BackupInfo, BackupList, BackupSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
   IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, BestSubtitleMatches, SubtitleCandidate, SubtitleCandidates, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, SubtitleSyncTools, RedundantSubtitlePage, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, SeasonDetails, EpisodeRelease, MediaInfo, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, KeywordLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
-  DashboardStats, TitleRatings, UserAccount, UserRole, JellyfinSettings, EmbySettings, PlexSettings, MediaServerTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, BackgroundTask, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus,
+  DashboardStats, OmdbInfo, UserAccount, UserRole, JellyfinSettings, EmbySettings, PlexSettings, MediaServerTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, BackgroundTask, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus,
   AlternateTitle, AlternateTitleInput, DatabaseDetails, DatabaseInfo, DatabaseTargetRequest, DatabaseTestResult, DatabaseSwitchStaged
 } from './models';
 
@@ -229,7 +229,7 @@ export class Api {
     return this.get<number[]>('movies/ids', query as Record<string, string | number | boolean | null | undefined>);
   }
   /** Collections with library movies matching the movie list's search and filter. */
-  movieCollections(query?: { q?: string; filter?: MovieFilter }) { return this.get<MovieCollectionSummary[]>('movies/collections', query); }
+  movieCollections(query?: { q?: string; filter?: MovieFilter; minRating?: number }) { return this.get<MovieCollectionSummary[]>('movies/collections', query); }
   movieCollection(id: number) { return this.get<MovieCollectionDetails>(`movies/collections/${id}`); }
   /** Movies of the collection that are not in the library (asks TMDB). */
   movieCollectionMissing(id: number) { return this.get<MovieLookup[]>(`movies/collections/${id}/missing`); }
@@ -362,8 +362,8 @@ export class Api {
   /** Shows tagged with every one of the keywords, most popular first. */
   seriesByKeywords(ids: readonly number[], page = 1) { return this.get<DiscoverPage<SeriesLookup>>('series/discover/keywords', { keywords: ids.join(','), page }); }
   person(tmdbId: number) { return this.get<PersonDetails>(`people/${tmdbId}`); }
-  /** IMDb, Rotten Tomatoes and Metacritic scores; null (HTTP 204) when no OMDb key is set or they are unavailable. */
-  ratings(imdbId: string) { return this.get<TitleRatings | null>(`ratings/${encodeURIComponent(imdbId)}`); }
+  /** OMDb scores and facts (IMDb, Rotten Tomatoes, Metacritic, rating, awards…); null (HTTP 204) when no OMDb key is set or OMDb has nothing. */
+  ratings(imdbId: string) { return this.get<OmdbInfo | null>(`ratings/${encodeURIComponent(imdbId)}`); }
   /** Replaces the editable fields; `languages` null = use the global default. */
   /** `title`: undefined keeps the current title, blank restores the metadata title. */
   updateSeries(id: number, monitored: boolean, qualityProfileId: number, seasonFolder: boolean, languages: string[] | null, title?: string) {

@@ -1,6 +1,6 @@
-import { Component, computed, effect, inject, input, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { Api } from '../../core/api';
-import { TitleRatings } from '../../core/models';
+import { OmdbInfo } from '../../core/models';
 
 /** For an `episode`, `tmdbId` is the show's TMDB id (with `season`/`episode`) and `tvdbId`/`imdbId` are the episode's own. */
 export type ExternalLinkKind = 'movie' | 'series' | 'episode' | 'person';
@@ -22,8 +22,13 @@ export class ExternalLinks {
   readonly imdbId = input<string | null | undefined>(null);
   readonly season = input<number | null | undefined>(null);
   readonly episode = input<number | null | undefined>(null);
+  /** OMDb data the page already has (stored on library titles). When set, nothing is fetched. */
+  readonly stored = input<OmdbInfo | null | undefined>(null);
+  /** OMDb data fetched live (titles outside the library, or not looked up yet), so the page can show its facts too. */
+  readonly loaded = output<OmdbInfo>();
 
-  protected readonly ratings = signal<TitleRatings | null>(null);
+  private readonly fetched = signal<OmdbInfo | null>(null);
+  protected readonly ratings = computed(() => this.stored() ?? this.fetched());
 
   protected readonly tmdbUrl = computed(() => {
     const id = this.tmdbId();
@@ -66,15 +71,19 @@ export class ExternalLinks {
     effect(() => {
       const id = this.imdbId();
       const kind = this.kind();
-      this.ratings.set(null);
-      if (id && kind !== 'person') void this.loadRatings(id);
+      const stored = this.stored();
+      untracked(() => this.fetched.set(null));
+      if (id && kind !== 'person' && !stored) void this.loadRatings(id);
     });
   }
 
   private async loadRatings(imdbId: string) {
     try {
       const ratings = await this.api.ratings(imdbId);
-      if (imdbId === this.imdbId()) this.ratings.set(ratings);
+      if (imdbId === this.imdbId() && !this.stored()) {
+        this.fetched.set(ratings);
+        if (ratings) this.loaded.emit(ratings);
+      }
     } catch {
       // Ratings are decoration: no OMDb key, unknown title or OMDb unreachable just shows the plain links.
     }

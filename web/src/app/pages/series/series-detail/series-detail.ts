@@ -28,6 +28,8 @@ import { SubtitleLanguages } from '../../../core/subtitles';
 import { MoreMenu } from '../../../shared/more-menu/more-menu';
 import { SubscribeButton } from '../../../shared/subscribe-button/subscribe-button';
 import { ExternalLinks } from '../../../shared/external-links/external-links';
+import { OmdbFacts } from '../../../shared/omdb-facts/omdb-facts';
+import { OmdbState } from '../../../core/omdb';
 import { EpisodeDetailsDialog } from '../episode-details/episode-details';
 import { DeleteFilesDialog } from '../../../shared/delete-files/delete-files';
 import { MediaDownloads } from '../../../shared/media-downloads/media-downloads';
@@ -60,7 +62,7 @@ export function episodeCodes(episodes: readonly Pick<Episode, 'seasonNumber' | '
 
 @Component({
   selector: 'kr-series-detail',
-  imports: [DeleteFilesDialog, MoreMenu, MediaDownloads, RouterLink, ExternalLinks, EpisodeDetailsDialog, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, AlternateTitles, FormsModule, DatePipe, NgTemplateOutlet, Poster, Overview, Progress, Modal, IndexerProgress, BytesPipe, AgoPipe, SubtitleManager, SortHeader],
+  imports: [DeleteFilesDialog, MoreMenu, MediaDownloads, RouterLink, ExternalLinks, OmdbFacts, EpisodeDetailsDialog, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, AlternateTitles, FormsModule, DatePipe, NgTemplateOutlet, Poster, Overview, Progress, Modal, IndexerProgress, BytesPipe, AgoPipe, SubtitleManager, SortHeader],
   templateUrl: './series-detail.html',
   styleUrl: './series-detail.scss',
 })
@@ -117,6 +119,8 @@ export class SeriesDetailPage implements OnInit {
   protected readonly detailEpisodeId = signal<number | null>(null);
   protected readonly detailEpisode = computed(() => this.episodes().find(e => e.id === this.detailEpisodeId()) ?? null);
   protected readonly series = signal<Series | null>(null);
+  /** Stored OMDb data, or what the external links fetched when the series has none yet. */
+  protected readonly omdb = new OmdbState(() => this.series());
   /** The series' page on Jellyfin, once an episode is downloaded and Jellyfin has scanned it. */
   private readonly jellyfin = new JellyfinLink();
   protected readonly jellyfinUrl = this.jellyfin.url;

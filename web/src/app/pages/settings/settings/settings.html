@@ -385,10 +385,20 @@
           Scene numbering only applies with TheTVDB as the series source, because TheXEM maps TheTVDB's episode order; scene names always help.
         </p>
       </div>
-      <div>
-        <label class="label">OMDb API key (optional)</label>
-        <input class="input font-mono" type="password" autocomplete="off" [(ngModel)]="m.omdbApiKey" />
-        <p class="hint">Free at omdbapi.com. Shows IMDb, Rotten Tomatoes and Metacritic scores on movie and series pages.</p>
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_12rem]">
+        <div>
+          <label class="label">OMDb API key (optional)</label>
+          <input class="input font-mono" type="password" autocomplete="off" [(ngModel)]="m.omdbApiKey" />
+          <p class="hint">
+            Free at omdbapi.com. Adds IMDb, Rotten Tomatoes and Metacritic scores, content ratings, credits, awards and box office to movies
+            and series, and lets you sort and filter the library by score. TMDB/TheTVDB stay the metadata sources; OMDb only adds to them.
+          </p>
+        </div>
+        <div>
+          <label class="label">OMDb requests per day</label>
+          <input class="input" type="number" min="0" max="100000" step="50" [(ngModel)]="m.omdbDailyLimit" placeholder="500" />
+          <p class="hint">Budget for refreshing library scores, spread over hourly runs (each title at most weekly). Free keys allow 1,000 a day. 0 turns it off.</p>
+        </div>
       </div>
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div><label class="label">Language</label><input class="input" [(ngModel)]="m.language" placeholder="en-US" /></div>

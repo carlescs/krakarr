@@ -404,7 +404,11 @@ public sealed class SeriesService(
         s.FanartUrl = info.FanartUrl ?? s.FanartUrl;
         s.Network = info.Network;
         s.Runtime = info.Runtime;
-        s.ImdbId = info.ImdbId ?? s.ImdbId;
+        if (info.ImdbId is not null && info.ImdbId != s.ImdbId)
+        {
+            s.ImdbId = info.ImdbId;
+            OmdbInfo.Reset(s); // scores of the old id; the OMDb task looks the new one up
+        }
         s.FirstAired = info.FirstAired;
         s.Status = info.Status?.ToLowerInvariant() switch
         {

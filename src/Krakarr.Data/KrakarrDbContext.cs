@@ -114,6 +114,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
             e.HasIndex(x => x.PhysicalRelease);
             e.HasOne(x => x.Collection).WithMany().HasForeignKey(x => x.CollectionId).OnDelete(DeleteBehavior.SetNull);
             e.HasIndex(x => x.CollectionId);
+            ConfigureOmdb(e);
         });
 
         b.Entity<MovieCollection>(e => e.HasIndex(x => x.TmdbId).IsUnique());
@@ -132,6 +133,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
             e.HasOne(x => x.QualityProfile).WithMany().HasForeignKey(x => x.QualityProfileId).OnDelete(DeleteBehavior.Restrict);
             e.HasMany(x => x.Seasons).WithOne().HasForeignKey(x => x.SeriesId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Episodes).WithOne().HasForeignKey(x => x.SeriesId).OnDelete(DeleteBehavior.Cascade);
+            ConfigureOmdb(e);
         });
 
         b.Entity<Season>(e => e.HasIndex(x => new { x.SeriesId, x.SeasonNumber }).IsUnique());
@@ -235,5 +237,17 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
             e.HasIndex(x => x.UserId);
             e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
         });
+    }
+
+    /// <summary>Column lengths of the OMDb fields shared by movies and series.</summary>
+    private static void ConfigureOmdb<T>(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<T> e) where T : class, IOmdbFields
+    {
+        e.Property<string?>(nameof(IOmdbFields.RottenTomatoesUrl)).HasMaxLength(Krakarr.Core.Metadata.OmdbInfo.UrlMaxLength);
+        e.Property<string?>(nameof(IOmdbFields.Certification)).HasMaxLength(Krakarr.Core.Metadata.OmdbInfo.RatedMaxLength);
+        e.Property<string?>(nameof(IOmdbFields.Awards)).HasMaxLength(Krakarr.Core.Metadata.OmdbInfo.AwardsMaxLength);
+        e.Property<string?>(nameof(IOmdbFields.BoxOffice)).HasMaxLength(Krakarr.Core.Metadata.OmdbInfo.BoxOfficeMaxLength);
+        e.Property<string?>(nameof(IOmdbFields.Director)).HasMaxLength(Krakarr.Core.Metadata.OmdbInfo.PeopleMaxLength);
+        e.Property<string?>(nameof(IOmdbFields.Writer)).HasMaxLength(Krakarr.Core.Metadata.OmdbInfo.PeopleMaxLength);
+        e.Property<string?>(nameof(IOmdbFields.OmdbPlot)).HasMaxLength(Krakarr.Core.Metadata.OmdbInfo.PlotMaxLength);
     }
 }

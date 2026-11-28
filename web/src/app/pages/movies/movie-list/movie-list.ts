@@ -6,7 +6,7 @@ import { Api, errorMessage } from '../../../core/api';
 import { Auth } from '../../../core/auth';
 import { Events } from '../../../core/events';
 import { Library, MovieQuery } from '../../../core/library';
-import { MovieFilter, MovieGrouping, MovieListItem, MovieSortKey } from '../../../core/models';
+import { MIN_RATINGS, MovieFilter, MovieGrouping, MovieListItem, MovieSortKey } from '../../../core/models';
 import { SEARCH_DEBOUNCE_MS, VirtualRowDataSource } from '../../../core/paged-list';
 import { PagedSelection, ViewMode, storeView, storedView } from '../../../core/selection';
 import { Subscriptions } from '../../../core/subscriptions';
@@ -75,6 +75,9 @@ export class MovieListPage {
   protected readonly query = signal('');
   private readonly committedQuery = signal('');
   protected readonly filter = signal<MovieFilter>('all');
+  /** Minimum IMDb rating (from OMDb); null = any. */
+  protected readonly minRating = signal<number | null>(null);
+  protected readonly minRatings = MIN_RATINGS;
   protected readonly grouping = signal<MovieGrouping>(storedGrouping());
   protected readonly view = signal<ViewMode>(storedView(VIEW_KEY));
   /** Grid selection mode: cards toggle selection instead of opening the movie. The table always has checkboxes. */
@@ -90,6 +93,8 @@ export class MovieListPage {
       title: 'source',
       year: m => m.year || null,
       status: m => this.statusRank(m),
+      imdb: m => m.imdbRating ?? null,
+      tomatoes: m => m.rottenTomatoes ?? null,
     },
     { key: 'title' },
   );
@@ -97,7 +102,10 @@ export class MovieListPage {
   private readonly listQuery = computed<MovieQuery>(() => {
     const s = this.sort.state();
     const q = this.committedQuery().trim();
-    return { q: q || undefined, filter: this.filter(), sort: s.key ?? 'title', desc: s.desc ? true : undefined, groupBy: 'none' };
+    return {
+      q: q || undefined, filter: this.filter(), sort: s.key ?? 'title', desc: s.desc ? true : undefined, groupBy: 'none',
+      minRating: this.minRating() ?? undefined,
+    };
   });
 
   /** Search as sent to the server (debounced), shared with the collection cards. */
