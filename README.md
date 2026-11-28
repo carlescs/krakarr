@@ -412,7 +412,9 @@ admins' notification bell until it is fixed (a dismissed problem comes back if i
   the service when they change, then daily (hourly after a failure); *Check now* validates them again.
 
 The checks run every 5 minutes and right after settings, root folders, indexers or the download client change.
-`GET /api/v1/system/health` returns the same report; `/api/v1/health` stays an anonymous liveness probe.
+`GET /api/v1/system/health` returns the same report; `/api/v1/health` stays an anonymous liveness probe. The Docker
+image's `HEALTHCHECK` calls it through `dotnet /app/Krakarr.Host.dll --healthcheck`, which exits 0 when the instance
+answers on loopback (honouring the port and `KRAKARR__URLBASE`), so the image ships no curl.
 
 **Indexer backoff:** an indexer whose query fails is skipped by searches and RSS syncs for 5 minutes, then 10, 20 and
 so on, doubling up to 24 hours while it keeps failing. Any successful query, a successful *Test*, or editing the
@@ -474,6 +476,20 @@ nothing changes: Krakarr keeps running on the old database and the page shows wh
   password applies at once, and a password change signs out every other session. *Settings → Account → Sign out other
   sessions* does the same without changing the password. Sign-ins also expire 30 days after the password (or passkey)
   was entered.
+- **Hardened container.** The image runs Krakarr as `PUID:PGID`, and `/app` (binaries and web UI) is owned by root and
+  read-only to it; Krakarr writes only to `/config`, `/data` and `/tmp`. So you can lock the container down further
+  (commented out in `docker-compose.yml`):
+  ```yaml
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop: [ALL]
+  cap_add: [CHOWN, SETUID, SETGID]   # the entrypoint chowns /config, then drops to PUID:PGID
+  security_opt:
+    - no-new-privileges:true
+  ```
+  Without `DAC_OVERRIDE` the entrypoint (root) is subject to host file permissions; if it stops with "Permission
+  denied", add `DAC_OVERRIDE` too.
 - **Browser hardening headers.** Every response carries a strict `Content-Security-Policy` (scripts only from Krakarr
   itself, images also from TMDB and TheTVDB), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`,
   `Referrer-Policy: no-referrer` and a restrictive `Permissions-Policy`.

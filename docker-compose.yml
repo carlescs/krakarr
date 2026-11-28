@@ -25,6 +25,16 @@ services:
       # One mount for downloads AND the library so imports can hardlink instead of copy.
       # Inside the container: /data/downloads (torrents) and e.g. /data/media/movies (root folder).
       - /path/to/data:/data
+    # Optional hardening: Krakarr writes only to /config, /data and /tmp, and the entrypoint needs just the capabilities
+    # to chown /config and drop to PUID:PGID. The entrypoint runs as root without DAC_OVERRIDE, so host permissions apply
+    # to it: if it stops with "Permission denied", add DAC_OVERRIDE to cap_add.
+    # read_only: true
+    # tmpfs:
+    #   - /tmp
+    # cap_drop: [ALL]
+    # cap_add: [CHOWN, SETUID, SETGID]
+    # security_opt:
+    #   - no-new-privileges:true
 
 #  Optional: use an existing qBittorrent instead of the built-in client
 #  (Settings → Download client → qBittorrent, URL http://qbittorrent:8080, tag "krakarr").

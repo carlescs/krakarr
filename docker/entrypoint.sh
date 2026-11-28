@@ -6,6 +6,8 @@ PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
 umask "${UMASK:-002}"
 
+# Only /config and /data are handed to PUID. /app stays root-owned and read-only (the Dockerfile checks it): never chown it.
+# Needs only the CHOWN, SETUID and SETGID capabilities, so the container can run with cap_drop: [ALL] plus those three.
 if [ "$(id -u)" = "0" ]; then
     mkdir -p /config /data/downloads
     chown -R "$PUID:$PGID" /config
