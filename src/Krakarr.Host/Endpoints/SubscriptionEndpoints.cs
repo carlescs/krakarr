@@ -1,6 +1,7 @@
 using Krakarr.Core.Domain;
 using Krakarr.Data;
 using Krakarr.Host.Auth;
+using Krakarr.Series;
 using Microsoft.EntityFrameworkCore;
 
 namespace Krakarr.Host.Endpoints;
@@ -96,6 +97,19 @@ public static class SubscriptionEndpoints
             }
 
             return Results.Ok(new BulkResult(toAdd.Count, []));
+        });
+
+        // The caller stops following every finished series (FinishedSeries); other users keep theirs.
+        group.MapPost("/series/unfollow-finished", async (HttpContext http, KrakarrDbContext db, TimeProvider time, CancellationToken ct) =>
+        {
+            if (http.User.GetUserId() is not { } userId)
+                return Results.Problem("Subscriptions belong to user accounts, not the API key.", statusCode: StatusCodes.Status400BadRequest);
+            var today = DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
+            var finished = db.Series.Where(FinishedSeries.Predicate(today)).Select(s => s.Id);
+            var removed = await db.MediaSubscriptions
+                .Where(sub => sub.UserId == userId && sub.SeriesId != null && finished.Contains(sub.SeriesId.Value))
+                .ExecuteDeleteAsync(ct);
+            return Results.Ok(new BulkResult(removed, []));
         });
 
         group.MapGet("/{mediaType}/{id:int}", async (MediaType mediaType, int id, HttpContext http, KrakarrDbContext db, CancellationToken ct) =>

@@ -306,6 +306,10 @@ export class Api {
   subscribers() { return this.get<Subscriber[]>('subscriptions/users'); }
 
   /** Follows or unfollows several library titles at once. */
+  /** The caller stops following every finished series (ended, everything aired downloaded). */
+  unfollowFinishedSeries() { return this.post<BulkResult>('subscriptions/series/unfollow-finished', {}); }
+  /** Admins: stop monitoring every finished series. */
+  unmonitorFinishedSeries() { return this.post<BulkResult>('series/finished/unmonitor', {}); }
   bulkSubscribe(mediaType: MediaType, ids: number[], subscribed: boolean) {
     return this.post<BulkResult>('subscriptions/bulk', { mediaType, ids, subscribed });
   }

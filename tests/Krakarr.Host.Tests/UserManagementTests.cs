@@ -44,6 +44,8 @@ public sealed class RoleAccessTests
     [InlineData("DELETE", "/api/v1/subscriptions/Series/5", UserRole.User)]
     [InlineData("GET", "/api/v1/subscriptions/users", UserRole.Manager)]
     [InlineData("POST", "/api/v1/subscriptions/bulk", UserRole.User)]
+    [InlineData("POST", "/api/v1/subscriptions/series/unfollow-finished", UserRole.User)]
+    [InlineData("POST", "/api/v1/series/finished/unmonitor", UserRole.Admin)]
     [InlineData("PUT", "/api/v1/movies/bulk", UserRole.Manager)]
     [InlineData("POST", "/api/v1/movies/bulk/delete", UserRole.Manager)]
     [InlineData("POST", "/api/v1/series/bulk/search", UserRole.Manager)]

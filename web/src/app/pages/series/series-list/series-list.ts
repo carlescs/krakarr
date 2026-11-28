@@ -1,5 +1,5 @@
 import { ScrollingModule } from '@angular/cdk/scrolling';
-import { DatePipe } from '@angular/common';
+import { DatePipe, NgTemplateOutlet } from '@angular/common';
 import { Component, DestroyRef, ElementRef, Injector, computed, effect, inject, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -39,6 +39,7 @@ interface SeriesGridRow {
     RouterLink,
     FormsModule,
     DatePipe,
+    NgTemplateOutlet,
     Poster,
     Progress,
     PosterGridSkeleton,
@@ -69,6 +70,8 @@ export class SeriesListPage {
   protected readonly view = signal<ViewMode>(storedView(VIEW_KEY));
   /** Grid selection mode: cards toggle selection instead of opening the series. The table always has checkboxes. */
   protected readonly selecting = signal(false);
+  /** A menu action on finished series is running. */
+  protected readonly busy = signal(false);
   protected readonly following = this.subscriptions.seriesIds;
   protected readonly tableRowHeight = TABLE_ROW_HEIGHT;
   protected readonly slots = gridSlots;
@@ -201,6 +204,36 @@ export class SeriesListPage {
         void untracked(() => this.selection.reconcile());
       }
     });
+  }
+
+  /** Stops following every finished series (ended, everything aired downloaded). Other users keep following them. */
+  protected unfollowFinished() {
+    if (!confirm('Unfollow every finished series? A series is finished once it has ended and every monitored episode that has aired is downloaded. Other users keep following them.')) return;
+    return this.runFinished(async () => {
+      const n = await this.subscriptions.unfollowFinishedSeries();
+      this.toasts.success(n ? `Unfollowed ${n} finished series` : 'You follow no finished series');
+    });
+  }
+
+  /** Admins: stops monitoring every finished series. */
+  protected unmonitorFinished() {
+    if (!confirm('Stop monitoring every finished series? A series is finished once it has ended and every monitored episode that has aired is downloaded.')) return;
+    return this.runFinished(async () => {
+      const { affected } = await this.api.unmonitorFinishedSeries();
+      this.toasts.success(affected ? `Stopped monitoring ${affected} finished series` : 'No monitored series is finished');
+      if (affected) await this.cache.reload();
+    });
+  }
+
+  private async runFinished(action: () => Promise<void>) {
+    this.busy.set(true);
+    try {
+      await action();
+    } catch (e) {
+      this.toasts.error(errorMessage(e));
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   protected seriesAt(index: number): SeriesListItem | undefined {

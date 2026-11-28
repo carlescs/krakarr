@@ -1,7 +1,7 @@
 import { CdkVirtualScrollViewport } from '@angular/cdk/scrolling';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SeriesListItem, SeriesListPage as SeriesPageDto, SeriesListQuery, UserRole } from '../../../core/models';
 import { SEARCH_DEBOUNCE_MS } from '../../../core/paged-list';
 import { button, mockApi, settle, setupTest, text, type } from '../../../../testing/test-setup';
@@ -42,7 +42,7 @@ function queryShows(list: SeriesListItem[], q: SeriesListQuery = {}): SeriesList
   return result;
 }
 
-async function render(list: SeriesListItem[], role: UserRole = 'Admin') {
+async function render(list: SeriesListItem[], role: UserRole = 'Admin', extra: Record<string, unknown> = {}) {
   const api = setupTest({
     role,
     providers: [{ provide: SEARCH_DEBOUNCE_MS, useValue: 0 }],
@@ -61,6 +61,7 @@ async function render(list: SeriesListItem[], role: UserRole = 'Admin') {
         };
       },
       seriesIds: async (q: Omit<SeriesListQuery, 'page' | 'pageSize'> = {}) => queryShows(list, q).map(s => s.id),
+      ...extra,
     }),
   });
   const fixture = TestBed.createComponent(SeriesListPage);
@@ -145,5 +146,34 @@ describe('SeriesListPage', () => {
     const user = await render([], 'User');
     expect(user.el.querySelector('a[href="/discover/search?type=series"]')?.textContent).toBe('Search & request');
     expect(user.el.querySelector('a[href="/discover"]')).not.toBeNull();
+  });
+
+  it('lets admins unmonitor and everyone unfollow finished series from the menu', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const finished = {
+      unmonitorFinishedSeries: async () => ({ affected: 2, errors: [] }),
+      unfollowFinishedSeries: async () => ({ affected: 1, errors: [] }),
+      subscriptions: async () => [],
+    };
+    const openMenu = async (el: HTMLElement, fixture: Parameters<typeof settle>[0]) => {
+      el.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!.click();
+      await settle(fixture);
+    };
+
+    const admin = await render(shows, 'Admin', finished);
+    await openMenu(admin.el, admin.fixture);
+    button(admin.el, 'Unmonitor finished series').click();
+    await settle(admin.fixture);
+    expect(admin.api.unmonitorFinishedSeries).toHaveBeenCalled();
+
+    TestBed.resetTestingModule();
+    const user = await render(shows, 'User', finished);
+    await openMenu(user.el, user.fixture);
+    expect(text(user.el)).not.toContain('Unmonitor finished series');
+    button(user.el, 'Unfollow finished series').click();
+    await settle(user.fixture);
+    expect(user.api.unfollowFinishedSeries).toHaveBeenCalled();
+    expect(confirmSpy).toHaveBeenCalledTimes(2);
+    confirmSpy.mockRestore();
   });
 });

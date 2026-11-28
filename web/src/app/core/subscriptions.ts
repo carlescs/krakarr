@@ -36,6 +36,13 @@ export class Subscriptions {
     if (this.list() !== null) void this.refresh();
   }
 
+  /** Stops following every finished series. Returns how many were unfollowed. */
+  async unfollowFinishedSeries(): Promise<number> {
+    const result = await this.api.unfollowFinishedSeries();
+    await this.refresh();
+    return result.affected;
+  }
+
   /** Follows or unfollows several titles at once. Returns how many changed. */
   async setMany(mediaType: MediaType, ids: number[], subscribed: boolean): Promise<number> {
     const result = await this.api.bulkSubscribe(mediaType, ids, subscribed);
