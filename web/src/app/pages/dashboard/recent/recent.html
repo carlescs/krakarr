@@ -2,7 +2,7 @@
   <div class="flex items-center justify-between gap-3 border-b border-surface-700 px-4 py-2.5 sm:px-5">
     <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-400">Recently</h2>
     <div class="inline-flex rounded-lg border border-surface-700 bg-surface-900 p-0.5" role="tablist" aria-label="Recently">
-      @for (t of tabs; track t.id) {
+      @for (t of tabs(); track t.id) {
         <button class="rounded-md px-3 py-1 text-xs font-medium transition pointer-coarse:min-h-9"
                 [class]="tab() === t.id ? 'bg-surface-700 text-white' : 'text-slate-400 hover:text-slate-200'"
                 role="tab" [attr.aria-selected]="tab() === t.id" (click)="selectTab(t.id)">{{ t.label }}</button>
@@ -11,7 +11,7 @@
   </div>
   <div class="px-4 py-4 sm:px-5" role="tabpanel">
     @if (pages().length === 0) {
-      <p class="text-sm text-slate-500">{{ tab() === 'imported' ? 'Nothing imported yet.' : 'Nothing in the library yet.' }}</p>
+      <p class="text-sm text-slate-500">{{ tab() === 'imported' ? 'Nothing imported yet.' : tab() === 'added' ? 'Nothing in the library yet.' : 'Nothing from the library played yet.' }}</p>
     } @else {
       <!-- Pages sit side by side; the track slides to the current one and follows the pointer during a swipe.
            Native drag of the links and poster images is blocked, or a mouse drag would pick up the image instead. -->
@@ -27,11 +27,11 @@
                 aria-roledescription="slide" [attr.aria-label]="'Page ' + (i + 1) + ' of ' + pages().length">
               @for (r of p; track r.mediaType + r.id) {
                 <li>
-                  <a [routerLink]="link(r.mediaType, r.id)" class="group block" [title]="r.title + ' (' + r.year + ')'">
+                  <a [routerLink]="link(r.mediaType, r.id)" class="group block" [title]="tab() === 'played' ? playedTitle(r) : r.title + ' (' + r.year + ')'">
                     <kr-poster [url]="r.posterUrl" [title]="r.title" />
                     <div class="mt-1 truncate text-xs text-slate-300 group-hover:text-accent-300">{{ r.title }}</div>
                     <div class="text-[11px] text-slate-500">
-                      @if (tab() === 'added') {<span>{{ r.mediaType }} · </span>}<span class="whitespace-nowrap">{{ r.date | ago }}</span>
+                      @if (tab() === 'added') {<span>{{ r.mediaType }} · </span>}@if (tab() === 'played' && episode(r); as code) {<span>{{ code }} · </span>}<span class="whitespace-nowrap">{{ r.date | ago }}</span>
                     </div>
                   </a>
                 </li>

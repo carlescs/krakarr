@@ -269,8 +269,8 @@
       </div>
     </section>
 
-    <!-- Recently imported or added, one tab each -->
-    <kr-recent [imported]="s.recentlyImported" [added]="s.recentlyAdded" />
+    <!-- Recently imported, added or played (when a media server reports play status), one tab each -->
+    <kr-recent [imported]="s.recentlyImported" [added]="s.recentlyAdded" [played]="played()" />
   </div>
 } @else if (!error()) {
   <p class="text-sm text-slate-500">Loading…</p>

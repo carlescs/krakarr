@@ -10,7 +10,7 @@ import {
   AuthStatus, AutomationSettings, BackupInfo, BackupList, BackupSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
   IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, BestSubtitleMatches, SubtitleCandidate, SubtitleCandidates, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, SubtitleSyncTools, RedundantSubtitlePage, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, SeasonDetails, EpisodeRelease, MediaInfo, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, KeywordLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
-  DashboardStats, OmdbInfo, UserAccount, UserRole, JellyfinSettings, EmbySettings, PlexSettings, MediaServerTestResult, MediaServerUser, PlayState, SeriesPlayStatus, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, BackgroundTask, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus,
+  DashboardStats, OmdbInfo, UserAccount, UserRole, JellyfinSettings, EmbySettings, PlexSettings, MediaServerTestResult, MediaServerUser, PlayState, RecentlyPlayed, SeriesPlayStatus, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, BackgroundTask, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus,
   AlternateTitle, AlternateTitleInput, DatabaseDetails, DatabaseInfo, DatabaseTargetRequest, DatabaseTestResult, DatabaseSwitchStaged
 } from './models';
 
@@ -131,6 +131,8 @@ export class Api {
   commands() { return this.get<CommandInfo[]>('system/commands'); }
   tasks() { return this.get<ScheduledTaskInfo[]>('system/tasks'); }
   dashboard() { return this.get<DashboardStats>('dashboard'); }
+  /** What was played last on the media servers set up to report play status. */
+  recentlyPlayed() { return this.get<RecentlyPlayed>('dashboard/recently-played'); }
   runTask(id: string) { return this.post<void>(`system/tasks/${encodeURIComponent(id)}/run`); }
   health() { return this.get<HealthReport>('system/health'); }
   /** Runs every health check now (API keys are validated again) and returns the new report. */

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Xml;
 using Krakarr.Core.Configuration;
+using Krakarr.Core.Domain;
 using Krakarr.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -34,6 +35,16 @@ public sealed record EpisodePlayState(int EpisodeId, bool Played, double? Progre
 public sealed record SeriesPlayStatus(string Server, int Watched, int Total, List<EpisodePlayState> Episodes);
 
 /// <summary>
+/// A library title played on a media server. For a series, <see cref="SeasonNumber"/> and <see cref="EpisodeNumber"/>
+/// are the last episode played. <see cref="Finished"/> is false while it was only played part-way.
+/// </summary>
+public sealed record RecentlyPlayedItem(MediaType MediaType, int Id, string Title, int Year, string? PosterUrl, DateTimeOffset Date,
+    string Server, int? SeasonNumber, int? EpisodeNumber, bool Finished);
+
+/// <summary>What was played last; <see cref="Enabled"/> is false when no media server is set up to report it.</summary>
+public sealed record RecentlyPlayed(bool Enabled, IReadOnlyList<RecentlyPlayedItem> Items);
+
+/// <summary>
 /// Reads watched state and progress from the media servers set up for it: Jellyfin and Emby for the chosen user
 /// (<see cref="JellyfinSettings.PlayStatusUserId"/>), Plex for the token owner (<see cref="PlexSettings.PlayStatus"/>).
 /// Servers are asked in parallel; one that fails or doesn't have the title is just left out.
@@ -45,10 +56,77 @@ public sealed class PlayStatusService(
     PlexClient plex,
     ILogger<PlayStatusService> logger)
 {
+    /// <summary>Plays read from each server: room for a few episodes of the same show before it fills the list.</summary>
+    internal const int RecentPlaysPerServer = 60;
+
     private sealed record Source(
         string Name,
         Func<JellyfinLookup, CancellationToken, Task<JellyfinItem?>> Find,
-        Func<JellyfinItem, CancellationToken, Task<IReadOnlyList<JellyfinItem>>> Episodes);
+        Func<JellyfinItem, CancellationToken, Task<IReadOnlyList<JellyfinItem>>> Episodes,
+        Func<int, CancellationToken, Task<IReadOnlyList<RecentPlay>>> Recent);
+
+    /// <summary>
+    /// The library titles played last on any server set up to report play status, newest first and one entry per title
+    /// (a series shows its latest episode). Plays of titles not in the library are left out.
+    /// </summary>
+    public async Task<RecentlyPlayed> RecentlyPlayedAsync(int limit, CancellationToken ct)
+    {
+        var sources = await SourcesAsync(ct);
+        if (sources.Count == 0) return new(false, []);
+
+        var perServer = await Task.WhenAll(sources.Select(source => TryAsync(source.Name, "recently played", async () =>
+            (await source.Recent(RecentPlaysPerServer, ct)).Select(p => (Server: source.Name, Play: p)).ToList(), ct)));
+        var plays = perServer.OfType<List<(string Server, RecentPlay Play)>>().SelectMany(p => p).OrderByDescending(p => p.Play.Played).ToList();
+        if (plays.Count == 0) return new(true, []);
+
+        // Match by provider id: one query per kind, bounded by the plays read.
+        var movieTmdb = Ids(plays, JellyfinItemKind.Movie, "Tmdb").Select(ParseInt).OfType<int>().ToList();
+        var movieImdb = Ids(plays, JellyfinItemKind.Movie, "Imdb").ToList();
+        var seriesTvdb = Ids(plays, JellyfinItemKind.Series, "Tvdb").Select(ParseInt).OfType<int>().ToList();
+        var seriesTmdb = Ids(plays, JellyfinItemKind.Series, "Tmdb").Select(ParseInt).OfType<int>().ToList();
+        var seriesImdb = Ids(plays, JellyfinItemKind.Series, "Imdb").ToList();
+
+        var movies = movieTmdb.Count + movieImdb.Count == 0 ? [] : await db.Movies.AsNoTracking()
+            .Where(m => movieTmdb.Contains(m.TmdbId) || (m.ImdbId != null && movieImdb.Contains(m.ImdbId)))
+            .Select(m => new Title(m.Id, m.Title, m.Year, m.PosterUrl, m.TmdbId, null, m.ImdbId))
+            .ToListAsync(ct);
+        var shows = seriesTvdb.Count + seriesTmdb.Count + seriesImdb.Count == 0 ? [] : await db.Series.AsNoTracking()
+            .Where(s => (s.TvdbId != null && seriesTvdb.Contains(s.TvdbId.Value)) || (s.TmdbId != null && seriesTmdb.Contains(s.TmdbId.Value))
+                || (s.ImdbId != null && seriesImdb.Contains(s.ImdbId)))
+            .Select(s => new Title(s.Id, s.Title, s.Year, s.PosterUrl, s.TmdbId, s.TvdbId, s.ImdbId))
+            .ToListAsync(ct);
+
+        var result = new List<RecentlyPlayedItem>(limit);
+        var seen = new HashSet<(MediaType, int)>();
+        foreach (var (server, play) in plays)
+        {
+            var movie = play.Kind == JellyfinItemKind.Movie;
+            if ((movie ? Find(movies, play) : Find(shows, play)) is not { } title) continue;
+            var type = movie ? MediaType.Movie : MediaType.Series;
+            if (!seen.Add((type, title.Id))) continue;
+            result.Add(new(type, title.Id, title.Name, title.Year, title.PosterUrl, play.Played, server, play.SeasonNumber, play.EpisodeNumber, play.Finished));
+            if (result.Count >= limit) break;
+        }
+        return new(true, result);
+    }
+
+    private sealed record Title(int Id, string Name, int Year, string? PosterUrl, int? TmdbId, int? TvdbId, string? ImdbId);
+
+    private static Title? Find(List<Title> titles, RecentPlay play) =>
+        titles.FirstOrDefault(t => SameId(play, "Tvdb", t.TvdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+        ?? titles.FirstOrDefault(t => SameId(play, "Tmdb", t.TmdbId?.ToString(System.Globalization.CultureInfo.InvariantCulture)))
+        ?? titles.FirstOrDefault(t => SameId(play, "Imdb", t.ImdbId));
+
+    private static bool SameId(RecentPlay play, string provider, string? ours) =>
+        !string.IsNullOrEmpty(ours) && ProviderId(play, provider) is { } theirs && string.Equals(theirs, ours, StringComparison.OrdinalIgnoreCase);
+
+    private static string? ProviderId(RecentPlay play, string provider) =>
+        play.ProviderIds.FirstOrDefault(p => string.Equals(p.Key, provider, StringComparison.OrdinalIgnoreCase)).Value is { Length: > 0 } v ? v.Trim() : null;
+
+    private static IEnumerable<string> Ids(List<(string Server, RecentPlay Play)> plays, JellyfinItemKind kind, string provider) =>
+        plays.Where(p => p.Play.Kind == kind).Select(p => ProviderId(p.Play, provider)).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase);
+
+    private static int? ParseInt(string s) => int.TryParse(s, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
 
     /// <summary>The movie's play state on each server that has it; null when the movie doesn't exist.</summary>
     public async Task<IReadOnlyList<PlayState>?> MovieAsync(int id, CancellationToken ct)
@@ -116,12 +194,14 @@ public sealed class PlayStatusService(
             sources.Add(MediaBrowser("Emby", e, eUser));
         var plexSettings = await settings.GetAsync<PlexSettings>(ct);
         if (plexSettings is { IsConfigured: true, PlayStatus: true })
-            sources.Add(new("Plex", (lookup, c) => plex.FindItemAsync(plexSettings, lookup, c), async (show, c) => await plex.EpisodesAsync(plexSettings, show.Id, c)));
+            sources.Add(new("Plex", (lookup, c) => plex.FindItemAsync(plexSettings, lookup, c), async (show, c) => await plex.EpisodesAsync(plexSettings, show.Id, c),
+                (limit, c) => plex.RecentlyPlayedAsync(plexSettings, limit, c)));
         return sources;
     }
 
     private Source MediaBrowser(string name, MediaBrowserServer server, string userId) =>
-        new(name, (lookup, c) => mediaBrowser.FindUserItemAsync(server, lookup, userId, c), (show, c) => mediaBrowser.EpisodesAsync(server, show.Id, userId, c));
+        new(name, (lookup, c) => mediaBrowser.FindUserItemAsync(server, lookup, userId, c), (show, c) => mediaBrowser.EpisodesAsync(server, show.Id, userId, c),
+            (limit, c) => mediaBrowser.RecentlyPlayedAsync(server, userId, limit, c));
 
     private static string? Trimmed(string? s) => string.IsNullOrWhiteSpace(s) ? null : s.Trim();
 

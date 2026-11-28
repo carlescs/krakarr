@@ -563,8 +563,16 @@ export interface DashboardStats {
   recentlyAdded: DashboardRecent[];
 }
 
-/** A movie or series on the dashboard, with the date it was imported or added. */
-export interface DashboardRecent { mediaType: MediaType; id: number; title: string; year: number; posterUrl?: string; date: string }
+/**
+ * A movie or series on the dashboard, with the date it was imported, added or played. Played entries also name the
+ * media server, the last episode played (series) and whether it was finished.
+ */
+export interface DashboardRecent {
+  mediaType: MediaType; id: number; title: string; year: number; posterUrl?: string | null; date: string;
+  server?: string; seasonNumber?: number | null; episodeNumber?: number | null; finished?: boolean;
+}
+/** What was played last on the media servers; `enabled` is false when none is set up to report play status. */
+export interface RecentlyPlayed { enabled: boolean; items: DashboardRecent[] }
 
 /** Where an alternate title comes from: the metadata source, the user, or TheXEM scene names. */
 export type AlternateTitleSource = 'Metadata' | 'User' | 'Scene';
