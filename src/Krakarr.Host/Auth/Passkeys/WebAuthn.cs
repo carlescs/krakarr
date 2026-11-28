@@ -191,14 +191,16 @@ public static class WebAuthn
     }
 
     /// <summary>
-    /// The origin must be on the RP id's host (or a subdomain), over HTTPS, or plain HTTP for localhost, which browsers
-    /// treat as secure. Its port and scheme can differ from the request's (TLS often terminates at a reverse proxy).
+    /// The origin must be the RP id's host itself, over HTTPS, or plain HTTP for localhost, which browsers treat as
+    /// secure. Subdomains are refused: browsers let any subdomain ask for a parent domain's passkeys, so accepting them
+    /// would let another app on a sibling subdomain relay a sign-in. The port and scheme can differ from the request's
+    /// (TLS often terminates at a reverse proxy).
     /// </summary>
     public static bool IsValidOrigin(string? origin, string rpId)
     {
         if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri)) return false;
         var host = uri.Host.ToLowerInvariant();
-        if (host != rpId && !host.EndsWith("." + rpId, StringComparison.Ordinal)) return false;
+        if (host != rpId) return false;
         return uri.Scheme == Uri.UriSchemeHttps
             || (uri.Scheme == Uri.UriSchemeHttp && (host == "localhost" || host.EndsWith(".localhost", StringComparison.Ordinal)));
     }

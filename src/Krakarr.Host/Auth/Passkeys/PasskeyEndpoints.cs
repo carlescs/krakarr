@@ -53,7 +53,7 @@ public static class PasskeyEndpoints
         anonymous.MapPost("/login/options", (HttpContext http, PasskeyChallenges challenges) =>
         {
             if (RpId(http) is not { } rpId) return NoRpId();
-            if (challenges.Create(null, rpId) is not { } challenge) return Busy();
+            var challenge = challenges.CreateForSignIn(http.Connection.RemoteIpAddress, rpId);
 
             // No allowCredentials: the passkeys are discoverable, so the browser lists the accounts it holds for us.
             return Results.Ok(new { challenge, rpId, timeout = TimeoutMs, userVerification = "required" });
@@ -134,7 +134,7 @@ public static class PasskeyEndpoints
                 .Select(p => new { p.CredentialId, p.Transports })
                 .ToListAsync(ct);
             if (existing.Count >= MaxPasskeysPerUser) return TooMany();
-            if (challenges.Create(user.Id, rpId) is not { } challenge) return Busy();
+            var challenge = challenges.CreateForRegistration(user.Id, rpId);
 
             return Results.Ok(new
             {
@@ -250,9 +250,6 @@ public static class PasskeyEndpoints
     private static IResult NoRpId() => Results.Problem(
         "Passkeys need Krakarr to be opened through a domain name (not an IP address) over HTTPS, or on localhost.",
         statusCode: StatusCodes.Status400BadRequest);
-
-    private static IResult Busy() => Results.Problem("Too many passkey requests are pending. Try again in a few minutes.",
-        statusCode: StatusCodes.Status503ServiceUnavailable);
 
     private static IResult TooMany() => Results.Problem($"You can have at most {MaxPasskeysPerUser} passkeys. Remove one first.",
         statusCode: StatusCodes.Status409Conflict);

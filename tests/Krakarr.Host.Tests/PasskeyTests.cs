@@ -13,7 +13,7 @@ public sealed class WebAuthnTests
     [Theory]
     [InlineData("https://krakarr.example.com", true)]
     [InlineData("https://krakarr.example.com:8443", true)]
-    [InlineData("https://sub.krakarr.example.com", true)]
+    [InlineData("https://sub.krakarr.example.com", false)]
     [InlineData("http://krakarr.example.com", false)]
     [InlineData("https://evil-krakarr.example.com", false)]
     [InlineData("https://krakarr.example.com.evil.net", false)]
