@@ -21,6 +21,7 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
     public DbSet<SettingEntry> Settings => Set<SettingEntry>();
     public DbSet<RootFolder> RootFolders => Set<RootFolder>();
     public DbSet<QualityProfile> QualityProfiles => Set<QualityProfile>();
+    public DbSet<CustomFormat> CustomFormats => Set<CustomFormat>();
     public DbSet<Indexer> Indexers => Set<Indexer>();
     public DbSet<Movie> Movies => Set<Movie>();
     public DbSet<MovieFile> MovieFiles => Set<MovieFile>();
@@ -64,6 +65,15 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
         }
     }
 
+    private static ValueConverter<List<T>, string> JsonListConverter<T>() => new(
+        v => JsonSerializer.Serialize(v, JsonColumn),
+        v => JsonSerializer.Deserialize<List<T>>(v, JsonColumn) ?? new List<T>());
+
+    private static ValueComparer<List<T>> JsonListComparer<T>() => new(
+        (a, b) => (a ?? new List<T>()).SequenceEqual(b ?? new List<T>()),
+        v => v.Aggregate(0, (h, x) => HashCode.Combine(h, x!.GetHashCode())),
+        v => v.ToList());
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         b.Entity<User>(e =>
@@ -92,6 +102,18 @@ public class KrakarrDbContext(DbContextOptions<KrakarrDbContext> options) : DbCo
         b.Entity<RootFolder>(e => e.HasIndex(x => x.Path).IsUnique());
 
         b.Entity<Indexer>(e => e.HasIndex(x => x.Name).IsUnique());
+
+        // Stored as JSON text columns: read as a whole, never queried into.
+        b.Entity<QualityProfile>(e => e.Property(x => x.FormatScores)
+            .HasConversion(JsonListConverter<ProfileFormatScore>(), JsonListComparer<ProfileFormatScore>())
+            .HasDefaultValue(new List<ProfileFormatScore>()));
+
+        b.Entity<CustomFormat>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(100);
+            e.HasIndex(x => x.Name).IsUnique();
+            e.Property(x => x.Specifications).HasConversion(JsonListConverter<CustomFormatSpecification>(), JsonListComparer<CustomFormatSpecification>());
+        });
 
         b.Entity<Movie>(e =>
         {

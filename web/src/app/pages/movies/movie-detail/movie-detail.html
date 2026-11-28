@@ -166,6 +166,7 @@
                 <th class="max-sm:hidden" krSort="peers" [krSortBy]="releaseSort">Peers</th>
                 <th class="max-sm:hidden" krSort="quality" [krSortBy]="releaseSort">Quality</th>
                 <th class="max-sm:hidden" krSort="language" [krSortBy]="releaseSort">Language</th>
+                <th class="max-sm:hidden" krSort="score" [krSortBy]="releaseSort" title="Custom format score">Score</th>
                 <th></th>
               </tr>
             </thead>
@@ -174,6 +175,12 @@
                 <tr [class.opacity-60]="!r.approved">
                   <td class="w-full max-w-0">
                     <div class="break-all sm:truncate sm:break-normal" [title]="r.release.title">{{ r.release.title }}</div>
+                    @if (r.customFormats?.length) {
+                      <div class="mt-1 flex flex-wrap gap-1" data-formats>
+                        @for (f of r.customFormats; track f) { <span class="badge bg-accent-500/15 text-accent-300">{{ f }}</span> }
+                        <span class="badge sm:hidden" [class]="scoreClass(r.customFormatScore)">{{ r.customFormatScore > 0 ? '+' : '' }}{{ r.customFormatScore }}</span>
+                      </div>
+                    }
                     <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-400 sm:hidden">
                       <span class="badge bg-surface-700 text-slate-200">{{ r.quality }}</span>
                       <span class="badge bg-surface-700 text-slate-300">{{ languages.describe(r.languages) }}</span>
@@ -188,6 +195,7 @@
                   <td class="whitespace-nowrap max-sm:hidden"><span class="text-emerald-400">{{ r.release.seeders ?? '?' }}</span> / {{ r.release.peers ?? '?' }}</td>
                   <td class="max-sm:hidden"><span class="badge bg-surface-700 text-slate-200">{{ r.quality }}</span></td>
                   <td class="whitespace-nowrap text-slate-300 max-sm:hidden">{{ languages.describe(r.languages) }}</td>
+                  <td class="whitespace-nowrap max-sm:hidden" [class]="scoreClass(r.customFormatScore)" data-score>{{ r.customFormatScore ?? 0 }}</td>
                   <td class="text-right">
                     <button class="btn-sm" [class]="r.approved ? 'btn-primary' : 'btn-secondary'" (click)="grab(r)" [disabled]="grabbing() === r.release.guid">
                       {{ grabbing() === r.release.guid ? '…' : 'Grab' }}

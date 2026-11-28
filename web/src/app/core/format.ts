@@ -52,3 +52,8 @@ export class DurationPipe implements PipeTransform {
 export class AgoPipe implements PipeTransform {
   transform(value: string | null | undefined) { return relativeTime(value); }
 }
+
+/** Text colour for a custom format score: positive scores stand out, negative ones warn, zero stays muted. */
+export function scoreClass(score: number | null | undefined): string {
+  return !score ? 'text-slate-400' : score > 0 ? 'text-emerald-400' : 'text-rose-300';
+}

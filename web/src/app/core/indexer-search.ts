@@ -4,11 +4,12 @@ import { IndexerQueryStatus, ReleaseInfo, SearchStreamEvent } from './models';
 /** Starts a streamed search: calls `onEvent` for each line and resolves when the stream ends. */
 export type SearchStarter<T> = (onEvent: (e: SearchStreamEvent<T>) => void, signal: AbortSignal) => Promise<void>;
 
-/** Interim order while indexers are still answering: approved first, then better quality, then more seeders. */
-export function byApprovalQualitySeeders(a: { approved?: boolean; qualityWeight?: number; release: ReleaseInfo },
-  b: { approved?: boolean; qualityWeight?: number; release: ReleaseInfo }): number {
+/** Interim order while indexers are still answering: approved first, then better quality, custom format score, then more seeders. */
+export function byApprovalQualitySeeders(a: { approved?: boolean; qualityWeight?: number; customFormatScore?: number; release: ReleaseInfo },
+  b: { approved?: boolean; qualityWeight?: number; customFormatScore?: number; release: ReleaseInfo }): number {
   return Number(b.approved ?? true) - Number(a.approved ?? true)
     || (b.qualityWeight ?? 0) - (a.qualityWeight ?? 0)
+    || (b.customFormatScore ?? 0) - (a.customFormatScore ?? 0)
     || (b.release.seeders ?? 0) - (a.release.seeders ?? 0);
 }
 

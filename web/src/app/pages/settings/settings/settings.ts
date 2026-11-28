@@ -7,7 +7,7 @@ import { BytesPipe } from '../../../core/format';
 import { Events } from '../../../core/events';
 import {
   AutomationSettings, DirectoryListing, Language, SubtitleSettings, SubtitleSyncTools, DownloadClientKind, DownloadClientSettings, DownloadClientTestResult, GeneralSettings, MediaManagementSettings, MetadataSettings, OtlpProtocol, Quality,
-  QualityProfile, RootFolder, ScheduledTaskInfo, SystemStatus, TelemetrySettings, TelemetryStatus,
+  CustomFormat, QualityProfile, RootFolder, ScheduledTaskInfo, SystemStatus, TelemetrySettings, TelemetryStatus,
 } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
 import { Modal } from '../../../shared/modal/modal';
@@ -23,6 +23,7 @@ import { HealthSettings } from '../health/health';
 import { BackupSettingsPanel } from '../backups/backups';
 import { DatabaseSettings } from '../database/database';
 import { MediaServerSettings } from '../media-servers/media-servers';
+import { CustomFormats } from '../custom-formats/custom-formats';
 
 interface TokenDoc { token: string; description: string; example: string; }
 
@@ -86,11 +87,11 @@ export function buildName(format: string, values: Record<string, string>): strin
   return result.trim().replace(/\.+$/, '').replace(/\s{2,}/g, ' ').trim();
 }
 
-type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'media-servers' | 'telemetry' | 'health' | 'tasks' | 'backups' | 'database' | 'users' | 'general' | 'account';
+type Tab = 'media' | 'profiles' | 'formats' | 'downloads' | 'subtitles' | 'metadata' | 'media-servers' | 'telemetry' | 'health' | 'tasks' | 'backups' | 'database' | 'users' | 'general' | 'account';
 
 @Component({
   selector: 'kr-settings',
-  imports: [RouterLink, LanguagePicker, FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings, HealthSettings, BackupSettingsPanel, DatabaseSettings, MediaServerSettings, SortHeader],
+  imports: [RouterLink, LanguagePicker, FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings, HealthSettings, BackupSettingsPanel, DatabaseSettings, MediaServerSettings, SortHeader, CustomFormats],
   templateUrl: './settings.html',
   styleUrl: './settings.scss',
 })
@@ -106,6 +107,7 @@ export class SettingsPage implements OnInit {
   private readonly adminTabs: { id: Tab; label: string }[] = [
     { id: 'media', label: 'Media management' },
     { id: 'profiles', label: 'Quality profiles' },
+    { id: 'formats', label: 'Custom formats' },
     { id: 'downloads', label: 'Download client' },
     { id: 'subtitles', label: 'Subtitles' },
     { id: 'metadata', label: 'Metadata' },
@@ -134,6 +136,8 @@ export class SettingsPage implements OnInit {
   protected readonly general = signal<GeneralSettings | null>(null);
   protected readonly status = signal<SystemStatus | null>(null);
   protected readonly profileForm = signal<QualityProfile | null>(null);
+  /** Custom formats the profile editor scores. */
+  protected readonly customFormats = signal<CustomFormat[]>([]);
   protected readonly browser = signal<DirectoryListing | null>(null);
   protected readonly clientOptions: { id: DownloadClientKind; label: string; description: string }[] = [
     { id: 'Embedded', label: 'Built-in', description: 'Krakarr downloads torrents itself. Nothing else to run.' },
@@ -204,6 +208,7 @@ export class SettingsPage implements OnInit {
     const tick = setInterval(() => this.now.set(Date.now()), 15_000);
     this.destroyRef.onDestroy(() => clearInterval(tick));
     this.api.tasks().then(t => this.tasks.set(t), () => {});
+    this.api.customFormats().then(f => this.customFormats.set(f), () => {});
     const [roots, profiles, qualities, media, downloads, automation, metadata, general, status] = await Promise.all([
       this.api.rootFolders(), this.api.qualityProfiles(), this.api.qualities(), this.api.settings('media'),
       this.api.settings('downloads'), this.api.settings('automation'), this.api.settings('metadata'),
@@ -390,7 +395,17 @@ export class SettingsPage implements OnInit {
   editProfile(p: QualityProfile | null) {
     this.profileForm.set(p ? structuredClone(p) : {
       id: 0, name: '', allowedQualityIds: [], cutoffQualityId: 0, upgradeAllowed: true, minSizeMb: 0, maxSizeMb: 0,
+      formatScores: [], minFormatScore: 0, cutoffFormatScore: 0,
     });
+  }
+
+  protected formatScore(p: QualityProfile, formatId: number) {
+    return p.formatScores?.find(s => s.formatId === formatId)?.score ?? 0;
+  }
+
+  setFormatScore(p: QualityProfile, formatId: number, score: number | null) {
+    const others = (p.formatScores ?? []).filter(s => s.formatId !== formatId);
+    p.formatScores = score ? [...others, { formatId, score: Math.trunc(score) }] : others;
   }
 
   toggleQuality(p: QualityProfile, id: number) {

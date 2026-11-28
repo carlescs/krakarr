@@ -8,6 +8,7 @@ using Krakarr.Core.Push;
 using Krakarr.Core.Telemetry;
 using Krakarr.Data;
 using Krakarr.Downloads;
+using Krakarr.Media.CustomFormats;
 using Krakarr.Media.Files;
 using Krakarr.Media.Parsing;
 using Krakarr.Subtitles;
@@ -140,7 +141,7 @@ public sealed class SeriesImportService(
 
             // Keep the file's own release name when it is informative (season packs), for subtitle matching later.
             var sceneName = ReleaseParser.Parse(fileName).IsEpisode ? Path.GetFileNameWithoutExtension(fileName) : download.Name;
-            await ImportFileAsync(series, targets, path, quality, parsed.ReleaseGroup ?? downloadParsed.ReleaseGroup, sceneName, mediaInfo, summary, media, ct);
+            await ImportFileAsync(series, targets, path, quality, parsed.ReleaseGroup ?? downloadParsed.ReleaseGroup, sceneName, mediaInfo, summary, media, download, ct);
             if (MediaInfoChecks.Mislabelled(summary, sceneName) is { } mislabelled) notes.Add($"{fileName}: {mislabelled}");
             if (MediaInfoChecks.UnwantedAudio(summary, wanted) is { } audio) notes.Add($"{fileName}: {audio}");
             imported.AddRange(targets);
@@ -155,7 +156,7 @@ public sealed class SeriesImportService(
 
     private async Task ImportFileAsync(
         Core.Domain.Series series, List<Episode> episodes, string sourcePath, Quality quality, string? releaseGroup, string sceneName,
-        MediaInfo mediaInfo, MediaInfoSummary? summary, MediaManagementSettings media, CancellationToken ct)
+        MediaInfo mediaInfo, MediaInfoSummary? summary, MediaManagementSettings media, Download download, CancellationToken ct)
     {
         var season = episodes[0].SeasonNumber;
         var ext = Path.GetExtension(sourcePath);
@@ -198,6 +199,8 @@ public sealed class SeriesImportService(
             MediaInfo = MediaInfoSummary.Serialize(summary),
             EmbeddedSubtitles = EmbeddedSubtitleList.Format(EmbeddedSubtitleList.FromTracks(mediaInfo.Subtitles)),
         };
+        // Formats come from the grabbed release's name, which carries the tags (service, audio, HDR) a pack's file names often drop.
+        LibraryFileFormats.Apply(episodeFile, await seriesService.FormatsAsync(ct), series.QualityProfile, download.Name, download.IndexerName);
         db.EpisodeFiles.Add(episodeFile);
         await db.SaveChangesAsync(ct);
 

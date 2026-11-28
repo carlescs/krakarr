@@ -83,6 +83,20 @@ Then open <http://localhost:8787>:
   `MULTi`/`DUAL` releases also count as English. Untagged releases are assumed to be in the indexer's **default
   language** (set per indexer), or English when it has none.
 
+### Custom formats
+
+- **Custom formats** (*Settings → Custom formats*) are named sets of conditions, like Radarr's and Sonarr's: release title,
+  release group or edition regexes, HDR (HDR10, HDR10+, Dolby Vision, DV without an HDR fallback, HLG), video codec, audio
+  (Atmos, TrueHD, DTS:X, DTS-HD MA, DD+, AAC, channel layout), streaming service (AMZN, NF, DSNP, ATVP, HMAX…), source,
+  resolution, remux, language, indexer, size, release type and flags (3D, hardcoded subs, upscaled). Each condition can be
+  negated or required; a format matches when every required condition and at least one condition of each kind match.
+- **Scores:** each quality profile scores the formats. Releases below the profile's *minimum score* are rejected, releases
+  of the same quality rank by score, and a better score upgrades an existing file until it reaches the *upgrade until* score.
+  Matched formats and the score show in interactive search; imported files remember their formats for later upgrades.
+- **Import/export:** paste custom formats from the TRaSH Guides, Radarr or Sonarr (choose which app's numbering the JSON
+  uses). Formats relying on conditions Krakarr cannot evaluate (indexer flags, "original language") are skipped with a
+  warning. *Test a release name* shows what the parser found and which formats match.
+
 ### Alternate titles and scene mapping
 
 - **Alternate titles:** on refresh Krakarr stores each movie's and series' original title, translated titles and AKAs
@@ -517,7 +531,7 @@ tests/                   xUnit v3 unit + HTTP integration tests
 ```
 
 **Movie pipeline:** *add (TMDB)* → *search all indexers (Torznab, by IMDb id when supported)* → *decision engine*
-(title/year/id match, wanted languages, quality profile, size limits, seeders, upgrade/cutoff) → *grab* (.torrent or magnet into the
+(title/year/id match, wanted languages, quality profile, custom format score, size limits, seeders, upgrade/cutoff) → *grab* (.torrent or magnet into the
 embedded engine) → *download completes* → *import* (pick main video, rename by template, hardlink into the library)
 → *seed until the ratio/time limit*, then remove the torrent from the client (or stop it).
 

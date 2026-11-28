@@ -87,6 +87,93 @@ public class QualityProfile
     public long MinSizeMb { get; set; }
     /// <summary>Maximum release size in MB (0 = no limit).</summary>
     public long MaxSizeMb { get; set; }
+    /// <summary>Score each <see cref="CustomFormat"/> adds to a release that matches it (formats not listed score 0).</summary>
+    public List<ProfileFormatScore> FormatScores { get; set; } = [];
+    /// <summary>Releases whose custom format score is below this are rejected.</summary>
+    public int MinFormatScore { get; set; }
+    /// <summary>"Upgrade until": once a file reaches this custom format score (and the quality cutoff), stop upgrading.</summary>
+    public int CutoffFormatScore { get; set; }
+
+    /// <summary>Sum of this profile's scores for the given matched custom formats.</summary>
+    public int FormatScore(IEnumerable<int>? customFormatIds)
+    {
+        if (customFormatIds is null || FormatScores.Count == 0) return 0;
+        var total = 0;
+        foreach (var id in customFormatIds)
+        {
+            foreach (var s in FormatScores)
+            {
+                if (s.FormatId == id) total += s.Score;
+            }
+        }
+
+        return total;
+    }
+}
+
+public sealed record ProfileFormatScore(int FormatId, int Score);
+
+/// <summary>
+/// A named set of conditions a release can match (Radarr/Sonarr "custom formats"); quality profiles score the formats a release
+/// matches to rank releases and decide upgrades.
+/// </summary>
+public class CustomFormat
+{
+    public int Id { get; set; }
+    public required string Name { get; set; }
+    public List<CustomFormatSpecification> Specifications { get; set; } = [];
+}
+
+/// <summary>What a custom format condition looks at.</summary>
+public enum CustomFormatCondition
+{
+    /// <summary>Regular expression on the release title.</summary>
+    ReleaseTitle,
+    /// <summary>Regular expression on the release group.</summary>
+    ReleaseGroup,
+    /// <summary>Regular expression on the editions tagged in the title ("Director's Cut", "IMAX"...).</summary>
+    Edition,
+    /// <summary>Audio language code (MediaLanguages); <see cref="CustomFormatSpecification.ExceptLanguage"/> inverts it.</summary>
+    Language,
+    /// <summary>Source: Cam, Telesync, Telecine, Workprint, Dvd, Tv, WebDl, WebRip or Bluray (remuxes included).</summary>
+    Source,
+    /// <summary>Resolution: 480, 576, 720, 1080 or 2160.</summary>
+    Resolution,
+    /// <summary>Quality modifier: Remux.</summary>
+    QualityModifier,
+    /// <summary>Size between <see cref="CustomFormatSpecification.Min"/> and <see cref="CustomFormatSpecification.Max"/> GB.</summary>
+    Size,
+    /// <summary>Regular expression on the indexer name.</summary>
+    Indexer,
+    /// <summary>HDR10, HDR10+, DV, HLG, "DV-only" (no HDR fallback) or "HDR" (any).</summary>
+    Hdr,
+    /// <summary>x264, x265, av1 or xvid.</summary>
+    VideoCodec,
+    /// <summary>Atmos, TrueHD, DTS:X, DTS-HD MA, DD+, AAC... or a channel layout ("7.1", "5.1", "2.0").</summary>
+    Audio,
+    /// <summary>Streaming service code: AMZN, NF, DSNP, ATVP, HMAX...</summary>
+    StreamingService,
+    /// <summary>Single episode, multi-episode or season pack.</summary>
+    ReleaseType,
+    /// <summary>3D, hardcoded subs or upscaled.</summary>
+    Flag,
+}
+
+public sealed record CustomFormatSpecification
+{
+    public string Name { get; init; } = string.Empty;
+    public CustomFormatCondition Condition { get; init; }
+    public string Value { get; init; } = string.Empty;
+    /// <summary>Size conditions: minimum size in GB (0 = none).</summary>
+    public double Min { get; init; }
+    /// <summary>Size conditions: maximum size in GB (0 = none).</summary>
+    public double Max { get; init; }
+    /// <summary>Language conditions: match releases with any language other than <see cref="Value"/>.</summary>
+    public bool ExceptLanguage { get; init; }
+    /// <summary>The condition matches when its test fails.</summary>
+    public bool Negate { get; init; }
+    /// <summary>The format only matches when this condition does (otherwise one condition of each kind is enough).</summary>
+    public bool Required { get; init; }
 }
 
 public enum IndexerProtocol
@@ -216,6 +303,11 @@ public class MovieCollection
 public interface ILibraryFile
 {
     int QualityId { get; set; }
+    string? SceneName { get; set; }
+    /// <summary>Ids of the custom formats the file's release matched when it was imported (null = not evaluated).</summary>
+    List<int>? CustomFormatIds { get; set; }
+    /// <summary>Custom format score of the file's release under its profile when it was imported.</summary>
+    int CustomFormatScore { get; set; }
     string? EmbeddedSubtitles { get; set; }
     string? MediaInfo { get; set; }
 }
@@ -230,6 +322,8 @@ public class MovieFile : ILibraryFile
     public int QualityId { get; set; }
     public string? ReleaseGroup { get; set; }
     public string? SceneName { get; set; }
+    public List<int>? CustomFormatIds { get; set; }
+    public int CustomFormatScore { get; set; }
     public DateTimeOffset DateAdded { get; set; } = DateTimeOffset.UtcNow;
     /// <summary>When subtitles were last searched for this file (null = never).</summary>
     public DateTimeOffset? LastSubtitleSearch { get; set; }
@@ -399,6 +493,8 @@ public class EpisodeFile : ILibraryFile
     public int QualityId { get; set; }
     public string? ReleaseGroup { get; set; }
     public string? SceneName { get; set; }
+    public List<int>? CustomFormatIds { get; set; }
+    public int CustomFormatScore { get; set; }
     public DateTimeOffset DateAdded { get; set; } = DateTimeOffset.UtcNow;
     /// <summary>When subtitles were last searched for this file (null = never).</summary>
     public DateTimeOffset? LastSubtitleSearch { get; set; }

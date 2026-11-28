@@ -21,6 +21,10 @@ public static partial class ReleaseParser
         // Language tags come after the title, so titles like "French Kiss" or "The Italian Job" are not mistaken for one.
         var titleEnd = mediaTitle is null ? -1 : normalized.IndexOf(mediaTitle, StringComparison.OrdinalIgnoreCase);
         var tail = titleEnd >= 0 ? normalized[(titleEnd + mediaTitle!.Length)..] : normalized;
+        // The group name ("-DV", "-HC") is not a tag.
+        var group = ParseReleaseGroup(title);
+        var tags = ReleaseTags.Detect(group is null ? tail : ReleaseGroupRegex().Replace(tail, string.Empty));
+        var videoCodec = ParseVideoCodec(tail);
 
         return new ParsedRelease
         {
@@ -30,11 +34,20 @@ public static partial class ReleaseParser
             Quality = ParseQuality(normalized),
             IsProper = ProperRegex().IsMatch(normalized),
             IsRepack = RepackRegex().IsMatch(normalized),
-            ReleaseGroup = ParseReleaseGroup(title),
+            ReleaseGroup = group,
             SeasonNumber = season,
             EpisodeNumbers = episodes,
             Languages = ParseLanguages(tail),
             IsMultiLanguage = MultiLanguageRegex().IsMatch(tail),
+            Hdr = tags.Hdr,
+            VideoCodec = videoCodec,
+            Audio = tags.Audio,
+            AudioChannels = tags.Channels,
+            Editions = tags.Editions,
+            StreamingService = tags.StreamingService,
+            Is3D = tags.Is3D,
+            HasHardcodedSubs = tags.HardcodedSubs,
+            IsUpscaled = tags.Upscaled,
         };
     }
 

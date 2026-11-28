@@ -8,6 +8,7 @@ using Krakarr.Data;
 using Krakarr.Downloads;
 using Krakarr.Indexers;
 using Krakarr.Media.Files;
+using Krakarr.Media.CustomFormats;
 using Krakarr.Media.Parsing;
 using Krakarr.Subtitles;
 using Microsoft.EntityFrameworkCore;
@@ -34,8 +35,13 @@ public sealed class MovieService(
     IDownloadService downloads,
     IEventHub eventHub,
     ILogger<MovieService> logger,
-    Krakarr.Core.Push.IPushNotifier? push = null)
+    Krakarr.Core.Push.IPushNotifier? push = null,
+    CustomFormatCache? formatCache = null)
 {
+    /// <summary>The library's compiled custom formats (cached until they are edited).</summary>
+    public Task<CustomFormatSet> FormatsAsync(CancellationToken ct = default) =>
+        formatCache?.GetAsync(db.CustomFormats, ct) ?? Task.FromResult(CustomFormatSet.Empty);
+
     public async Task<Movie> AddAsync(AddMovieRequest request, CancellationToken ct = default)
     {
         if (await db.Movies.AnyAsync(m => m.TmdbId == request.TmdbId, ct))
@@ -325,7 +331,8 @@ public sealed class MovieService(
         Movie movie, CancellationToken ct = default)
     {
         var profile = movie.QualityProfile ?? await db.QualityProfiles.FirstAsync(p => p.Id == movie.QualityProfileId, ct);
-        var existing = await ExistingQualityAsync(movie, ct);
+        var formats = await FormatsAsync(ct);
+        var (existing, existingScore) = await ExistingFileAsync(movie, profile, formats, ct);
         await EnsureAlternateTitlesAsync(movie, ct);
 
         var result = await indexerSearch.SearchAsync(Criteria(movie), ct: ct);
@@ -334,14 +341,15 @@ public sealed class MovieService(
         await db.SaveChangesAsync(ct);
 
         var languages = (await settings.GetAsync<LanguageSettings>(ct)).For(movie.Languages);
-        return (MovieDecisionEngine.Evaluate(movie, profile, existing, result.Releases, languages), result.Errors, result.Indexers);
+        return (MovieDecisionEngine.Evaluate(movie, profile, existing, result.Releases, languages, formats, existingScore), result.Errors, result.Indexers);
     }
 
     /// <summary>Interactive search that hands out evaluated releases as each indexer answers (see <see cref="SearchStream"/>).</summary>
     public async IAsyncEnumerable<SearchStreamEvent<ReleaseDecisionDto>> SearchStreamAsync(Movie movie, [EnumeratorCancellation] CancellationToken ct = default)
     {
         var profile = movie.QualityProfile ?? await db.QualityProfiles.FirstAsync(p => p.Id == movie.QualityProfileId, ct);
-        var existing = await ExistingQualityAsync(movie, ct);
+        var formats = await FormatsAsync(ct);
+        var (existing, existingScore) = await ExistingFileAsync(movie, profile, formats, ct);
         var languages = (await settings.GetAsync<LanguageSettings>(ct)).For(movie.Languages);
         await EnsureAlternateTitlesAsync(movie, ct);
 
@@ -350,7 +358,7 @@ public sealed class MovieService(
         await db.SaveChangesAsync(ct);
 
         var events = run.EventsAsync(
-            releases => MovieDecisionEngine.Evaluate(movie, profile, existing, releases, languages).Select(ReleaseDecisionDto.From).ToList(),
+            releases => MovieDecisionEngine.Evaluate(movie, profile, existing, releases, languages, formats, existingScore).Select(ReleaseDecisionDto.From).ToList(),
             row => row.Release, ct);
         await foreach (var e in events) yield return e;
     }
@@ -443,11 +451,11 @@ public sealed class MovieService(
     public Task<bool> HasActiveDownloadAsync(int movieId, CancellationToken ct = default) =>
         db.Downloads.AnyAsync(d => d.MovieId == movieId && !d.Imported && d.ImportMessage == null, ct);
 
-    private async Task<Quality?> ExistingQualityAsync(Movie movie, CancellationToken ct)
+    private async Task<(Quality? Quality, int FormatScore)> ExistingFileAsync(Movie movie, QualityProfile profile, CustomFormatSet formats, CancellationToken ct)
     {
-        if (movie.MovieFileId is not { } fileId) return null;
+        if (movie.MovieFileId is not { } fileId) return (null, 0);
         var file = await db.MovieFiles.AsNoTracking().FirstOrDefaultAsync(f => f.Id == fileId, ct);
-        return file is null ? null : Qualities.FindById(file.QualityId);
+        return file is null ? (null, 0) : (Qualities.FindById(file.QualityId), formats.ScoreOf(file, profile));
     }
 
     private static string ReleaseSortTitle(string title)

@@ -8,6 +8,7 @@ using Krakarr.Data;
 using Krakarr.Downloads;
 using Krakarr.Indexers;
 using Krakarr.Media.Files;
+using Krakarr.Media.CustomFormats;
 using Krakarr.Media.Parsing;
 using Krakarr.Subtitles;
 using Microsoft.EntityFrameworkCore;
@@ -31,9 +32,14 @@ public sealed class SeriesService(
     TimeProvider time,
     IXemClient xem,
     ILogger<SeriesService> logger,
-    Krakarr.Core.Push.IPushNotifier? push = null)
+    Krakarr.Core.Push.IPushNotifier? push = null,
+    CustomFormatCache? formatCache = null)
 {
     private DateOnly Today => DateOnly.FromDateTime(time.GetUtcNow().UtcDateTime);
+
+    /// <summary>The library's compiled custom formats (cached until they are edited).</summary>
+    public Task<CustomFormatSet> FormatsAsync(CancellationToken ct = default) =>
+        formatCache?.GetAsync(db.CustomFormats, ct) ?? Task.FromResult(CustomFormatSet.Empty);
 
     /// <summary>Loads a series with everything the decision engine and import need.</summary>
     public Task<Core.Domain.Series?> LoadAsync(int id, CancellationToken ct = default) =>
@@ -470,7 +476,8 @@ public sealed class SeriesService(
 
         var scope = new SearchScope(season, episode is null ? null : new HashSet<int> { episode.Id });
         var languages = (await settings.GetAsync<LanguageSettings>(ct)).For(series.Languages);
-        var decisions = EpisodeDecisionEngine.Evaluate(series, series.QualityProfile!, series.Episodes, result.Releases, scope, requireMonitored, Today, languages);
+        var formats = await FormatsAsync(ct);
+        var decisions = EpisodeDecisionEngine.Evaluate(series, series.QualityProfile!, series.Episodes, result.Releases, scope, requireMonitored, Today, languages, formats);
         return (decisions, result.Errors, result.Indexers);
     }
 
@@ -481,13 +488,14 @@ public sealed class SeriesService(
         var season = episode?.SeasonNumber ?? seasonNumber;
         var scope = new SearchScope(season, episode is null ? null : new HashSet<int> { episode.Id });
         var languages = (await settings.GetAsync<LanguageSettings>(ct)).For(series.Languages);
+        var formats = await FormatsAsync(ct);
 
         var run = await indexerSearch.StartAsync(Criteria(series, season, episode), ct: ct);
         series.LastSearched = time.GetUtcNow();
         await db.SaveChangesAsync(ct);
 
         var events = run.EventsAsync(
-            releases => EpisodeDecisionEngine.Evaluate(series, series.QualityProfile!, series.Episodes, releases, scope, requireMonitored: false, Today, languages)
+            releases => EpisodeDecisionEngine.Evaluate(series, series.QualityProfile!, series.Episodes, releases, scope, requireMonitored: false, Today, languages, formats)
                 .Select(EpisodeReleaseDto.From).ToList(),
             row => row.Release, ct);
         await foreach (var e in events) yield return e;
@@ -551,8 +559,9 @@ public sealed class SeriesService(
         System.Diagnostics.Activity.Current?.SetTag("krakarr.series.title", series.Title);
         var profile = series.QualityProfile!;
         var busy = await ActiveEpisodeIdsAsync(ct);
+        var formats = await FormatsAsync(ct);
         var wanted = series.Episodes
-            .Where(e => EpisodeDecisionEngine.IsWanted(e, profile, Today) && !busy.Contains(e.Id))
+            .Where(e => EpisodeDecisionEngine.IsWanted(e, profile, Today, formats) && !busy.Contains(e.Id))
             .Where(e => seasonNumber is null || e.SeasonNumber == seasonNumber)
             .Where(e => episodeIds is null || episodeIds.Count == 0 || episodeIds.Contains(e.Id))
             .ToList();

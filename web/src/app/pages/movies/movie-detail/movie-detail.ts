@@ -6,7 +6,7 @@ import { Router } from '@angular/router';
 import { Api, errorMessage } from '../../../core/api';
 import { Auth } from '../../../core/auth';
 import { Events } from '../../../core/events';
-import { AgoPipe, BytesPipe } from '../../../core/format';
+import { AgoPipe, BytesPipe, scoreClass } from '../../../core/format';
 import { AVAILABILITY_OPTIONS } from '../../../core/calendar';
 import { HistoryItem, MinimumAvailability, Movie, PlayState, QualityProfile, ReleaseDecision, SubtitleFile } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
@@ -61,6 +61,7 @@ export class MovieDetailPage implements OnInit {
   protected readonly releaseSearch = new ReleaseSearch<ReleaseDecision>();
   /** Best first, re-ranked as indexers answer. */
   protected readonly releases = this.releaseSearch.results;
+  protected readonly scoreClass = scoreClass;
   protected readonly releaseSort = new TableSort(this.releaseSearch.filtered, {
     release: r => r.release.title,
     indexer: r => r.release.indexerName,
@@ -68,6 +69,7 @@ export class MovieDetailPage implements OnInit {
     peers: { value: r => r.release.seeders, desc: true },
     quality: { value: r => r.qualityWeight, desc: true },
     language: r => this.languages.describe(r.languages),
+    score: r => r.customFormatScore ?? 0,
   });
   protected readonly releasesOpen = signal(false);
   protected readonly searching = this.releaseSearch.running;
