@@ -27,6 +27,7 @@ const collectionNames = new Map<number, string>([[10, 'Alien Collection']]);
 function queryMovies(list: MovieListItem[], q: MovieListQuery = {}, activeDownloadIds = new Set<number>()): { items: MovieListItem[] } {
   const textFilter = q.q?.toLowerCase().trim() ?? '';
   let result = list.filter(m => {
+    if (q.minRating != null && (m.imdbRating == null || m.imdbRating < q.minRating)) return false;
     if (textFilter) {
       const colName = m.collectionId != null ? (collectionNames.get(m.collectionId) ?? '').toLowerCase() : '';
       if (!m.title.toLowerCase().includes(textFilter) && !colName.includes(textFilter)) return false;
@@ -43,6 +44,8 @@ function queryMovies(list: MovieListItem[], q: MovieListQuery = {}, activeDownlo
   const dir = q.desc ? -1 : 1;
   if (q.sort === 'year') {
     result = [...result].sort((a, b) => (a.year - b.year) * dir);
+  } else if (q.sort === 'imdb') {
+    result = [...result].sort((a, b) => (a.imdbRating == null ? 1 : 0) - (b.imdbRating == null ? 1 : 0) || ((a.imdbRating ?? 0) - (b.imdbRating ?? 0)) * dir);
   } else if (q.sort === 'status') {
     const rank = (m: MovieListItem) => (m.hasFile ? 3 : m.downloadProgress != null ? 2 : !m.monitored ? 1 : 0);
     result = [...result].sort((a, b) => (rank(a) - rank(b)) * dir);
@@ -115,6 +118,34 @@ describe('MovieListPage', () => {
     type(el, 'input[type="search"]', 'alien collection');
     await settle(fixture);
     expect(titles(el)).toEqual(['Alien', 'Aliens']);
+  });
+
+  it('filters and sorts by the IMDb rating from OMDb', async () => {
+    const rated = [
+      movie({ id: 1, title: 'Alien', year: 1979, imdbRating: 8.5, rottenTomatoes: 93 }),
+      movie({ id: 2, title: 'Alien 3', year: 1992, imdbRating: 6.4 }),
+      movie({ id: 3, title: 'Arrival', year: 2016 }),
+    ];
+    const { api, fixture, el } = await render(rated);
+    expect(text(el.querySelector('a[href="/movies/1"]') as HTMLElement)).toContain('1979 · ★ 8.5');
+    expect(text(el.querySelector('a[href="/movies/3"]') as HTMLElement)).not.toContain('★');
+
+    type(el, 'select[aria-label="Minimum IMDb rating"]', '3: 7');
+    await settle(fixture);
+    expect(api.movies).toHaveBeenLastCalledWith(expect.objectContaining({ minRating: 7 }));
+    expect(titles(el)).toEqual(['Alien']);
+
+    type(el, 'select[aria-label="Minimum IMDb rating"]', '0: null');
+    button(el, 'Table').click();
+    await settle(fixture);
+    button(el, 'IMDb').click();
+    button(el, 'IMDb').click();
+    await settle(fixture);
+    expect(api.movies).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 'imdb', desc: true }));
+    const rows = [...el.querySelectorAll('tbody tr')].map(r => text(r as HTMLElement));
+    expect([...el.querySelectorAll('tbody a')].map(a => a.textContent)).toEqual(['Alien', 'Alien 3', 'Arrival']);
+    expect(rows[0]).toContain('8.5');
+    expect(rows[0]).toContain('93%');
   });
 
   it('shows collections as cards that open the collection', async () => {

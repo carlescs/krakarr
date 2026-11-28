@@ -17,7 +17,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261127110142_PushSubscriptions";
+    public override string LastMigrationId => "20261128080016_OmdbInfo";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -506,17 +506,39 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<DateTimeOffset>("Added")
                     .HasColumnType("timestamp with time zone");
 
+                b.Property<string>("Awards")
+                    .HasMaxLength(256)
+                    .HasColumnType("character varying(256)");
+
+                b.Property<string>("BoxOffice")
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
+
+                b.Property<string>("Certification")
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
+
                 b.Property<int?>("CollectionId")
                     .HasColumnType("integer");
 
                 b.Property<DateOnly?>("DigitalRelease")
                     .HasColumnType("date");
 
+                b.Property<string>("Director")
+                    .HasMaxLength(512)
+                    .HasColumnType("character varying(512)");
+
                 b.Property<string>("FanartUrl")
                     .HasColumnType("text");
 
                 b.Property<string>("ImdbId")
                     .HasColumnType("text");
+
+                b.Property<double?>("ImdbRating")
+                    .HasColumnType("double precision");
+
+                b.Property<long?>("ImdbVotes")
+                    .HasColumnType("bigint");
 
                 b.Property<DateOnly?>("InCinemas")
                     .HasColumnType("date");
@@ -527,6 +549,9 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<DateTimeOffset?>("LastSearched")
                     .HasColumnType("timestamp with time zone");
 
+                b.Property<int?>("Metacritic")
+                    .HasColumnType("integer");
+
                 b.Property<int>("MinimumAvailability")
                     .HasColumnType("integer");
 
@@ -535,6 +560,13 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<int?>("MovieFileId")
                     .HasColumnType("integer");
+
+                b.Property<string>("OmdbPlot")
+                    .HasMaxLength(2048)
+                    .HasColumnType("character varying(2048)");
+
+                b.Property<DateTimeOffset?>("OmdbUpdated")
+                    .HasColumnType("timestamp with time zone");
 
                 b.Property<string>("OriginalTitle")
                     .HasColumnType("text");
@@ -561,6 +593,13 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("text")
                     .HasDefaultValue("[]");
 
+                b.Property<int?>("RottenTomatoes")
+                    .HasColumnType("integer");
+
+                b.Property<string>("RottenTomatoesUrl")
+                    .HasMaxLength(512)
+                    .HasColumnType("character varying(512)");
+
                 b.Property<int>("Runtime")
                     .HasColumnType("integer");
 
@@ -577,6 +616,10 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<int>("TmdbId")
                     .HasColumnType("integer");
+
+                b.Property<string>("Writer")
+                    .HasMaxLength(512)
+                    .HasColumnType("character varying(512)");
 
                 b.Property<int>("Year")
                     .HasColumnType("integer");
@@ -856,6 +899,22 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<DateTimeOffset>("Added")
                     .HasColumnType("timestamp with time zone");
 
+                b.Property<string>("Awards")
+                    .HasMaxLength(256)
+                    .HasColumnType("character varying(256)");
+
+                b.Property<string>("BoxOffice")
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
+
+                b.Property<string>("Certification")
+                    .HasMaxLength(32)
+                    .HasColumnType("character varying(32)");
+
+                b.Property<string>("Director")
+                    .HasMaxLength(512)
+                    .HasColumnType("character varying(512)");
+
                 b.Property<string>("FanartUrl")
                     .HasColumnType("text");
 
@@ -864,6 +923,12 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<string>("ImdbId")
                     .HasColumnType("text");
+
+                b.Property<double?>("ImdbRating")
+                    .HasColumnType("double precision");
+
+                b.Property<long?>("ImdbVotes")
+                    .HasColumnType("bigint");
 
                 b.PrimitiveCollection<List<string>>("Languages")
                     .HasColumnType("text[]");
@@ -874,6 +939,9 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.Property<DateTimeOffset?>("LastSearched")
                     .HasColumnType("timestamp with time zone");
 
+                b.Property<int?>("Metacritic")
+                    .HasColumnType("integer");
+
                 b.Property<string>("MetadataTitle")
                     .IsRequired()
                     .HasColumnType("text");
@@ -883,6 +951,13 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<string>("Network")
                     .HasColumnType("text");
+
+                b.Property<string>("OmdbPlot")
+                    .HasMaxLength(2048)
+                    .HasColumnType("character varying(2048)");
+
+                b.Property<DateTimeOffset?>("OmdbUpdated")
+                    .HasColumnType("timestamp with time zone");
 
                 b.Property<string>("Overview")
                     .HasColumnType("text");
@@ -896,6 +971,13 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<int>("QualityProfileId")
                     .HasColumnType("integer");
+
+                b.Property<int?>("RottenTomatoes")
+                    .HasColumnType("integer");
+
+                b.Property<string>("RottenTomatoesUrl")
+                    .HasMaxLength(512)
+                    .HasColumnType("character varying(512)");
 
                 b.Property<int>("Runtime")
                     .HasColumnType("integer");
@@ -919,6 +1001,10 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<int?>("TvdbId")
                     .HasColumnType("integer");
+
+                b.Property<string>("Writer")
+                    .HasMaxLength(512)
+                    .HasColumnType("character varying(512)");
 
                 b.Property<int>("Year")
                     .HasColumnType("integer");

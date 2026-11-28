@@ -24,6 +24,7 @@ export class CollectionGrid {
   /** Search and filter of the movie list: a collection shows when any of its library movies match. */
   readonly q = input<string>('');
   readonly filter = input<MovieFilter>('all');
+  readonly minRating = input<number | null>(null);
   readonly view = input<ViewMode>('grid');
 
   protected readonly grid = POSTER_GRID;
@@ -35,13 +36,14 @@ export class CollectionGrid {
     effect(() => {
       const q = this.q().trim();
       const filter = this.filter();
-      untracked(() => void this.load(q, filter));
+      const minRating = this.minRating();
+      untracked(() => void this.load(q, filter, minRating));
     });
 
     let timer: ReturnType<typeof setTimeout> | undefined;
     const sub = inject(Events).movieUpdated.subscribe(() => {
       clearTimeout(timer);
-      timer = setTimeout(() => void this.load(this.q().trim(), this.filter()), RELOAD_DELAY_MS);
+      timer = setTimeout(() => void this.load(this.q().trim(), this.filter(), this.minRating()), RELOAD_DELAY_MS);
     });
     inject(DestroyRef).onDestroy(() => {
       clearTimeout(timer);
@@ -49,10 +51,10 @@ export class CollectionGrid {
     });
   }
 
-  private async load(q: string, filter: MovieFilter) {
+  private async load(q: string, filter: MovieFilter, minRating: number | null) {
     const id = ++this.requestId;
     try {
-      const result = await this.api.movieCollections({ q: q || undefined, filter });
+      const result = await this.api.movieCollections({ q: q || undefined, filter, minRating: minRating ?? undefined });
       if (id !== this.requestId) return;
       this.collections.set(result);
       this.error.set(null);

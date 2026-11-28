@@ -26,8 +26,19 @@ public sealed class FakeOmdb : HttpMessageHandler
         else if (query.Contains("i=tt0133093", StringComparison.Ordinal))
         {
             body = """
-                {"Title":"The Matrix","Ratings":[{"Source":"Internet Movie Database","Value":"8.7/10"},{"Source":"Rotten Tomatoes","Value":"83%"},{"Source":"Metacritic","Value":"73/100"}],
-                 "Metascore":"73","imdbRating":"8.7","imdbVotes":"2,123,456","imdbID":"tt0133093","tomatoURL":"https://www.rottentomatoes.com/m/matrix/","Response":"True"}
+                {"Title":"The Matrix","Rated":"R","Director":"Lana Wachowski, Lilly Wachowski","Writer":"Lilly Wachowski, Lana Wachowski",
+                 "Plot":"A computer hacker learns about the true nature of reality.","Awards":"Won 4 Oscars. 42 wins & 51 nominations total",
+                 "Ratings":[{"Source":"Internet Movie Database","Value":"8.7/10"},{"Source":"Rotten Tomatoes","Value":"83%"},{"Source":"Metacritic","Value":"73/100"}],
+                 "Metascore":"73","imdbRating":"8.7","imdbVotes":"2,123,456","imdbID":"tt0133093","BoxOffice":"$172,076,928",
+                 "tomatoURL":"https://www.rottentomatoes.com/m/matrix/","Response":"True"}
+                """;
+        }
+        else if (query.Contains("i=tt0386676", StringComparison.Ordinal))
+        {
+            body = """
+                {"Title":"The Office","Rated":"TV-14","Director":"N/A","Writer":"Greg Daniels","Plot":"N/A","Awards":"N/A","BoxOffice":"N/A",
+                 "Ratings":[{"Source":"Internet Movie Database","Value":"9.0/10"}],"Metascore":"N/A","imdbRating":"9.0","imdbVotes":"750,000",
+                 "imdbID":"tt0386676","Type":"series","Response":"True"}
                 """;
         }
         else
@@ -46,7 +57,7 @@ public sealed class RatingsFactory : KrakarrFactory
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         base.ConfigureWebHost(builder);
-        builder.ConfigureServices(s => s.AddHttpClient(RatingsClient.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Omdb));
+        builder.ConfigureServices(s => s.AddHttpClient(OmdbClient.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Omdb));
     }
 }
 
@@ -83,6 +94,10 @@ public sealed class RatingsTests(RatingsFactory factory) : IClassFixture<Ratings
         Assert.Equal(83, ratings.GetProperty("rottenTomatoes").GetInt32());
         Assert.Equal(73, ratings.GetProperty("metacritic").GetInt32());
         Assert.Equal("https://www.rottentomatoes.com/m/matrix/", ratings.GetProperty("rottenTomatoesUrl").GetString());
+        Assert.Equal("R", ratings.GetProperty("rated").GetString());
+        Assert.Equal("Won 4 Oscars. 42 wins & 51 nominations total", ratings.GetProperty("awards").GetString());
+        Assert.Equal("$172,076,928", ratings.GetProperty("boxOffice").GetString());
+        Assert.Equal("Lana Wachowski, Lilly Wachowski", ratings.GetProperty("director").GetString());
 
         // Served from the cache the second time.
         var before = factory.Omdb.Requests.Count;

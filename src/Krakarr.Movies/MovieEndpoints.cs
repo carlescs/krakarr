@@ -55,10 +55,13 @@ public sealed record MovieDto
     public double? DownloadProgress { get; init; }
     /// <summary>Local id of the TMDB collection the movie belongs to (see <c>GET /movies/collections</c>).</summary>
     public int? CollectionId { get; init; }
+    /// <summary>Scores and facts from OMDb, as last stored; null when OMDb hasn't been asked yet.</summary>
+    public OmdbInfo? Omdb { get; init; }
 }
 
 /// <summary>Row of the library grid: only what the movie list shows, so the whole library stays a small payload.</summary>
-public sealed record MovieListItemDto(int Id, string Title, int Year, string? PosterUrl, bool Monitored, bool HasFile, string? Quality, double? DownloadProgress, int? CollectionId);
+public sealed record MovieListItemDto(int Id, string Title, int Year, string? PosterUrl, bool Monitored, bool HasFile, string? Quality, double? DownloadProgress, int? CollectionId,
+    double? ImdbRating = null, int? RottenTomatoes = null);
 
 /// <summary>Summary of one collection section (or "Other movies") matching the current movie list filter.</summary>
 public sealed record MovieCollectionGroupDto(string Key, int? CollectionId, string Title, int Count, int Downloaded);
@@ -97,7 +100,7 @@ public static class MovieEndpoints
     {
         var group = app.MapGroup("/api/v1/movies").WithTags("Movies");
 
-        group.MapGet("/", async (int? page, int? pageSize, string? q, string? filter, string? sort, bool? desc, string? groupBy,
+        group.MapGet("/", async (int? page, int? pageSize, string? q, string? filter, string? sort, bool? desc, string? groupBy, double? minRating,
             HttpContext http, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
         {
             var currentPage = Math.Max(1, page ?? 1);
@@ -107,7 +110,7 @@ public static class MovieEndpoints
             var userId = MediaSubscriptions.GetUserId(http.User);
             var grouped = string.Equals(groupBy, "collection", StringComparison.OrdinalIgnoreCase);
 
-            var (filtered, isFiltered) = FilterMovies(db, q, filter, userId, downloadingIds);
+            var (filtered, isFiltered) = FilterMovies(db, q, filter, userId, downloadingIds, minRating);
             var total = await filtered.CountAsync(ct);
             var libraryTotal = isFiltered ? await db.Movies.CountAsync(ct) : total;
 
@@ -129,26 +132,26 @@ public static class MovieEndpoints
                 // The grid only needs a handful of columns: skip overviews, paths and release dates.
                 var rows = await SortMovies(filtered, sort, desc == true, grouped, downloadingIds)
                     .Skip(skip).Take(size)
-                    .Select(m => new { m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, m.CollectionId, QualityId = m.MovieFile != null ? m.MovieFile.QualityId : (int?)null })
+                    .Select(m => new { m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, m.CollectionId, QualityId = m.MovieFile != null ? m.MovieFile.QualityId : (int?)null, m.ImdbRating, m.RottenTomatoes })
                     .ToListAsync(ct);
                 items = rows.Select(m => new MovieListItemDto(
                     m.Id, m.Title, m.Year, m.PosterUrl, m.Monitored, m.QualityId is not null,
                     m.QualityId is { } qual ? Qualities.FindById(qual).Name : null,
                     progress.TryGetValue(m.Id, out var p) ? p : null,
-                    m.CollectionId)).ToList();
+                    m.CollectionId, m.ImdbRating, m.RottenTomatoes)).ToList();
             }
 
             return new MovieListPageDto(items, currentPage, size, total, libraryTotal, groups);
         });
 
         // Matching movie ids in display order, for "Select all" and Shift+click range selection across pages.
-        group.MapGet("/ids", async (string? q, string? filter, string? sort, bool? desc, string? groupBy,
+        group.MapGet("/ids", async (string? q, string? filter, string? sort, bool? desc, string? groupBy, double? minRating,
             HttpContext http, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
         {
             var downloadingIds = ActiveProgress(engine).Keys.ToList();
             var userId = MediaSubscriptions.GetUserId(http.User);
             var grouped = string.Equals(groupBy, "collection", StringComparison.OrdinalIgnoreCase);
-            var (filtered, _) = FilterMovies(db, q, filter, userId, downloadingIds);
+            var (filtered, _) = FilterMovies(db, q, filter, userId, downloadingIds, minRating);
             return await SortMovies(filtered, sort, desc == true, grouped, downloadingIds)
                 .Select(m => m.Id)
                 .Take(BulkLimits.MaxIds)
@@ -156,10 +159,10 @@ public static class MovieEndpoints
         });
 
         // Collections with at least one library movie matching the movie list's search and filter, as cards.
-        group.MapGet("/collections", async (string? q, string? filter, HttpContext http, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
+        group.MapGet("/collections", async (string? q, string? filter, double? minRating, HttpContext http, KrakarrDbContext db, ITorrentEngine engine, CancellationToken ct) =>
         {
             var downloadingIds = ActiveProgress(engine).Keys.ToList();
-            var (filtered, _) = FilterMovies(db, q, filter, MediaSubscriptions.GetUserId(http.User), downloadingIds);
+            var (filtered, _) = FilterMovies(db, q, filter, MediaSubscriptions.GetUserId(http.User), downloadingIds, minRating);
             var counts = await filtered
                 .Where(m => m.CollectionId != null)
                 .GroupBy(m => m.CollectionId!.Value)
@@ -581,10 +584,18 @@ public static class MovieEndpoints
             .ToDictionary(g => g.Key, g => g.Max(s => s.Progress));
 
     private static (IQueryable<Movie> Query, bool IsFiltered) FilterMovies(
-        KrakarrDbContext db, string? q, string? filter, int? userId, IReadOnlyCollection<int> downloadingIds)
+        KrakarrDbContext db, string? q, string? filter, int? userId, IReadOnlyCollection<int> downloadingIds, double? minRating = null)
     {
         IQueryable<Movie> query = db.Movies.AsNoTracking();
         var isFiltered = false;
+
+        // Minimum IMDb rating (from OMDb): movies without a rating don't match.
+        if (minRating is > 0)
+        {
+            var min = minRating.Value;
+            query = query.Where(m => m.ImdbRating != null && m.ImdbRating >= min);
+            isFiltered = true;
+        }
 
         if (!string.IsNullOrWhiteSpace(q))
         {
@@ -640,6 +651,21 @@ public static class MovieEndpoints
 
         switch (sort?.ToLowerInvariant())
         {
+            // Scores from OMDb; movies without one always go last.
+            case "imdb":
+            {
+                var byKnown = query.OrderBy(m => m.ImdbRating == null ? 1 : 0);
+                return (desc ? byKnown.ThenByDescending(m => m.ImdbRating).ThenByDescending(m => m.ImdbVotes) : byKnown.ThenBy(m => m.ImdbRating).ThenBy(m => m.ImdbVotes))
+                    .ThenBy(m => m.SortTitle)
+                    .ThenBy(m => m.Id);
+            }
+            case "tomatoes":
+            {
+                var byKnown = query.OrderBy(m => m.RottenTomatoes == null ? 1 : 0);
+                return (desc ? byKnown.ThenByDescending(m => m.RottenTomatoes) : byKnown.ThenBy(m => m.RottenTomatoes))
+                    .ThenBy(m => m.SortTitle)
+                    .ThenBy(m => m.Id);
+            }
             case "year":
             {
                 // Unknown years (0) always go last, whatever the sort direction.
@@ -723,7 +749,8 @@ public static class MovieEndpoints
         Title = m.Title,
         OriginalTitle = m.OriginalTitle,
         Year = m.Year,
-        Overview = m.Overview,
+        // TMDB may have no overview (or none in the metadata language): fall back to OMDb's English plot.
+        Overview = string.IsNullOrWhiteSpace(m.Overview) ? m.OmdbPlot : m.Overview,
         PosterUrl = m.PosterUrl,
         FanartUrl = m.FanartUrl,
         Runtime = m.Runtime,
@@ -747,6 +774,7 @@ public static class MovieEndpoints
             : null,
         DownloadProgress = progress.TryGetValue(m.Id, out var p) ? p : null,
         CollectionId = m.CollectionId,
+        Omdb = OmdbInfo.From(m),
     };
 
     private static (string Query, int? Year) SplitYear(string term)

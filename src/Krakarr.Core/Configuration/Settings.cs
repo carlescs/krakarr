@@ -42,8 +42,17 @@ public sealed record MetadataSettings : ISettingsSection
     public SeriesMetadataSource SeriesSource { get; init; } = SeriesMetadataSource.Tmdb;
     public string? TvdbApiKey { get; init; }
     public string? TvdbPin { get; init; }
-    /// <summary>OMDb API key (omdbapi.com). Optional: enables IMDb, Rotten Tomatoes and Metacritic scores on detail pages.</summary>
+    /// <summary>
+    /// OMDb API key (omdbapi.com). Optional: adds IMDb, Rotten Tomatoes and Metacritic scores, content ratings, awards, box
+    /// office and credits to movies and series, so the library can be sorted and filtered by score.
+    /// </summary>
     public string? OmdbApiKey { get; init; }
+    /// <summary>
+    /// OMDb requests the background refresh may make per day (spread over hourly runs); 0 turns it off. Free keys allow 1,000
+    /// a day, and detail pages of titles outside the library use some of them too.
+    /// </summary>
+    public int OmdbDailyLimit { get; init; } = DefaultOmdbDailyLimit;
+    public const int DefaultOmdbDailyLimit = 500;
     public string Language { get; init; } = "en-US";
     /// <summary>Country (ISO 3166-1 alpha-2) whose movie release dates the calendar prefers; empty = earliest worldwide.</summary>
     public string? ReleaseRegion { get; init; }

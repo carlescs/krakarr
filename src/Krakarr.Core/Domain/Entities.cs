@@ -125,7 +125,28 @@ public enum MovieStatus
     Released = 2,
 }
 
-public class Movie
+/// <summary>Scores and facts read from OMDb, stored on movies and series (see <c>OmdbInfo</c>).</summary>
+public interface IOmdbFields
+{
+    string? ImdbId { get; }
+    double? ImdbRating { get; set; }
+    long? ImdbVotes { get; set; }
+    int? RottenTomatoes { get; set; }
+    int? Metacritic { get; set; }
+    string? RottenTomatoesUrl { get; set; }
+    /// <summary>Content rating ("PG-13", "TV-MA").</summary>
+    string? Certification { get; set; }
+    string? Awards { get; set; }
+    string? BoxOffice { get; set; }
+    string? Director { get; set; }
+    string? Writer { get; set; }
+    /// <summary>OMDb's English plot, shown only when the metadata source has no overview.</summary>
+    string? OmdbPlot { get; set; }
+    /// <summary>When OMDb was last asked; null = never (or the IMDb id changed since).</summary>
+    DateTimeOffset? OmdbUpdated { get; set; }
+}
+
+public class Movie : IOmdbFields
 {
     public int Id { get; set; }
     public int TmdbId { get; set; }
@@ -165,6 +186,19 @@ public class Movie
     public MovieCollection? Collection { get; set; }
     /// <summary>Other names releases use for the movie. Load it only for the movie being matched or searched.</summary>
     public List<AlternateTitle> AlternateTitles { get; set; } = [];
+    // ---- OMDb (IOmdbFields): refreshed by the OMDb task, keyed on ImdbId ----
+    public double? ImdbRating { get; set; }
+    public long? ImdbVotes { get; set; }
+    public int? RottenTomatoes { get; set; }
+    public int? Metacritic { get; set; }
+    public string? RottenTomatoesUrl { get; set; }
+    public string? Certification { get; set; }
+    public string? Awards { get; set; }
+    public string? BoxOffice { get; set; }
+    public string? Director { get; set; }
+    public string? Writer { get; set; }
+    public string? OmdbPlot { get; set; }
+    public DateTimeOffset? OmdbUpdated { get; set; }
 }
 
 /// <summary>A TMDB movie collection ("The Lord of the Rings Collection"). Only collections with movies in the library are kept.</summary>
@@ -234,7 +268,7 @@ public enum MonitorMode
     None = 5,
 }
 
-public class Series
+public class Series : IOmdbFields
 {
     public int Id { get; set; }
     /// <summary>TMDB TV id. Always set when series metadata comes from TMDB; otherwise when TheTVDB knows it.</summary>
@@ -271,6 +305,19 @@ public class Series
     public List<Episode> Episodes { get; set; } = [];
     /// <summary>Other names releases use for the series. Load it only for the series being matched or searched.</summary>
     public List<AlternateTitle> AlternateTitles { get; set; } = [];
+    // ---- OMDb (IOmdbFields): refreshed by the OMDb task, keyed on ImdbId ----
+    public double? ImdbRating { get; set; }
+    public long? ImdbVotes { get; set; }
+    public int? RottenTomatoes { get; set; }
+    public int? Metacritic { get; set; }
+    public string? RottenTomatoesUrl { get; set; }
+    public string? Certification { get; set; }
+    public string? Awards { get; set; }
+    public string? BoxOffice { get; set; }
+    public string? Director { get; set; }
+    public string? Writer { get; set; }
+    public string? OmdbPlot { get; set; }
+    public DateTimeOffset? OmdbUpdated { get; set; }
 }
 
 public enum AlternateTitleSource

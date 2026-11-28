@@ -9,6 +9,10 @@
     <option value="ended">Ended</option>
     <option value="unmonitored">Unmonitored</option>
   </select>
+  <select class="input w-36" aria-label="Minimum IMDb rating" title="Minimum IMDb rating (from OMDb)" [ngModel]="minRating()" (ngModelChange)="minRating.set($event)">
+    <option [ngValue]="null">Any rating</option>
+    @for (r of minRatings; track r) { <option [ngValue]="r">IMDb {{ r }}+</option> }
+  </select>
   <div class="flex gap-2">
     <kr-view-toggle [mode]="view()" (modeChange)="setView($event)" />
     @if (view() === 'grid' && !selecting() && libraryTotal()) {
@@ -45,7 +49,7 @@
   </div>
 } @else if (total() === 0) {
   <p class="py-12 text-center text-slate-500">
-    {{ filter() === 'following' && !query() ? 'You don’t follow any series yet. Open one and press Follow to see it here and in your calendar.' : 'No series match the filter.' }}
+    {{ filter() === 'following' && !query() && !minRating() ? 'You don’t follow any series yet. Open one and press Follow to see it here and in your calendar.' : 'No series match the filter.' }}
   </p>
 } @else {
   @if (showBulk()) {
@@ -67,6 +71,8 @@
               <th class="max-md:hidden" krSort="status" [krSortBy]="sort">Status</th>
               <th krSort="episodes" [krSortBy]="sort">Episodes</th>
               <th class="max-lg:hidden" krSort="nextAiring" [krSortBy]="sort">Next airing</th>
+              <th class="max-md:hidden" krSort="imdb" [krSortBy]="sort" title="IMDb rating (from OMDb)">IMDb</th>
+              <th class="max-xl:hidden" krSort="tomatoes" [krSortBy]="sort" title="Rotten Tomatoes Tomatometer (from OMDb)">RT</th>
               <th class="max-sm:hidden">Following</th>
             </tr>
           </thead>
@@ -95,11 +101,13 @@
                   </div>
                 </td>
                 <td class="whitespace-nowrap text-slate-400 max-lg:hidden">{{ s.nextAiring ? (s.nextAiring | date: 'MMM d, y') : '—' }}</td>
+                <td class="whitespace-nowrap text-slate-400 max-md:hidden">{{ s.imdbRating != null ? s.imdbRating.toFixed(1) : '—' }}</td>
+                <td class="whitespace-nowrap text-slate-400 max-xl:hidden">{{ s.rottenTomatoes != null ? s.rottenTomatoes + '%' : '—' }}</td>
                 <td class="max-sm:hidden">
                   @if (following().has(s.id)) { <span class="badge bg-accent-500/15 text-accent-300">Following</span> }
                 </td>
               } @else {
-                <td colspan="8"><div class="h-4 w-48 animate-pulse rounded bg-surface-800"></div></td>
+                <td colspan="10"><div class="h-4 w-48 animate-pulse rounded bg-surface-800"></div></td>
               }
             </tr>
           </tbody>
@@ -132,7 +140,7 @@
               <kr-progress class="mt-2" [value]="percent(s)" [color]="progressColor(s)" />
               <div class="mt-1.5 truncate text-xs font-medium text-slate-100 group-hover:text-white sm:text-sm" [title]="s.network ? s.title + ' · ' + s.network : s.title">{{ s.title }}</div>
               <div class="flex justify-between gap-1 text-[11px] text-slate-500 sm:text-xs">
-                <span class="truncate">{{ s.episodeFileCount }}/{{ s.episodeCount }}<span class="max-sm:hidden"> episodes</span></span>
+                <span class="truncate">{{ s.episodeFileCount }}/{{ s.episodeCount }}<span class="max-sm:hidden"> episodes</span>@if (s.imdbRating != null) { <span class="text-amber-300/80" title="IMDb rating"> · ★ {{ s.imdbRating.toFixed(1) }}</span> }</span>
                 @if (s.nextAiring) { <span class="whitespace-nowrap" [title]="'Next airing'">{{ s.nextAiring | date: 'MMM d' }}</span> }
                 @else { <span class="truncate">{{ s.status }}</span> }
               </div>

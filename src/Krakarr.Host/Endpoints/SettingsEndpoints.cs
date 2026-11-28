@@ -21,6 +21,7 @@ public static class SettingsEndpoints
             merge: (_, incoming) => incoming with { ReleaseRegion = MovieReleases.NormalizeRegion(incoming.ReleaseRegion) },
             validate: s => s.ReleaseRegion is { } r && (r.Length != 2 || !r.All(char.IsAsciiLetterUpper))
                 ? "Release region must be a two-letter country code (ISO 3166-1), e.g. US or ES"
+                : s.OmdbDailyLimit is < 0 or > 100_000 ? "OMDb daily requests must be between 0 (off) and 100,000"
                 : null);
         MapSection<DownloadClientSettings>(settings, "downloads",
             merge: (current, incoming) => incoming with { QBittorrent = incoming.QBittorrent.WithSecretsFrom(current.QBittorrent) },

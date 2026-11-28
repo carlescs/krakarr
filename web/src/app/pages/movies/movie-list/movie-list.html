@@ -9,6 +9,10 @@
     <option value="downloaded">Downloaded</option>
     <option value="unmonitored">Unmonitored</option>
   </select>
+  <select class="input min-w-0 max-sm:flex-1 sm:w-36" aria-label="Minimum IMDb rating" title="Minimum IMDb rating (from OMDb)" [ngModel]="minRating()" (ngModelChange)="minRating.set($event)">
+    <option [ngValue]="null">Any rating</option>
+    @for (r of minRatings; track r) { <option [ngValue]="r">IMDb {{ r }}+</option> }
+  </select>
   <div class="flex gap-2">
     <div class="inline-flex shrink-0 rounded-lg bg-surface-800 p-0.5" role="group" aria-label="Show">
       <button type="button" class="rounded-md px-2.5 py-1.5 pointer-coarse:min-h-9" [class]="grouping() === 'none' ? 'bg-surface-600 text-white' : 'text-slate-400 hover:text-white'"
@@ -58,10 +62,10 @@
     }
   </div>
 } @else if (grouping() === 'collection') {
-  <kr-collection-grid [q]="searchTerm()" [filter]="filter()" [view]="view()" />
+  <kr-collection-grid [q]="searchTerm()" [filter]="filter()" [minRating]="minRating()" [view]="view()" />
 } @else if (total() === 0) {
   <p class="py-12 text-center text-slate-500">
-    {{ filter() === 'following' && !query() ? 'You don’t follow any movies yet. Open one and press Follow to see it here and in your calendar.' : 'No movies match the filter.' }}
+    {{ filter() === 'following' && !query() && !minRating() ? 'You don’t follow any movies yet. Open one and press Follow to see it here and in your calendar.' : 'No movies match the filter.' }}
   </p>
 } @else {
   @if (showBulk()) {
@@ -80,6 +84,8 @@
               <th krSort="title" [krSortBy]="sort">Title</th>
               <th class="max-sm:hidden" krSort="year" [krSortBy]="sort">Year</th>
               <th krSort="status" [krSortBy]="sort">Status</th>
+              <th class="max-md:hidden" krSort="imdb" [krSortBy]="sort" title="IMDb rating (from OMDb)">IMDb</th>
+              <th class="max-lg:hidden" krSort="tomatoes" [krSortBy]="sort" title="Rotten Tomatoes Tomatometer (from OMDb)">RT</th>
               <th class="max-md:hidden">Quality</th>
               <th class="max-sm:hidden">Following</th>
             </tr>
@@ -106,12 +112,14 @@
                       {{ statusLabel(m) }}
                     </span>
                   </td>
+                  <td class="whitespace-nowrap text-slate-400 max-md:hidden">{{ m.imdbRating != null ? m.imdbRating.toFixed(1) : '—' }}</td>
+                  <td class="whitespace-nowrap text-slate-400 max-lg:hidden">{{ m.rottenTomatoes != null ? m.rottenTomatoes + '%' : '—' }}</td>
                   <td class="whitespace-nowrap text-slate-400 max-md:hidden">{{ m.quality || '—' }}</td>
                   <td class="text-slate-400 max-sm:hidden">
                     @if (following().has(m.id)) { <span class="badge bg-accent-500/15 text-accent-300">Following</span> }
                   </td>
                 } @else {
-                  <td colspan="6"><div class="h-4 w-48 animate-pulse rounded bg-surface-800"></div></td>
+                  <td colspan="8"><div class="h-4 w-48 animate-pulse rounded bg-surface-800"></div></td>
                 }
             </tr>
           </tbody>
@@ -145,7 +153,7 @@
                 }
               </div>
               <div class="mt-1.5 truncate text-xs font-medium sm:mt-2 sm:text-sm text-slate-100 group-hover:text-white">{{ m.title }}</div>
-              <div class="truncate text-[11px] text-slate-500 sm:text-xs">{{ m.year || '—' }}{{ m.quality ? ' · ' + m.quality : '' }}</div>
+              <div class="truncate text-[11px] text-slate-500 sm:text-xs">{{ m.year || '—' }}{{ m.quality ? ' · ' + m.quality : '' }}@if (m.imdbRating != null) { <span class="text-amber-300/80" title="IMDb rating"> · ★ {{ m.imdbRating.toFixed(1) }}</span> }</div>
             </a>
           } @else {
             <div class="min-w-0" aria-hidden="true">
