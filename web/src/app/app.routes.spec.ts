@@ -1,8 +1,8 @@
 import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Route, Router, provideRouter } from '@angular/router';
+import { Route, Router, UrlSegment, provideRouter } from '@angular/router';
 import { describe, expect, it } from 'vitest';
-import { routes } from './app.routes';
+import { routes, settingsRouteMatcher } from './app.routes';
 
 @Component({ template: '' })
 class Blank {}
@@ -24,5 +24,18 @@ describe('routes', () => {
     expect(router.url).toBe(to);
     await router.navigateByUrl('/people/6384');
     expect(router.url).toBe('/people/6384');
+  });
+
+  // One route for /settings and /settings/<tab>, so switching tabs reuses the page instead of rebuilding it.
+  it.each([
+    ['/settings', undefined],
+    ['/settings/health', 'health'],
+  ])('matches %s with the settings route', (url, tab) => {
+    const segments = url.split('/').filter(Boolean).map(path => new UrlSegment(path, {}));
+    expect(settingsRouteMatcher(segments)?.posParams?.['tab']?.path).toBe(tab);
+  });
+
+  it.each(['/settingsx', '/settings/health/extra', '/movies'])('does not match %s with the settings route', url => {
+    expect(settingsRouteMatcher(url.split('/').filter(Boolean).map(path => new UrlSegment(path, {})))).toBeNull();
   });
 });

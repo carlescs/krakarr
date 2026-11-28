@@ -1,7 +1,7 @@
 import { Component, DestroyRef, OnInit, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api, SettingsMap, errorMessage } from '../../../core/api';
 import { BytesPipe } from '../../../core/format';
 import { Events } from '../../../core/events';
@@ -90,7 +90,7 @@ type Tab = 'media' | 'profiles' | 'downloads' | 'subtitles' | 'metadata' | 'medi
 
 @Component({
   selector: 'kr-settings',
-  imports: [LanguagePicker, FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings, HealthSettings, BackupSettingsPanel, DatabaseSettings, MediaServerSettings, SortHeader],
+  imports: [RouterLink, LanguagePicker, FormsModule, Modal, BytesPipe, AccountSettings, UsersSettings, HealthSettings, BackupSettingsPanel, DatabaseSettings, MediaServerSettings, SortHeader],
   templateUrl: './settings.html',
   styleUrl: './settings.scss',
 })
@@ -100,6 +100,7 @@ export class SettingsPage implements OnInit {
   private readonly events = inject(Events);
   private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
 
   protected readonly auth = inject(Auth);
   private readonly adminTabs: { id: Tab; label: string }[] = [
@@ -120,7 +121,8 @@ export class SettingsPage implements OnInit {
   ];
   /** Everyone manages their own account here; the rest of the settings are for admins. */
   protected readonly tabs = computed(() => this.auth.isAdmin() ? this.adminTabs : this.adminTabs.filter(t => t.id === 'account'));
-  protected readonly tab = signal<Tab>(this.auth.isAdmin() ? 'media' : 'account');
+  private readonly defaultTab: Tab = this.auth.isAdmin() ? 'media' : 'account';
+  protected readonly tab = signal<Tab>(this.defaultTab);
 
   protected readonly rootFolders = signal<RootFolder[]>([]);
   protected readonly profiles = signal<QualityProfile[]>([]);
@@ -188,10 +190,13 @@ export class SettingsPage implements OnInit {
   private readonly now = signal(Date.now());
 
   async ngOnInit() {
-    // /settings/<tab> opens a tab directly (links from the bell and the health page).
+    // Each tab has its own URL, /settings/<tab>, so tabs can be linked and bookmarked; /settings opens the first one.
+    // The page stays alive while the tab changes (one route matches both), so unsaved edits on other tabs survive.
     this.route.paramMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
       const wanted = params.get('tab');
-      if (wanted && this.tabs().some(t => t.id === wanted)) this.tab.set(wanted as Tab);
+      if (!wanted) this.tab.set(this.defaultTab);
+      else if (this.tabs().some(t => t.id === wanted)) this.tab.set(wanted as Tab);
+      else void this.router.navigate(['/settings'], { replaceUrl: true }); // unknown, or not for this role
     });
     if (!this.auth.isAdmin()) return;
     this.events.taskUpdated.pipe(takeUntilDestroyed(this.destroyRef))
