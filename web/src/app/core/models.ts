@@ -316,7 +316,13 @@ export interface DownloadClientSettings {
   downloadDirectory?: string; listenPort: number; maxDownloadRateKiB: number; maxUploadRateKiB: number; maxConnections: number;
   seedRatioLimit: number; seedTimeLimitMinutes: number; seedLimitAction: SeedLimitAction; enableDht: boolean; enablePortForwarding: boolean;
 }
-export interface AutomationSettings { rssSyncIntervalMinutes: number; searchOnAdd: boolean; }
+export interface AutomationSettings {
+  rssSyncIntervalMinutes: number; searchOnAdd: boolean;
+  /** Stop monitoring a series once it has ended and every monitored, aired episode has a file. */
+  unmonitorFinishedSeries: boolean;
+  /** Make everyone stop following such a finished series. */
+  unfollowFinishedSeries: boolean;
+}
 
 /** Scheduled backups into /config/Backups. `intervalDays` 0 turns scheduled backups off. */
 export interface BackupSettings { intervalDays: number; retentionCount: number; }

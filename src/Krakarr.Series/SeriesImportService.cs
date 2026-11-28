@@ -257,6 +257,8 @@ public sealed class SeriesImportService(
         if (series is not null) await eventHub.PublishAsync(EventNames.SeriesUpdated, new { series.Id }, ct);
         await eventHub.PublishAsync(EventNames.HistoryAdded, entry, ct);
         push.Send(PushFor(download, series, imported));
+        // Importing the last missing episode of an ended series finishes it.
+        if (series is not null && download.Imported) await seriesService.CheckFinishedAsync(series.Id, ct);
     }
 
     private static PushMessage PushFor(Download download, Core.Domain.Series? series, List<Episode> imported)

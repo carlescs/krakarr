@@ -207,6 +207,57 @@ public sealed class SeriesService(
     public Task RescanDiskAsync(Core.Domain.Series series, CancellationToken ct = default) =>
         RescanDiskCoreAsync(series, seen: null, ct);
 
+    /// <summary>
+    /// Records when a series becomes finished (ended, with at least one episode file and a file for every monitored regular
+    /// episode that has aired) and then applies the finished-series actions of <see cref="AutomationSettings"/>: stop
+    /// monitoring it and/or remove everyone's follow. They run once, when the series becomes finished, so monitoring or
+    /// following it again afterwards sticks; the mark goes away when it is no longer finished (new episodes announced,
+    /// a file deleted). Does nothing while both actions are off. Returns whether the actions ran.
+    /// </summary>
+    public async Task<bool> CheckFinishedAsync(int seriesId, CancellationToken ct = default)
+    {
+        var automation = await settings.GetAsync<AutomationSettings>(ct);
+        if (!automation.UnmonitorFinishedSeries && !automation.UnfollowFinishedSeries) return false;
+
+        var today = Today;
+        var state = await db.Series.AsNoTracking().Where(s => s.Id == seriesId)
+            .Select(s => new
+            {
+                s.Title,
+                s.Status,
+                s.Monitored,
+                s.FinishedAt,
+                HasFile = s.Episodes.Any(e => e.SeasonNumber > 0 && e.EpisodeFileId != null),
+                Missing = s.Episodes.Any(e => e.SeasonNumber > 0 && e.Monitored && e.EpisodeFileId == null && e.AirDate != null && e.AirDate <= today),
+            })
+            .FirstOrDefaultAsync(ct);
+        if (state is null) return false;
+
+        var finished = state.Status == SeriesStatus.Ended && state.HasFile && !state.Missing;
+        if (finished == (state.FinishedAt is not null)) return false;
+        if (!finished)
+        {
+            await db.Series.Where(s => s.Id == seriesId).ExecuteUpdateAsync(u => u.SetProperty(s => s.FinishedAt, (DateTimeOffset?)null), ct);
+            return false;
+        }
+
+        var unmonitor = automation.UnmonitorFinishedSeries && state.Monitored;
+        var now = time.GetUtcNow();
+        await db.Series.Where(s => s.Id == seriesId).ExecuteUpdateAsync(u => u
+            .SetProperty(s => s.FinishedAt, now)
+            .SetProperty(s => s.Monitored, s => s.Monitored && !unmonitor), ct);
+        var unfollowed = automation.UnfollowFinishedSeries
+            ? await MediaSubscriptions.For(db, MediaType.Series, seriesId).ExecuteDeleteAsync(ct)
+            : 0;
+
+        logger.LogInformation("{Title} has finished{Unmonitored}{Unfollowed}", state.Title,
+            unmonitor ? "; no longer monitored" : string.Empty,
+            unfollowed > 0 ? $"; {unfollowed} follower(s) removed" : string.Empty);
+        if (unmonitor) await eventHub.PublishAsync(EventNames.SeriesUpdated, new { Id = seriesId }, ct);
+        if (unfollowed > 0) await eventHub.PublishAsync(EventNames.NotificationsUpdated, null, ct);
+        return true;
+    }
+
     private async Task RescanDiskCoreAsync(Core.Domain.Series series, HashSet<Episode>? seen, CancellationToken ct)
     {
         var existingFiles = await db.EpisodeFiles.Where(f => f.SeriesId == series.Id).ToListAsync(ct);

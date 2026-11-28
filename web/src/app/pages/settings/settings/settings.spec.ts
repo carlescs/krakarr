@@ -201,4 +201,27 @@ describe('SettingsPage', () => {
     expect(api.saveSettings).toHaveBeenCalledWith('downloads', expect.objectContaining({ client: 'Embedded' }));
     expect(api.saveSettings).toHaveBeenCalledWith('automation', { rssSyncIntervalMinutes: 15 });
   });
+
+  it('saves the finished-series actions with the automation settings', async () => {
+    const api = setupTest({
+      providers: routed,
+      api: mockApi({
+        settings: async (section: string) => (section === 'downloads' ? { client: 'Embedded', qBittorrent: {} }
+          : section === 'automation' ? { rssSyncIntervalMinutes: 15, unmonitorFinishedSeries: false, unfollowFinishedSeries: false }
+          : section === 'languages' ? { preferred: [] } : {}),
+        rootFolders: async () => [], qualityProfiles: async () => [], qualities: async () => [], systemStatus: async () => ({}),
+        saveSettings: async (_: string, value: unknown) => value,
+      }),
+    });
+    const { fixture, el } = await render();
+    tabLink(el, 'Download client').click();
+    await settle(fixture);
+    const unmonitor = [...el.querySelectorAll('label')].find(l => l.textContent?.includes('Stop monitoring them'))!.querySelector('input')!;
+    unmonitor.click();
+    await settle(fixture);
+    button(el, 'Save').click();
+    await settle(fixture);
+    expect(api.saveSettings).toHaveBeenCalledWith('automation',
+      { rssSyncIntervalMinutes: 15, unmonitorFinishedSeries: true, unfollowFinishedSeries: false });
+  });
 });
