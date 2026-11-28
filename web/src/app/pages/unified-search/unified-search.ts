@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, signal, untracked } from '@angular/core';
+import { Component, ElementRef, afterNextRender, computed, effect, inject, input, signal, untracked, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../core/api';
@@ -46,6 +46,7 @@ export class UnifiedSearchPage {
   protected readonly preview = PREVIEW;
 
   protected term = '';
+  private readonly termInput = viewChild<ElementRef<HTMLInputElement>>('termInput');
   protected readonly tab = signal<SearchTab>('all');
   protected readonly searched = signal('');
   protected readonly searching = signal(false);
@@ -80,6 +81,8 @@ export class UnifiedSearchPage {
   private generation = 0;
 
   constructor() {
+    // `autofocus` only applies on a full page load, not when the router (e.g. the top bar's search button) brings us here.
+    afterNextRender(() => { if (!this.q()) this.termInput()?.nativeElement.focus(); });
     // URL → state: on first load, and on back/forward.
     effect(() => {
       const q = (this.q() ?? '').trim();

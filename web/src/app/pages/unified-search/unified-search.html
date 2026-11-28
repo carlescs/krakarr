@@ -4,7 +4,7 @@
 </div>
 
 <form class="mb-4 flex gap-2 sm:gap-3" (ngSubmit)="search()">
-  <input class="input min-w-0 flex-1 !py-3 !text-base" type="search" enterkeyhint="search" name="term" [(ngModel)]="term"
+  <input class="input min-w-0 flex-1 !py-3 !text-base" type="search" enterkeyhint="search" #termInput name="term" [(ngModel)]="term"
          placeholder="Movies, series, people or keywords, e.g. “The Matrix”, “Keanu Reeves”, “heist”" autofocus />
   <button class="btn-primary px-4 sm:px-6" [disabled]="searching() || !term.trim()">{{ searching() ? 'Searching…' : 'Search' }}</button>
 </form>
