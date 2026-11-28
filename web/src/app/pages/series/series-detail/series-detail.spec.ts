@@ -132,6 +132,43 @@ describe('SeriesDetailPage', () => {
     expect(page.seasonSubtitleGaps().get(1)).toBe(1);
   });
 
+  it('reads which episodes were watched, per server', async () => {
+    const api = {
+      series: vi.fn(async (id: number) => ({ id, title: 'Show', monitored: true, seasonFolder: true, qualityProfileId: 1, seasons: [{ seasonNumber: 1 }], episodeFileCount: 2 })),
+      episodes: vi.fn(async () => []),
+      qualityProfiles: vi.fn(async () => []),
+      history: vi.fn(async () => ({ items: [] })),
+      subtitleFiles: vi.fn(async () => []),
+      languages: vi.fn(async () => ({ all: [], preferred: [] })),
+      wantedSubtitleLanguages: vi.fn(async () => ({ enabled: false, useEmbeddedSubtitles: true, languages: [] })),
+      subtitleLanguages: vi.fn(async () => []),
+      seriesJellyfinLink: vi.fn(async () => null),
+      seriesPlayStatus: vi.fn(async () => [
+        { server: 'Jellyfin', watched: 1, total: 2, episodes: [{ episodeId: 1, played: true }, { episodeId: 2, played: false, progress: 0.5 }] },
+        { server: 'Plex', watched: 1, total: 2, episodes: [{ episodeId: 1, played: true }] },
+      ]),
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: Api, useValue: api },
+        { provide: Auth, useValue: { isStaff: () => true } },
+        { provide: Events, useValue: { downloads: signal([]), seriesUpdated: new Subject(), historyAdded: new Subject(), subtitlesUpdated: new Subject() } },
+        { provide: Toasts, useValue: { error: vi.fn(), show: vi.fn(), success: vi.fn() } },
+        { provide: Router, useValue: { navigateByUrl: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(SeriesDetailPage, { set: { template: '', imports: [] } });
+
+    const fixture = TestBed.createComponent(SeriesDetailPage);
+    const page = fixture.componentInstance as unknown as { episodePlay: () => Map<number, { server: string; played: boolean; progress?: number }[]> };
+    fixture.componentRef.setInput('id', 3);
+    await fixture.whenStable();
+    await new Promise(resolve => setTimeout(resolve));
+    expect(api.seriesPlayStatus).toHaveBeenCalledWith(3);
+    expect(page.episodePlay().get(1)?.map(s => s.server)).toEqual(['Jellyfin', 'Plex']);
+    expect(page.episodePlay().get(2)).toEqual([expect.objectContaining({ server: 'Jellyfin', played: false, progress: 0.5 })]);
+  });
+
   it('deletes all files of a season once each, then reloads', async () => {
     const file = (id: number, relativePath: string) => ({ id, relativePath, size: 1, quality: 'HDTV-720p', dateAdded: '2024-01-01T00:00:00Z' });
     const api = {

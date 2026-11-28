@@ -5,7 +5,7 @@ import { Api, errorMessage } from '../../../core/api';
 import { Auth } from '../../../core/auth';
 import { BytesPipe } from '../../../core/format';
 import { JellyfinLink } from '../../../core/jellyfin-link';
-import { Episode, EpisodeDetails, MediaInfo, SubtitleFile } from '../../../core/models';
+import { Episode, EpisodeDetails, MediaInfo, PlayState, SubtitleFile } from '../../../core/models';
 import { Modal } from '../../../shared/modal/modal';
 import { MoreMenu } from '../../../shared/more-menu/more-menu';
 import { CreditsView } from '../../../shared/credits/credits';
@@ -13,6 +13,7 @@ import { ExternalLinks } from '../../../shared/external-links/external-links';
 import { Progress } from '../../../shared/progress/progress';
 import { SubtitleList } from '../../../shared/subtitle-list/subtitle-list';
 import { MediaInfoView } from '../../../shared/media-info/media-info';
+import { PlayStatus } from '../../../shared/play-status/play-status';
 
 /**
  * Dialog with everything about one library episode: what the library stores (file, subtitles, status) plus TMDB's
@@ -20,7 +21,7 @@ import { MediaInfoView } from '../../../shared/media-info/media-info';
  */
 @Component({
   selector: 'kr-episode-details',
-  imports: [RouterLink, Modal, MoreMenu, CreditsView, ExternalLinks, Progress, SubtitleList, MediaInfoView, DatePipe, BytesPipe],
+  imports: [RouterLink, PlayStatus, Modal, MoreMenu, CreditsView, ExternalLinks, Progress, SubtitleList, MediaInfoView, DatePipe, BytesPipe],
   templateUrl: './episode-details.html',
   styleUrl: './episode-details.scss',
 })
@@ -32,6 +33,8 @@ export class EpisodeDetailsDialog {
   readonly episode = input.required<Episode>();
   /** Subtitles of the episode's file. */
   readonly subtitles = input<SubtitleFile[]>([]);
+  /** The episode's watched state on the media servers that report it (only watched or part-way watched episodes have one). */
+  readonly playStatus = input<PlayState[]>([]);
 
   readonly closed = output<void>();
   readonly search = output<void>();

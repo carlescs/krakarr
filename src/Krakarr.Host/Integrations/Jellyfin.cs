@@ -19,13 +19,32 @@ public sealed record JellyfinLookup(JellyfinItemKind Kind, string Title, string?
 /// <summary>An episode as Krakarr knows it, used to find it under the series' item on the Jellyfin server.</summary>
 public sealed record JellyfinEpisodeLookup(int SeasonNumber, int EpisodeNumber, int? TmdbId, int? TvdbId);
 
-/// <summary>A Jellyfin item; the index numbers are only set for episodes (season, episode and the last episode of a multi-episode file).</summary>
+/// <summary>
+/// A Jellyfin (or Emby, or Plex mapped onto it) item; the index numbers are only set for episodes (season, episode and the
+/// last episode of a multi-episode file). <see cref="UserData"/> is only asked for when reading play status.
+/// </summary>
 public sealed record JellyfinItem(string Id, string? Name, string? ServerId, int? ProductionYear, Dictionary<string, string?>? ProviderIds,
-    int? ParentIndexNumber = null, int? IndexNumber = null, int? IndexNumberEnd = null);
+    int? ParentIndexNumber = null, int? IndexNumber = null, int? IndexNumberEnd = null, long? RunTimeTicks = null, JellyfinUserData? UserData = null);
+
+/// <summary>One user's play state of an item (Jellyfin, Emby; Plex is mapped onto it).</summary>
+public sealed record JellyfinUserData(bool Played, int PlayCount, long PlaybackPositionTicks, DateTimeOffset? LastPlayedDate);
+
+/// <summary>A user account on a Jellyfin or Emby server.</summary>
+public sealed record MediaServerUser(string Id, string? Name);
+
+/// <summary>A Jellyfin or Emby server to talk to.</summary>
+public sealed record MediaBrowserServer(MediaBrowserKind Kind, string Url, string ApiKey)
+{
+    public static MediaBrowserServer? From(JellyfinSettings s) => s.IsConfigured ? new(MediaBrowserKind.Jellyfin, s.Url!, s.ApiKey!) : null;
+    public static MediaBrowserServer? From(EmbySettings s) => s.IsConfigured ? new(MediaBrowserKind.Emby, s.Url!, s.ApiKey!) : null;
+}
 
 public sealed record JellyfinTestResult(bool Success, string? ServerName = null, string? Version = null, string? Message = null);
 
-/// <summary>Finds library titles on a Jellyfin server and builds links to their pages in the Jellyfin web client.</summary>
+/// <summary>
+/// Finds library titles on a Jellyfin (or Emby, which shares this part of the API) server, builds links to their pages in
+/// the Jellyfin web client and reads a user's play state.
+/// </summary>
 public sealed class JellyfinClient(IHttpClientFactory httpClientFactory, ILogger<JellyfinClient> logger)
 {
     public const string HttpClientName = "jellyfin";
@@ -35,34 +54,55 @@ public sealed class JellyfinClient(IHttpClientFactory httpClientFactory, ILogger
 
     private const int SearchLimit = 25;
 
+    /// <summary>A whole series' episodes with ids and user data: about 1 KB each, so room for several thousand.</summary>
+    private const long MaxEpisodesBytes = 16 * 1024 * 1024;
+
     private sealed record ItemsResponse(List<JellyfinItem>? Items);
 
     private sealed record SystemInfo(string? ServerName, string? Version);
 
     /// <summary>Link to the title's page in Jellyfin, or null when Jellyfin is not configured or doesn't have it.</summary>
     public async Task<string?> FindItemUrlAsync(JellyfinSettings settings, JellyfinLookup lookup, CancellationToken ct) =>
-        await FindItemAsync(settings, lookup, ct) is { } item ? ItemUrl(settings, item) : null;
+        MediaBrowserServer.From(settings) is { } server && await FindItemAsync(server, lookup, null, ct) is { } item ? ItemUrl(settings, item) : null;
 
     /// <summary>Link to the episode's page in Jellyfin, or null when Jellyfin is not configured or doesn't have the series or the episode.</summary>
     public async Task<string?> FindEpisodeUrlAsync(JellyfinSettings settings, JellyfinLookup series, JellyfinEpisodeLookup episode, CancellationToken ct)
     {
-        if (await FindItemAsync(settings, series, ct) is not { } show) return null;
+        if (MediaBrowserServer.From(settings) is not { } server || await FindItemAsync(server, series, null, ct) is not { } show) return null;
         // One season's episodes: bounded, and the only way to match a multi-episode file by its index range.
         var query = $"Shows/{Uri.EscapeDataString(show.Id)}/Episodes?Season={episode.SeasonNumber}"
             + "&Fields=ProviderIds&EnableImages=false&EnableUserData=false";
-        var response = await GetAsync<ItemsResponse>(settings, query, ct);
+        var response = await GetAsync<ItemsResponse>(server, query, MaxResponseBytes, ct);
         return MatchEpisode(response?.Items ?? [], episode) is { } item ? ItemUrl(settings, item) : null;
     }
 
-    private async Task<JellyfinItem?> FindItemAsync(JellyfinSettings settings, JellyfinLookup lookup, CancellationToken ct)
-    {
-        if (!settings.IsConfigured) return null;
+    /// <summary>The movie or series as <paramref name="userId"/> sees it (with its play state), or null when the server doesn't have it.</summary>
+    public Task<JellyfinItem?> FindUserItemAsync(MediaBrowserServer server, JellyfinLookup lookup, string userId, CancellationToken ct) =>
+        FindItemAsync(server, lookup, userId, ct);
 
+    /// <summary>Every episode of a series item, with ids and <paramref name="userId"/>'s play state.</summary>
+    public async Task<IReadOnlyList<JellyfinItem>> EpisodesAsync(MediaBrowserServer server, string seriesItemId, string userId, CancellationToken ct)
+    {
+        var query = $"Shows/{Uri.EscapeDataString(seriesItemId)}/Episodes?UserId={Uri.EscapeDataString(userId)}"
+            + "&Fields=ProviderIds&EnableImages=false&EnableUserData=true";
+        return (await GetAsync<ItemsResponse>(server, query, MaxEpisodesBytes, ct))?.Items ?? [];
+    }
+
+    /// <summary>The server's user accounts, to pick whose play state Krakarr shows.</summary>
+    public async Task<IReadOnlyList<MediaServerUser>> UsersAsync(MediaBrowserServer server, CancellationToken ct) =>
+        (await GetAsync<List<MediaServerUser>>(server, "Users", MaxResponseBytes, ct) ?? [])
+            .Where(u => !string.IsNullOrEmpty(u.Id))
+            .OrderBy(u => u.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    private async Task<JellyfinItem?> FindItemAsync(MediaBrowserServer server, JellyfinLookup lookup, string? userId, CancellationToken ct)
+    {
+        var user = userId is null ? "&EnableUserData=false" : $"&UserId={Uri.EscapeDataString(userId)}&EnableUserData=true";
         foreach (var term in new[] { lookup.Title, lookup.OriginalTitle }.Where(t => !string.IsNullOrWhiteSpace(t)).Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var query = $"Items?Recursive=true&IncludeItemTypes={lookup.Kind}&SearchTerm={Uri.EscapeDataString(term!)}"
-                + $"&Fields=ProviderIds&EnableImages=false&EnableUserData=false&Limit={SearchLimit}";
-            var response = await GetAsync<ItemsResponse>(settings, query, ct);
+                + $"&Fields=ProviderIds&EnableImages=false{user}&Limit={SearchLimit}";
+            var response = await GetAsync<ItemsResponse>(server, query, MaxResponseBytes, ct);
             if (Match(response?.Items ?? [], lookup) is { } item) return item;
         }
 
@@ -74,7 +114,7 @@ public sealed class JellyfinClient(IHttpClientFactory httpClientFactory, ILogger
         if (!settings.IsConfigured) return new(false, Message: "Enter the Jellyfin URL and an API key");
         try
         {
-            var info = await GetAsync<SystemInfo>(settings, "System/Info", ct);
+            var info = await GetAsync<SystemInfo>(MediaBrowserServer.From(settings)!, "System/Info", MaxResponseBytes, ct);
             return new(true, info?.ServerName, info?.Version);
         }
         catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException or UriFormatException)
@@ -119,6 +159,38 @@ public sealed class JellyfinClient(IHttpClientFactory httpClientFactory, ILogger
             && (first == episode.EpisodeNumber || (i.IndexNumberEnd is { } last && first <= episode.EpisodeNumber && episode.EpisodeNumber <= last)));
     }
 
+    /// <summary>
+    /// <see cref="MatchEpisode"/> for many episodes at once (a whole series): indexes the items once instead of scanning
+    /// them for every episode. The result lines up with <paramref name="episodes"/>.
+    /// </summary>
+    public static JellyfinItem?[] MatchEpisodes(IReadOnlyList<JellyfinItem> items, IReadOnlyList<JellyfinEpisodeLookup> episodes)
+    {
+        var byTvdb = new Dictionary<string, JellyfinItem>(StringComparer.OrdinalIgnoreCase);
+        var byTmdb = new Dictionary<string, JellyfinItem>(StringComparer.OrdinalIgnoreCase);
+        var byNumber = new Dictionary<(int Season, int Episode), JellyfinItem>();
+        foreach (var item in items)
+        {
+            if (ProviderId(item, "Tvdb") is { } tvdb) byTvdb.TryAdd(tvdb, item);
+            if (ProviderId(item, "Tmdb") is { } tmdb) byTmdb.TryAdd(tmdb, item);
+            if (item is { ParentIndexNumber: { } season, IndexNumber: { } first })
+            {
+                // A multi-episode file covers its whole range (capped, in case the server reports nonsense).
+                var last = item.IndexNumberEnd is { } end && end >= first ? Math.Min(end, first + 50) : first;
+                for (var n = first; n <= last; n++) byNumber.TryAdd((season, n), item);
+            }
+        }
+
+        var result = new JellyfinItem?[episodes.Count];
+        for (var i = 0; i < episodes.Count; i++)
+        {
+            var e = episodes[i];
+            result[i] = (e.TvdbId is { } tvdb && byTvdb.TryGetValue(tvdb.ToString(System.Globalization.CultureInfo.InvariantCulture), out var a) ? a : null)
+                ?? (e.TmdbId is { } tmdb && byTmdb.TryGetValue(tmdb.ToString(System.Globalization.CultureInfo.InvariantCulture), out var b) ? b : null)
+                ?? (byNumber.TryGetValue((e.SeasonNumber, e.EpisodeNumber), out var c) ? c : null);
+        }
+        return result;
+    }
+
     /// <summary>The item's details page in the Jellyfin web client.</summary>
     public static string ItemUrl(JellyfinSettings settings, JellyfinItem item)
     {
@@ -141,23 +213,23 @@ public sealed class JellyfinClient(IHttpClientFactory httpClientFactory, ILogger
 
     private static string Normalize(string s) => new(s.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
 
-    private async Task<T?> GetAsync<T>(JellyfinSettings settings, string relative, CancellationToken ct)
+    private async Task<T?> GetAsync<T>(MediaBrowserServer server, string relative, long maxBytes, CancellationToken ct)
     {
-        var url = new Uri(new Uri(settings.Url!.Trim().TrimEnd('/') + "/"), relative);
+        var url = new Uri(new Uri(server.Url.Trim().TrimEnd('/') + "/"), relative);
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        var key = settings.ApiKey!.Trim();
-        request.Headers.Authorization = new AuthenticationHeaderValue("MediaBrowser", $"Token=\"{key}\"");
-        request.Headers.TryAddWithoutValidation("X-Emby-Token", key); // servers older than 10.9
+        var key = server.ApiKey.Trim();
+        if (server.Kind == MediaBrowserKind.Jellyfin) request.Headers.Authorization = new AuthenticationHeaderValue("MediaBrowser", $"Token=\"{key}\"");
+        request.Headers.TryAddWithoutValidation("X-Emby-Token", key); // Emby, and Jellyfin servers older than 10.9
 
-        var http = httpClientFactory.CreateClient(HttpClientName);
+        var http = httpClientFactory.CreateClient(server.Kind == MediaBrowserKind.Jellyfin ? HttpClientName : MediaBrowserClient.EmbyHttpClientName);
         using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!response.IsSuccessStatusCode)
         {
-            logger.LogDebug("Jellyfin {Path} answered HTTP {Status}", url.AbsolutePath, (int)response.StatusCode);
-            throw new HttpRequestException($"Jellyfin answered HTTP {(int)response.StatusCode}", null, response.StatusCode);
+            logger.LogDebug("{Server} {Path} answered HTTP {Status}", server.Kind, url.AbsolutePath, (int)response.StatusCode);
+            throw new HttpRequestException($"{server.Kind} answered HTTP {(int)response.StatusCode}", null, response.StatusCode);
         }
 
-        await using var body = await response.Content.ReadAsBoundedStreamAsync(MaxResponseBytes, ct);
+        await using var body = await response.Content.ReadAsBoundedStreamAsync(maxBytes, ct);
         return await JsonSerializer.DeserializeAsync<T>(body, JsonSerializerOptions.Web, ct);
     }
 }

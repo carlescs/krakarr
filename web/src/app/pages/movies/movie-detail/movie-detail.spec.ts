@@ -75,7 +75,7 @@ describe('MovieDetailPage', () => {
     expect(toasts.show).toHaveBeenCalled();
   });
 
-  it('looks the movie up on Jellyfin once its file is imported', async () => {
+  it('looks the movie up on Jellyfin and reads its play status once its file is imported', async () => {
     let movieFile: { id: number } | null = null;
     const api = {
       movie: vi.fn(async (id: number) => ({ id, title: `Movie ${id}`, monitored: true, qualityProfileId: 1, minimumAvailability: 'Released', hasFile: !!movieFile, movieFile })),
@@ -84,6 +84,7 @@ describe('MovieDetailPage', () => {
       subtitleFiles: vi.fn(async () => []),
       languages: vi.fn(async () => ({ all: [], preferred: [] })),
       movieJellyfinLink: vi.fn(async () => ({ url: 'https://jf/web/#/details?id=m' })),
+      moviePlayStatus: vi.fn(async () => [{ server: 'Jellyfin', played: true, playCount: 1 }]),
     };
     const movieUpdated = new Subject<{ id: number }>();
     TestBed.configureTestingModule({
@@ -98,10 +99,11 @@ describe('MovieDetailPage', () => {
     TestBed.overrideComponent(MovieDetailPage, { set: { template: '', imports: [] } });
 
     const fixture = TestBed.createComponent(MovieDetailPage);
-    const page = fixture.componentInstance as unknown as { jellyfinUrl: () => string | null };
+    const page = fixture.componentInstance as unknown as { jellyfinUrl: () => string | null; playStatus: () => { played: boolean }[] };
     fixture.componentRef.setInput('id', 1);
     await fixture.whenStable();
     expect(api.movieJellyfinLink).not.toHaveBeenCalled();
+    expect(api.moviePlayStatus).not.toHaveBeenCalled();
 
     movieFile = { id: 10 };
     movieUpdated.next({ id: 1 });
@@ -109,10 +111,12 @@ describe('MovieDetailPage', () => {
     await new Promise(r => setTimeout(r));
     expect(api.movieJellyfinLink).toHaveBeenCalledWith(1);
     expect(page.jellyfinUrl()).toBe('https://jf/web/#/details?id=m');
+    expect(page.playStatus()).toEqual([expect.objectContaining({ played: true })]);
 
     // Further updates of the same file don't look it up again.
     movieUpdated.next({ id: 1 });
     await fixture.whenStable();
     expect(api.movieJellyfinLink).toHaveBeenCalledTimes(1);
+    expect(api.moviePlayStatus).toHaveBeenCalledTimes(1);
   });
 });

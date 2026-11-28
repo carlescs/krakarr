@@ -1,10 +1,28 @@
 <div class="space-y-6">
-  @if (jellyfin(); as j) {
-    <section class="card grid grid-cols-1 gap-4 p-4 sm:p-5 sm:grid-cols-2" data-server="jellyfin">
-      <div class="sm:col-span-2">
-        <h2 class="font-semibold text-white">Jellyfin</h2>
-        <p class="hint">Downloaded movies and series get an <span class="text-slate-200">Open in Jellyfin</span> button, for every user. Leave the URL empty to turn it off.</p>
+  @if (loaded()) {
+    <div class="card flex flex-wrap items-center gap-3 p-4 sm:p-5" data-picker>
+      <div class="min-w-0 flex-1">
+        <h2 class="font-semibold text-white">Media servers</h2>
+        <p class="hint">
+          @if (enabled().length) {
+            In use: {{ enabledNames() }}.
+          } @else {
+            None in use. Add a server to have it rescan imports, link titles to it or show what was watched.
+          }
+        </p>
       </div>
+      @if (available().length) {
+        <select id="add-server" class="input w-auto" aria-label="Add a media server" (change)="add($event)">
+          <option value="" selected>Add a media server…</option>
+          @for (s of available(); track s) { <option [value]="s">{{ names[s] }}</option> }
+        </select>
+      }
+    </div>
+  }
+
+  @if (enabled().includes('jellyfin') && jellyfin(); as j) {
+    <section class="card grid grid-cols-1 gap-4 p-4 sm:p-5 sm:grid-cols-2" data-server="jellyfin">
+      <ng-container *ngTemplateOutlet="header; context: { $implicit: 'jellyfin', hint: 'Downloaded movies and series get an Open in Jellyfin button, for every user.' }" />
       <div>
         <label class="label" for="jellyfin-url">URL</label>
         <input id="jellyfin-url" class="input" [(ngModel)]="j.url" placeholder="http://jellyfin:8096" />
@@ -23,17 +41,15 @@
       <label class="flex items-center gap-2 text-sm sm:col-span-2">
         <input id="jellyfin-refresh" type="checkbox" class="accent-accent-500" [(ngModel)]="j.refreshLibrary" /> Rescan the affected folder after imports, renames and deletes
       </label>
+      <ng-container *ngTemplateOutlet="playUser; context: { $implicit: 'jellyfin', settings: j }" />
       <ng-container *ngTemplateOutlet="mappings; context: { $implicit: j.pathMappings, server: 'jellyfin' }" />
       <ng-container *ngTemplateOutlet="testRow; context: { $implicit: 'jellyfin', name: 'Jellyfin' }" />
     </section>
   }
 
-  @if (emby(); as e) {
+  @if (enabled().includes('emby') && emby(); as e) {
     <section class="card grid grid-cols-1 gap-4 p-4 sm:p-5 sm:grid-cols-2" data-server="emby">
-      <div class="sm:col-span-2">
-        <h2 class="font-semibold text-white">Emby</h2>
-        <p class="hint">Emby rescans the affected folder after imports, renames and deletes. Leave the URL empty to turn it off.</p>
-      </div>
+      <ng-container *ngTemplateOutlet="header; context: { $implicit: 'emby', hint: 'Emby rescans the affected folder after imports, renames and deletes.' }" />
       <div>
         <label class="label" for="emby-url">URL</label>
         <input id="emby-url" class="input" [(ngModel)]="e.url" placeholder="http://emby:8096" />
@@ -43,17 +59,15 @@
         <input id="emby-key" class="input font-mono" type="password" autocomplete="off" [(ngModel)]="e.apiKey" />
         <p class="hint">Emby → Settings → Advanced → API Keys.</p>
       </div>
+      <ng-container *ngTemplateOutlet="playUser; context: { $implicit: 'emby', settings: e }" />
       <ng-container *ngTemplateOutlet="mappings; context: { $implicit: e.pathMappings, server: 'emby' }" />
       <ng-container *ngTemplateOutlet="testRow; context: { $implicit: 'emby', name: 'Emby' }" />
     </section>
   }
 
-  @if (plex(); as p) {
+  @if (enabled().includes('plex') && plex(); as p) {
     <section class="card grid grid-cols-1 gap-4 p-4 sm:p-5 sm:grid-cols-2" data-server="plex">
-      <div class="sm:col-span-2">
-        <h2 class="font-semibold text-white">Plex</h2>
-        <p class="hint">Plex rescans the affected folder of the library that contains it. Leave the URL empty to turn it off.</p>
-      </div>
+      <ng-container *ngTemplateOutlet="header; context: { $implicit: 'plex', hint: 'Plex rescans the affected folder of the library that contains it.' }" />
       <div>
         <label class="label" for="plex-url">URL</label>
         <input id="plex-url" class="input" [(ngModel)]="p.url" placeholder="http://plex:32400" />
@@ -63,17 +77,56 @@
         <input id="plex-token" class="input font-mono" type="password" autocomplete="off" [(ngModel)]="p.token" />
         <p class="hint">The server owner's <code>X-Plex-Token</code>.</p>
       </div>
+      <div class="sm:col-span-2">
+        <label class="flex items-center gap-2 text-sm">
+          <input id="plex-play-status" type="checkbox" class="accent-accent-500" [(ngModel)]="p.playStatus" /> Show what was watched
+        </label>
+        <p class="hint">Movies and episodes show the token owner's watched state and progress from Plex.</p>
+      </div>
       <ng-container *ngTemplateOutlet="mappings; context: { $implicit: p.pathMappings, server: 'plex' }" />
       <ng-container *ngTemplateOutlet="testRow; context: { $implicit: 'plex', name: 'Plex' }" />
     </section>
   }
 
-  @if (jellyfin() && emby() && plex()) {
+  @if (loaded() && enabled().length) {
     <div class="flex justify-end">
       <button type="button" class="btn-primary" [disabled]="saving()" (click)="save()">{{ saving() ? 'Saving…' : 'Save' }}</button>
     </div>
   }
 </div>
+
+<ng-template #header let-server let-hint="hint">
+  <div class="flex items-start gap-3 sm:col-span-2">
+    <div class="min-w-0 flex-1">
+      <h2 class="font-semibold text-white">{{ nameOf(server) }}</h2>
+      <p class="hint">{{ hint }}</p>
+    </div>
+    <button type="button" class="btn-ghost btn-sm -mr-1 -mt-1" [attr.aria-label]="'Remove ' + nameOf(server)" [title]="'Remove ' + nameOf(server)"
+            [disabled]="removing() !== null" (click)="remove(server)" data-remove>✕</button>
+  </div>
+</ng-template>
+
+<ng-template #playUser let-server let-settings="settings">
+  <div class="sm:col-span-2">
+    <label class="label" [for]="server + '-play-user'">Show what was watched by</label>
+    <div class="flex flex-wrap items-center gap-2 sm:flex-nowrap">
+      <select [id]="server + '-play-user'" class="input min-w-0 flex-1" [(ngModel)]="settings.playStatusUserId">
+        <option [ngValue]="null">Nobody (don't show play status)</option>
+        @for (u of userOptions(server, settings.playStatusUserId); track u.id) {
+          <option [ngValue]="u.id">{{ u.name || u.id }}</option>
+        }
+      </select>
+      <button type="button" class="btn-secondary shrink-0" [disabled]="loadingUsers() !== null" (click)="loadUsers(server)">
+        {{ loadingUsers() === server ? 'Loading…' : 'Load users' }}
+      </button>
+    </div>
+    @if (userError(server); as error) {
+      <p class="hint text-rose-300" [attr.data-users-error]="server">{{ error }}</p>
+    } @else {
+      <p class="hint">Movies and episodes show this user's watched state and progress from {{ nameOf(server) }}.</p>
+    }
+  </div>
+</ng-template>
 
 <ng-template #mappings let-list let-server="server">
   <div class="space-y-2 sm:col-span-2" [attr.data-mappings]="server">

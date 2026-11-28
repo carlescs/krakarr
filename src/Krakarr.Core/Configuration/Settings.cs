@@ -285,6 +285,8 @@ public sealed record JellyfinSettings : ISettingsSection
     public bool RefreshLibrary { get; init; } = true;
     /// <summary>Translate Krakarr's library paths to the paths Jellyfin sees, when they differ.</summary>
     public List<PathMapping> PathMappings { get; init; } = [];
+    /// <summary>Jellyfin user whose watched state and progress Krakarr shows on titles and episodes. Empty = not shown.</summary>
+    public string? PlayStatusUserId { get; init; }
 
     [System.Text.Json.Serialization.JsonIgnore]
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(ApiKey);
@@ -312,6 +314,8 @@ public sealed record EmbySettings : ISettingsSection
     /// <summary>API key from Emby → Settings → Advanced → API Keys.</summary>
     public string? ApiKey { get; init; }
     public List<PathMapping> PathMappings { get; init; } = [];
+    /// <summary>Emby user whose watched state and progress Krakarr shows on titles and episodes. Empty = not shown.</summary>
+    public string? PlayStatusUserId { get; init; }
 
     [System.Text.Json.Serialization.JsonIgnore]
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(ApiKey);
@@ -329,6 +333,8 @@ public sealed record PlexSettings : ISettingsSection
     /// <summary>An <c>X-Plex-Token</c> of the server owner.</summary>
     public string? Token { get; init; }
     public List<PathMapping> PathMappings { get; init; } = [];
+    /// <summary>Show the token owner's watched state and progress on titles and episodes.</summary>
+    public bool PlayStatus { get; init; }
 
     [System.Text.Json.Serialization.JsonIgnore]
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Url) && !string.IsNullOrWhiteSpace(Token);

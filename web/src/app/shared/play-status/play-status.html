@@ -1,0 +1,18 @@
+@for (s of states(); track s.server) {
+  @let suffix = showServer() ? ' · ' + s.server : '';
+  @if (s.played) {
+    <span class="badge gap-1 bg-sky-500/15 text-sky-300" [attr.data-play-status]="s.server"
+          [title]="s.server + ': watched' + (s.playCount > 1 ? ' ' + s.playCount + ' times' : '') + (s.lastPlayed ? ', last on ' + (s.lastPlayed | date: 'mediumDate') : '')">
+      <svg class="size-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+      Watched{{ suffix }}
+    </span>
+  } @else if (s.progress != null) {
+    <span class="badge gap-1.5 bg-sky-500/10 text-sky-300" [attr.data-play-status]="s.server"
+          [title]="s.server + ': ' + percent(s) + '% watched' + (s.lastPlayed ? ', last on ' + (s.lastPlayed | date: 'mediumDate') : '')">
+      <span class="inline-block h-1.5 w-8 overflow-hidden rounded-full bg-sky-950" aria-hidden="true"><span class="block h-full bg-sky-400" [style.width.%]="percent(s)"></span></span>
+      {{ percent(s) }}% watched{{ suffix }}
+    </span>
+  } @else {
+    <span class="badge bg-slate-500/15 text-slate-400" [attr.data-play-status]="s.server" [title]="s.server + ': not watched yet'">Unwatched{{ suffix }}</span>
+  }
+}

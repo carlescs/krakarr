@@ -19,6 +19,12 @@
           <span class="badge" [class]="s.episodeFileCount >= s.episodeCount ? 'bg-emerald-500/15 text-emerald-300' : 'bg-rose-500/15 text-rose-300'">
             {{ s.episodeFileCount }}/{{ s.episodeCount }} episodes
           </span>
+          @for (p of playStatus(); track p.server) {
+            <span class="badge gap-1 bg-sky-500/15 text-sky-300" [title]="p.server + ': ' + p.watched + ' of the ' + p.total + ' downloaded episodes it has are watched'" [attr.data-play-status]="p.server">
+              <svg class="size-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+              {{ p.watched }}/{{ p.total }} watched{{ playStatus().length > 1 ? ' · ' + p.server : '' }}
+            </span>
+          }
           <span class="badge" [class]="s.monitored ? 'bg-accent-500/15 text-accent-300' : 'bg-slate-500/15 text-slate-400'">{{ s.monitored ? 'Monitored' : 'Unmonitored' }}</span>
           <span class="badge bg-surface-700 text-slate-300">{{ profileName() }}</span>
           <span class="badge bg-surface-700 text-slate-300" [title]="s.languages ? 'Languages set for this series' : 'Default languages'">
@@ -113,7 +119,12 @@
                     </td>
                     <td class="text-slate-400">{{ e.episodeNumber }}</td>
                     <td class="w-full max-w-0">
-                      <button class="block max-w-full truncate text-left hover:text-accent-300" [title]="e.overview ?? ''" (click)="detailEpisodeId.set(e.id)" data-episode-title>{{ e.title || 'TBA' }}</button>
+                      <div class="flex min-w-0 items-center gap-1.5">
+                        <button class="min-w-0 truncate text-left hover:text-accent-300" [title]="e.overview ?? ''" (click)="detailEpisodeId.set(e.id)" data-episode-title>{{ e.title || 'TBA' }}</button>
+                        @if (episodePlay().get(e.id); as play) {
+                          <ng-container *ngTemplateOutlet="episodeWatched; context: { $implicit: play }" />
+                        }
+                      </div>
                       @if (e.episodeFile; as f) {
                         <div class="flex items-center gap-1.5">
                           @for (s of subtitlesByFile().get(f.id) ?? []; track $index) {
@@ -258,7 +269,7 @@
   }
 
   @if (detailEpisode(); as e) {
-    <kr-episode-details [seriesId]="s.id" [episode]="e" [subtitles]="e.episodeFile ? (subtitlesByFile().get(e.episodeFile.id) ?? []) : []"
+    <kr-episode-details [seriesId]="s.id" [episode]="e" [playStatus]="episodePlay().get(e.id) ?? []" [subtitles]="e.episodeFile ? (subtitlesByFile().get(e.episodeFile.id) ?? []) : []"
                         (closed)="detailEpisodeId.set(null)" (search)="searchEpisode(e)"
                         (interactive)="fromDetails(e, 'interactive')" (manageSubtitles)="fromDetails(e, 'subtitles', $event)" (deleteFile)="fromDetails(e, 'delete')" (subtitlesChanged)="loadSubtitles()" />
   }
@@ -363,6 +374,17 @@
   <p class="text-slate-500">Loading…</p>
 }
 <!-- Episode status, shown in its own column on wider screens and under the title on phones. -->
+<ng-template #episodeWatched let-play>
+  @let watched = play.some(isPlayed);
+  @if (watched) {
+    <span class="shrink-0 text-sky-300" [title]="'Watched on ' + serverNames(play)" data-episode-watched>
+      <svg class="size-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-label="Watched"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+    </span>
+  } @else {
+    <span class="shrink-0 text-[10px] font-medium text-sky-300" [title]="'Part-way watched on ' + serverNames(play)" data-episode-watched>{{ maxProgress(play) }}%</span>
+  }
+</ng-template>
+
 <ng-template #episodeStatus let-e>
   @if (e.downloadProgress != null) {
     @if (auth.isStaff() && e.downloadHash) {
