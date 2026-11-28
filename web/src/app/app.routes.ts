@@ -1,5 +1,5 @@
 import { inject } from '@angular/core';
-import { Routes } from '@angular/router';
+import { Routes, UrlMatchResult, UrlSegment } from '@angular/router';
 import { Auth, authGuard, guestGuard, roleGuard } from './core/auth';
 import { calendarRouteMatcher } from './core/calendar';
 import { Shell } from './layout/shell/shell';
@@ -9,6 +9,15 @@ async function homeRedirect(): Promise<string> {
   const auth = inject(Auth);
   const status = auth.status() ?? (await auth.refresh().catch(() => null));
   return status?.role === 'Admin' || status?.role === 'Manager' ? 'dashboard' : 'movies';
+}
+
+/**
+ * Matches /settings and /settings/<tab> with one route, so switching tabs keeps the same page instance
+ * (and its unsaved edits) instead of rebuilding it.
+ */
+export function settingsRouteMatcher(segments: UrlSegment[]): UrlMatchResult | null {
+  if (segments.length === 0 || segments.length > 2 || segments[0].path !== 'settings') return null;
+  return { consumed: segments, posParams: segments[1] ? { tab: segments[1] } : {} };
 }
 
 export const routes: Routes = [
@@ -45,8 +54,7 @@ export const routes: Routes = [
       { path: 'search', canActivate: [roleGuard('Manager')], loadComponent: () => import('./pages/search/search').then(m => m.SearchPage), title: 'Search · Krakarr' },
       { path: 'downloads', canActivate: [roleGuard('Manager')], loadComponent: () => import('./pages/downloads/downloads').then(m => m.DownloadsPage), title: 'Downloads · Krakarr' },
       { path: 'activity', canActivate: [roleGuard('Manager')], loadComponent: () => import('./pages/activity/activity').then(m => m.ActivityPage), title: 'Activity · Krakarr' },
-      { path: 'settings', loadComponent: () => import('./pages/settings/settings/settings').then(m => m.SettingsPage), title: 'Settings · Krakarr' },
-      { path: 'settings/:tab', loadComponent: () => import('./pages/settings/settings/settings').then(m => m.SettingsPage), title: 'Settings · Krakarr' },
+      { matcher: settingsRouteMatcher, loadComponent: () => import('./pages/settings/settings/settings').then(m => m.SettingsPage), title: 'Settings · Krakarr' },
     ],
   },
   { path: '**', redirectTo: '' },

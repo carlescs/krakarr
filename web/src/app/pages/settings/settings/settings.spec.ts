@@ -1,11 +1,30 @@
 import { TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
+import { RouterTestingHarness } from '@angular/router/testing';
 import { of } from 'rxjs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Events } from '../../../core/events';
 import { ScheduledTaskInfo } from '../../../core/models';
 import { button, mockApi, settle, setupTest, text } from '../../../../testing/test-setup';
+import { settingsRouteMatcher } from '../../../app.routes';
 import { SettingsPage } from './settings';
+
+/** The page behind the real settings route, so its tab links navigate. Call `setupTest` with `routed` first. */
+async function render(url = '/settings') {
+  const harness = await RouterTestingHarness.create();
+  const page = await harness.navigateByUrl(url, SettingsPage);
+  await settle(harness.fixture);
+  return { harness, page, fixture: harness.fixture, el: harness.fixture.nativeElement as HTMLElement };
+}
+
+const routed = [provideRouter([{ matcher: settingsRouteMatcher, component: SettingsPage }])];
+
+/** The tab link labelled `label`. */
+function tabLink(root: HTMLElement, label: string): HTMLAnchorElement {
+  const found = [...root.querySelectorAll<HTMLAnchorElement>('h1 + div a')].find(a => a.textContent?.trim() === label);
+  if (!found) throw new Error(`No tab "${label}"`);
+  return found;
+}
 
 const task = (t: Partial<ScheduledTaskInfo>): ScheduledTaskInfo => ({
   id: 'rss', name: 'RSS sync', intervalSeconds: 900, lastRun: null, lastDurationSeconds: null, lastSucceeded: null, lastError: null, nextRun: null, isRunning: false, ...t,
@@ -23,20 +42,22 @@ describe('SettingsPage', () => {
   });
 
   it('shows admins every tab and loads the settings', async () => {
-    const api = setupTest({ api: mockApi({ rootFolders: async () => [{ id: 1, path: '/data/movies', mediaType: 'Movie', accessible: false }] }) });
-    const fixture = TestBed.createComponent(SettingsPage);
-    await settle(fixture);
-    const el = fixture.nativeElement as HTMLElement;
+    const api = setupTest({ providers: routed, api: mockApi({ rootFolders: async () => [{ id: 1, path: '/data/movies', mediaType: 'Movie', accessible: false }] }) });
+    const { fixture, el, page, harness } = await render();
     expect(text(el, 'h1')).toBe('Settings');
-    expect([...el.querySelectorAll('h1 + div button')].map(b => b.textContent)).toEqual([
+    expect([...el.querySelectorAll('h1 + div a')].map(b => b.textContent)).toEqual([
       'Media management', 'Quality profiles', 'Download client', 'Subtitles', 'Metadata', 'Media servers', 'Telemetry', 'Health', 'Tasks', 'Backups', 'Database', 'Users', 'General', 'Account',
     ]);
     expect(api.settings).toHaveBeenCalledWith('media');
     expect(api.settings).toHaveBeenCalledWith('general');
 
-    button(el, 'Users').click();
+    tabLink(el, 'Users').click();
     await settle(fixture);
     expect(el.querySelector('kr-users-settings')).not.toBeNull();
+    expect(TestBed.inject(Router).url).toBe('/settings/users');
+    // Same page instance, so the settings aren't fetched again and unsaved edits on other tabs survive.
+    expect(harness.routeDebugElement?.componentInstance).toBe(page);
+    expect(api.settings.mock.calls.filter(([section]) => section === 'media')).toHaveLength(1);
   });
 
   it('opens the tab named in the URL', async () => {
@@ -49,26 +70,36 @@ describe('SettingsPage', () => {
     expect((fixture.nativeElement as HTMLElement).querySelector('kr-health-settings')).not.toBeNull();
   });
 
-  it('ignores tabs a plain user may not open', async () => {
+  it('ignores tabs a plain user may not open and drops them from the URL', async () => {
     setupTest({ role: 'User', providers: [{ provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ tab: 'health' })) } }] });
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     const fixture = TestBed.createComponent(SettingsPage);
     await settle(fixture);
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector('kr-health-settings')).toBeNull();
     expect(el.querySelector('kr-account-settings')).not.toBeNull();
+    expect(navigate).toHaveBeenCalledWith(['/settings'], { replaceUrl: true });
+  });
+
+  it('links every tab to its own URL', async () => {
+    setupTest({ api: mockApi({ health: async () => ({ checkedAt: null, issues: [] }) }) });
+    const fixture = TestBed.createComponent(SettingsPage);
+    await settle(fixture);
+    const links = [...(fixture.nativeElement as HTMLElement).querySelectorAll<HTMLAnchorElement>('a[href^="/settings/"]')];
+    expect(links.map(a => a.getAttribute('href'))).toContain('/settings/health');
+    expect(links.find(a => a.getAttribute('aria-current') === 'page')?.getAttribute('href')).toBe('/settings/media');
   });
 
   it('lists scheduled tasks, runs one and follows live updates', async () => {
     const api = setupTest({
+      providers: routed,
       api: mockApi({
         tasks: async () => [task({ lastRun: new Date(Date.now() - 3 * 60_000).toISOString(), lastSucceeded: false, lastDurationSeconds: 2.5 })],
         runTask: async () => undefined,
       }),
     });
-    const fixture = TestBed.createComponent(SettingsPage);
-    await settle(fixture);
-    const el = fixture.nativeElement as HTMLElement;
-    button(el, 'Tasks').click();
+    const { fixture, el } = await render();
+    tabLink(el, 'Tasks').click();
     await settle(fixture);
     expect(text(el, 'tbody')).toContain('RSS sync');
     expect(text(el, 'tbody')).toContain('Every 15m');
@@ -91,6 +122,7 @@ describe('SettingsPage', () => {
     };
     let status = { active: false, signals: [] as string[], endpoint: null as string | null, protocol: null as string | null, error: null };
     const api = setupTest({
+      providers: routed,
       api: mockApi({
         settings: async (section: string) => (section === 'telemetry' ? { ...settings } : section === 'languages' ? { preferred: [] } : {}),
         rootFolders: async () => [], qualityProfiles: async () => [], qualities: async () => [], systemStatus: async () => ({}),
@@ -98,11 +130,9 @@ describe('SettingsPage', () => {
         saveSettings: async (_: string, value: unknown) => value,
       }),
     });
-    const fixture = TestBed.createComponent(SettingsPage);
-    fixture.componentInstance.telemetryStatusDelayMs = 0;
-    await settle(fixture);
-    const el = fixture.nativeElement as HTMLElement;
-    button(el, 'Telemetry').click();
+    const { page, fixture, el } = await render();
+    page.telemetryStatusDelayMs = 0;
+    tabLink(el, 'Telemetry').click();
     await settle(fixture);
     expect(text(el)).toContain('Telemetry is off');
 
@@ -128,6 +158,7 @@ describe('SettingsPage', () => {
       sync: { automatic: false, belowScore: 90, timeoutSeconds: 300 }, openSubtitles: { enabled: true }, subdl: { enabled: true },
     };
     const api = setupTest({
+      providers: routed,
       api: mockApi({
         settings: async (section: string) => (section === 'subtitles' ? { ...subtitles } : section === 'languages' ? { preferred: [] } : {}),
         subtitleLanguages: async () => [{ code: 'en', name: 'English' }],
@@ -136,10 +167,8 @@ describe('SettingsPage', () => {
         subtitleSyncTools: async () => ({ alass: true, ffsubsync: false, ffmpeg: true }),
       }),
     });
-    const fixture = TestBed.createComponent(SettingsPage);
-    await settle(fixture);
-    const el = fixture.nativeElement as HTMLElement;
-    button(el, 'Subtitles').click();
+    const { fixture, el } = await render();
+    tabLink(el, 'Subtitles').click();
     await settle(fixture);
     expect(text(el, '[data-sync-tools]')).toContain('alass · found');
     expect(text(el, '[data-sync-tools]')).toContain('ffsubsync · not found');
@@ -157,16 +186,15 @@ describe('SettingsPage', () => {
 
   it('saves the download client and automation settings together', async () => {
     const api = setupTest({
+      providers: routed,
       api: mockApi({
         settings: async (section: string) => (section === 'downloads' ? { client: 'Embedded', qBittorrent: {} } : section === 'automation' ? { rssSyncIntervalMinutes: 15 } : section === 'languages' ? { preferred: [] } : {}),
         rootFolders: async () => [], qualityProfiles: async () => [], qualities: async () => [], systemStatus: async () => ({}),
         saveSettings: async (_: string, value: unknown) => value,
       }),
     });
-    const fixture = TestBed.createComponent(SettingsPage);
-    await settle(fixture);
-    const el = fixture.nativeElement as HTMLElement;
-    button(el, 'Download client').click();
+    const { fixture, el } = await render();
+    tabLink(el, 'Download client').click();
     await settle(fixture);
     button(el, 'Save').click();
     await settle(fixture);
