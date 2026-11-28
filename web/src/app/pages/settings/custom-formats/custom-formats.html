@@ -1,0 +1,170 @@
+<section class="card mb-6 space-y-3 p-4 sm:p-5">
+  <div class="flex flex-wrap items-center gap-2">
+    <h2 class="flex-1 font-semibold text-white">Custom formats</h2>
+    <button class="btn-ghost btn-sm" (click)="openImport()">Import</button>
+    <button class="btn-ghost btn-sm" [disabled]="formats().length === 0" (click)="openExport()">Export</button>
+    <button class="btn-secondary btn-sm" (click)="edit(null)">+ Add format</button>
+  </div>
+  <p class="hint">
+    Named sets of conditions (HDR, audio, codec, edition, streaming service, release group…). Each quality profile gives the formats a
+    score: releases are ranked by quality, then by score, and a higher score counts as an upgrade until the profile's "upgrade until" score.
+    Paste formats from the TRaSH Guides, Radarr or Sonarr with Import.
+  </p>
+
+  @if (loading()) {
+    <p class="text-sm text-slate-400">Loading…</p>
+  } @else if (formats().length === 0) {
+    <p class="text-sm text-slate-400" data-empty>No custom formats yet.</p>
+  } @else {
+    <ul class="divide-y divide-surface-700 rounded-lg border border-surface-700" data-formats>
+      @for (f of formats(); track f.id) {
+        <li>
+          <button class="flex w-full flex-col items-start gap-1 px-3 py-2 text-left hover:bg-surface-800" (click)="edit(f)">
+            <span class="font-medium text-white">{{ f.name }}</span>
+            <span class="flex flex-wrap gap-1">
+              @for (s of f.specifications; track $index) {
+                <span class="badge bg-surface-700 text-slate-300">{{ describe(s) }}</span>
+              }
+            </span>
+          </button>
+        </li>
+      }
+    </ul>
+  }
+</section>
+
+<section class="card mb-6 space-y-3 p-4 sm:p-5">
+  <h2 class="font-semibold text-white">Test a release name</h2>
+  <form class="flex gap-2" (submit)="$event.preventDefault(); test()">
+    <input id="cf-test" class="input flex-1" placeholder="Movie.2024.2160p.AMZN.WEB-DL.DDP5.1.Atmos.DV.HDR10.H.265-GROUP" [(ngModel)]="testTitle" name="testTitle" />
+    <button class="btn-secondary" type="submit">Test</button>
+  </form>
+  @if (testResult(); as r) {
+    <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm" data-test-result>
+      <dt class="text-slate-400">Quality</dt><dd>{{ r.quality }}</dd>
+      @if (r.releaseGroup) { <dt class="text-slate-400">Group</dt><dd>{{ r.releaseGroup }}</dd> }
+      @if (r.hdr.length) { <dt class="text-slate-400">HDR</dt><dd>{{ r.hdr.join(', ') }}</dd> }
+      @if (r.videoCodec) { <dt class="text-slate-400">Codec</dt><dd>{{ r.videoCodec }}</dd> }
+      @if (r.audio.length) { <dt class="text-slate-400">Audio</dt><dd>{{ r.audio.join(', ') }}{{ r.audioChannels ? ' ' + r.audioChannels : '' }}</dd> }
+      @if (r.editions.length) { <dt class="text-slate-400">Edition</dt><dd>{{ r.editions.join(', ') }}</dd> }
+      @if (r.streamingService) { <dt class="text-slate-400">Service</dt><dd>{{ r.streamingService }}</dd> }
+      @if (r.languages.length) { <dt class="text-slate-400">Languages</dt><dd>{{ r.languages.join(', ') }}</dd> }
+      @if (r.flags.length) { <dt class="text-slate-400">Flags</dt><dd>{{ r.flags.join(', ') }}</dd> }
+      <dt class="text-slate-400">Formats</dt>
+      <dd data-matched>{{ matchedNames(r) }}</dd>
+    </dl>
+  }
+</section>
+
+<!-- Editor -->
+@if (form(); as f) {
+  <kr-modal [title]="f.id ? 'Edit custom format' : 'New custom format'" width="max-w-3xl" (closed)="form.set(null)">
+    <div class="space-y-4">
+      <div><label class="label" for="cf-name">Name</label><input id="cf-name" class="input" maxlength="100" [(ngModel)]="f.name" /></div>
+      <p class="hint">
+        The format matches when, for each kind of condition, at least one of its conditions matches, and every required condition does.
+        Negate turns a condition around.
+      </p>
+      @for (s of f.specifications; track $index; let i = $index) {
+        <div class="space-y-2 rounded-lg border border-surface-700 p-3" data-spec>
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-[12rem_1fr]">
+            <select class="input" [(ngModel)]="s.condition" (ngModelChange)="conditionChanged(f, s)" aria-label="Condition">
+              @for (c of conditions; track c) { <option [ngValue]="c">{{ info[c].label }}</option> }
+            </select>
+            @if (s.condition === 'Size') {
+              <div class="flex items-center gap-2">
+                <input class="input" type="number" min="0" step="0.1" [(ngModel)]="s.min" aria-label="Minimum GB" />
+                <span class="text-slate-400">–</span>
+                <input class="input" type="number" min="0" step="0.1" [(ngModel)]="s.max" aria-label="Maximum GB" />
+                <span class="text-sm text-slate-400">GB</span>
+              </div>
+            } @else if (isRegex(s.condition)) {
+              <input class="input font-mono" [(ngModel)]="s.value" placeholder="Regular expression" aria-label="Value" />
+            } @else {
+              <select class="input" [(ngModel)]="s.value" aria-label="Value">
+                @for (v of valuesFor(s.condition); track v) { <option [ngValue]="v">{{ v }}</option> }
+              </select>
+            }
+          </div>
+          <p class="hint">{{ info[s.condition].hint }}</p>
+          <div class="flex flex-wrap items-center gap-4 text-sm">
+            <input class="input max-w-xs" [(ngModel)]="s.name" placeholder="Label (optional)" aria-label="Label" />
+            <label class="flex items-center gap-2"><input type="checkbox" class="accent-accent-500" [(ngModel)]="s.negate" /> Negate</label>
+            <label class="flex items-center gap-2"><input type="checkbox" class="accent-accent-500" [(ngModel)]="s.required" /> Required</label>
+            @if (s.condition === 'Language') {
+              <label class="flex items-center gap-2"><input type="checkbox" class="accent-accent-500" [(ngModel)]="s.exceptLanguage" /> Any other language</label>
+            }
+            <button class="btn-ghost btn-sm ml-auto" (click)="removeSpec(f, i)">Remove</button>
+          </div>
+        </div>
+      }
+      <button class="btn-secondary btn-sm" (click)="addSpec(f)">+ Add condition</button>
+    </div>
+    <ng-container footer>
+      @if (f.id) { <button class="btn-danger mr-auto" (click)="confirmDelete.set(f)">Delete</button> }
+      <button class="btn-ghost" (click)="form.set(null)">Cancel</button>
+      <button class="btn-primary" [disabled]="saving()" (click)="save(f)">Save</button>
+    </ng-container>
+  </kr-modal>
+}
+
+@if (confirmDelete(); as f) {
+  <kr-modal [title]="'Delete ' + f.name + '?'" (closed)="confirmDelete.set(null)">
+    <p class="text-sm text-slate-300">Quality profiles lose their score for this format.</p>
+    <ng-container footer>
+      <button class="btn-ghost" (click)="confirmDelete.set(null)">Cancel</button>
+      <button class="btn-danger" (click)="remove(f)">Delete</button>
+    </ng-container>
+  </kr-modal>
+}
+
+<!-- Import -->
+@if (importOpen()) {
+  <kr-modal title="Import custom formats" width="max-w-2xl" (closed)="importOpen.set(false)">
+    <div class="space-y-3">
+      <p class="hint">
+        Paste one custom format or an array of them, as the TRaSH Guides publish them or as Radarr and Sonarr export them. Formats with a
+        name that already exists are replaced. Formats using conditions Krakarr can't evaluate (indexer flags, "original language") are skipped.
+      </p>
+      <div>
+        <label class="label" for="cf-import-app">Numbering of</label>
+        <select id="cf-import-app" class="input max-w-xs" [(ngModel)]="importApp">
+          <option value="Radarr">Radarr (movies)</option>
+          <option value="Sonarr">Sonarr (series)</option>
+        </select>
+      </div>
+      <textarea id="cf-import-json" class="input h-64 font-mono text-xs" [(ngModel)]="importJson" placeholder='{ "name": "...", "specifications": [...] }'></textarea>
+      @if (importResult(); as r) {
+        <div class="text-sm" data-import-result>
+          <p>Created {{ r.created }}, updated {{ r.updated }}.</p>
+          @for (w of r.warnings; track $index) { <p class="text-amber-300">{{ w }}</p> }
+        </div>
+      }
+    </div>
+    <ng-container footer>
+      <button class="btn-ghost" (click)="importOpen.set(false)">Close</button>
+      <button class="btn-primary" [disabled]="saving() || !importJson.trim()" (click)="runImport()">Import</button>
+    </ng-container>
+  </kr-modal>
+}
+
+<!-- Export -->
+@if (exportJson(); as json) {
+  <kr-modal title="Export custom formats" width="max-w-2xl" (closed)="exportJson.set(null)">
+    <div class="space-y-3">
+      <div class="flex items-center gap-2">
+        <label class="label mb-0" for="cf-export-app">Numbering of</label>
+        <select id="cf-export-app" class="input max-w-xs" [(ngModel)]="exportApp" (ngModelChange)="openExport()">
+          <option value="Radarr">Radarr</option>
+          <option value="Sonarr">Sonarr</option>
+        </select>
+      </div>
+      <p class="hint">Conditions only Krakarr has (HDR, codec, audio, streaming service, flags, indexer) use Krakarr names that Radarr and Sonarr don't read.</p>
+      <textarea class="input h-64 font-mono text-xs" readonly [value]="json" data-export></textarea>
+    </div>
+    <ng-container footer>
+      <button class="btn-ghost" (click)="exportJson.set(null)">Close</button>
+      <button class="btn-primary" (click)="copyExport()">Copy</button>
+    </ng-container>
+  </kr-modal>
+}

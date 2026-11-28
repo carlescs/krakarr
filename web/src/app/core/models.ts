@@ -16,6 +16,39 @@ export interface Quality { id: number; name: string; source: string; resolution:
 export interface QualityProfile {
   id: number; name: string; allowedQualityIds: number[]; cutoffQualityId: number;
   upgradeAllowed: boolean; minSizeMb: number; maxSizeMb: number;
+  /** Score each custom format adds to a matching release (unlisted formats score 0). */
+  formatScores: ProfileFormatScore[];
+  /** Releases scoring below this are rejected. */
+  minFormatScore: number;
+  /** "Upgrade until": stop upgrading once a file reaches this score (and the quality cutoff). */
+  cutoffFormatScore: number;
+}
+
+export interface ProfileFormatScore { formatId: number; score: number; }
+
+export type CustomFormatCondition =
+  | 'ReleaseTitle' | 'ReleaseGroup' | 'Edition' | 'Language' | 'Source' | 'Resolution' | 'QualityModifier' | 'Size'
+  | 'Indexer' | 'Hdr' | 'VideoCodec' | 'Audio' | 'StreamingService' | 'ReleaseType' | 'Flag';
+
+export interface CustomFormatSpecification {
+  name: string; condition: CustomFormatCondition; value: string;
+  /** Size conditions, in GB (0 = no limit). */
+  min: number; max: number;
+  /** Language conditions: any language other than `value`. */
+  exceptLanguage: boolean;
+  negate: boolean; required: boolean;
+}
+
+export interface CustomFormat { id: number; name: string; specifications: CustomFormatSpecification[]; }
+
+/** A condition and the values it accepts (empty: regex, or a size range). */
+export interface CustomFormatSchema { condition: CustomFormatCondition; values: string[]; }
+
+export type CustomFormatApp = 'Radarr' | 'Sonarr';
+export interface CustomFormatImportResult { created: number; updated: number; warnings: string[]; }
+export interface CustomFormatTestResult {
+  quality: string; releaseGroup?: string | null; hdr: string[]; videoCodec?: string | null; audio: string[]; audioChannels?: string | null;
+  editions: string[]; streamingService?: string | null; languages: string[]; flags: string[]; formats: { id: number; name: string }[];
 }
 
 export interface RootFolder { id: number; path: string; mediaType: MediaType; accessible: boolean; freeSpace?: number; }
@@ -72,7 +105,11 @@ export interface ReleaseInfo {
 }
 
 export interface SearchResult { release: ReleaseInfo; quality: string; parsedTitle?: string; parsedYear?: number; }
-export interface ReleaseDecision { release: ReleaseInfo; quality: string; qualityWeight: number; approved: boolean; rejections: string[]; languages: string[]; }
+export interface ReleaseDecision {
+  release: ReleaseInfo; quality: string; qualityWeight: number; approved: boolean; rejections: string[]; languages: string[];
+  /** Custom formats the release matches, and the quality profile's score for them. */
+  customFormats: string[]; customFormatScore: number;
+}
 
 /** What the file's own headers say (GET movie, GET series/{id}/episodefiles/{fileId}/mediainfo). */
 export interface MediaInfo {
@@ -236,6 +273,7 @@ export interface EpisodeDetails {
 }
 export interface EpisodeRelease {
   release: ReleaseInfo; quality: string; qualityWeight: number; approved: boolean; rejections: string[]; episodes?: string; seasonPack: boolean; languages: string[];
+  customFormats: string[]; customFormatScore: number;
 }
 
 /** What a bulk action on the downloads page multi-selection does. */

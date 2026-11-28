@@ -99,6 +99,7 @@ public static class SettingsEndpoints
         profiles.MapPost("/", async (QualityProfile input, KrakarrDbContext db, CancellationToken ct) =>
         {
             if (ValidateProfile(input) is { } problem) return problem;
+            if (await UnknownFormatsAsync(input, db, ct) is { } unknown) return unknown;
             input.Id = 0;
             db.QualityProfiles.Add(input);
             await db.SaveChangesAsync(ct);
@@ -107,6 +108,7 @@ public static class SettingsEndpoints
         profiles.MapPut("/{id:int}", async (int id, QualityProfile input, KrakarrDbContext db, CancellationToken ct) =>
         {
             if (ValidateProfile(input) is { } problem) return problem;
+            if (await UnknownFormatsAsync(input, db, ct) is { } unknown) return unknown;
             var existing = await db.QualityProfiles.FindAsync([id], ct);
             if (existing is null) return Results.NotFound();
             existing.Name = input.Name;
@@ -115,6 +117,9 @@ public static class SettingsEndpoints
             existing.UpgradeAllowed = input.UpgradeAllowed;
             existing.MinSizeMb = input.MinSizeMb;
             existing.MaxSizeMb = input.MaxSizeMb;
+            existing.FormatScores = input.FormatScores;
+            existing.MinFormatScore = input.MinFormatScore;
+            existing.CutoffFormatScore = input.CutoffFormatScore;
             await db.SaveChangesAsync(ct);
             return Results.Ok(existing);
         });
@@ -216,7 +221,20 @@ public static class SettingsEndpoints
         if (p.AllowedQualityIds.Count == 0) errors["allowedQualityIds"] = ["Select at least one quality"];
         if (!p.AllowedQualityIds.Contains(p.CutoffQualityId)) errors["cutoffQualityId"] = ["Cutoff must be one of the allowed qualities"];
         if (p.MaxSizeMb > 0 && p.MinSizeMb > p.MaxSizeMb) errors["maxSizeMb"] = ["Maximum size must be larger than minimum size"];
+        p.FormatScores ??= [];
+        if (p.FormatScores.Count > 1000) errors["formatScores"] = ["Too many custom format scores"];
+        else if (p.FormatScores.GroupBy(s => s.FormatId).Any(g => g.Count() > 1)) errors["formatScores"] = ["Each custom format can only be scored once"];
+        // Zero scores change nothing; keep the stored list to the formats that count.
+        p.FormatScores = p.FormatScores.Where(s => s.Score != 0).ToList();
         return errors.Count > 0 ? Results.ValidationProblem(errors) : null;
+    }
+
+    private static async Task<IResult?> UnknownFormatsAsync(QualityProfile p, KrakarrDbContext db, CancellationToken ct)
+    {
+        if (p.FormatScores.Count == 0) return null;
+        var ids = p.FormatScores.Select(s => s.FormatId).ToList();
+        var known = await db.CustomFormats.CountAsync(f => ids.Contains(f.Id), ct);
+        return known == ids.Count ? null : Results.ValidationProblem(new Dictionary<string, string[]> { ["formatScores"] = ["Unknown custom format"] });
     }
 
     private static RootFolderDto ToDto(RootFolder r)

@@ -84,9 +84,11 @@ public sealed record MovieCollectionDetailsDto(int Id, int TmdbId, string Name, 
 /// <param name="Languages">Wanted audio languages, most preferred first; null = use the global default.</param>
 public sealed record UpdateMovieRequest(bool Monitored, int QualityProfileId, MinimumAvailability? MinimumAvailability = null, IReadOnlyList<string>? Languages = null);
 
-public sealed record ReleaseDecisionDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections, IReadOnlyList<string> Languages)
+public sealed record ReleaseDecisionDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections, IReadOnlyList<string> Languages,
+    IReadOnlyList<string> CustomFormats, int CustomFormatScore)
 {
-    public static ReleaseDecisionDto From(ReleaseDecision d) => new(d.Release, d.Quality.Name, d.Quality.Weight, d.Approved, d.Rejections, d.Languages);
+    public static ReleaseDecisionDto From(ReleaseDecision d) => new(d.Release, d.Quality.Name, d.Quality.Weight, d.Approved, d.Rejections, d.Languages,
+        d.CustomFormats.Select(f => f.Name).ToList(), d.CustomFormatScore);
 }
 
 public sealed record GrabMovieReleaseRequest(ReleaseInfo Release);

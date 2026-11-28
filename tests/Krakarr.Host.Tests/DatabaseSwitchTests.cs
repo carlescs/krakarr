@@ -45,6 +45,10 @@ public sealed class DatabaseCopyTests : IDisposable
         db.Settings.Add(new SettingEntry { Key = "general", Value = """{"apiKey":"abc"}""" });
         db.RootFolders.Add(new RootFolder { Path = "/movies" });
         db.Indexers.Add(new Indexer { Name = "Indexer", BaseUrl = "https://example.org" });
+        var format = new CustomFormat { Name = "Atmos", Specifications = [new() { Condition = CustomFormatCondition.Audio, Value = "Atmos" }] };
+        db.CustomFormats.Add(format);
+        await db.SaveChangesAsync(ct);
+        profile.FormatScores = [new(format.Id, 100)];
         await db.SaveChangesAsync(ct);
 
         db.UserPasskeys.Add(new UserPasskey { UserId = user.Id, CredentialId = [1, 2, 3], PublicKey = [4, 5, 6], Name = "Key" });

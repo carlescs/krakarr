@@ -46,7 +46,7 @@ describe('SettingsPage', () => {
     const { fixture, el, page, harness } = await render();
     expect(text(el, 'h1')).toBe('Settings');
     expect([...el.querySelectorAll('h1 + div a')].map(b => b.textContent)).toEqual([
-      'Media management', 'Quality profiles', 'Download client', 'Subtitles', 'Metadata', 'Media servers', 'Telemetry', 'Health', 'Tasks', 'Backups', 'Database', 'Users', 'General', 'Account',
+      'Media management', 'Quality profiles', 'Custom formats', 'Download client', 'Subtitles', 'Metadata', 'Media servers', 'Telemetry', 'Health', 'Tasks', 'Backups', 'Database', 'Users', 'General', 'Account',
     ]);
     expect(api.settings).toHaveBeenCalledWith('media');
     expect(api.settings).toHaveBeenCalledWith('general');
@@ -200,5 +200,42 @@ describe('SettingsPage', () => {
     await settle(fixture);
     expect(api.saveSettings).toHaveBeenCalledWith('downloads', expect.objectContaining({ client: 'Embedded' }));
     expect(api.saveSettings).toHaveBeenCalledWith('automation', { rssSyncIntervalMinutes: 15 });
+  });
+  it('scores custom formats in the quality profile editor', async () => {
+    const profile = {
+      id: 1, name: 'HD', allowedQualityIds: [16, 17], cutoffQualityId: 17, upgradeAllowed: true, minSizeMb: 0, maxSizeMb: 0,
+      formatScores: [{ formatId: 1, score: 100 }], minFormatScore: 0, cutoffFormatScore: 0,
+    };
+    const api = setupTest({
+      providers: routed,
+      api: mockApi({
+        settings: async (section: string) => (section === 'languages' ? { preferred: [] } : {}),
+        rootFolders: async () => [], qualityProfiles: async () => [profile], systemStatus: async () => ({}),
+        qualities: async () => [{ id: 16, name: 'WEBDL-1080p', source: 'WebDl', resolution: 1080, weight: 16 }, { id: 17, name: 'Bluray-1080p', source: 'Bluray', resolution: 1080, weight: 17 }],
+        customFormats: async () => [
+          { id: 1, name: 'Atmos', specifications: [] },
+          { id: 2, name: 'x265', specifications: [] },
+        ],
+        saveQualityProfile: async (p: unknown) => p,
+      }),
+    });
+    const { fixture, el } = await render('/settings/profiles');
+    button(el, 'HD').click();
+    await settle(fixture);
+
+    const score = (name: string) => el.querySelector<HTMLInputElement>(`[data-format-scores] input[aria-label="${name} score"]`)!;
+    expect(score('Atmos').value).toBe('100');
+    score('Atmos').value = '0';
+    score('Atmos').dispatchEvent(new Event('input'));
+    score('x265').value = '-50';
+    score('x265').dispatchEvent(new Event('input'));
+    const cutoff = el.querySelector<HTMLInputElement>('#profile-cutoff-score')!;
+    cutoff.value = '200';
+    cutoff.dispatchEvent(new Event('input'));
+    await settle(fixture);
+
+    button(el.querySelector('[role="dialog"]') as HTMLElement, 'Save').click();
+    await settle(fixture);
+    expect(api.saveQualityProfile).toHaveBeenCalledWith(expect.objectContaining({ formatScores: [{ formatId: 2, score: -50 }], cutoffFormatScore: 200 }));
   });
 });

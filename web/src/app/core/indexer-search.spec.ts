@@ -1,7 +1,7 @@
 import { Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
-import { ReleaseSearch } from './indexer-search';
+import { ReleaseSearch, byApprovalQualitySeeders } from './indexer-search';
 import { ReleaseInfo, SearchStreamEvent } from './models';
 
 interface Row { release: ReleaseInfo; approved: boolean; qualityWeight: number }
@@ -90,5 +90,10 @@ describe('ReleaseSearch', () => {
 
     await search.run(async () => {});
     expect(search.selected().size).toBe(0);
+  });
+  it('orders by quality, then custom format score, then seeders while indexers answer', () => {
+    const scored = (guid: string, qualityWeight: number, customFormatScore: number, seeders: number) => ({ ...row(guid, qualityWeight, true, seeders), customFormatScore });
+    const rows = [scored('plain', 17, 0, 500), scored('atmos', 17, 100, 1), scored('web', 16, 500, 900)];
+    expect(rows.sort(byApprovalQualitySeeders).map(r => r.release.guid)).toEqual(['atmos', 'plain', 'web']);
   });
 });

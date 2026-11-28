@@ -6,7 +6,7 @@ import { Router, RouterLink } from '@angular/router';
 import { Api, errorMessage } from '../../../core/api';
 import { Auth } from '../../../core/auth';
 import { Events } from '../../../core/events';
-import { AgoPipe, BytesPipe, airsOn } from '../../../core/format';
+import { AgoPipe, BytesPipe, airsOn, scoreClass } from '../../../core/format';
 import { Episode, EpisodeRelease, HistoryItem, OrganizePreview, PlayState, QualityProfile, SeasonInfo, Series, SeriesPlayStatus, SubtitleFile } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
 import { ReleaseSearch } from '../../../core/indexer-search';
@@ -157,6 +157,7 @@ export class SeriesDetailPage implements OnInit {
   protected readonly releaseSearch = new ReleaseSearch<EpisodeRelease>();
   /** Best first, re-ranked as indexers answer. */
   protected readonly releases = this.releaseSearch.results;
+  protected readonly scoreClass = scoreClass;
   protected readonly releaseSort = new TableSort(this.releaseSearch.filtered, {
     release: r => r.release.title,
     // Season packs first, then by episode label.
@@ -166,6 +167,7 @@ export class SeriesDetailPage implements OnInit {
     peers: { value: r => r.release.seeders, desc: true },
     quality: { value: r => r.qualityWeight, desc: true },
     language: r => this.languages.describe(r.languages),
+    score: r => r.customFormatScore ?? 0,
   });
   protected readonly searching = this.releaseSearch.running;
   protected readonly grabbing = signal<string | null>(null);

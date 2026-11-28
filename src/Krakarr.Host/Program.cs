@@ -253,6 +253,7 @@ app.MapSystemEndpoints();
 app.MapHealthEndpoints();
 app.MapDashboardEndpoints();
 app.MapSettingsEndpoints();
+app.MapCustomFormatEndpoints();
 app.MapIndexerEndpoints();
 app.MapDownloadEndpoints();
 app.MapMovieEndpoints();

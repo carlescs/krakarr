@@ -17,7 +17,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261128080016_OmdbInfo";
+    public override string LastMigrationId => "20261128140257_CustomFormats";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -68,6 +68,31 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.HasIndex("SeriesId");
 
                 b.ToTable("AlternateTitles");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.CustomFormat", b =>
+            {
+                var id = b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("integer");
+
+                NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("character varying(100)");
+
+                b.Property<string>("Specifications")
+                    .IsRequired()
+                    .HasColumnType("text");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Name")
+                    .IsUnique();
+
+                b.ToTable("CustomFormats");
             });
 
         modelBuilder.Entity("Krakarr.Core.Domain.Download", b =>
@@ -244,6 +269,12 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .HasColumnType("integer");
 
                 NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
+
+                b.PrimitiveCollection<List<int>>("CustomFormatIds")
+                    .HasColumnType("integer[]");
+
+                b.Property<int>("CustomFormatScore")
+                    .HasColumnType("integer");
 
                 b.Property<DateTimeOffset>("DateAdded")
                     .HasColumnType("timestamp with time zone");
@@ -688,6 +719,12 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(id);
 
+                b.PrimitiveCollection<List<int>>("CustomFormatIds")
+                    .HasColumnType("integer[]");
+
+                b.Property<int>("CustomFormatScore")
+                    .HasColumnType("integer");
+
                 b.Property<DateTimeOffset>("DateAdded")
                     .HasColumnType("timestamp with time zone");
 
@@ -819,11 +856,23 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .IsRequired()
                     .HasColumnType("integer[]");
 
+                b.Property<int>("CutoffFormatScore")
+                    .HasColumnType("integer");
+
                 b.Property<int>("CutoffQualityId")
                     .HasColumnType("integer");
 
+                b.Property<string>("FormatScores")
+                    .IsRequired()
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("text")
+                    .HasDefaultValue("[]");
+
                 b.Property<long>("MaxSizeMb")
                     .HasColumnType("bigint");
+
+                b.Property<int>("MinFormatScore")
+                    .HasColumnType("integer");
 
                 b.Property<long>("MinSizeMb")
                     .HasColumnType("bigint");

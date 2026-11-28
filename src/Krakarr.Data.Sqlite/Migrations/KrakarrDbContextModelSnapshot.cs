@@ -15,7 +15,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261128080013_OmdbInfo";
+    public override string LastMigrationId => "20261128140254_CustomFormats";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -60,6 +60,29 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                 b.HasIndex("SeriesId");
 
                 b.ToTable("AlternateTitles");
+            });
+
+        modelBuilder.Entity("Krakarr.Core.Domain.CustomFormat", b =>
+            {
+                b.Property<int>("Id")
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.Property<string>("Name")
+                    .IsRequired()
+                    .HasMaxLength(100)
+                    .HasColumnType("TEXT");
+
+                b.Property<string>("Specifications")
+                    .IsRequired()
+                    .HasColumnType("TEXT");
+
+                b.HasKey("Id");
+
+                b.HasIndex("Name")
+                    .IsUnique();
+
+                b.ToTable("CustomFormats");
             });
 
         modelBuilder.Entity("Krakarr.Core.Domain.Download", b =>
@@ -229,6 +252,12 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
             {
                 b.Property<int>("Id")
                     .ValueGeneratedOnAdd()
+                    .HasColumnType("INTEGER");
+
+                b.PrimitiveCollection<string>("CustomFormatIds")
+                    .HasColumnType("TEXT");
+
+                b.Property<int>("CustomFormatScore")
                     .HasColumnType("INTEGER");
 
                 b.Property<long>("DateAdded")
@@ -660,6 +689,12 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .ValueGeneratedOnAdd()
                     .HasColumnType("INTEGER");
 
+                b.PrimitiveCollection<string>("CustomFormatIds")
+                    .HasColumnType("TEXT");
+
+                b.Property<int>("CustomFormatScore")
+                    .HasColumnType("INTEGER");
+
                 b.Property<long>("DateAdded")
                     .HasColumnType("INTEGER");
 
@@ -785,10 +820,22 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
                     .IsRequired()
                     .HasColumnType("TEXT");
 
+                b.Property<int>("CutoffFormatScore")
+                    .HasColumnType("INTEGER");
+
                 b.Property<int>("CutoffQualityId")
                     .HasColumnType("INTEGER");
 
+                b.Property<string>("FormatScores")
+                    .IsRequired()
+                    .ValueGeneratedOnAdd()
+                    .HasColumnType("TEXT")
+                    .HasDefaultValue("[]");
+
                 b.Property<long>("MaxSizeMb")
+                    .HasColumnType("INTEGER");
+
+                b.Property<int>("MinFormatScore")
                     .HasColumnType("INTEGER");
 
                 b.Property<long>("MinSizeMb")

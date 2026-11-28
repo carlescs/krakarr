@@ -77,10 +77,12 @@ public sealed record MonitorRequest(bool Monitored);
 /// <param name="Unmonitor">Also unmonitor the episodes of the deleted files, so searches don't fetch them again.</param>
 public sealed record DeleteEpisodeFilesRequest(IReadOnlyList<int> Ids, bool Unmonitor = false);
 public sealed record SeriesSearchRequest(int? SeasonNumber, IReadOnlyList<int>? EpisodeIds);
-public sealed record EpisodeReleaseDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections, string? Episodes, bool SeasonPack, IReadOnlyList<string> Languages)
+public sealed record EpisodeReleaseDto(ReleaseInfo Release, string Quality, int QualityWeight, bool Approved, IReadOnlyList<string> Rejections, string? Episodes, bool SeasonPack, IReadOnlyList<string> Languages,
+    IReadOnlyList<string> CustomFormats, int CustomFormatScore)
 {
     public static EpisodeReleaseDto From(EpisodeDecision d) => new(d.Release, d.Quality.Name, d.Quality.Weight, d.Approved, d.Rejections,
-        d.Episodes.Count > 0 ? SeriesService.Codes(d.Episodes) : null, d.IsSeasonPack, d.Languages);
+        d.Episodes.Count > 0 ? SeriesService.Codes(d.Episodes) : null, d.IsSeasonPack, d.Languages,
+        d.CustomFormats.Select(f => f.Name).ToList(), d.CustomFormatScore);
 }
 public sealed record GrabEpisodeReleaseRequest(ReleaseInfo Release);
 

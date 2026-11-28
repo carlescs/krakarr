@@ -1,4 +1,5 @@
 using Krakarr.Core.Domain;
+using Krakarr.Media.CustomFormats;
 using Krakarr.Media.Parsing;
 
 namespace Krakarr.Series;
@@ -15,6 +16,10 @@ public sealed record EpisodeDecision
     public IReadOnlyList<string> Languages { get; init; } = [];
     /// <summary>Position of the release's best wanted language (lower is better); <see cref="int.MaxValue"/> when unwanted.</summary>
     public int LanguageRank { get; init; }
+    /// <summary>Custom formats the release matches.</summary>
+    public IReadOnlyList<MatchedFormat> CustomFormats { get; init; } = [];
+    /// <summary>The profile's score for <see cref="CustomFormats"/>.</summary>
+    public int CustomFormatScore { get; init; }
     public bool Approved => Rejections.Count == 0;
     public bool IsSeasonPack => Parsed.IsSeasonPack;
 }
@@ -28,19 +33,25 @@ public static class EpisodeDecisionEngine
     /// <param name="episodes">All episodes of the series, with <see cref="Episode.EpisodeFile"/> loaded.</param>
     /// <param name="requireMonitored">Automatic searches/RSS only grab monitored episodes.</param>
     /// <param name="languages">Wanted audio languages, most preferred first; null or empty = any.</param>
+    /// <param name="formats">The library's custom formats (null = none).</param>
     public static IReadOnlyList<EpisodeDecision> Evaluate(
         Core.Domain.Series series, QualityProfile profile, IReadOnlyCollection<Episode> episodes, IEnumerable<ReleaseInfo> releases,
-        SearchScope? scope, bool requireMonitored, DateOnly today, IReadOnlyList<string>? languages = null) =>
-        Rank(releases.Select(r => Evaluate(series, profile, episodes, r, scope, requireMonitored, today, languages)));
+        SearchScope? scope, bool requireMonitored, DateOnly today, IReadOnlyList<string>? languages = null, CustomFormatSet? formats = null) =>
+        Rank(releases.Select(r => Evaluate(series, profile, episodes, r, scope, requireMonitored, today, languages, formats)));
 
     public static EpisodeDecision Evaluate(
         Core.Domain.Series series, QualityProfile profile, IReadOnlyCollection<Episode> episodes, ReleaseInfo release,
-        SearchScope? scope, bool requireMonitored, DateOnly today, IReadOnlyList<string>? languages = null)
+        SearchScope? scope, bool requireMonitored, DateOnly today, IReadOnlyList<string>? languages = null, CustomFormatSet? formats = null)
     {
         var parsed = ReleaseParser.Parse(release.Title);
         var rejections = new List<string>();
         var releaseLanguages = ReleaseLanguages.Resolve(parsed, release);
         var languageRank = ReleaseLanguages.PreferenceRank(releaseLanguages, languages);
+        formats ??= CustomFormatSet.Empty;
+        var matched = formats.Count > 0
+            ? formats.Match(new CustomFormatInput { Parsed = parsed, Languages = releaseLanguages, IndexerName = release.IndexerName, Size = release.Size })
+            : [];
+        var score = profile.FormatScore(matched.Select(m => m.Id));
 
         if (parsed.SeasonNumber is not { } season)
         {
@@ -48,6 +59,7 @@ public static class EpisodeDecisionEngine
             {
                 Release = release, Parsed = parsed, Rejections = ["Not a TV episode or season release"],
                 Languages = releaseLanguages, LanguageRank = languageRank ?? int.MaxValue,
+                CustomFormats = matched, CustomFormatScore = score,
             };
         }
 
@@ -137,23 +149,28 @@ public static class EpisodeDecisionEngine
             rejections.Add("No seeders");
         }
 
+        if (score < profile.MinFormatScore)
+        {
+            rejections.Add($"Custom format score {score} is below the minimum ({profile.MinFormatScore})");
+        }
+
         // Upgrades: every covered episode that already has a file must benefit.
-        var cutoff = Qualities.FindById(profile.CutoffQualityId);
         foreach (var ep in mapped.Where(e => e.EpisodeFile is not null))
         {
             var existing = Qualities.FindById(ep.EpisodeFile!.QualityId);
+            var existingScore = formats.ScoreOf(ep.EpisodeFile, profile);
             var code = SeriesNaming.EpisodeCode(ep.SeasonNumber, [ep.EpisodeNumber]);
-            if (!profile.UpgradeAllowed)
+            switch (FormatUpgrade.Evaluate(profile, existing, existingScore, parsed.Quality, score))
             {
-                rejections.Add($"{code} already has a file and upgrades are disabled");
-            }
-            else if (existing.Weight >= cutoff.Weight)
-            {
-                rejections.Add($"{code} meets cutoff ({existing.Name})");
-            }
-            else if (parsed.Quality.Weight <= existing.Weight)
-            {
-                rejections.Add($"Not an upgrade for {code} ({existing.Name})");
+                case UpgradeVerdict.UpgradesDisabled:
+                    rejections.Add($"{code} already has a file and upgrades are disabled");
+                    break;
+                case UpgradeVerdict.CutoffMet:
+                    rejections.Add($"{code} meets cutoff ({FormatUpgrade.Describe(existing, existingScore)})");
+                    break;
+                case UpgradeVerdict.NotBetter:
+                    rejections.Add($"Not an upgrade for {code} ({FormatUpgrade.Describe(existing, existingScore)})");
+                    break;
             }
         }
 
@@ -171,6 +188,7 @@ public static class EpisodeDecisionEngine
         {
             Release = release, Parsed = parsed, Episodes = mapped, Rejections = rejections.Distinct().ToList(),
             Languages = releaseLanguages, LanguageRank = languageRank ?? int.MaxValue,
+            CustomFormats = matched, CustomFormatScore = score,
         };
     }
 
@@ -207,12 +225,13 @@ public static class EpisodeDecisionEngine
                 || series.AlternateTitles.Any(t => normalized == SeriesNaming.NormalizedTitle(t.Title)));
     }
 
-    /// <summary>Approved first, then preferred language, best quality, larger coverage (season packs), propers, seeders, indexer priority.</summary>
+    /// <summary>Approved first, then preferred language, best quality, custom format score, larger coverage (season packs), propers, seeders, indexer priority.</summary>
     public static IReadOnlyList<EpisodeDecision> Rank(IEnumerable<EpisodeDecision> decisions) =>
         decisions
             .OrderByDescending(d => d.Approved)
             .ThenBy(d => d.LanguageRank)
             .ThenByDescending(d => d.Quality.Weight)
+            .ThenByDescending(d => d.CustomFormatScore)
             .ThenByDescending(d => d.Episodes.Count)
             .ThenByDescending(d => d.Parsed.IsProper || d.Parsed.IsRepack)
             .ThenByDescending(d => d.Release.Seeders ?? 0)
@@ -237,11 +256,12 @@ public static class EpisodeDecisionEngine
         return picked;
     }
 
-    /// <summary>Monitored, aired episodes that are missing or below the profile cutoff.</summary>
-    public static bool IsWanted(Episode episode, QualityProfile profile, DateOnly today)
+    /// <summary>Monitored, aired episodes that are missing or below the profile cutoff (quality or custom format score).</summary>
+    public static bool IsWanted(Episode episode, QualityProfile profile, DateOnly today, CustomFormatSet? formats = null)
     {
         if (!episode.Monitored || !episode.HasAired(today)) return false;
-        if (episode.EpisodeFile is null) return true;
-        return profile.UpgradeAllowed && Qualities.FindById(episode.EpisodeFile.QualityId).Weight < Qualities.FindById(profile.CutoffQualityId).Weight;
+        if (episode.EpisodeFile is not { } file) return true;
+        var score = (formats ?? CustomFormatSet.Empty).ScoreOf(file, profile);
+        return FormatUpgrade.CutoffNotMet(profile, Qualities.FindById(file.QualityId), score);
     }
 }

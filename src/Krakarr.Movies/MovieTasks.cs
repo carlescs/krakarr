@@ -39,6 +39,7 @@ public sealed class MovieRssSyncTask(
         var feed = await indexerSearch.SearchAsync(new SearchCriteria { Type = SearchType.Movie, Rss = true }, ct: cancellationToken);
         logger.LogInformation("RSS sync: {Count} release(s) from indexers", feed.Releases.Count);
         var languageSettings = await settings.GetAsync<LanguageSettings>(cancellationToken);
+        var formats = await movies.FormatsAsync(cancellationToken);
 
         var byTitle = feed.Releases
             .GroupBy(r => ReleaseParser.NormalizeTitle(ReleaseParser.Parse(r.Title).Title))
@@ -70,7 +71,9 @@ public sealed class MovieRssSyncTask(
             }
 
             var existing = movie.MovieFile is null ? null : Qualities.FindById(movie.MovieFile.QualityId);
-            var best = MovieDecisionEngine.Evaluate(movie, movie.QualityProfile, existing, candidates, languageSettings.For(movie.Languages)).FirstOrDefault(d => d.Approved);
+            var existingScore = movie.MovieFile is null ? 0 : formats.ScoreOf(movie.MovieFile, movie.QualityProfile);
+            var best = MovieDecisionEngine.Evaluate(movie, movie.QualityProfile, existing, candidates, languageSettings.For(movie.Languages), formats, existingScore)
+                .FirstOrDefault(d => d.Approved);
             if (best is not null)
             {
                 await movies.GrabAsync(movie, best.Release, cancellationToken);

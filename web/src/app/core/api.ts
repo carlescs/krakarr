@@ -8,7 +8,7 @@ import type { Passkey, PasskeyCreationOptionsJson, PasskeyCredentialJson, Passke
 import type { PushDevice, PushStatus, PushTestResult, PushTopic } from './push';
 import {
   AuthStatus, AutomationSettings, BackupInfo, BackupList, BackupSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
-  IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, BestSubtitleMatches, SubtitleCandidate, SubtitleCandidates, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, SubtitleSyncTools, RedundantSubtitlePage, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, SeasonDetails, EpisodeRelease, MediaInfo, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
+  IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, BestSubtitleMatches, SubtitleCandidate, SubtitleCandidates, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, SubtitleSyncTools, RedundantSubtitlePage, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, SeasonDetails, EpisodeRelease, MediaInfo, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile, CustomFormat, CustomFormatApp, CustomFormatImportResult, CustomFormatSchema, CustomFormatTestResult,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, KeywordLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
   DashboardStats, OmdbInfo, UserAccount, UserRole, JellyfinSettings, EmbySettings, PlexSettings, MediaServerTestResult, MediaServerUser, PlayState, RecentlyPlayed, SeriesPlayStatus, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, BackgroundTask, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus,
   AlternateTitle, AlternateTitleInput, DatabaseDetails, DatabaseInfo, DatabaseTargetRequest, DatabaseTestResult, DatabaseSwitchStaged
@@ -177,6 +177,17 @@ export class Api {
   qualityProfiles() { return this.get<QualityProfile[]>('qualityprofiles'); }
   saveQualityProfile(p: QualityProfile) { return p.id ? this.put<QualityProfile>(`qualityprofiles/${p.id}`, p) : this.post<QualityProfile>('qualityprofiles', p); }
   deleteQualityProfile(id: number) { return this.delete<void>(`qualityprofiles/${id}`); }
+
+  customFormats() { return this.get<CustomFormat[]>('customformats'); }
+  customFormatSchema() { return this.get<CustomFormatSchema[]>('customformats/schema'); }
+  saveCustomFormat(f: CustomFormat) { return f.id ? this.put<CustomFormat>(`customformats/${f.id}`, f) : this.post<CustomFormat>('customformats', f); }
+  deleteCustomFormat(id: number) { return this.delete<void>(`customformats/${id}`); }
+  importCustomFormats(json: string, app: CustomFormatApp) { return this.post<CustomFormatImportResult>('customformats/import', { json, app }); }
+  /** Radarr/Sonarr-compatible JSON of the given formats (all when `ids` is empty). */
+  exportCustomFormats(app: CustomFormatApp, ids: number[] = []) {
+    return firstValueFrom(this.http.get(`${API}/customformats/export`, { params: Api.params({ app, ids: ids.join(',') }), responseType: 'text' }));
+  }
+  testCustomFormats(title: string) { return this.post<CustomFormatTestResult>('customformats/test', { title }); }
   rootFolders() { return this.get<RootFolder[]>('rootfolders'); }
   addRootFolder(path: string, mediaType: MediaType = 'Movie') { return this.post<RootFolder>('rootfolders', { path, mediaType }); }
   deleteRootFolder(id: number) { return this.delete<void>(`rootfolders/${id}`); }

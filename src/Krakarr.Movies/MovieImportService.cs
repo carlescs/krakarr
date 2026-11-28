@@ -8,6 +8,7 @@ using Krakarr.Core.Push;
 using Krakarr.Core.Telemetry;
 using Krakarr.Data;
 using Krakarr.Downloads;
+using Krakarr.Media.CustomFormats;
 using Krakarr.Media.Files;
 using Krakarr.Media.Parsing;
 using Krakarr.Subtitles;
@@ -25,7 +26,8 @@ public sealed class MovieImportService(
     IEventHub eventHub,
     IMediaServerNotifier mediaServers,
     IPushNotifier push,
-    ILogger<MovieImportService> logger) : IScheduledTask
+    ILogger<MovieImportService> logger,
+    CustomFormatCache? formatCache = null) : IScheduledTask
 {
     public string Name => "Import completed movie downloads";
     public TimeSpan Interval => TimeSpan.FromSeconds(15);
@@ -135,6 +137,12 @@ public sealed class MovieImportService(
             MediaInfo = MediaInfoSummary.Serialize(summary),
             EmbeddedSubtitles = EmbeddedSubtitleList.Format(EmbeddedSubtitleList.FromTracks(mediaInfo.Subtitles)),
         };
+        if (formatCache is not null)
+        {
+            var profile = await db.QualityProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.Id == movie.QualityProfileId, ct);
+            LibraryFileFormats.Apply(movieFile, await formatCache.GetAsync(db.CustomFormats, ct), profile, download.Name, download.IndexerName);
+        }
+
         db.MovieFiles.Add(movieFile);
         await db.SaveChangesAsync(ct);
 

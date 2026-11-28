@@ -29,6 +29,7 @@ public static class RoleAccess
     private static readonly string[] AdminWrites =
     [
         "/api/v1/qualityprofiles",
+        "/api/v1/customformats",
         "/api/v1/rootfolders",
         "/api/v1/subtitles/providers",
     ];
