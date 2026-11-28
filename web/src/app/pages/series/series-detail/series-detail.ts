@@ -7,7 +7,7 @@ import { Api, errorMessage } from '../../../core/api';
 import { Auth } from '../../../core/auth';
 import { Events } from '../../../core/events';
 import { AgoPipe, BytesPipe, airsOn } from '../../../core/format';
-import { Episode, EpisodeRelease, HistoryItem, OrganizePreview, QualityProfile, SeasonInfo, Series, SubtitleFile } from '../../../core/models';
+import { Episode, EpisodeRelease, HistoryItem, OrganizePreview, PlayState, QualityProfile, SeasonInfo, Series, SeriesPlayStatus, SubtitleFile } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
 import { ReleaseSearch } from '../../../core/indexer-search';
 import { Languages } from '../../../core/languages';
@@ -124,6 +124,21 @@ export class SeriesDetailPage implements OnInit {
   /** The series' page on Jellyfin, once an episode is downloaded and Jellyfin has scanned it. */
   private readonly jellyfin = new JellyfinLink();
   protected readonly jellyfinUrl = this.jellyfin.url;
+  /** Watched episodes on each media server set up to report them. */
+  protected readonly playStatus = signal<SeriesPlayStatus[]>([]);
+  /** The downloads the play status was read for, so reloads of the same series don't ask again. */
+  private playStatusKey: string | null = null;
+  /** Watched and part-way watched episodes by id, with their state on each server. */
+  protected readonly episodePlay = computed(() => {
+    const byEpisode = new Map<number, PlayState[]>();
+    for (const server of this.playStatus()) {
+      for (const e of server.episodes) {
+        const state: PlayState = { server: server.server, played: e.played, playCount: e.played ? 1 : 0, progress: e.progress, lastPlayed: e.lastPlayed };
+        byEpisode.set(e.episodeId, [...(byEpisode.get(e.episodeId) ?? []), state]);
+      }
+    }
+    return byEpisode;
+  });
   protected readonly episodes = signal<Episode[]>([]);
   /** Torrents of this series in the download clients (live). */
   protected readonly downloads = computed(() => this.events.downloads().filter(d => d.seriesId === this.id()));
@@ -214,6 +229,8 @@ export class SeriesDetailPage implements OnInit {
   private reset() {
     this.series.set(null);
     this.jellyfin.reset();
+    this.playStatus.set([]);
+    this.playStatusKey = null;
     this.episodes.set([]);
     this.history.set([]);
     this.subtitles.set([]);
@@ -243,6 +260,7 @@ export class SeriesDetailPage implements OnInit {
       this.editProfileId = s.qualityProfileId;
       this.editLanguages = s.languages ? [...s.languages] : null;
       this.jellyfin.watch(s.episodeFileCount > 0 ? `${id}:${s.episodeFileCount}` : null, () => this.api.seriesJellyfinLink(id));
+      this.loadPlayStatus(id, s.episodeFileCount > 0 ? `${id}:${s.episodeFileCount}` : null);
       if (!this.expandedInitialised) {
         // Open the latest regular season by default.
         const latest = Math.max(0, ...s.seasons.map(x => x.seasonNumber));
@@ -251,6 +269,19 @@ export class SeriesDetailPage implements OnInit {
       }
     } catch (e) {
       this.toasts.error(errorMessage(e));
+    }
+  }
+
+  private async loadPlayStatus(id: number, key: string | null) {
+    if (key === this.playStatusKey) return;
+    this.playStatusKey = key;
+    this.playStatus.set([]);
+    if (key == null) return;
+    try {
+      const status = await this.api.seriesPlayStatus(id);
+      if (key === this.playStatusKey) this.playStatus.set(status ?? []);
+    } catch {
+      // A convenience: an unreachable media server just shows nothing.
     }
   }
 
@@ -278,6 +309,10 @@ export class SeriesDetailPage implements OnInit {
   protected episodesFor(season: number) {
     return this.episodes().filter(e => e.seasonNumber === season).sort((a, b) => b.episodeNumber - a.episodeNumber);
   }
+
+  protected readonly isPlayed = (s: PlayState) => s.played;
+  protected serverNames(states: PlayState[]) { return states.map(s => s.server).join(', '); }
+  protected maxProgress(states: PlayState[]) { return Math.round(Math.max(0, ...states.map(s => s.progress ?? 0)) * 100); }
 
   protected code(e: Episode) { return `S${String(e.seasonNumber).padStart(2, '0')}E${String(e.episodeNumber).padStart(2, '0')}`; }
   protected seasonLabel(n: number) { return n === 0 ? 'Specials' : `Season ${n}`; }

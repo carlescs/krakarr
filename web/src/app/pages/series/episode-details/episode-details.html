@@ -19,9 +19,9 @@
           <span [title]="'TMDB user score from ' + d!.voteCount + ' votes'"><span class="text-amber-300">★</span> {{ d!.rating!.toFixed(1) }}</span>
         }
       </div>
-      <div class="mt-2">
+      <div class="mt-2 flex flex-wrap items-center gap-2">
         @if (e.downloadProgress != null) {
-          <div class="flex max-w-xs items-center gap-2"><kr-progress class="flex-1" [value]="e.downloadProgress" /><span class="text-xs text-accent-300">{{ e.downloadProgress.toFixed(0) }}%</span></div>
+          <div class="flex w-full max-w-xs items-center gap-2"><kr-progress class="flex-1" [value]="e.downloadProgress" /><span class="text-xs text-accent-300">{{ e.downloadProgress.toFixed(0) }}%</span></div>
           @if (auth.isStaff() && e.downloadHash) {
             <a [routerLink]="['/downloads']" [queryParams]="{ hash: e.downloadHash }" class="mt-1 inline-block text-xs text-slate-400 hover:text-accent-300" data-download-link>Show in Downloads →</a>
           }
@@ -34,6 +34,7 @@
         } @else {
           <span class="badge bg-slate-500/15 text-slate-400">Unmonitored</span>
         }
+        <kr-play-status [states]="playStatus()" />
       </div>
       @if (jellyfinUrl(); as url) {
         <a class="btn mt-3 bg-violet-600/90 text-white hover:bg-violet-500" [href]="url" target="_blank" rel="noopener" data-jellyfin>

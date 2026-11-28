@@ -10,7 +10,7 @@ import {
   AuthStatus, AutomationSettings, BackupInfo, BackupList, BackupSettings, CommandInfo, DirectoryListing, DownloadClientSettings, DownloadClientStatus, DownloadClientTestResult, GeneralSettings, HistoryItem, Indexer, SearchIndexer,
   IndexerTestResult, ProwlarrImportResult, ProwlarrListResult, SearchStreamEvent, Language, LanguageCatalog, LanguageSettings, TorrentDetails, MovieImportCandidate, SeriesImportCandidate, ScoredSubtitle, BestSubtitleMatches, SubtitleCandidate, SubtitleCandidates, SubtitleFile, SubtitleFileRef, SubtitleProvider, SubtitleSettings, SubtitleSyncTools, RedundantSubtitlePage, WantedSubtitleLanguages, WantedSubtitlePage, WantedSubtitleQuery, Episode, EpisodeDetails, SeasonDetails, EpisodeRelease, MediaInfo, MediaType, MonitorMode, Series, SeriesListPage, SeriesListQuery, MediaManagementSettings, MetadataSettings, OrganizePreview, Movie, MovieCollectionDetails, MovieCollectionSummary, MovieFilter, MovieListPage, MovieListQuery, MovieLookup, Quality, QualityProfile,
   ReleaseDecision, ReleaseInfo, Credits, MovieDetails, SeriesDetails, PersonDetails, PersonLookup, KeywordLookup, CalendarEntry, MinimumAvailability, DiscoverPage, MovieDiscoverList, SeriesDiscoverList, RootFolder, ScheduledTaskInfo, SearchResult, SearchType, SeriesLookup, SystemStatus, TorrentStatus,
-  DashboardStats, OmdbInfo, UserAccount, UserRole, JellyfinSettings, EmbySettings, PlexSettings, MediaServerTestResult, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, BackgroundTask, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus,
+  DashboardStats, OmdbInfo, UserAccount, UserRole, JellyfinSettings, EmbySettings, PlexSettings, MediaServerTestResult, MediaServerUser, PlayState, SeriesPlayStatus, TelemetrySettings, TelemetryStatus, MediaRequest, MediaRequestPage, RequestStatus, ApproveRequestOptions, AppNotification, BackgroundTask, Subscription, SubscriptionState, Subscriber, BulkResult, BulkDownloadAction, ImportIssue, DownloadMediaInfo, HealthReport, IndexerStatus,
   AlternateTitle, AlternateTitleInput, DatabaseDetails, DatabaseInfo, DatabaseTargetRequest, DatabaseTestResult, DatabaseSwitchStaged
 } from './models';
 
@@ -167,6 +167,9 @@ export class Api {
   testJellyfin(settings: JellyfinSettings) { return this.post<MediaServerTestResult>('settings/jellyfin/test', settings); }
   testEmby(settings: EmbySettings) { return this.post<MediaServerTestResult>('settings/emby/test', settings); }
   testPlex(settings: PlexSettings) { return this.post<MediaServerTestResult>('settings/plex/test', settings); }
+  /** Users of the Jellyfin server in `settings` (which may not be saved yet), to pick whose play status to show. */
+  jellyfinUsers(settings: JellyfinSettings) { return this.post<MediaServerUser[]>('settings/jellyfin/users', settings); }
+  embyUsers(settings: EmbySettings) { return this.post<MediaServerUser[]>('settings/emby/users', settings); }
   regenerateApiKey() { return this.post<GeneralSettings>('settings/general/regenerate-api-key'); }
   qualities() { return this.get<Quality[]>('qualities'); }
   qualityProfiles() { return this.get<QualityProfile[]>('qualityprofiles'); }
@@ -236,6 +239,8 @@ export class Api {
   movie(id: number) { return this.get<Movie>(`movies/${id}`); }
   /** The movie's Jellyfin page; null (HTTP 204) when Jellyfin isn't set up or doesn't have it. */
   movieJellyfinLink(id: number) { return this.get<{ url: string } | null>(`movies/${id}/jellyfin`); }
+  /** The movie's play state on each media server set up to report it. */
+  moviePlayStatus(id: number) { return this.get<PlayState[]>(`movies/${id}/playstatus`); }
   lookupMovies(term: string) { return this.get<MovieLookup[]>('movies/lookup', { term }); }
   addMovie(req: { tmdbId: number; qualityProfileId: number; rootFolderPath: string; monitored: boolean; searchForMovie: boolean; minimumAvailability: MinimumAvailability }) {
     return this.post<Movie>('movies', req);
@@ -332,6 +337,8 @@ export class Api {
   series(id: number) { return this.get<Series>(`series/${id}`); }
   /** The series' Jellyfin page; null (HTTP 204) when Jellyfin isn't set up or doesn't have it. */
   seriesJellyfinLink(id: number) { return this.get<{ url: string } | null>(`series/${id}/jellyfin`); }
+  /** The series' watched episodes on each media server set up to report it. */
+  seriesPlayStatus(id: number) { return this.get<SeriesPlayStatus[]>(`series/${id}/playstatus`); }
   episodes(seriesId: number) { return this.get<Episode[]>(`series/${seriesId}/episodes`); }
   /** The episode's Jellyfin page; null (HTTP 204) when Jellyfin isn't set up or doesn't have it. */
   episodeJellyfinLink(seriesId: number, episodeId: number) { return this.get<{ url: string } | null>(`series/${seriesId}/episodes/${episodeId}/jellyfin`); }

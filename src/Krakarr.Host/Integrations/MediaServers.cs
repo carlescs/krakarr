@@ -219,8 +219,8 @@ public sealed class MediaBrowserClient(IHttpClientFactory httpClientFactory, ILo
     }
 }
 
-/// <summary>A Plex library section and the folders it covers.</summary>
-public sealed record PlexSection(string Key, string? Title, IReadOnlyList<string> Locations);
+/// <summary>A Plex library section and the folders it covers; <see cref="Type"/> is "movie" or "show" for video libraries.</summary>
+public sealed record PlexSection(string Key, string? Title, IReadOnlyList<string> Locations, string? Type = null);
 
 /// <summary>Refreshes Plex library sections by path, and tests the connection.</summary>
 public sealed class PlexClient(IHttpClientFactory httpClientFactory, ILogger<PlexClient> logger)
@@ -229,6 +229,92 @@ public sealed class PlexClient(IHttpClientFactory httpClientFactory, ILogger<Ple
 
     /// <summary>The section list is a few hundred bytes per library.</summary>
     private const long MaxResponseBytes = 1024 * 1024;
+
+    /// <summary>
+    /// A show's episode list carries media and part details (a couple of KB per episode). It is read as a stream, keeping
+    /// only a few attributes per item, so the bound only caps the transfer.
+    /// </summary>
+    private const long MaxItemsBytes = 64 * 1024 * 1024;
+
+    /// <summary>Most items a single item list may hold (a show's episodes, or the titles matching a search).</summary>
+    private const int MaxItems = 20_000;
+
+    /// <summary>
+    /// The movie or show for <paramref name="lookup"/>, with the token owner's play state (a show's is empty), or null when
+    /// no Plex library has it. Searches the movie or show libraries by title, then matches like Jellyfin (ids, then name and year).
+    /// </summary>
+    public async Task<JellyfinItem?> FindItemAsync(PlexSettings settings, JellyfinLookup lookup, CancellationToken ct)
+    {
+        var (sectionType, itemType, element) = lookup.Kind == JellyfinItemKind.Movie ? ("movie", 1, "Video") : ("show", 2, "Directory");
+        var sections = Sections(await GetXmlAsync(settings, "library/sections", ct)).Where(s => s.Type == sectionType).ToList();
+        foreach (var term in new[] { lookup.Title, lookup.OriginalTitle }.Where(t => !string.IsNullOrWhiteSpace(t)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            foreach (var section in sections)
+            {
+                var relative = $"library/sections/{Uri.EscapeDataString(section.Key)}/all?type={itemType}&includeGuids=1&title={Uri.EscapeDataString(term!)}";
+                if (JellyfinClient.Match(await GetItemsAsync(settings, relative, element, ct), lookup) is { } item) return item;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>Every episode of a show (by its <c>ratingKey</c>), with ids and the token owner's play state.</summary>
+    public Task<List<JellyfinItem>> EpisodesAsync(PlexSettings settings, string showKey, CancellationToken ct) =>
+        GetItemsAsync(settings, $"library/metadata/{Uri.EscapeDataString(showKey)}/allLeaves?includeGuids=1", "Video", ct);
+
+    /// <summary>Reads the <paramref name="element"/> items of a Plex list as a stream, mapped onto <see cref="JellyfinItem"/>.</summary>
+    private async Task<List<JellyfinItem>> GetItemsAsync(PlexSettings settings, string relative, string element, CancellationToken ct)
+    {
+        using var request = Request(settings, relative);
+        using var response = await httpClientFactory.CreateClient(HttpClientName).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (!response.IsSuccessStatusCode) throw new HttpRequestException($"Plex answered HTTP {(int)response.StatusCode}", null, response.StatusCode);
+        await using var body = await response.Content.ReadAsBoundedStreamAsync(MaxItemsBytes, ct);
+        using var reader = XmlReader.Create(body, new XmlReaderSettings { Async = true, DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, IgnoreWhitespace = true });
+        return await ReadItemsAsync(reader, element);
+    }
+
+    /// <summary>
+    /// Maps Plex items (<c>&lt;Video&gt;</c> or <c>&lt;Directory&gt;</c> directly under the container) onto <see cref="JellyfinItem"/>:
+    /// <c>&lt;Guid id="tmdb://1"/&gt;</c> children become provider ids, <c>viewCount</c>/<c>viewOffset</c>/<c>lastViewedAt</c> the play state.
+    /// </summary>
+    public static async Task<List<JellyfinItem>> ReadItemsAsync(XmlReader reader, string element)
+    {
+        var items = new List<JellyfinItem>();
+        while (await reader.ReadAsync())
+        {
+            if (reader.NodeType != XmlNodeType.Element || reader.Depth != 1 || reader.Name != element) continue;
+            var key = reader.GetAttribute("ratingKey");
+            var title = reader.GetAttribute("title");
+            var year = Int(reader.GetAttribute("year"));
+            var season = Int(reader.GetAttribute("parentIndex"));
+            var index = Int(reader.GetAttribute("index"));
+            var duration = Long(reader.GetAttribute("duration"));
+            var viewCount = Int(reader.GetAttribute("viewCount")) ?? 0;
+            var viewOffset = Long(reader.GetAttribute("viewOffset")) ?? 0;
+            var lastViewed = Long(reader.GetAttribute("lastViewedAt")) is { } at ? DateTimeOffset.FromUnixTimeSeconds(at) : (DateTimeOffset?)null;
+            var ids = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+            if (!reader.IsEmptyElement)
+            {
+                var depth = reader.Depth;
+                while (await reader.ReadAsync() && !(reader.NodeType == XmlNodeType.EndElement && reader.Depth == depth))
+                {
+                    if (reader.NodeType == XmlNodeType.Element && reader.Depth == depth + 1 && reader.Name == "Guid"
+                        && reader.GetAttribute("id") is { } guid && guid.IndexOf("://", StringComparison.Ordinal) is var sep and > 0)
+                        ids.TryAdd(guid[..sep], guid[(sep + 3)..]);
+                }
+            }
+            if (string.IsNullOrEmpty(key)) continue;
+            // Plex counts in milliseconds, Jellyfin in ticks of 100 ns.
+            items.Add(new(key, title, null, year, ids, season, index, null, duration * 10_000,
+                new JellyfinUserData(viewCount > 0, viewCount, viewOffset * 10_000, lastViewed)));
+            if (items.Count >= MaxItems) break;
+        }
+        return items;
+    }
+
+    private static int? Int(string? s) => int.TryParse(s, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
+
+    private static long? Long(string? s) => long.TryParse(s, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var v) ? v : null;
 
     public async Task<MediaServerTestResult> TestAsync(PlexSettings settings, CancellationToken ct)
     {
@@ -281,7 +367,7 @@ public sealed class PlexClient(IHttpClientFactory httpClientFactory, ILogger<Ple
         doc.Root?.Elements("Directory")
             .Where(d => !string.IsNullOrEmpty(d.Attribute("key")?.Value))
             .Select(d => new PlexSection(d.Attribute("key")!.Value, d.Attribute("title")?.Value,
-                d.Elements("Location").Select(l => l.Attribute("path")?.Value).OfType<string>().ToList()))
+                d.Elements("Location").Select(l => l.Attribute("path")?.Value).OfType<string>().ToList(), d.Attribute("type")?.Value))
             .ToList() ?? [];
 
     private async Task RefreshSectionAsync(PlexSettings settings, PlexSection section, string? path, CancellationToken ct)
@@ -387,12 +473,36 @@ public static class MediaServerEndpoints
         services.Replace(ServiceDescriptor.Singleton<IMediaServerNotifier>(sp => sp.GetRequiredService<MediaServerRefreshQueue>()));
         services.AddSingleton<MediaServerRefresher>();
         services.AddHostedService(sp => sp.GetRequiredService<MediaServerRefresher>());
+        services.AddScoped<PlayStatusService>();
         return services;
     }
 
-    /// <summary>Connection tests for Emby and Plex. Under <c>/api/v1/settings</c>, so admins only (RoleAccess).</summary>
+    /// <summary>
+    /// Play status of library titles (readable by every user: GETs under movies/series), plus connection tests and user
+    /// lists for the settings page (under <c>/api/v1/settings</c>, so admins only; RoleAccess).
+    /// </summary>
     public static IEndpointRouteBuilder MapMediaServerEndpoints(this IEndpointRouteBuilder app)
     {
+        // The movie's watched state on each media server set up to report it; empty when none is or nothing is downloaded.
+        app.MapGet("/api/v1/movies/{id:int}/playstatus", async (int id, PlayStatusService playStatus, CancellationToken ct) =>
+            await playStatus.MovieAsync(id, ct) is { } states ? Results.Ok(states) : Results.NotFound()).WithTags("Media servers");
+
+        // The series' watched episodes on each media server set up to report it.
+        app.MapGet("/api/v1/series/{id:int}/playstatus", async (int id, PlayStatusService playStatus, CancellationToken ct) =>
+            await playStatus.SeriesAsync(id, ct) is { } states ? Results.Ok(states) : Results.NotFound()).WithTags("Media servers");
+
+        app.MapPost("/api/v1/settings/jellyfin/users", async (JellyfinSettings input, ISettingsService settings, JellyfinClient client, CancellationToken ct) =>
+        {
+            if (input.ApiKey == JellyfinSettings.ApiKeyMask) input = input with { ApiKey = (await settings.GetAsync<JellyfinSettings>(ct)).ApiKey };
+            return await UsersAsync(client, MediaBrowserServer.From(input), "Jellyfin", ct);
+        }).WithTags("Settings");
+
+        app.MapPost("/api/v1/settings/emby/users", async (EmbySettings input, ISettingsService settings, JellyfinClient client, CancellationToken ct) =>
+        {
+            if (input.ApiKey == EmbySettings.ApiKeyMask) input = input with { ApiKey = (await settings.GetAsync<EmbySettings>(ct)).ApiKey };
+            return await UsersAsync(client, MediaBrowserServer.From(input), "Emby", ct);
+        }).WithTags("Settings");
+
         app.MapPost("/api/v1/settings/emby/test", async (EmbySettings input, ISettingsService settings, MediaBrowserClient client, CancellationToken ct) =>
         {
             var key = input.ApiKey == EmbySettings.ApiKeyMask ? (await settings.GetAsync<EmbySettings>(ct)).ApiKey : input.ApiKey;
@@ -406,5 +516,18 @@ public static class MediaServerEndpoints
         }).WithTags("Settings");
 
         return app;
+    }
+
+    private static async Task<IResult> UsersAsync(JellyfinClient client, MediaBrowserServer? server, string name, CancellationToken ct)
+    {
+        if (server is null) return Results.Problem($"Enter the {name} URL and an API key", statusCode: StatusCodes.Status400BadRequest);
+        try
+        {
+            return Results.Ok(await client.UsersAsync(server, ct));
+        }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or UriFormatException || (ex is TaskCanceledException && !ct.IsCancellationRequested))
+        {
+            return Results.Problem($"Cannot list the {name} users: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+        }
     }
 }

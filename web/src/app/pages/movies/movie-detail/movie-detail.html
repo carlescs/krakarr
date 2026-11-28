@@ -21,6 +21,7 @@
           } @else if (m.monitored) {
             <span class="badge bg-rose-500/15 text-rose-300">Missing</span>
           }
+          <kr-play-status [states]="playStatus()" />
           <span class="badge" [class]="m.monitored ? 'bg-accent-500/15 text-accent-300' : 'bg-slate-500/15 text-slate-400'">
             {{ m.monitored ? 'Monitored' : 'Unmonitored' }}
           </span>

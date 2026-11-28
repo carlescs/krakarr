@@ -8,7 +8,7 @@ import { Auth } from '../../../core/auth';
 import { Events } from '../../../core/events';
 import { AgoPipe, BytesPipe } from '../../../core/format';
 import { AVAILABILITY_OPTIONS } from '../../../core/calendar';
-import { HistoryItem, MinimumAvailability, Movie, QualityProfile, ReleaseDecision, SubtitleFile } from '../../../core/models';
+import { HistoryItem, MinimumAvailability, Movie, PlayState, QualityProfile, ReleaseDecision, SubtitleFile } from '../../../core/models';
 import { Toasts } from '../../../core/toast';
 import { ReleaseSearch } from '../../../core/indexer-search';
 import { Languages } from '../../../core/languages';
@@ -34,10 +34,11 @@ import { OmdbState } from '../../../core/omdb';
 import { MovieReleases } from '../../../shared/movie-releases/movie-releases';
 import { MediaDownloads } from '../../../shared/media-downloads/media-downloads';
 import { DeleteFilesDialog } from '../../../shared/delete-files/delete-files';
+import { PlayStatus } from '../../../shared/play-status/play-status';
 
 @Component({
   selector: 'kr-movie-detail',
-  imports: [DeleteFilesDialog, MoreMenu, MediaDownloads, ExternalLinks, OmdbFacts, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, AlternateTitles, MovieReleases, FormsModule, DatePipe, Poster, Overview, Modal, IndexerProgress, SubtitleManager, SubtitleList, MediaInfoView, SortHeader, BytesPipe, AgoPipe],
+  imports: [DeleteFilesDialog, PlayStatus, MoreMenu, MediaDownloads, ExternalLinks, OmdbFacts, SubscribeButton, LibraryCredits, RelatedTitles, LanguageOverride, AlternateTitles, MovieReleases, FormsModule, DatePipe, Poster, Overview, Modal, IndexerProgress, SubtitleManager, SubtitleList, MediaInfoView, SortHeader, BytesPipe, AgoPipe],
   templateUrl: './movie-detail.html',
   styleUrl: './movie-detail.scss',
 })
@@ -82,6 +83,10 @@ export class MovieDetailPage implements OnInit {
   /** The movie's page on Jellyfin, once it's downloaded and Jellyfin has scanned it. */
   private readonly jellyfin = new JellyfinLink();
   protected readonly jellyfinUrl = this.jellyfin.url;
+  /** Watched state on each media server set up to report it (empty until downloaded, or when none is). */
+  protected readonly playStatus = signal<PlayState[]>([]);
+  /** The file the play status was read for, so reloads of the same movie don't ask again. */
+  private playStatusKey: string | null = null;
   protected editMonitored = true;
   protected editProfileId = 0;
   protected editAvailability: MinimumAvailability = 'Released';
@@ -135,6 +140,8 @@ export class MovieDetailPage implements OnInit {
     this.confirmDeleteFile.set(false);
     this.subtitlesOpen.set(false);
     this.jellyfin.reset();
+    this.playStatus.set([]);
+    this.playStatusKey = null;
     this.deleteFiles = false;
   }
 
@@ -148,9 +155,23 @@ export class MovieDetailPage implements OnInit {
       this.editAvailability = m.minimumAvailability;
       this.editLanguages = m.languages ? [...m.languages] : null;
       this.jellyfin.watch(m.movieFile ? `${id}:${m.movieFile.id}` : null, () => this.api.movieJellyfinLink(id));
+      this.loadPlayStatus(id, m.movieFile ? `${id}:${m.movieFile.id}` : null);
       await Promise.all([this.loadHistory(), this.loadSubtitles()]);
     } catch (e) {
       this.toasts.error(errorMessage(e));
+    }
+  }
+
+  private async loadPlayStatus(id: number, key: string | null) {
+    if (key === this.playStatusKey) return;
+    this.playStatusKey = key;
+    this.playStatus.set([]);
+    if (key == null) return;
+    try {
+      const states = await this.api.moviePlayStatus(id);
+      if (key === this.playStatusKey) this.playStatus.set(states ?? []);
+    } catch {
+      // A convenience: an unreachable media server just shows nothing.
     }
   }
 

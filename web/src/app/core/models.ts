@@ -312,10 +312,20 @@ export interface MetadataSettings {
 }
 /** A library path as Krakarr sees it (from) and as the media server sees it (to). */
 export interface PathMapping { from: string; to: string; }
-export interface JellyfinSettings { url?: string | null; apiKey?: string | null; publicUrl?: string | null; refreshLibrary?: boolean; pathMappings?: PathMapping[]; }
-export interface EmbySettings { url?: string | null; apiKey?: string | null; pathMappings?: PathMapping[]; }
-export interface PlexSettings { url?: string | null; token?: string | null; pathMappings?: PathMapping[]; }
+export interface JellyfinSettings {
+  url?: string | null; apiKey?: string | null; publicUrl?: string | null; refreshLibrary?: boolean; pathMappings?: PathMapping[]; playStatusUserId?: string | null;
+}
+export interface EmbySettings { url?: string | null; apiKey?: string | null; pathMappings?: PathMapping[]; playStatusUserId?: string | null; }
+export interface PlexSettings { url?: string | null; token?: string | null; pathMappings?: PathMapping[]; playStatus?: boolean; }
 export interface MediaServerTestResult { success: boolean; serverName?: string; version?: string; message?: string; }
+/** A user account on a Jellyfin or Emby server. */
+export interface MediaServerUser { id: string; name?: string | null; }
+/** A movie's play state on one media server; `progress` (0–1) is set while it is part-way watched. */
+export interface PlayState { server: string; played: boolean; playCount: number; progress?: number | null; lastPlayed?: string | null; }
+/** A watched or part-way watched episode on one media server. */
+export interface EpisodePlayState { episodeId: number; played: boolean; progress?: number | null; lastPlayed?: string | null; }
+/** A series' play state on one media server: `watched` of the `total` downloaded episodes the server has. */
+export interface SeriesPlayStatus { server: string; watched: number; total: number; episodes: EpisodePlayState[]; }
 export type OtlpProtocol = 'Grpc' | 'HttpProtobuf';
 export interface TelemetrySettings {
   enabled: boolean; endpoint?: string | null; protocol: OtlpProtocol; headers?: string | null; serviceName: string; resourceAttributes?: string | null;
