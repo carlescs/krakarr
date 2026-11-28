@@ -82,10 +82,6 @@ ARG VERSION
 LABEL org.opencontainers.image.title="Krakarr" \
       org.opencontainers.image.description="Movies, series, subtitles, indexers and torrents in one container" \
       org.opencontainers.image.version="$VERSION"
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
-
 ENV ASPNETCORE_HTTP_PORTS=8787 \
     DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_gcServer=0 \
@@ -99,13 +95,21 @@ COPY --from=tools /out/bin/ /usr/local/bin/
 WORKDIR /app
 COPY --from=build /app ./
 COPY docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh && mkdir -p /config /data
+# /app (the binaries and web UI) must stay owned by root and read-only for PUID, so the app can't be made to rewrite its
+# own code. COPY already gives root:root; the check fails the build if a later change loosens it. Krakarr writes only to
+# /config, /data and /tmp, which is what lets the container run with read_only: true (see docker-compose.yml).
+RUN chmod +x /entrypoint.sh && mkdir -p /config /data \
+    && chmod -R go-w /app \
+    && if [ -n "$(find /app /entrypoint.sh \( ! -user 0 -o ! -group 0 -o -perm /022 \) -print -quit)" ]; then \
+         echo "/app must be owned by root and not writable by group/others" >&2; exit 1; \
+       fi
 
 # /data holds both downloads/ and the media library so imports can hardlink (one mount = one filesystem).
 VOLUME ["/config", "/data"]
 EXPOSE 8787 6881/tcp 6881/udp
 
+# Built-in probe (no curl in the image): GET /api/v1/health on loopback, honouring the port and KRAKARR__URLBASE.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -fsS "http://127.0.0.1:8787${KRAKARR__URLBASE:-}/api/v1/health" || exit 1
+    CMD ["dotnet", "/app/Krakarr.Host.dll", "--healthcheck"]
 
 ENTRYPOINT ["/entrypoint.sh"]

@@ -31,6 +31,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
+// Docker HEALTHCHECK: probe the running instance and exit before building a host (see HealthProbe).
+if (HealthProbe.Requested(args)) return await HealthProbe.RunAsync();
+
 var builder = WebApplication.CreateBuilder(args);
 var inContainer = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true";
 
@@ -229,6 +232,9 @@ if (!string.IsNullOrEmpty(urlBase))
 {
     app.UsePathBase(urlBase);
 }
+// Explicit, after UsePathBase: WebApplication otherwise adds routing at the very start of the pipeline, where endpoints
+// would be matched against the path with the URL base still on it (every API route 404ing under the base).
+app.UseRouting();
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
@@ -269,5 +275,6 @@ app.MapHub<EventsHub>("/hubs/events");
 app.MapKrakarrSpa(urlBase);
 
 await app.RunAsync();
+return 0;
 
 public partial class Program;
