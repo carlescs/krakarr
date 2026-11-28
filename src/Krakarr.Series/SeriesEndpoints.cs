@@ -330,6 +330,14 @@ public static class SeriesEndpoints
             return Results.Ok(new BulkResult(affected, []));
         });
 
+        // Admins (RoleAccess): stop monitoring every finished series at once, from the series list menu.
+        group.MapPost("/finished/unmonitor", async (KrakarrDbContext db, TimeProvider time, CancellationToken ct) =>
+        {
+            var affected = await db.Series.Where(s => s.Monitored).Where(FinishedSeries.Predicate(Today(time)))
+                .ExecuteUpdateAsync(u => u.SetProperty(s => s.Monitored, false), ct);
+            return Results.Ok(new BulkResult(affected, []));
+        });
+
         group.MapPost("/bulk/search", async (BulkIdsRequest req, KrakarrDbContext db, ICommandQueue commands, CancellationToken ct) =>
         {
             if (BulkLimits.Clean(req.Ids) is not { } requested) return Results.Problem(BulkLimits.InvalidMessage, statusCode: 400);

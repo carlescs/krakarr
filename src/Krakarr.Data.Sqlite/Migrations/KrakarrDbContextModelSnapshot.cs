@@ -15,7 +15,7 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
     // If you encounter a merge conflict in the line below, it means you need to
     // discard one of the migration branches and recreate its migrations on top of
     // the other branch. See https://aka.ms/efcore-docs-migrations-conflicts for more info.
-    public override string LastMigrationId => "20261128080254_SeriesFinishedAt";
+    public override string LastMigrationId => "20261127110139_PushSubscriptions";
 
     protected override void BuildModel(ModelBuilder modelBuilder)
     {
@@ -818,9 +818,6 @@ partial class KrakarrDbContextModelSnapshot : ModelSnapshot
 
                 b.Property<string>("FanartUrl")
                     .HasColumnType("TEXT");
-
-                b.Property<long?>("FinishedAt")
-                    .HasColumnType("INTEGER");
 
                 b.Property<DateOnly?>("FirstAired")
                     .HasColumnType("TEXT");

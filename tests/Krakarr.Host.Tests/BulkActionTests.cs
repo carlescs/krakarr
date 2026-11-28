@@ -136,6 +136,52 @@ public sealed class BulkActionTests(KrakarrFactory factory) : IClassFixture<Krak
     }
 
     [Fact]
+    public async Task Unmonitors_and_unfollows_only_finished_series()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = await AdminAsync(ct);
+        var adminId = await QueryAsync(db => db.Users.Where(u => u.Username == "admin").Select(u => u.Id).SingleAsync(ct));
+        // Finished; ended but missing an aired episode; complete but still continuing.
+        var ids = await QueryAsync(async db =>
+        {
+            var profile = await db.QualityProfiles.MinAsync(p => p.Id, ct);
+            Krakarr.Core.Domain.Series Show(int n, SeriesStatus status, bool complete)
+            {
+                var show = new Krakarr.Core.Domain.Series { TvdbId = 71_000 + n, Title = $"Finished {n}", SortTitle = $"finished {n}", Path = $"/tv/finished-{n}", QualityProfileId = profile, Status = status };
+                for (var e = 1; e <= 2; e++)
+                {
+                    // Episodes to give a file are marked with Runtime 1 until the series has an id.
+                    show.Episodes.Add(new Episode { SeasonNumber = 1, EpisodeNumber = e, AirDate = new DateOnly(2020, 1, e), Runtime = e == 1 || complete ? 1 : 0 });
+                }
+
+                // A special without a file and an announced episode don't count.
+                show.Episodes.Add(new Episode { SeasonNumber = 0, EpisodeNumber = 1, AirDate = new DateOnly(2020, 6, 1) });
+                show.Episodes.Add(new Episode { SeasonNumber = 2, EpisodeNumber = 1 });
+                return show;
+            }
+
+            var shows = new[] { Show(1, SeriesStatus.Ended, complete: true), Show(2, SeriesStatus.Ended, complete: false), Show(3, SeriesStatus.Continuing, complete: true) };
+            db.Series.AddRange(shows);
+            await db.SaveChangesAsync(ct);
+            foreach (var episode in shows.SelectMany(x => x.Episodes).Where(e => e.Runtime == 1))
+                episode.EpisodeFile = new EpisodeFile { SeriesId = episode.SeriesId, SeasonNumber = 1, RelativePath = $"S01E0{episode.EpisodeNumber}.mkv" };
+            db.MediaSubscriptions.AddRange(shows.Select(x => new MediaSubscription { UserId = adminId, SeriesId = x.Id }));
+            await db.SaveChangesAsync(ct);
+            return shows.Select(x => x.Id).ToArray();
+        });
+
+        var unfollow = await client.PostAsync("/api/v1/subscriptions/series/unfollow-finished", null, ct);
+        unfollow.EnsureSuccessStatusCode();
+        Assert.Equal(1, (await unfollow.Content.ReadFromJsonAsync<JsonElement>(ct)).GetProperty("affected").GetInt32());
+        var followed = await QueryAsync(db => db.MediaSubscriptions.Where(x => x.UserId == adminId && ids.Contains(x.SeriesId!.Value)).Select(x => x.SeriesId!.Value).OrderBy(x => x).ToListAsync(ct));
+        Assert.Equal(ids[1..], followed);
+
+        (await client.PostAsync("/api/v1/series/finished/unmonitor", null, ct)).EnsureSuccessStatusCode();
+        var monitored = await QueryAsync(db => db.Series.Where(x => ids.Contains(x.Id)).OrderBy(x => x.Id).Select(x => x.Monitored).ToListAsync(ct));
+        Assert.Equal([false, true, true], monitored);
+    }
+
+    [Fact]
     public async Task Follows_and_unfollows_several_titles()
     {
         var ct = TestContext.Current.CancellationToken;

@@ -20,11 +20,23 @@
       <a routerLink="/discover/search" [queryParams]="{ type: 'series' }" class="btn-primary max-sm:flex-1">+ Add series</a>
       <kr-more-menu>
         <a routerLink="/series/import" class="menu-item" role="menuitem">Import existing library…</a>
+        <ng-container *ngTemplateOutlet="finishedActions" />
       </kr-more-menu>
     </div>
   } @else {
-    <a routerLink="/discover/search" [queryParams]="{ type: 'series' }" class="btn-secondary max-sm:basis-full">Search &amp; request</a>
+    <div class="flex gap-2 max-sm:basis-full">
+      <a routerLink="/discover/search" [queryParams]="{ type: 'series' }" class="btn-secondary max-sm:flex-1">Search &amp; request</a>
+      <kr-more-menu>
+        <ng-container *ngTemplateOutlet="finishedActions" />
+      </kr-more-menu>
+    </div>
   }
+  <ng-template #finishedActions>
+    <button type="button" class="menu-item" role="menuitem" [disabled]="busy()" (click)="unfollowFinished()">Unfollow finished series</button>
+    @if (auth.isAdmin()) {
+      <button type="button" class="menu-item" role="menuitem" [disabled]="busy()" (click)="unmonitorFinished()">Unmonitor finished series</button>
+    }
+  </ng-template>
 </div>
 
 @if (loading()) {

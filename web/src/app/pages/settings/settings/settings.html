@@ -233,16 +233,6 @@
     <section class="card mt-6 grid grid-cols-1 gap-4 p-4 sm:p-5 sm:grid-cols-2">
       <h2 class="font-semibold text-white sm:col-span-2">Automation</h2>
       <div><label class="label">RSS sync interval (minutes, 0 = off)</label><input class="input" type="number" min="0" [(ngModel)]="a.rssSyncIntervalMinutes" /></div>
-      <div class="space-y-2 sm:col-span-2">
-        <span class="label">Finished series</span>
-        <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="a.unmonitorFinishedSeries" /> Stop monitoring them</label>
-        <label class="flex items-center gap-2 text-sm"><input type="checkbox" class="accent-accent-500" [(ngModel)]="a.unfollowFinishedSeries" /> Unfollow them for everyone</label>
-        <p class="hint">
-          A series is finished once it has ended and every monitored episode that has aired is downloaded. This is checked after imports and
-          at the twice-daily series refresh, which also catches series that were already finished. Each series is handled once, so monitoring
-          or following it again afterwards sticks.
-        </p>
-      </div>
     </section>
   }
 }

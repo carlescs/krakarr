@@ -156,10 +156,6 @@ public sealed record AutomationSettings : ISettingsSection
     public static string SectionKey => "automation";
     public int RssSyncIntervalMinutes { get; init; } = 30;
     public bool SearchOnAdd { get; init; } = true;
-    /// <summary>Stop monitoring a series once it has ended and every monitored, aired episode has a file.</summary>
-    public bool UnmonitorFinishedSeries { get; init; }
-    /// <summary>Make every user stop following a series once it has ended and every monitored, aired episode has a file.</summary>
-    public bool UnfollowFinishedSeries { get; init; }
 
     /// <summary>Time between RSS syncs, or <c>null</c> when automatic RSS sync is off.</summary>
     [System.Text.Json.Serialization.JsonIgnore]

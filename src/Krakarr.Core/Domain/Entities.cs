@@ -267,12 +267,6 @@ public class Series
     public DateTimeOffset Added { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastRefreshed { get; set; }
     public DateTimeOffset? LastSearched { get; set; }
-    /// <summary>
-    /// When the series was first found finished: ended, with a file for every monitored episode that has aired (null = not
-    /// finished, or not checked because no finished-series action is enabled). The actions of <c>AutomationSettings</c>
-    /// run only when this is set, so a series the user monitors or follows again afterwards keeps that choice.
-    /// </summary>
-    public DateTimeOffset? FinishedAt { get; set; }
     public List<Season> Seasons { get; set; } = [];
     public List<Episode> Episodes { get; set; } = [];
     /// <summary>Other names releases use for the series. Load it only for the series being matched or searched.</summary>
