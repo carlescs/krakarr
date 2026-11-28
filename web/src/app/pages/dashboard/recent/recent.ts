@@ -9,9 +9,12 @@ export const PAGE_SIZE = 6;
 /** Horizontal drag, in pixels, that turns the page. Shorter drags snap back (and still count as clicks). */
 export const SWIPE_THRESHOLD = 40;
 
-type Tab = 'imported' | 'added';
+type Tab = 'imported' | 'added' | 'played';
 
-/** Dashboard panel with the latest imports and additions, one tab each, paged by dots or by swiping. */
+/**
+ * Dashboard panel with the latest imports, additions and (when a media server reports play status) plays, one tab
+ * each, paged by dots or by swiping.
+ */
 @Component({
   selector: 'kr-recent',
   imports: [RouterLink, AgoPipe, Poster],
@@ -22,14 +25,25 @@ type Tab = 'imported' | 'added';
 export class Recent {
   readonly imported = input.required<DashboardRecent[]>();
   readonly added = input.required<DashboardRecent[]>();
+  /** Titles played last on the media servers; null hides the tab (no server set up to report play status). */
+  readonly played = input<DashboardRecent[] | null>(null);
 
-  protected readonly tabs = [{ id: 'imported', label: 'Imported' }, { id: 'added', label: 'Added' }] as const;
-  protected readonly tab = signal<Tab>('imported');
+  protected readonly tabs = computed(() => [
+    { id: 'imported' as const, label: 'Imported' },
+    { id: 'added' as const, label: 'Added' },
+    ...(this.played() ? [{ id: 'played' as const, label: 'Played' }] : []),
+  ]);
+  protected readonly selected = signal<Tab>('imported');
+  /** The selected tab, back on Imported when the Played tab goes away. */
+  protected readonly tab = computed<Tab>(() => (this.selected() === 'played' && !this.played() ? 'imported' : this.selected()));
   protected readonly page = signal(0);
   /** How far the track follows the pointer during a swipe, in pixels. */
   protected readonly dragOffset = signal(0);
 
-  protected readonly items = computed(() => (this.tab() === 'imported' ? this.imported() : this.added()));
+  protected readonly items = computed(() => {
+    const tab = this.tab();
+    return tab === 'imported' ? this.imported() : tab === 'added' ? this.added() : (this.played() ?? []);
+  });
   protected readonly pages = computed(() => {
     const items = this.items();
     const pages: DashboardRecent[][] = [];
@@ -57,12 +71,23 @@ export class Recent {
   }
 
   protected selectTab(tab: Tab) {
-    this.tab.set(tab);
+    this.selected.set(tab);
     this.page.set(0);
   }
 
   protected goTo(page: number) {
     this.page.set(Math.min(Math.max(page, 0), this.pages().length - 1));
+  }
+
+  /** S01E02 for the last episode played of a series. */
+  protected episode(r: DashboardRecent) {
+    if (r.seasonNumber == null || r.episodeNumber == null) return null;
+    return `S${String(r.seasonNumber).padStart(2, '0')}E${String(r.episodeNumber).padStart(2, '0')}`;
+  }
+
+  protected playedTitle(r: DashboardRecent) {
+    const episode = this.episode(r);
+    return `${r.title} (${r.year})${episode ? ' · ' + episode : ''} · ${r.finished ? 'watched' : 'part-way watched'} on ${r.server}`;
   }
 
   protected link(mediaType: MediaType, id: number): unknown[] {

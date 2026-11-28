@@ -108,6 +108,22 @@ public sealed class JellyfinMatchTests
     }
 
     [Fact]
+    public async Task Reads_movie_and_episode_plays_from_the_plex_history()
+    {
+        var xml = """
+            <MediaContainer>
+              <Video historyKey="/status/sessions/history/1" type="episode" ratingKey="73" grandparentKey="/library/metadata/7" parentIndex="2" index="4" viewedAt="1700000000" />
+              <Video type="movie" ratingKey="5" viewedAt="1600000000" />
+              <Video type="track" ratingKey="9" viewedAt="1600000000" />
+              <Video type="movie" ratingKey="6" />
+            </MediaContainer>
+            """;
+        using var reader = System.Xml.XmlReader.Create(new StringReader(xml), new() { Async = true });
+        var plays = await PlexClient.ReadHistoryAsync(reader, 10);
+        Assert.Equal([new PlexClient.PlexPlay(false, "7", 2, 4, DateTimeOffset.FromUnixTimeSeconds(1700000000)), new PlexClient.PlexPlay(true, "5", null, null, DateTimeOffset.FromUnixTimeSeconds(1600000000))], plays);
+    }
+
+    [Fact]
     public void Links_to_the_public_url_when_set()
     {
         var item = Item("abc", "Dune", 2021);
@@ -134,6 +150,10 @@ public sealed class FakeJellyfin : HttpMessageHandler
                 """{"Items":[{"Id":"ep-1","Name":"Pilot","ServerId":"srv","ParentIndexNumber":1,"IndexNumber":1},{"Id":"ep-2","Name":"Two","ServerId":"srv","ParentIndexNumber":1,"IndexNumber":2,"IndexNumberEnd":3}]}""",
             "/jf/System/Info" => """{"ServerName":"Living room","Version":"10.10.3"}""",
             "/jf/Users" => """[{"Name":"zoe","Id":"u2"},{"Name":"Anna","Id":"u1"}]""",
+            var p when p.StartsWith("/jf/Items?UserId=u1&Recursive=true&IncludeItemTypes=Movie,Episode&SortBy=DatePlayed", StringComparison.Ordinal) =>
+                """{"Items":[{"Id":"ep-2","Type":"Episode","SeriesId":"show-1","ParentIndexNumber":1,"IndexNumber":2,"UserData":{"Played":false,"PlaybackPositionTicks":5,"LastPlayedDate":"2026-11-03T20:00:00Z"}},{"Id":"ep-1","Type":"Episode","SeriesId":"show-1","ParentIndexNumber":1,"IndexNumber":1,"UserData":{"Played":true,"LastPlayedDate":"2026-11-02T22:00:00Z"}},{"Id":"movie-1","Type":"Movie","ProviderIds":{"Tmdb":"7001"},"UserData":{"Played":true,"LastPlayedDate":"2026-11-02T20:00:00Z"}},{"Id":"other","Type":"Movie","ProviderIds":{"Tmdb":"1"},"UserData":{"Played":true,"LastPlayedDate":"2026-11-01T20:00:00Z"}},{"Id":"never","Type":"Movie","ProviderIds":{"Tmdb":"7001"},"UserData":{"Played":false}}]}""",
+            var p when p.StartsWith("/jf/Items?Ids=show-1&", StringComparison.Ordinal) =>
+                """{"Items":[{"Id":"show-1","Type":"Series","Name":"Jelly Show","ProviderIds":{"Tvdb":"8001"}}]}""",
             var p when p.StartsWith("/jf/Shows/show-1/Episodes?UserId=u1&", StringComparison.Ordinal) =>
                 """{"Items":[{"Id":"ep-1","ParentIndexNumber":1,"IndexNumber":1,"UserData":{"Played":true,"PlayCount":2,"PlaybackPositionTicks":0,"LastPlayedDate":"2026-11-01T20:00:00Z"}},{"Id":"ep-2","ParentIndexNumber":1,"IndexNumber":2,"IndexNumberEnd":3,"RunTimeTicks":1000,"UserData":{"Played":false,"PlayCount":0,"PlaybackPositionTicks":250}}]}""",
             var p when p.StartsWith("/jf/Items?", StringComparison.Ordinal) && p.Contains("IncludeItemTypes=Movie", StringComparison.Ordinal) && p.Contains("UserId=u1", StringComparison.Ordinal) =>
@@ -270,6 +290,12 @@ public sealed class PlayStatusTests(PlayStatusFactory factory) : IClassFixture<P
             var p when p.StartsWith("/library/sections/2/all?type=2&includeGuids=1&title=Jelly%20Show", StringComparison.Ordinal) => FakeMediaServer.Xml("""
                 <MediaContainer><Directory ratingKey="7" title="Jelly Show" year="2019"><Guid id="tvdb://8001" /></Directory></MediaContainer>
                 """),
+            var p when p.StartsWith("/status/sessions/history/all?sort=viewedAt:desc&accountID=1&", StringComparison.Ordinal) => FakeMediaServer.Xml("""
+                <MediaContainer><Video type="episode" grandparentKey="/library/metadata/7" parentIndex="1" index="3" viewedAt="1700000000" /><Video type="movie" ratingKey="5" viewedAt="1600000000" /><Video type="track" ratingKey="9" viewedAt="1800000000" /></MediaContainer>
+                """),
+            "/library/metadata/7,5?includeGuids=1" => FakeMediaServer.Xml("""
+                <MediaContainer><Directory ratingKey="7" title="Jelly Show"><Guid id="tvdb://8001" /></Directory><Video ratingKey="5" title="Jelly Movie"><Guid id="tmdb://7001" /></Video></MediaContainer>
+                """),
             "/library/metadata/7/allLeaves?includeGuids=1" => FakeMediaServer.Xml("""
                 <MediaContainer><Video ratingKey="71" parentIndex="1" index="1" duration="1000" /><Video ratingKey="73" parentIndex="1" index="3" viewCount="1" duration="1000" /></MediaContainer>
                 """),
@@ -300,6 +326,7 @@ public sealed class PlayStatusTests(PlayStatusFactory factory) : IClassFixture<P
 
         // Nothing set up to report play status yet.
         Assert.Empty(await client.GetFromJsonAsync<JsonElement[]>($"/api/v1/movies/{movie}/playstatus", ct) ?? []);
+        Assert.False((await client.GetFromJsonAsync<JsonElement>("/api/v1/dashboard/recently-played", ct)).GetProperty("enabled").GetBoolean());
 
         (await client.PutAsJsonAsync("/api/v1/settings/jellyfin", new { url = "http://jellyfin/jf", apiKey = "secret" }, ct)).EnsureSuccessStatusCode();
         var users = await (await client.PostAsJsonAsync("/api/v1/settings/jellyfin/users", new { url = "http://jellyfin/jf", apiKey = JellyfinSettings.ApiKeyMask }, ct)).Content.ReadFromJsonAsync<JsonElement[]>(ct);
@@ -325,5 +352,14 @@ public sealed class PlayStatusTests(PlayStatusFactory factory) : IClassFixture<P
         Assert.Equal(e3, plexShow.GetProperty("episodes").EnumerateArray().Single().GetProperty("episodeId").GetInt32());
 
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync("/api/v1/movies/999999/playstatus", ct)).StatusCode);
+
+        // Recently played: newest first, one entry per library title, titles not in the library left out.
+        var recent = await client.GetFromJsonAsync<JsonElement>("/api/v1/dashboard/recently-played", ct);
+        Assert.True(recent.GetProperty("enabled").GetBoolean());
+        var items = recent.GetProperty("items").EnumerateArray().ToList();
+        Assert.Equal([("Series", show, "Jellyfin"), ("Movie", movie, "Jellyfin")],
+            items.Select(i => (i.GetProperty("mediaType").GetString(), i.GetProperty("id").GetInt32(), i.GetProperty("server").GetString())));
+        Assert.Equal((1, 2), (items[0].GetProperty("seasonNumber").GetInt32(), items[0].GetProperty("episodeNumber").GetInt32()));
+        Assert.False(items[0].GetProperty("finished").GetBoolean());
     }
 }

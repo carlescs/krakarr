@@ -24,7 +24,14 @@ public sealed record JellyfinEpisodeLookup(int SeasonNumber, int EpisodeNumber, 
 /// last episode of a multi-episode file). <see cref="UserData"/> is only asked for when reading play status.
 /// </summary>
 public sealed record JellyfinItem(string Id, string? Name, string? ServerId, int? ProductionYear, Dictionary<string, string?>? ProviderIds,
-    int? ParentIndexNumber = null, int? IndexNumber = null, int? IndexNumberEnd = null, long? RunTimeTicks = null, JellyfinUserData? UserData = null);
+    int? ParentIndexNumber = null, int? IndexNumber = null, int? IndexNumberEnd = null, long? RunTimeTicks = null, JellyfinUserData? UserData = null,
+    string? Type = null, string? SeriesId = null);
+
+/// <summary>
+/// A movie or episode a media server user played. <see cref="ProviderIds"/> are the movie's or, for an episode, the
+/// series' ids, so it can be matched with the library.
+/// </summary>
+public sealed record RecentPlay(JellyfinItemKind Kind, IReadOnlyDictionary<string, string?> ProviderIds, int? SeasonNumber, int? EpisodeNumber, DateTimeOffset Played, bool Finished);
 
 /// <summary>One user's play state of an item (Jellyfin, Emby; Plex is mapped onto it).</summary>
 public sealed record JellyfinUserData(bool Played, int PlayCount, long PlaybackPositionTicks, DateTimeOffset? LastPlayedDate);
@@ -86,6 +93,39 @@ public sealed class JellyfinClient(IHttpClientFactory httpClientFactory, ILogger
         var query = $"Shows/{Uri.EscapeDataString(seriesItemId)}/Episodes?UserId={Uri.EscapeDataString(userId)}"
             + "&Fields=ProviderIds&EnableImages=false&EnableUserData=true";
         return (await GetAsync<ItemsResponse>(server, query, MaxEpisodesBytes, ct))?.Items ?? [];
+    }
+
+    /// <summary>
+    /// What <paramref name="userId"/> played last, newest first: movies and episodes with a play date (finished or
+    /// part-way), at most <paramref name="limit"/>. An episode carries its series' ids, read in one extra request.
+    /// </summary>
+    public async Task<IReadOnlyList<RecentPlay>> RecentlyPlayedAsync(MediaBrowserServer server, string userId, int limit, CancellationToken ct)
+    {
+        var query = $"Items?UserId={Uri.EscapeDataString(userId)}&Recursive=true&IncludeItemTypes=Movie,Episode&SortBy=DatePlayed&SortOrder=Descending"
+            + $"&Fields=ProviderIds&EnableImages=false&EnableUserData=true&Limit={limit}";
+        var played = ((await GetAsync<ItemsResponse>(server, query, MaxResponseBytes, ct))?.Items ?? [])
+            .Where(i => i.UserData?.LastPlayedDate is not null)
+            .ToList();
+
+        var seriesIds = played.Where(i => i.Type == "Episode" && !string.IsNullOrEmpty(i.SeriesId)).Select(i => i.SeriesId!).Distinct().ToList();
+        var series = new Dictionary<string, JellyfinItem>();
+        if (seriesIds.Count > 0)
+        {
+            var ids = string.Join(',', seriesIds.Select(Uri.EscapeDataString));
+            var response = await GetAsync<ItemsResponse>(server, $"Items?Ids={ids}&Fields=ProviderIds&EnableImages=false&EnableUserData=false", MaxResponseBytes, ct);
+            foreach (var item in response?.Items ?? []) series.TryAdd(item.Id, item);
+        }
+
+        var result = new List<RecentPlay>(played.Count);
+        foreach (var item in played)
+        {
+            var data = item.UserData!;
+            if (item.Type == "Movie")
+                result.Add(new(JellyfinItemKind.Movie, item.ProviderIds ?? [], null, null, data.LastPlayedDate!.Value, data.Played));
+            else if (item.SeriesId is { } id && series.TryGetValue(id, out var show))
+                result.Add(new(JellyfinItemKind.Series, show.ProviderIds ?? [], item.ParentIndexNumber, item.IndexNumber, data.LastPlayedDate!.Value, data.Played));
+        }
+        return result;
     }
 
     /// <summary>The server's user accounts, to pick whose play state Krakarr shows.</summary>

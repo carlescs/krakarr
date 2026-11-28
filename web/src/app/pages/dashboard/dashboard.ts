@@ -6,7 +6,7 @@ import { debounceTime, merge } from 'rxjs';
 import { Api, errorMessage } from '../../core/api';
 import { Events } from '../../core/events';
 import { AgoPipe, BytesPipe, DurationPipe, SpeedPipe } from '../../core/format';
-import { DashboardStats, DownloadState, RootFolder } from '../../core/models';
+import { DashboardRecent, DashboardStats, DownloadState, RootFolder } from '../../core/models';
 import { Poster } from '../../shared/poster/poster';
 import { Progress } from '../../shared/progress/progress';
 import { StateBadge } from '../../shared/state-badge/state-badge';
@@ -46,6 +46,8 @@ export class DashboardPage implements OnInit {
   protected readonly stats = signal<DashboardStats | null>(null);
   protected readonly rootFolders = signal<RootFolder[]>([]);
   protected readonly error = signal<string | null>(null);
+  /** Titles played last on the media servers; null while loading or when none is set up to report play status. */
+  protected readonly played = signal<DashboardRecent[] | null>(null);
 
   // Library breakdowns as segmented bars.
   protected readonly movieSegments = computed<Segment[]>(() => {
@@ -115,6 +117,7 @@ export class DashboardPage implements OnInit {
 
   ngOnInit() {
     this.load();
+    this.loadPlayed();
     // Imports, grabs and request changes alter the figures; they come in bursts, so reload at most every few seconds.
     merge(this.events.historyAdded, this.events.requestsUpdated)
       .pipe(debounceTime(3000), takeUntilDestroyed(this.destroyRef))
@@ -129,6 +132,16 @@ export class DashboardPage implements OnInit {
       this.error.set(null);
     } catch (err) {
       this.error.set(errorMessage(err));
+    }
+  }
+
+  /** Asked once, apart from the overview: media servers can be slow, and plays don't raise events here. */
+  private async loadPlayed() {
+    try {
+      const played = await this.api.recentlyPlayed();
+      this.played.set(played?.enabled ? played.items : null);
+    } catch {
+      // No tab when the media servers can't be read.
     }
   }
 

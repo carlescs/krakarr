@@ -262,27 +262,82 @@ public sealed class PlexClient(IHttpClientFactory httpClientFactory, ILogger<Ple
     public Task<List<JellyfinItem>> EpisodesAsync(PlexSettings settings, string showKey, CancellationToken ct) =>
         GetItemsAsync(settings, $"library/metadata/{Uri.EscapeDataString(showKey)}/allLeaves?includeGuids=1", "Video", ct);
 
-    /// <summary>Reads the <paramref name="element"/> items of a Plex list as a stream, mapped onto <see cref="JellyfinItem"/>.</summary>
-    private async Task<List<JellyfinItem>> GetItemsAsync(PlexSettings settings, string relative, string element, CancellationToken ct)
+    /// <summary>
+    /// What the token owner (account 1 on their own server) watched last, newest first, at most <paramref name="limit"/>
+    /// plays. Plex only records finished views. Movies and shows are then read in one request for their ids.
+    /// </summary>
+    public async Task<IReadOnlyList<RecentPlay>> RecentlyPlayedAsync(PlexSettings settings, int limit, CancellationToken ct)
+    {
+        List<PlexPlay> plays;
+        var relative = $"status/sessions/history/all?sort=viewedAt:desc&accountID=1&X-Plex-Container-Start=0&X-Plex-Container-Size={limit}";
+        using (var request = Request(settings, relative))
+        using (var response = await httpClientFactory.CreateClient(HttpClientName).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct))
+        {
+            if (!response.IsSuccessStatusCode) throw new HttpRequestException($"Plex answered HTTP {(int)response.StatusCode}", null, response.StatusCode);
+            await using var body = await response.Content.ReadAsBoundedStreamAsync(MaxItemsBytes, ct);
+            using var reader = XmlReader.Create(body, new XmlReaderSettings { Async = true, DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, IgnoreWhitespace = true });
+            plays = await ReadHistoryAsync(reader, limit);
+        }
+        if (plays.Count == 0) return [];
+
+        var keys = plays.Select(p => p.TitleKey).Distinct().ToList();
+        var titles = (await GetItemsAsync(settings, $"library/metadata/{string.Join(',', keys.Select(Uri.EscapeDataString))}?includeGuids=1", ["Video", "Directory"], ct))
+            .ToDictionary(t => t.Id);
+        return plays
+            .Where(p => titles.ContainsKey(p.TitleKey))
+            .Select(p => new RecentPlay(p.Movie ? JellyfinItemKind.Movie : JellyfinItemKind.Series, titles[p.TitleKey].ProviderIds ?? [],
+                p.Season, p.Episode, p.ViewedAt, true))
+            .ToList();
+    }
+
+    /// <summary>A play in the Plex history: the movie's or show's <c>ratingKey</c> in <see cref="TitleKey"/>.</summary>
+    public sealed record PlexPlay(bool Movie, string TitleKey, int? Season, int? Episode, DateTimeOffset ViewedAt);
+
+    /// <summary>Reads movie and episode plays from <c>/status/sessions/history/all</c>.</summary>
+    public static async Task<List<PlexPlay>> ReadHistoryAsync(XmlReader reader, int limit)
+    {
+        var plays = new List<PlexPlay>();
+        while (plays.Count < limit && await reader.ReadAsync())
+        {
+            if (reader.NodeType != XmlNodeType.Element || reader.Depth != 1 || reader.Name != "Video") continue;
+            var type = reader.GetAttribute("type");
+            if (Long(reader.GetAttribute("viewedAt")) is not { } viewedAt) continue;
+            var key = type switch
+            {
+                "movie" => reader.GetAttribute("ratingKey"),
+                "episode" => reader.GetAttribute("grandparentKey") is { } show ? show[(show.LastIndexOf('/') + 1)..] : null,
+                _ => null,
+            };
+            if (string.IsNullOrEmpty(key)) continue;
+            plays.Add(new(type == "movie", key, Int(reader.GetAttribute("parentIndex")), Int(reader.GetAttribute("index")), DateTimeOffset.FromUnixTimeSeconds(viewedAt)));
+        }
+        return plays;
+    }
+
+    /// <summary>Reads the <paramref name="elements"/> items of a Plex list as a stream, mapped onto <see cref="JellyfinItem"/>.</summary>
+    private Task<List<JellyfinItem>> GetItemsAsync(PlexSettings settings, string relative, string element, CancellationToken ct) =>
+        GetItemsAsync(settings, relative, [element], ct);
+
+    private async Task<List<JellyfinItem>> GetItemsAsync(PlexSettings settings, string relative, string[] elements, CancellationToken ct)
     {
         using var request = Request(settings, relative);
         using var response = await httpClientFactory.CreateClient(HttpClientName).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!response.IsSuccessStatusCode) throw new HttpRequestException($"Plex answered HTTP {(int)response.StatusCode}", null, response.StatusCode);
         await using var body = await response.Content.ReadAsBoundedStreamAsync(MaxItemsBytes, ct);
         using var reader = XmlReader.Create(body, new XmlReaderSettings { Async = true, DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null, IgnoreWhitespace = true });
-        return await ReadItemsAsync(reader, element);
+        return await ReadItemsAsync(reader, elements);
     }
 
     /// <summary>
-    /// Maps Plex items (<c>&lt;Video&gt;</c> or <c>&lt;Directory&gt;</c> directly under the container) onto <see cref="JellyfinItem"/>:
+    /// Maps Plex items (the given elements, <c>&lt;Video&gt;</c> or <c>&lt;Directory&gt;</c>, directly under the container) onto <see cref="JellyfinItem"/>:
     /// <c>&lt;Guid id="tmdb://1"/&gt;</c> children become provider ids, <c>viewCount</c>/<c>viewOffset</c>/<c>lastViewedAt</c> the play state.
     /// </summary>
-    public static async Task<List<JellyfinItem>> ReadItemsAsync(XmlReader reader, string element)
+    public static async Task<List<JellyfinItem>> ReadItemsAsync(XmlReader reader, params string[] elements)
     {
         var items = new List<JellyfinItem>();
         while (await reader.ReadAsync())
         {
-            if (reader.NodeType != XmlNodeType.Element || reader.Depth != 1 || reader.Name != element) continue;
+            if (reader.NodeType != XmlNodeType.Element || reader.Depth != 1 || !elements.Contains(reader.Name)) continue;
             var key = reader.GetAttribute("ratingKey");
             var title = reader.GetAttribute("title");
             var year = Int(reader.GetAttribute("year"));

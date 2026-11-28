@@ -10,11 +10,12 @@ function item(id: number, overrides: Partial<DashboardRecent> = {}): DashboardRe
 
 const many = (count: number) => Array.from({ length: count }, (_, i) => item(i + 1));
 
-async function render(imported: DashboardRecent[], added: DashboardRecent[] = []) {
+async function render(imported: DashboardRecent[], added: DashboardRecent[] = [], played: DashboardRecent[] | null = null) {
   setupTest();
   const fixture = TestBed.createComponent(Recent);
   fixture.componentRef.setInput('imported', imported);
   fixture.componentRef.setInput('added', added);
+  fixture.componentRef.setInput('played', played);
   await settle(fixture);
   return { fixture, el: fixture.nativeElement as HTMLElement };
 }
@@ -137,5 +138,38 @@ describe('Recent', () => {
     ([...el.querySelectorAll('[role="tab"]')] as HTMLElement[]).find(t => t.textContent!.trim() === 'Added')!.click();
     await settle(fixture);
     expect(text(el)).toContain('Nothing in the library yet.');
+  });
+
+  it('shows a Played tab only when a media server reports play status', async () => {
+    const tabs = (el: HTMLElement) => [...el.querySelectorAll('[role="tab"]')].map(t => t.textContent?.trim());
+    expect(tabs((await render(many(1))).el)).toEqual(['Imported', 'Added']);
+
+    TestBed.resetTestingModule();
+    const { fixture, el } = await render(many(1), [], [
+      item(5, { mediaType: 'Series', title: 'Andor', seasonNumber: 1, episodeNumber: 3, server: 'Jellyfin', finished: false }),
+      item(6, { title: 'Alien', server: 'Plex', finished: true }),
+    ]);
+    expect(tabs(el)).toEqual(['Imported', 'Added', 'Played']);
+    ([...el.querySelectorAll('[role="tab"]')] as HTMLElement[]).find(t => t.textContent!.trim() === 'Played')!.click();
+    await settle(fixture);
+
+    const links = [...el.querySelectorAll('[data-list="recently-played"] a')];
+    expect(links.map(a => a.getAttribute('href'))).toEqual(['/series/5', '/movies/6']);
+    expect(text(links[0] as HTMLElement)).toContain('S01E03 ·');
+    expect(links[0].getAttribute('title')).toBe('Andor (2020) · S01E03 · part-way watched on Jellyfin');
+    expect(links[1].getAttribute('title')).toBe('Alien (2020) · watched on Plex');
+
+    // Back to Imported when the tab goes away.
+    fixture.componentRef.setInput('played', null);
+    await settle(fixture);
+    expect(tabs(el)).toEqual(['Imported', 'Added']);
+    expect(el.querySelector('[role="tab"][aria-selected="true"]')!.textContent).toContain('Imported');
+  });
+
+  it('says when nothing from the library was played', async () => {
+    const { fixture, el } = await render([], [], []);
+    ([...el.querySelectorAll('[role="tab"]')] as HTMLElement[]).find(t => t.textContent!.trim() === 'Played')!.click();
+    await settle(fixture);
+    expect(text(el, '[data-section="recent"]')).toContain('Nothing from the library played yet.');
   });
 });

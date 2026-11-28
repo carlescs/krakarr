@@ -34,6 +34,7 @@ public static class DashboardEndpoints
     /// <summary>Three pages of six on the dashboard.</summary>
     internal const int RecentImports = 18;
     internal const int RecentAdditions = 18;
+    internal const int RecentPlays = 18;
     internal const int TopRequesters = 5;
 
     public static IEndpointRouteBuilder MapDashboardEndpoints(this IEndpointRouteBuilder app)
@@ -51,6 +52,11 @@ public static class DashboardEndpoints
                 await RecentlyImportedAsync(db, ct),
                 await RecentlyAddedAsync(db, ct)));
         }).WithTags("Dashboard");
+
+        // What was played last on the media servers set up to report it. Separate from the overview, so a slow or
+        // unreachable media server never holds up the dashboard.
+        app.MapGet("/api/v1/dashboard/recently-played", async (Krakarr.Host.Integrations.PlayStatusService playStatus, CancellationToken ct) =>
+            Results.Ok(await playStatus.RecentlyPlayedAsync(RecentPlays, ct))).WithTags("Dashboard");
 
         return app;
     }

@@ -39,6 +39,7 @@ describe('DashboardPage', () => {
     const api = setupTest({
       api: mockApi({
         dashboard: async () => stats(), calendar: async () => [],
+        recentlyPlayed: async () => ({ enabled: true, items: [{ mediaType: 'Movie', id: 4, title: 'Dune', year: 2021, date: '2026-01-03T00:00:00Z', server: 'Jellyfin', finished: true }] }),
         rootFolders: async () => [{ id: 1, path: '/media/movies', mediaType: 'Movie', accessible: true, freeSpace: 1024 ** 4 }],
       }),
     });
@@ -61,6 +62,8 @@ describe('DashboardPage', () => {
     expect(text(el, '[data-section="downloads"]')).toContain('2 imports need attention');
     expect(el.querySelector('[data-list="recently-imported"] a[href="/movies/3"]')).not.toBeNull();
     expect(text(el, '[data-section="downloads"]')).toContain('Nothing in the download client.');
+    expect(api.recentlyPlayed).toHaveBeenCalledTimes(1);
+    expect([...el.querySelectorAll('[data-section="recent"] [role="tab"]')].map(t => t.textContent?.trim())).toEqual(['Imported', 'Added', 'Played']);
   });
 
   it('summarises live downloads', async () => {
