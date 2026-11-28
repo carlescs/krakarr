@@ -52,6 +52,9 @@
           <span class="truncate font-semibold text-white">{{ current()?.label ?? 'Krakarr' }}</span>
         </a>
         <div class="flex-1"></div>
+        <a routerLink="/discover/search" routerLinkActive="!text-white" class="btn-ghost px-2 text-slate-400" aria-label="Search" title="Search movies, series and people">
+          <svg class="size-6" fill="none" viewBox="0 0 24 24" stroke-width="1.6" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" [attr.d]="icons['search']" /></svg>
+        </a>
         <kr-background-tasks />
         <kr-notification-bell />
         <a routerLink="/settings" class="hidden text-sm text-slate-400 hover:text-white sm:inline" title="Your account">{{ auth.status()?.username }}</a>

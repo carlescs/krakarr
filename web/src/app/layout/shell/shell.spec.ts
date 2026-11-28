@@ -45,6 +45,13 @@ describe('Shell', () => {
     expect(nav).toContain('Requests4');
   });
 
+  for (const role of ['Admin', 'User'] as UserRole[]) {
+    it(`links ${role.toLowerCase()}s to search from the top bar`, async () => {
+      const { el } = await render(role);
+      expect(el.querySelector('header a[aria-label="Search"]')?.getAttribute('href')).toBe('/discover/search');
+    });
+  }
+
   it('signs out', async () => {
     const api = mockApi({ logout: async () => undefined });
     const { fixture, el, events } = await render('Admin', api);

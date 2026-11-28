@@ -90,6 +90,20 @@ describe('UnifiedSearchPage', () => {
     expect(el.querySelector('a[href="/requests"]')?.textContent).toContain('Requested');
   });
 
+  it('focuses the search box when opened without a search', async () => {
+    const focus = vi.spyOn(HTMLInputElement.prototype, 'focus');
+    await create(lookups());
+    expect(focus).toHaveBeenCalled();
+    focus.mockRestore();
+  });
+
+  it('leaves focus alone when the URL carries a search', async () => {
+    const focus = vi.spyOn(HTMLInputElement.prototype, 'focus');
+    await create(lookups(), { q: 'matrix' });
+    expect(focus).not.toHaveBeenCalled();
+    focus.mockRestore();
+  });
+
   it('restores the search and tab from the URL', async () => {
     const api = lookups();
     const { el } = await create(api, { q: 'keanu', type: 'people' });
